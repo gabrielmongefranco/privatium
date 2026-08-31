@@ -70,7 +70,7 @@ files works. The table is about *fit*, not permission.
 | Library | Build step | Notes |
 |---|---|---|
 | **Vanilla JS + `pv.js`** | none | The floor, and often enough |
-| **Alpine.js** | none | Reactive sprinkles |
+| **Alpine.js** | none | Reactive sprinkles — **use the `@alpinejs/csp` build.** The standard build compiles attribute expressions with `Function`, which needs `'unsafe-eval'`; the CSP build swaps inline expressions for components registered with `Alpine.data()`. Working example in `apps/animals`. |
 | **Datastar** | none | Signals + SSE |
 | **VanJS** | none | 1 KB components |
 | **Preact + htm** | none | Component model via tagged templates, no JSX, ~4 KB |

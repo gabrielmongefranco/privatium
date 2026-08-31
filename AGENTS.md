@@ -101,6 +101,15 @@ Violating any of these is a bug, regardless of how well the code works:
   GPLv2-only (incompatible with this project's GPLv3), its GPL clarification extends to web
   content hosted by the server, and — independently of licensing — it owns the event loop,
   so there is no configuration where it coexists with iroh, tokio, and DuckDB cheaply.
+- **Do not add `'unsafe-eval'` or `'unsafe-inline'` to the default CSP**, and do not set
+  `eval`/`inline_script` in a reference app's `app.toml` to make a library's shorter syntax
+  work. Apps share the framework's origin and session, so CSP is *not* an inter-app boundary
+  today — the honest justifications are defense in depth around `<?raw ?>`, no-CDN
+  discipline, `remote = []`, and keeping the door open for the per-app origins that
+  `docs/security.md §7` eventually needs. Relaxing it is one-way: once app authors and the
+  models reading `skills/` write inline expressions, the permission can never be withdrawn.
+  Use `@alpinejs/csp` rather than the `eval` permission; `apps/animals` is the worked example.
+  Inline event handler attributes (`onclick`, `onsubmit`) are script too, and fail silently.
 - **Do not adopt a JavaScript sync core.** Gun, RxDB, and their relatives are fine *above*
   the data API and disqualifying *below* it: a Rust core reaches LÖVE, Godot, Unity, Bevy,
   Swift, and Kotlin through a C ABI with no server at all. See `docs/decisions/0004 §6`.

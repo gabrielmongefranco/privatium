@@ -1,6 +1,6 @@
 -- Project:  Privatium™  |  File: apps/animals/lib/tree.lua
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
--- Created:  2026-08-28  |  Modified: 2026-08-28
+-- Created:  2026-08-28  |  Modified: 2026-08-31
 -- Summary:  Queries over the decision tree. Kept out of app.lua so the routes
 --           stay readable — the same split any growing app should make.
 
@@ -24,6 +24,11 @@ function M.root_id()
 end
 
 -- Every animal with the questions that lead to it.
+--
+-- `id` is selected as well as `text` because views/knowledge.lsp needs a stable,
+-- unique value for the `aria-controls` / `id` pair on each collapsible path. Two
+-- animals can share a name in a tree that has been reset and rebuilt; ULIDs
+-- cannot, so the accessible name never points at the wrong element.
 function M.knowledge()
   return pv.query([[
     WITH RECURSIVE walk(id, depth, path) AS (
@@ -42,7 +47,7 @@ function M.knowledge()
       CROSS JOIN (VALUES ('yes'), ('no')) AS t(answer)
       JOIN node c ON c.id = CASE WHEN t.answer = 'yes' THEN p.yes_id ELSE p.no_id END
     )
-    SELECT w.depth, w.path, n.text AS animal
+    SELECT w.depth, w.path, n.id AS animal_id, n.text AS animal
     FROM walk w JOIN node n ON n.id = w.id
     WHERE n.kind = 'a'
     ORDER BY w.depth, n.text

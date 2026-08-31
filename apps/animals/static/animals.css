@@ -1,0 +1,13 @@
+/* Project:  Privatium™  |  File: apps/animals/static/animals.css
+ * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+ * Created:  2026-08-31  |  Modified: 2026-08-31
+ * Summary:  The two rules this app needs on top of the framework stylesheet.
+ */
+
+/* Alpine hides x-show elements only once it has initialised. Without this the
+ * collapsed content is visible for one frame on a slow phone. Pair every
+ * x-show that starts closed with x-cloak. */
+[x-cloak] { display: none !important; }
+
+/* Question paths can be long. Wrap rather than scroll the table sideways. */
+.pv-path { white-space: normal; }

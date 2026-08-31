@@ -1,6 +1,6 @@
 ---
 name: privatium-app-animals
-description: Context for extending the animals reference app — its decision-tree schema, the three-event learning step, and its recursive SQL. Load alongside privatium-tier1-lua when modifying this specific app.
+description: Context for extending the animals reference app — its decision-tree schema, the three-event learning step, its recursive SQL, and the HTMX/Alpine boundary it demonstrates. Load alongside privatium-tier1-lua when modifying this specific app.
 ---
 
 # animals
@@ -25,6 +25,53 @@ id, every existing pointer into the tree stays correct. A version that creates a
 and re-points the parent is wrong: the parent may not exist (the leaf may be the root), and
 finding it requires a traversal.
 
+## HTMX or Alpine — the rule this app exists to demonstrate
+
+> **If losing it on refresh loses data, it is HTMX.
+> If losing it on refresh is fine, it is Alpine.**
+
+| Interaction | Tool | File |
+|---|---|---|
+| Submit a guess | HTMX | `views/_board.lsp` |
+| Plant the first animal | HTMX | `views/_board.lsp` |
+| Restart a round | HTMX | `views/_board.lsp` |
+| Teach a new animal | plain form post | `views/teach.lsp` |
+| Forget everything | plain form post | `views/knowledge.lsp` |
+| Expand a question path | Alpine | `views/knowledge.lsp` |
+| Confirm before forgetting | Alpine | `views/knowledge.lsp` |
+| Show example questions | Alpine | `views/teach.lsp` |
+
+Two things worth noticing, because both look like exceptions and are not:
+
+- **Not every write is HTMX.** Teaching and forgetting are *navigations* — a
+  separate page you arrive at and leave. Swapping a fragment there means owning
+  the back button. `app.lua` comments say so at each route.
+- **Every HTMX form still carries `method` and `action`.** `hx-post` is an
+  enhancement on top, and `board()` in `app.lua` returns a fragment or a redirect
+  depending on `req.is_htmx`. Do not delete either branch: without the redirect,
+  recording a guess would require JavaScript.
+
+## Alpine must be the CSP build
+
+An app runs under `script-src 'self'` with no `'unsafe-eval'`
+(`spec/app-contract.md §5.4`). Standard Alpine compiles attribute expressions
+with the `Function` constructor and cannot run at all under that policy.
+
+Consequences for anything you add:
+
+- `x-data` names a component registered in `static/animals.js` via `Alpine.data()`.
+  Inline objects (`x-data="{ open: false }"`) will not work.
+- Bindings reference properties and methods **by key**. No expressions: write a
+  getter (see `label`) instead of `x-text="open ? 'Hide' : 'Show'"`.
+- Inline event handlers (`onclick`, `onsubmit`) are script and are blocked. An
+  earlier version of `knowledge.lsp` used `onsubmit="return confirm(...)"`; that
+  was a bug, not a style choice.
+- **Do not set `eval = true` in `app.toml`** to get the shorter syntax back.
+- Every `x-show` that starts closed needs `x-cloak`, and `static/animals.css`
+  carries the matching rule.
+
+See `static/VENDOR.md` for the vendored file and how to reproduce it.
+
 ## `lib/tree.lua`
 
 Queries live here, not in `app.lua`. `root_id()` finds the node nobody points at.
@@ -37,5 +84,11 @@ input.
   exist. Do not pre-generate ids outside the batch.
 - `reset` writes tombstones. It never rewrites a log.
 - The radio pair in `views/teach.lsp` is wrapped in `fieldset`/`legend`. Keep it.
+- `knowledge()` selects `n.id AS animal_id` only so the collapsible path can pair
+  `id` with `aria-controls`. Two animals can share a name; ULIDs cannot.
+- `views/_board.lsp` is a partial because HTMX swaps it. `views/play.lsp` is the
+  page around it and holds the `#board` wrapper. Keep the split.
+- `views/_assets.lsp` loads Alpine and this app's CSS. HTMX is the framework's and
+  is already loaded — do not vendor a second copy.
 
 Run `privatium lint apps/animals` before finishing.

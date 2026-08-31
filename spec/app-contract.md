@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/app-contract.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-28
+Modified: 2026-08-31
 Summary:  NORMATIVE. What an app is, the three tiers of app, and the three
           deployment modes. The declarative tier is one option, not the model.
 -->
@@ -343,6 +343,17 @@ queries over it. For a drawing app or a game this is frequently the right choice
 
 Each app is served with its own CSP. By default `script-src 'self'` scoped to the app's
 own path — external `.js` files work, inline `<script>` does not.
+
+**Inline event handler attributes are script too.** `onclick`, `onsubmit`, and their
+relatives are blocked by the same default. This is the most common way an otherwise correct
+app fails silently: nothing errors, the handler simply never runs.
+
+**Reactive micro-frameworks usually need a CSP-specific build.** Alpine is the common case:
+its standard build compiles attribute expressions with the `Function` constructor and
+therefore requires `'unsafe-eval'`, while `@alpinejs/csp` drops inline expressions in favour
+of components registered with `Alpine.data()` and needs no permission at all. Reach for the
+CSP build rather than the `eval` permission — granting `eval` to shorten some attributes
+hands any injected string a JavaScript engine. `apps/animals` is a worked example.
 
 Some things need more. Declare it and take the warning:
 

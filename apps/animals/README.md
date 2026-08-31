@@ -17,6 +17,8 @@ It is here because it forces the framework to prove things `hello` does not.
 | **Tombstones** | `reset` empties the tree; the log keeps every round you played |
 | **Accessible forms** | `fieldset`/`legend` for the radio pair, labels on every input |
 | **The HTMX / Alpine boundary** | Both on one screen — see below |
+| **Progressive enhancement** | `app.lua` → `board()` returns a fragment or a redirect |
+| **A strict CSP, satisfied** | `static/animals.js` — Alpine's CSP build, no `eval` |
 
 ## Why this app exists, in one sentence
 
@@ -41,8 +43,30 @@ complementary halves of one rule:
 | Teach a new animal | HTMX | appends events, atomically |
 | Tree fragment re-renders | HTMX | the node owns the truth |
 | "Show the question path" disclosure | Alpine | pure UI, nothing persisted |
-| Play / History tab switch | Alpine | no round trip, no state worth keeping |
-| Confirm before teaching | Alpine | ephemeral by definition |
+| Show example questions when teaching | Alpine | a hint, not an answer |
+| Confirm before forgetting everything | Alpine | ephemeral by definition |
+
+Two cases that look like exceptions and are not. **Teaching and forgetting are
+plain form posts**, not HTMX, because they are navigations — a separate page you
+arrive at and leave, and swapping a fragment there means owning the back button.
+And **every HTMX form still carries `method` and `action`**: `hx-post` is an
+enhancement, and `board()` in `app.lua` returns a fragment or a redirect depending
+on `req.is_htmx`, so recording a guess never requires JavaScript.
+
+### Alpine here is the CSP build, and that is the interesting part
+
+An app runs under `script-src 'self'` with no `'unsafe-eval'`
+(`spec/app-contract.md §5.4`). Standard Alpine compiles `x-data="{ open: false }"`
+with the `Function` constructor, so it cannot run at all under that policy. The
+CSP build trades inline expressions for registered components: `x-data` names
+something in `static/animals.js`, and bindings reference its properties and
+methods by key.
+
+That is more typing and it is the right trade — the alternative is granting the
+app `eval`, which hands any injected string a JavaScript engine to save a few
+characters. An earlier version of `knowledge.lsp` used
+`onsubmit="return confirm(...)"`, which was not a style problem but a silent
+failure: an inline handler is script, and the policy blocks it.
 
 Each use is commented in the source with *why that tool*, not *how it works*. The teaching
 happens in the contrast, on one page.
