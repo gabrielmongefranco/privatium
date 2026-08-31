@@ -1,0 +1,19 @@
+# Project:  Privatium™  |  File: apps/hello/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-08-28  |  Modified: 2026-08-28
+# Summary:  Manifest for the minimal Tier 1 app. Copy this folder to start.
+
+[app]
+slug        = "hello"
+title       = "Hello"
+version     = "1.0.0"
+api         = 1
+tier        = "lua"
+description = "Stores your name and greets you. The smallest possible Privatium app."
+icon        = "chat-heart"
+authors     = ["Gabriel Mongefranco"]
+license     = "GPL-3.0-or-later"
+
+[nav]
+order     = 10
+advertise = true

@@ -1,0 +1,32 @@
+# ---------------------------------------------------------------------------
+# Project:  Privatium™
+# File:     apps/sketch/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-08-28
+# Modified: 2026-08-28
+# Summary:  Tier 2 reference app. Note what is absent: no app.lua, no views/,
+#           no schema.sql. This is the entire manifest.
+# ---------------------------------------------------------------------------
+
+[app]
+slug        = "sketch"
+title       = "Sketch"
+version     = "1.0.0"
+api         = 1
+tier        = "web"
+description = "A shared canvas. Draw on the laptop, it appears on the phone."
+icon        = "pencil-square"
+authors     = ["Gabriel Mongefranco"]
+license     = "GPL-3.0-or-later"
+
+[nav]
+order     = 30
+advertise = true
+
+# Everything below is optional and shown here only to document the defaults.
+[permissions]
+inline_script = false    # our JS is an external file, as it should be
+wasm          = false
+eval          = false
+remote        = []       # never phones out
+sql           = false    # no tables, so nothing to query
