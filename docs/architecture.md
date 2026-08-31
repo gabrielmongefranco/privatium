@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/architecture.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-28
+Modified: 2026-08-31
 Summary:  Explanatory architecture overview. Non-normative; see spec/ for the contract.
 -->
 
@@ -108,9 +108,42 @@ Icons are Bootstrap Icons, vendored as raw SVGs and inlined at render (`docs/ico
 No icon font, no CDN, no runtime sprite fetch — which also means no additions to the
 Content Security Policy and no broken glyphs offline.
 
-This has a consequence worth stating plainly: **the browser client is online-only.**
-Offline capability comes from the native shells (Tauri desktop, Tauri mobile) or from an
-installed PWA on a stable HTTPS origin. That is a deliberate trade, not an oversight.
+#### Offline capability follows from secure context, not from rendering
+
+It is tempting to read the above and conclude that server rendering is what makes the
+browser client online-only. It is not. **The constraint is the origin.**
+
+Service workers require a secure context, and the "potentially trustworthy origin" list is
+`https:`, `wss:`, `file:`, `localhost`, `127.0.0.1/8`, `::1`, and `*.localhost`. **A LAN IP
+address is not on that list.** `http://192.168.1.5:8420` cannot register a service worker
+in any browser, under any flag a non-technical owner will ever set.
+
+IndexedDB *is* available on plain HTTP, so a page can store data offline. But with no
+service worker there is nothing to serve the shell from cache, so when the node is
+unreachable the browser shows a connection error and the local data sits behind it. Storage
+without a cached shell buys nothing.
+
+| Origin | Service worker | Works offline |
+|---|---|---|
+| `http://192.168.1.5:8420` | ✘ | ✘ — the page will not even load |
+| `https://you.duckdns.org` | ✔ | ✔ — needs a domain and a certificate |
+| `https://x.ts.net` | ✔ | ✔ — needs a third-party account |
+| **Native shell (custom scheme)** | ✔ | ✔ — **no third party at all** |
+
+**The native shell is the answer, and it is a better one than a PWA.** Its webview runs on a
+scheme the browser treats as trustworthy, and the core runs *in the same process* — so
+there is no service worker to register, no replica to synchronise, and no cache to
+invalidate, because there is no network hop to survive. Offline is the default state rather
+than a feature. See `docs/decisions/0003-in-process-adapter.md`.
+
+A PWA on a real HTTPS origin remains supported for people who want one, and gets a client
+replica built on the event log's own `(dev, lam)` watermarks. It is the second path, not
+the only one.
+
+One honest limit: this gives Tier 2 full parity immediately, and Tier 1 parity for views
+already visited. Rendering an *unvisited* Tier 1 view offline needs handler logic in the
+browser, which is the open `wasmoon` question in `docs/roadmap.md`, not a transport
+question.
 
 ### 2.6 Certificates are a browser problem, not a security problem
 

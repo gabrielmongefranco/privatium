@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/data-api.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-28
+Modified: 2026-08-31
 Summary:  NORMATIVE. The HTTP data API that custom-UI (Tier 2) apps build against.
 -->
 
@@ -165,6 +165,13 @@ data: {"reason":"rematerialized","lam":8900}
 SSE rather than WebSocket because it reconnects automatically, survives proxies, and needs
 no framing. Apps needing bidirectional streaming may open `/ws` and speak the session
 protocol directly.
+
+**A host MUST serve this endpoint as SSE.** A host MAY additionally offer a long-poll
+fallback, and a client MAY negotiate it with `Accept: application/json` plus `after=`,
+receiving the same event objects in a JSON array and reissuing the request on each response.
+The fallback exists because custom-scheme streaming inside a platform webview — WKWebView in
+particular — is unproven; it is not an invitation to skip SSE. `pv.js` selects between them
+and apps see no difference (`§5`).
 
 **Note:** a quick Cloudflare tunnel does not pass SSE. This does not affect LAN, Tailscale,
 Let's Encrypt, onion, or native transports.

@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/frameworks.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-28
+Modified: 2026-08-31
 Summary:  Which frameworks, libraries and engines work inside Privatium, which
           do not, and why. Selection criteria are explicit and testable.
 -->
@@ -78,6 +78,7 @@ files works. The table is about *fit*, not permission.
 | **PixiJS** | none | 2D WebGL rendering |
 | **Chart.js / uPlot / D3** | none | Charting. uPlot is ~45 KB and very fast. |
 | **wasmoon / Fengari** | none | Lua in the browser; share logic with Tier 1 |
+| **RxDB** | none (free storages) | A client-side replica with its own sync engine. Works, and usually unnecessary — the framework's own outbox covers the same ground with no dependency. Its useful storages are paid, and it has no discovery layer of its own. See `docs/decisions/0004 §2`. |
 
 ### 4.2 Work, with a build step you run yourself
 
@@ -146,12 +147,27 @@ account, and none of them need to live inside `web/`.
 Pair the game with a small Tier 1 app that renders save history, statistics, and a
 leaderboard in the browser. That is often the best of both.
 
+Better still, link `privatium-core` directly. It exposes a C ABI, so LÖVE reaches it through
+LuaJIT's FFI, Godot through GDExtension, Unity through P/Invoke, and Bevy as an ordinary
+crate — **with no server, no localhost port, and no daemon**. The HTTP path above remains
+correct and is the right answer when a process boundary is wanted anyway. The `lantern`
+reference app (roadmap, Phase 4) demonstrates the linked path with a paired Tier 1 app
+rendering its history.
+
 ### 5.4 The cross-origin isolation problem
 
 Godot 4, Unity, and love.js in threaded mode need `SharedArrayBuffer`, which requires
 cross-origin isolation — `COOP: same-origin` plus `COEP: require-corp`. Without the
 headers, only Chromium browsers load these builds, and Godot ships an export toggle plus a
 "disable Thread Support" option (4.3+) to avoid the requirement at the cost of audio.
+
+**This applies to `duckdb-wasm` too, and it matters more.** The multithreaded bundle needs
+`SharedArrayBuffer` and therefore cross-origin isolation. A Tier 1 offline query runtime
+that required cross-origin isolation would impose those headers on the framework's own
+origin and **break host mode for every other app on the node**. If `duckdb-wasm` is ever
+adopted for offline Tier 1 rendering, it is the **single-threaded bundle only** — no
+exceptions, regardless of benchmark results. Otherwise Tier 1 offline becomes solo-mode-only,
+which is not a trade worth making.
 
 **This conflicts directly with host mode.** COOP/COEP are document-level headers on a
 single origin. If `/a/mygame/` sets `COEP: require-corp`, every subresource lacking CORP
@@ -188,6 +204,20 @@ building the Emscripten pipeline yourself). Any of these can still use §5.3.
 | **rust-sdl2 / macroquad** | ✅ Lightweight 2D |
 | **egui / iced / slint** | ✅ Native GUI over the same data layer |
 | **Tauri** | ✅ How the official desktop and mobile shells are built |
+
+**Not only Rust, in practice.** `privatium-core` also exposes a C ABI (`privatium-ffi`),
+which is how a non-Rust engine links it without a server:
+
+| Consumer | Via | Server needed |
+|---|---|---|
+| **LÖVE** | LuaJIT FFI | no |
+| **Godot (native)** | GDExtension | no |
+| **Unity** | P/Invoke | no |
+| **Swift / Kotlin** | `uniffi` | no |
+| **Bevy, macroquad, egui, …** | crate dependency | no |
+
+This is the capability a JavaScript sync core would have removed, and the reason the core is
+Rust — see `docs/decisions/0004 §6`.
 
 Nothing from §3–§5 applies here. Those are web technologies; Tier 3 is a binary.
 

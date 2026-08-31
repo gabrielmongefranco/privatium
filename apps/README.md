@@ -6,12 +6,19 @@ demos — the framework's own tests run against them.
 | App | Tier | Read it for |
 |---|---|---|
 | [`hello`](hello) | 1 — Lua | Three routes, one table, two LSP templates. **Start here.** |
-| [`animals`](animals) | 1 — Lua | Atomic multi-event writes, recursive SQL, stored session state, `lib/` modules. |
+| [`animals`](animals) | 1 — Lua | Atomic multi-event writes, recursive SQL, stored session state, `lib/` modules — and the clearest place to *see* that nothing is ever updated. Also where HTMX and Alpine.js sit side by side. |
 | [`sketch`](sketch) | 2 — Web | Your own HTML and JavaScript, no SQL at all. The framework as a syncing datastore. |
 
-`hello` and `animals` contain no JavaScript and no build step, because Tier 1 renders
-server-side. `sketch` is nothing but JavaScript, because Tier 2 renders itself. Both are
-normal.
+Three apps, three jobs: **`hello` is the floor, `animals` is the ceiling, `sketch` is the
+escape hatch.** There is deliberately no fourth.
+
+`hello` and `animals` contain no build step, because Tier 1 renders server-side; `animals`
+carries a few lines of Alpine.js for state that is not worth persisting, which is the point
+of §"HTMX and Alpine" in its README. `sketch` is nothing but JavaScript, because Tier 2
+renders itself. All of this is normal.
+
+A fourth reference app, **`lantern`** (Tier 3, LÖVE linking the C ABI with no node process),
+arrives with `privatium-ffi` in Phase 4 — see `docs/roadmap.md`.
 
 **Tiers differ by language, not by capability.** None has a ceiling. If your app is records
 and forms, Tier 1 saves you a front end. If it is a game or a canvas, use Tier 2 — you lose

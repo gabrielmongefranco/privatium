@@ -17,8 +17,12 @@ the spec in the same change — do not implement around it.
 
 Violating any of these is a bug, regardless of how well the code works:
 
-1. **JSONL is the only source of truth.** DuckDB files, Parquet snapshots, and CSV exports
-   are all caches. Deleting every one of them must lose zero data.
+1. **Append-only single-writer logs are the source of truth.** DuckDB files, Parquet
+   snapshots, and CSV exports are all caches. Deleting every one of them must lose zero data.
+   **Plain-text JSONL is a strong default, not a law** — sealed historical segments may be
+   compressed or stored as Parquet. **The live tail is always plain JSONL**, uncompressed,
+   appendable by `echo`. That property is what the Phase 1 acceptance test protects; do not
+   erode it into "we compress everything.
 2. **One writer per log file, forever.** A device appends only to its own
    `log/<device-id>.jsonl`. Never write another device's file, not even during a merge.
 3. **Append-only.** No line in a log file is ever modified or removed. Corrections are new
@@ -93,9 +97,25 @@ Violating any of these is a bug, regardless of how well the code works:
   config key that describes a UI, stop.
 - **Do not make `schema.sql` mandatory.** Tiers 1 and 2 both work with the event log as a
   document store.
-- **Do not vendor Barracuda/BAS** without reading `docs/decisions/0001`. It is GPLv2-only
-  (incompatible with this project's GPLv3), and its GPL clarification extends to web content
-  hosted by the server.
+- **Do not vendor Barracuda/BAS** without reading `docs/decisions/0001` and `0004`. It is
+  GPLv2-only (incompatible with this project's GPLv3), its GPL clarification extends to web
+  content hosted by the server, and — independently of licensing — it owns the event loop,
+  so there is no configuration where it coexists with iroh, tokio, and DuckDB cheaply.
+- **Do not adopt a JavaScript sync core.** Gun, RxDB, and their relatives are fine *above*
+  the data API and disqualifying *below* it: a Rust core reaches LÖVE, Godot, Unity, Bevy,
+  Swift, and Kotlin through a C ABI with no server at all. See `docs/decisions/0004 §6`.
+- **Do not add routes in an adapter.** `core::handle(Request) -> Response` is the single
+  entry point (ADR 0003). If a platform needs behaviour the others lack, it goes in the core
+  behind a capability flag. Adapters do not rewrite paths either — `pv.url()` is the only
+  URL construction point.
+- **Do not model request or response bodies as `Vec<u8>`.** Both directions stream. SSE
+  needs it on the way out; uploads need it on the way in.
+- **Do not treat the browser's offline limits as a rendering problem.** They are a secure
+  context problem: a LAN IP cannot register a service worker at all. See
+  `docs/architecture.md §2.5` and ADR 0003.
+- **Do not make a phone a discovery target by default.** Mobile resolves; it does not
+  publish (ADR 0005). Foreground-only reachability plus multi-hour record lifetimes means a
+  publishing phone advertises a stale address.
 - **Do not impose the framework's UI decisions on apps.** The framework ships no client
   framework and uses HTMX; a Tier 2 app may vendor React, Three.js, or anything else in its
   own `web/` directory. The no-framework rule governs `privatium-core` and the shell, not

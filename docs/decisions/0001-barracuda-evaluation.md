@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/decisions/0001-barracuda-evaluation.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-28
+Modified: 2026-08-31
 Summary:  Decision record. Barracuda App Server / Mako Server evaluated as a
           foundation and declined. Status: DECIDED — Rust.
 -->
@@ -80,9 +80,9 @@ These would stand at zero license cost:
   session model, Lua VM, and SQLite binding. Privatium needs axum, rustls, iroh QUIC, an
   event-log-backed VFS, a PAKE session model, mlua, and DuckDB. Every one overlaps. This is
   not adding LSP; it is arbitrating two application servers across an FFI boundary.
-- **SQLite, not DuckDB.** BAS gives SQLite. DuckDB was chosen for `DECIMAL`, `DATE`, and
-  reading JSONL in place. Adopting BAS reintroduces exactly the type problems that started
-  this design.
+- **SQLite, not DuckDB.** BAS gives SQLite. DuckDB was chosen for real `DECIMAL`, `DATE`,
+  `INTERVAL`, and `TIMESTAMPTZ`, and for reading JSONL in place. Adopting BAS reintroduces
+  the type problems that started this design — see §3 below for the precise version.
 - **Sandbox posture.** BAS treats Lua as trusted manufacturer logic. Privatium treats an app
   folder as a semi-trusted download. The sandbox would have to be built regardless.
 - **Export control.** SharkSSL is classified ECCN 5D002.C.1 and distributed under the
@@ -130,10 +130,26 @@ between working and not.
 
 ### 3. SQLite reintroduces the original problem
 
-BAS supplies SQLite. DuckDB was chosen for native `DECIMAL` and `DATE` and for querying
-JSONL in place. The first application is a medication and insurance-cost tracker; adopting
-BAS would mean returning to integer cents and ISO date strings — the exact complaint that
-began this design.
+BAS supplies SQLite. DuckDB was chosen for native `DECIMAL`, `DATE`, `INTERVAL`, and
+`TIMESTAMPTZ`, and for querying JSONL in place.
+
+**A correction to an earlier draft of this document.** It previously said adopting SQLite
+would mean "returning to integer cents". That overstated the case and is withdrawn. SQLite
+accepts a `DECIMAL(10,2)` column declaration and it works; nobody has to encode cents as
+integers. What SQLite has is not a decimal *type* but **type affinity** — a column declared
+`DECIMAL(10,2)` gets NUMERIC affinity, and a value like `12.34` is stored as an 8-byte
+IEEE-754 float. So it is ergonomically fine and quietly binary: sums across many rows
+accumulate the usual binary-fraction error, which is invisible on a single pharmacy price
+and produces an unexplainable penny on a year-end total. There is a `decimal` extension in
+SQLite's `ext/misc` that does arbitrary-precision decimal over text, but it is not compiled
+in by default.
+
+**Dates carry the argument.** SQLite has no date or time type at all — dates are TEXT,
+REAL, or INTEGER by convention, and every comparison, interval, and timezone conversion is
+the application's problem. The first application is a medication and insurance-cost tracker
+whose central questions are all temporal: fill intervals, prior-authorisation expiry, days
+of supply remaining. DuckDB answers those in SQL. That is the reason, and decimals are a
+supporting note rather than the case.
 
 ### On SharkTrustX
 

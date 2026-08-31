@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/decisions/0002-rust-core.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-29
-Modified: 2026-08-29
+Modified: 2026-08-31
 Summary:  Decision record. Rust as the core language, and the discovery and
           transport stack that follows from it. Status: DECIDED.
 -->
@@ -99,9 +99,33 @@ Nothing is removed. mDNS and the raw LAN address remain the zero-dependency floo
 tunnel, DDNS with a DNS-01 certificate, Tor, and file sync on `data/` all remain first-class,
 and the PWA path remains the insurance policy for any platform with a gatekeeper.
 
+## Transport library: `iroh`, confirmed over libp2p
+
+Re-examined against `rust-libp2p` and confirmed. libp2p is genuinely capable — Kademlia,
+AutoNAT, DCUtR, circuit relay v2, Noise, QUIC, mDNS — and the decision is fit rather than
+quality. Its advantages (polyglot implementations, browser WebRTC, million-node routing)
+are not things Privatium needs, and its default DHT bootstrap is more operator-dependent
+than mainline, not less.
+
+The decisive point: **iroh already ships `discovery-pkarr-dht` and `ConcurrentDiscovery`.**
+The "everything at once" design above is a feature flag rather than a build. Full reasoning
+and the "would reopen if" are in `docs/decisions/0004-declined-alternatives.md §3`.
+
+One behaviour to know about, recorded in `docs/security.md §3b`: iroh's DHT discovery
+publishes only the home relay address by default. Direct addresses require
+`include_direct_addresses`, which is what the account-free path needs and which publicly
+associates the node ID with an IP.
+
 ## Consequences
 
 - Two shells to build, but one core behind them.
+- `spec/protocol.md §6.5` concurrent discovery is satisfied by `ConcurrentDiscovery` rather
+  than by hand-written orchestration.
+- Application traffic reaches the core through one interface regardless of shell — see
+  `docs/decisions/0003-in-process-adapter.md`, which is what makes offline work without a
+  certificate.
+- A phone is a full replica but never a dependable peer; see
+  `docs/decisions/0005-mobile-role.md`.
 - A Rust toolchain is required to extend the framework. Tier 3 authors write Rust; Tier 1 and
   Tier 2 authors are unaffected.
 - The DHT is blocked on many managed networks, so concurrent DNS discovery is required rather

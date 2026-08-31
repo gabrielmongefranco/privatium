@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/security.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-28
+Modified: 2026-08-31
 Summary:  Threat model, protections, and honest statements of what is not protected.
 -->
 
@@ -128,6 +128,17 @@ hostname resolves theirs. It is not worse. Specifically:
 
 For better than DDNS-equivalent, publish under a key derived per period from the cluster key.
 An observer who captures the key once then cannot track the node indefinitely.
+
+### Direct addresses are opt-in, and publishing them is the trade
+
+The transport publishes only the home relay address by default. Direct addresses require
+`include_direct_addresses`, and **the account-free remote path needs them** — a relay-only
+record means relayed traffic, which is exactly what hole punching exists to avoid.
+
+The trade is explicit: publishing direct addresses associates the node's public key with
+its current IP address, for anyone holding the key. This is the same exposure as the
+dynamic-DNS comparison above rather than a new one, but it is a separate switch and should
+be presented as one. A LAN-only node should publish nothing.
 
 ### One operational note
 

@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/roadmap.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-28
+Modified: 2026-08-31
 Summary:  Build phases with explicit acceptance criteria. Non-normative.
 -->
 
@@ -17,7 +17,8 @@ shipping. Acceptance criteria are written so that "done" is not a matter of opin
 **Deliverable:** a binary you run, that serves the `hello` app in a browser on the same
 machine, and stores its data as JSONL.
 
-Scope: `privatium-core` (log, store, app loader), the Lua host (mlua, sandbox, VM pool),
+Scope: `privatium-core` (log, store, app loader), **the `Request`/`Response` interface and
+the axum adapter (ADR 0003)**, the Lua host (mlua, sandbox, VM pool),
 the LSP compiler with hot reload, HTTP server, HTMX shell, DuckDB materialization,
 snapshots, three-tier restore, the Tier 2 data API and `pv.js`, and the CLI including
 `privatium dev`, `new`, and `lint` (`spec/cli.md`).
@@ -33,8 +34,14 @@ snapshots, three-tier restore, the Tier 2 data API and `pv.js`, and the CLI incl
 - [ ] `--format json` findings each carry a resolvable `spec` reference
 - [ ] `privatium dev` reloads Lua, templates, and schema with no restart
 - [ ] `privatium-core` compiles and runs standalone in a 30-line embedded example
+- [ ] Every application route is reachable as `core::handle(Request) -> Response` with no
+      socket, and the HTTP server is a thin adapter over it (ADR 0003)
+- [ ] `Request` and `Response` bodies are streams in both directions — `/api/stream` is
+      served without buffering, and a large upload never lands in memory whole
 - [ ] `rm -rf cache/ data/*/snap/` then restart → identical state
 - [ ] A hand-written JSONL line appended by `echo` appears in the UI after reload
+      *(this is the test that keeps `AGENTS.md` invariant 1 honest — the live tail stays
+      plain, uncompressed JSONL no matter what sealed segments become)*
 - [ ] Conformance checklist items for §3, §4, §5 pass
 - [ ] Runs on Linux, Windows and macOS from a single binary
 
@@ -72,6 +79,11 @@ filesystem watcher for externally-synced logs, endpoint candidate list with fail
 - [ ] Cluster private key is absent from every event, snapshot, and backup export
 - [ ] Killing the active endpoint fails over in under 5 seconds, not 30
 
+**Sync demo, once §10 works:** wire `animals` to `/api/stream` with the HTMX SSE extension.
+Teaching an animal on the desktop makes the phone's history update live, on screen, with no
+polling code and no page reload. Two devices, one visible cause and effect — a far better
+demonstration than a passing test, and it costs one attribute.
+
 ## Phase 3b — The always-on node
 
 **Deliverable:** the phone works on cellular.
@@ -89,8 +101,25 @@ ordinary cluster member.
 
 **Deliverable:** installable desktop app, and Android and iOS apps.
 
-Scope: Tauri v2 desktop, Tauri mobile, `uniffi` bindings, offline read + write outbox.
-Mobile clients live in separate repositories depending on `privatium-core`.
+Scope: Tauri v2 desktop, Tauri mobile, `uniffi` bindings, **`privatium-ffi` (the C ABI)**,
+offline read + write outbox. Mobile clients live in separate repositories depending on
+`privatium-core`.
+
+The shells are adapters over `core::handle` (ADR 0003), so they add no routing work. The
+desktop shell gets offline for free: the core is in-process, so there is no service worker,
+no PWA manifest, no certificate, and no domain — see `docs/architecture.md §2.5`.
+
+**Open risk, carried deliberately:** custom-scheme *streaming* in a platform webview,
+particularly WKWebView, is unproven. `spec/data-api.md §3` therefore specifies long-poll as
+a conformant fallback for `/api/stream`. Because `Response` is stream-shaped in the core,
+this is a transport swap rather than a refactor. The spike belongs to the mobile
+repositories, not to Phase 1.
+
+**New reference app: `lantern` (Tier 3).** A deliberately trivial LÖVE game — one button,
+dodge falling shapes, run ends — linking `privatium-ffi` through LuaJIT's FFI. Each run
+appends one event. Paired with a small Tier 1 app rendering run history, personal bests, and
+per-device statistics in the browser: start a run on the desktop, see it on the phone. The
+game is trivial on purpose; the demonstration is the C ABI and the log, not the gameplay.
 
 **Done when:**
 - [ ] Desktop app works with the network cable unplugged
@@ -100,7 +129,13 @@ Mobile clients live in separate repositories depending on `privatium-core`.
 - [ ] **The Wi-Fi-to-cellular transition:** switch mid-session, app keeps working, queued
       writes replay, no re-pairing, no duplicated rows
 - [ ] Native clients hold and fail over a multi-endpoint list; browser clients hold one
-- [ ] `sys_device.replica` is reported accurately by every client kind
+- [ ] `sys_device.replica` is reported accurately by every client kind, and **reachability
+      is reported separately** — a phone is a full replica whose reachability is
+      foreground-only (ADR 0005)
+- [ ] Mobile resolves discovery records but does not publish them by default; publishing is
+      a setting, off by default
+- [ ] `lantern` runs as a native LÖVE binary against `privatium-ffi` with no node process,
+      and its paired Tier 1 app renders the same runs in a browser
 
 ## Phase 5 — Reaching home from outside
 
@@ -166,6 +201,54 @@ change belongs in `pv/1` before the app ships.
 `skills/` ships and versions with the code. A change to `spec/` without the matching skill
 update is incomplete (`AGENTS.md`). `privatium lint` is what makes the skills enforceable
 rather than advisory, so it lands in Phase 1, not later.
+
+## Open questions, not yet scheduled
+
+Each of these is worth prototyping before it is worth specifying. None is a deliverable.
+
+### Tier 1 rendering offline
+
+Tier 1 renders on the node, so a cached shell gives offline access to views already
+*visited*. Rendering an unvisited view needs handler logic in the browser. Three options,
+in increasing ambition:
+
+1. **Accept the limit.** Offline Tier 1 = visited views plus queued writes. Probably
+   sufficient — this morning's list, this evening's entry. Zero new machinery, and this is
+   the specified behaviour until something replaces it.
+2. **Ship Lua to the browser.** `wasmoon` runs Lua 5.4 in WASM. Run the *same* `app.lua` and
+   the *same* compiled LSP templates client-side — no second implementation and therefore no
+   drift, which is the objection that rules out client frameworks in the first place. The
+   open problem is the query layer: Tier 1 handlers run SQL against DuckDB.
+3. **Tier 2.** Already works. The author owns their client code.
+
+### `duckdb-wasm` for offline Tier 1 queries
+
+Fast in practice, and OPFS-backed persistence is real. Two things to settle before it is
+adopted:
+
+- **Payload over cellular.** Measure the gzipped size of the non-threaded (`eh`) bundle.
+  That number decides it.
+- **Single-threaded bundle only.** The multithreaded build requires cross-origin isolation,
+  which would break host mode for every other app on the node (`docs/frameworks.md §5.4`).
+  This constraint holds regardless of how the benchmarks come out.
+
+If `duckdb-wasm` does not work out, option 2 above still stands with a narrower offline
+query surface. It is not load-bearing for it.
+
+### Passing data between node Lua and browser Lua
+
+Useful if browser Lua happens, and worth keeping even if `duckdb-wasm` does not. **The
+mechanism already exists: it is the event log.** Events are JSON, JSON maps to Lua tables,
+and both sides already agree on the shape. Do not build a second serialisation path, a
+shared-state abstraction, or transparent RPC — those work in a demo and leak at every
+failure boundary. Keep it explicit and JSON-shaped.
+
+### PWA client replica
+
+Wanted for people on a real HTTPS origin, and clearly the second path after the native
+shell — build the shell first, since it needs no replica at all. When built, it is the event
+log's `(dev, lam)` watermark plus an outbox, roughly 300 lines, not a third-party sync
+library (`docs/decisions/0004 §2`).
 
 ## Explicitly not on the roadmap
 

@@ -48,7 +48,7 @@ must satisfy.
 | [docs/frameworks.md](docs/frameworks.md) | Which libraries, frameworks and game engines fit, and which do not |
 | [docs/skills.md](docs/skills.md) | How LLM-authored apps get correct, accessible, secure code |
 | [docs/icons.md](docs/icons.md) | Icon system: Bootstrap Icons, inlined server-side |
-| [docs/decisions/](docs/decisions/) | Decision records: Barracuda evaluated and declined; Rust core, pkarr, peer transport |
+| [docs/decisions/](docs/decisions/) | Decision records: Barracuda declined (0001); Rust core, pkarr, peer transport (0002); one core interface behind three transports (0003); Gun, RxDB, libp2p, SharkTrustX and BAS-in-Rust declined (0004); what a phone is in the cluster (0005) |
 | [docs/naming.md](docs/naming.md) | Name, taglines, and the rename checklist |
 
 ## Quick Start Guide
@@ -115,13 +115,13 @@ Questions, bug reports, enhancement ideas and requests are welcome as GitHub iss
   application language and its Rust bindings.
 - [Mako Server / Barracuda App Server](https://github.com/RealTimeLogic/BAS) — Real Time
   Logic's Lua Server Pages inspired this project's Tier 1 template engine and much of its
-  developer-experience goal. See [docs/decisions/0001](docs/decisions/0001-barracuda-evaluation.md).
+  developer-experience goal. No code from those projects was used. See [docs/decisions/0001](docs/decisions/0001-barracuda-evaluation.md).
 - [Bootstrap Icons](https://github.com/twbs/icons) — MIT-licensed SVG icon set, vendored
   and inlined server-side; the only icon source used anywhere in the project.
 - [SPAKE2 (RFC 9382)](https://www.rfc-editor.org/rfc/rfc9382.html) and CPace — the
   password-authenticated key exchange protocols used for device pairing.
 - [Magic Wormhole](https://github.com/magic-wormhole/magic-wormhole) — inspiration for the
-  short human-readable pairing code experience.
+  short human-readable pairing code experience. No code from that project was used.
 
 ## License
 
