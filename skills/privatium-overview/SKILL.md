@@ -45,7 +45,9 @@ hardcode `/a/<slug>/`** — it breaks in solo mode, and the linter flags it.
 6. **No secret enters a log file.** Not keys, not codes, not tokens.
 7. **XDG paths only.** Never write beside the binary.
 8. **IDs are ULIDs.** No sequences, no auto-increment. They are also what makes an offline
-   outbox idempotent — never add a dedupe table or transaction IDs.
+   outbox idempotent — never add a dedupe table or transaction IDs. The one exception is a
+   deliberate singleton keyed by a constant, the way `apps/animals` keys its `cursor` row
+   `'cursor'`; anything arriving over the HTTP data API must still be a ULID.
 9. **No node is primary.** Every node is a peer. An always-on node on a VPS is a peer that
    happens to be reachable, not a server.
 10. **Devices pin the cluster key, not a node key.** Pair a phone once and it trusts every

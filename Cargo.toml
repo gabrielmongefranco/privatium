@@ -1,6 +1,6 @@
 # Project:  Privatium™  |  File: Cargo.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-08-31  |  Modified: 2026-08-31
+# Created:  2026-08-31  |  Modified: 2026-09-01
 # Summary:  Workspace root. Three crates per docs/plans/phase-1.md §4, one pinned
 #           dependency table, and the MSRV every member inherits.
 
@@ -45,6 +45,23 @@ sha2          = "0.11.0"
 hmac          = "0.13.0"
 hkdf          = "0.13.0"
 rand          = "0.10.2"
+# Wipes the 32-byte buffer node.key is read into. Already in the graph via
+# ed25519-dalek's default `zeroize` feature; named here so the intent is not incidental.
+zeroize       = "1.9.0"
+# sys_node.pubkey and sys_device.*_pub are base64 (spec/data-dictionary.md §3.1, §3.2).
+# `simd-unsafe` is a default feature and stays off: this workspace denies unsafe_code and
+# a 32-byte key is not where SIMD earns its keep.
+base64 = { version = "0.23.1", default-features = false, features = ["std"] }
+
+# Time — M1 `ts`, M2 §4.4 clock hygiene, M3 TIMESTAMPTZ. Not in the plan's §5 table; see
+# the M1 PR. `ts` is normative (RFC 3339 UTC, millisecond precision, literal `Z`) and
+# hand-rolled civil-from-days arithmetic is not worth owning. default-features = false
+# drops the whole bundled tz database and `windows-link`; Privatium stores UTC only.
+jiff = { version = "0.2.35", default-features = false, features = ["std"] }
+
+# Data root resolution — M1. XDG on Linux, Known Folder API on Windows, the Standard
+# Directory guidelines on macOS (spec/protocol.md §3, AGENTS.md 7).
+directories = "6.0.0"
 
 # Events — M2. Crockford Base32, 26 characters.
 ulid = "3.0.0"
@@ -72,6 +89,9 @@ anyhow    = "1.0.104"
 
 # Embedding icons, shell assets, and pv.js into the binary — M6.
 include_dir = "0.7.4"
+
+# Test-only: an isolated data root per test, removed on drop. M1 onward.
+tempfile = "3.27.0"
 
 [profile.release]
 lto           = "thin"

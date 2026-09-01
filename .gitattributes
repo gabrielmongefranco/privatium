@@ -11,5 +11,6 @@
 * text=auto eol=lf
 *.jsonl   -text
 *.key     -text
+*.pub     -text
 *.parquet binary
 *.svg     text eol=lf
