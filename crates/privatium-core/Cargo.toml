@@ -1,6 +1,6 @@
 # Project:  Privatium™  |  File: crates/privatium-core/Cargo.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-08-31  |  Modified: 2026-08-31
+# Created:  2026-08-31  |  Modified: 2026-09-01
 # Summary:  The library. One core crate per ADR 0002 — the server, the shells, and
 #           (later) uniffi all consume this and nothing else.
 
@@ -18,6 +18,15 @@ repository.workspace   = true
 # M0 links these two and nothing else. They are here rather than under dev-dependencies
 # because risk R1 is about the shipped artefact: if DuckDB and Lua were test-only, the
 # binary size CI reports would not be the size of the binary we ship.
+#
+# `bundled` compiles DuckDB from the amalgamation shipped inside libduckdb-sys and
+# unpacked with flate2. It does not fetch anything: the download path is in that crate's
+# `mod build_linked`, which is `#[cfg(not(feature = "bundled"))]` and gated again on
+# `DUCKDB_DOWNLOAD_LIB`, so with `bundled` on the networking code is not compiled at all.
+# Offline and reproducible builds are fine. What is real is that `ureq` and `webpki-roots`
+# are unconditional build-dependencies and so compile regardless — build time and
+# supply-chain surface, not a network call, and the reason deny.toml carries a scoped
+# licence exception. Checked against libduckdb-sys 1.10505.0; re-check on a major bump.
 duckdb    = { workspace = true, features = ["bundled"] }
 mlua      = { workspace = true, features = ["lua54", "vendored", "send"] }
 thiserror = { workspace = true }

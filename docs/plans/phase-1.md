@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/plans/phase-1.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-31
-Modified: 2026-08-31
+Modified: 2026-09-01
 Summary:  Implementation plan for Phase 1 — a node that works on one machine.
           Non-normative. Where this plan and spec/ disagree, spec/ wins and this
           file is wrong.
@@ -642,6 +642,9 @@ Implement `spec/cli.md` and nothing beyond it.
   parse and exit with a clear "not in this build" message rather than being absent, so the
   help text matches the spec.
 - No `doctor`, no `serve`, no `migrate`, no `install`, no `login` (`spec/cli.md §10`).
+- Remove the M0 engine-version placeholder from `main()`; the link gate moves to a
+  `#[used]` reference or to the CI size check. Bare `privatium` runs a node from here on,
+  and the comment in M0's `main()` saying so will not survive the rewrite that replaces it.
 
 **Tests:** `test_cli_exit_codes`, `test_new_from_hello_rewrites_slug_and_title`,
 `test_scaffold_output_passes_lint`, `test_no_undocumented_flags` (compare `clap` output

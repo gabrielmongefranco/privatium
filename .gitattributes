@@ -1,0 +1,15 @@
+# Project:  Privatium™  |  File: .gitattributes
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-01  |  Modified: 2026-09-01
+# Summary:  Line endings. The event log is 0x0A-terminated by spec
+#           (spec/protocol.md §4.1). Nothing in this repository wants CRLF.
+#
+#           `-text` means git never converts in either direction, which is what a
+#           byte-exact fixture requires: a log fixture whose lines gained a 0x0D, or a
+#           keypair whose bytes were rewritten, would fail on Windows and pass in CI.
+
+* text=auto eol=lf
+*.jsonl   -text
+*.key     -text
+*.parquet binary
+*.svg     text eol=lf

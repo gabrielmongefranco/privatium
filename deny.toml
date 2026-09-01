@@ -1,6 +1,6 @@
 # Project:  Privatium™  |  File: deny.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-08-31  |  Modified: 2026-08-31
+# Created:  2026-08-31  |  Modified: 2026-09-01
 # Summary:  Licence and supply-chain policy, checked by `cargo deny check` in CI.
 #           ADR 0001 declined Barracuda/BAS partly because it is GPL-2.0-only and so
 #           incompatible with this project's GPL-3.0-or-later. That was a judgement call
@@ -43,9 +43,11 @@ allow = [
 ]
 # Scoped to the one crate rather than blessing the licence generally. webpki-roots is the
 # Mozilla CA certificate set — data, not code — under a permissive data licence, and it
-# reaches us only as a build-time dependency of libduckdb-sys's build script. It is never
-# linked into the shipped binary. If it ever appears anywhere else, this stops covering it
-# and the check fails again, which is the point of scoping it.
+# reaches us as an unconditional build-dependency of libduckdb-sys, by way of ureq. It is
+# compiled, never linked into the shipped binary, and never used to fetch anything under
+# the `bundled` feature — see the note in crates/privatium-core/Cargo.toml. If it ever
+# appears anywhere else, this stops covering it and the check fails again, which is the
+# point of scoping it to one crate rather than allowing the licence generally.
 exceptions = [
     { crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
 ]

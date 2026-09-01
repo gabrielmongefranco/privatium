@@ -1,6 +1,6 @@
 # Project:  Privatium™  |  File: .github/workflows/ci.yml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-08-31  |  Modified: 2026-08-31
+# Created:  2026-08-31  |  Modified: 2026-09-01
 # Summary:  The gate. Three platforms, because "runs on Linux, Windows and macOS from a
 #           single binary" is a Phase 1 acceptance bullet and finding out at M13 that the
 #           bundled DuckDB build never worked on one of them would be too late.
@@ -91,7 +91,5 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
-      - name: Install cargo-deny
-        run: cargo install cargo-deny --version 0.20.2 --locked
+      - uses: taiki-e/install-action@cargo-deny
       - run: cargo deny check
