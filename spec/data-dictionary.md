@@ -136,11 +136,6 @@ Every paired device, including browsers and other nodes.
 | `label` | `VARCHAR` | Owner-set, e.g. "Pixel 9" |
 | `kind` | `VARCHAR` | `browser` \| `desktop` \| `mobile` \| `node` |
 | `replica` | `BOOLEAN` | Holds full logs and materializes locally. Nodes always; native mobile optionally; browsers never. Peers use this to decide whether to offer sync (`spec/protocol.md §10.7`). |
-
-A row with `kind = 'node'` is a cluster member and holds the cluster private key; every other
-kind holds the public key only (`spec/protocol.md §2.3.3`). Revoking a node also requires a
-`sys_node_revocation` entry (§3.1c), because a node's certificate is presented to devices that
-may not have synced `sys_device` recently.
 | `ed25519_pub` | `VARCHAR` | base64 |
 | `x25519_pub` | `VARCHAR` | base64 |
 | `paired_at` | `TIMESTAMPTZ` | |
@@ -149,6 +144,11 @@ may not have synced `sys_device` recently.
 | `user_agent` | `VARCHAR` | Nullable; browsers only |
 | `revoked_at` | `TIMESTAMPTZ` | Nullable. Set = access denied immediately. |
 | `revoked_reason` | `VARCHAR` | Nullable |
+
+A row with `kind = 'node'` is a cluster member and holds the cluster private key; every other
+kind holds the public key only (`spec/protocol.md §2.3.3`). Revoking a node also requires a
+`sys_node_revocation` entry (§3.1c), because a node's certificate is presented to devices that
+may not have synced `sys_device` recently.
 
 Revocation is a `put` with `revoked_at` set, never a `del`. The historical record of what
 was paired MUST survive.

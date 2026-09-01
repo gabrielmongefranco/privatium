@@ -22,7 +22,7 @@ Violating any of these is a bug, regardless of how well the code works:
    **Plain-text JSONL is a strong default, not a law** — sealed historical segments may be
    compressed or stored as Parquet. **The live tail is always plain JSONL**, uncompressed,
    appendable by `echo`. That property is what the Phase 1 acceptance test protects; do not
-   erode it into "we compress everything.
+   erode it into "we compress everything".
 2. **One writer per log file, forever.** A device appends only to its own
    `log/<device-id>.jsonl`. Never write another device's file, not even during a merge.
 3. **Append-only.** No line in a log file is ever modified or removed. Corrections are new

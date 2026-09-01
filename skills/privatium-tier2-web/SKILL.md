@@ -53,7 +53,7 @@ pv.ulid();  pv.url('/path');  pv.node();
 
 - Set `seq`, `lam`, `ts`, `dev`, or `app` on an event — the server rejects it
 - Use `localStorage` for anything that should survive a device — that is what the log is for
-- Assume you are online; `pv.query` throws `BwOffline`
+- Assume you are online; `pv.query` throws `PvOffline`
 - Implement your own outbox deduplication, transaction IDs, or acknowledgement protocol.
   ULIDs already make replay idempotent — adding these can create the divergence they were
   meant to prevent.

@@ -227,7 +227,7 @@ The API is local. In a native shell or an installed PWA it is served by the node
 the same device, so it works with no network at all.
 
 When the node is remote and unreachable, `pv.append` queues to an outbox and replays on
-reconnect; `pv.query` throws `BwOffline` and the app decides what to show. The helper
+reconnect; `pv.query` throws `PvOffline` and the app decides what to show. The helper
 exposes `pv.online` and a `pv.on('online' | 'offline')` event.
 
 **Replay is idempotent and needs no bookkeeping.** A queued write carries its ULID, so

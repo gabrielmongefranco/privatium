@@ -686,7 +686,7 @@ skipped. Implementations MUST NOT skip it on plain HTTP under any circumstances.
 
 ### 9.1 Route namespaces
 
-The framework reserves three prefixes and hands everything else to apps.
+The framework reserves five prefixes and hands everything else to apps.
 
 | Prefix | Owner | Notes |
 |---|---|---|
