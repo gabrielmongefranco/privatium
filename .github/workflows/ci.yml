@@ -69,7 +69,9 @@ jobs:
           binary="target/release/privatium"
           [ "${{ matrix.os }}" = "windows-latest" ] && binary="target/release/privatium.exe"
           "$binary"
-          ls -l "$binary"
+          # Bytes first and always. MB/MiB differ by 5% and by tool, and M6 and M13 diff
+          # against this number.
+          echo "binary size: $(wc -c < "$binary") bytes ($binary)"
 
   # A second opinion from current stable, so a compiler change that will break us lands
   # as one failing job rather than as a surprise the next time the MSRV moves.

@@ -533,6 +533,11 @@ The riskiest milestone. Budget accordingly.
 - `pv.dec` backed by an exact decimal type. `DECIMAL` and `BIGINT` cross the boundary as
   Lua strings, always.
 
+- **`panic` stays at the default in `[profile.release]`, and M7 is where that is
+  confirmed rather than assumed.** A limit abort must fail the request and leave the node
+  and the next request untouched; `panic = "abort"` may foreclose whatever mechanism does
+  that. Decide it here, with the limit tests in front of you — not in a profile table.
+
 **Tests:** `test_spec_lua_5_banned_globals_absent` (one assertion per banned name, all
 thirteen), `test_spec_lua_5_require_confined_to_lib`,
 `test_spec_lua_5_instruction_limit_aborts`, `test_spec_lua_5_memory_limit_aborts`,
