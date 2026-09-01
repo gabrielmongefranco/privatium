@@ -201,6 +201,10 @@ pv.post('/name', function(req)          -- url() in a handler
 end)
 ```
 
+`pv.url(path)` is available as an alias of the global `url(path)`, identical in behaviour.
+Both exist because `PV301` and `spec/protocol.md §9.1` refer to the qualified form, while
+sandbox code more naturally reaches for the bare one. Implementations MUST provide both.
+
 Hardcoding `/a/<slug>/...` anywhere — handler or template — breaks the app in solo mode and
 is rejected by `privatium lint` rule `PV301`.
 

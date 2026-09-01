@@ -283,8 +283,7 @@ apps/<slug>/
 │   ├── app.js
 │   ├── style.css
 │   └── vendor/         whatever you vendored
-├── schema.sql          OPTIONAL — only if you want typed tables and SQL queries
-└── views.sql           OPTIONAL
+└── schema.sql          OPTIONAL — typed tables, and `CREATE VIEW` for `/api/q/<view>`
 ```
 
 `web/index.html` is served at the app's mount point. Everything under `web/` is served

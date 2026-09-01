@@ -58,11 +58,13 @@ rm -rf cache/ data/hello/snap/
 # restart — the greeting is still there
 
 # Append an event by hand, then reload the page
-echo '{"seq":99,"lam":99,"ts":"2026-08-28T20:00:00.000Z","dev":"<your-id>","app":"hello","op":"put","tbl":"profile","id":"<the-ulid>","d":{"display_name":"Someone Else"}}' \
+echo '{"seq":4,"lam":4,"ts":"2026-08-28T20:00:00.000Z","dev":"<your-id>","app":"hello","op":"put","tbl":"profile","id":"<the-ulid>","d":{"display_name":"Someone Else"}}' \
   >> data/hello/log/<your-id>.jsonl
 ```
 
-That last one is the whole architecture in one command.
+That last one is the whole architecture in one command. Use the next unused `seq` for your
+device — `4` if the log holds three lines — because a writer must emit `seq` gaplessly
+(`spec/protocol.md §4.1`). Reading tolerates a gap; syncing does not.
 
 ---
 

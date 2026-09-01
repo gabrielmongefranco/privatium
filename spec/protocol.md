@@ -36,8 +36,9 @@ and only when, they appear in all capitals.
 
 ### 1.1 Reserved slugs
 
-`_sys`, `api`, `a`, `ws`, `static`, `health`, `pair`, `well-known`.
-Implementations MUST reject an app folder using any of these.
+`_sys`, `api`, `a`, `ws`, `static`, `health`, `pair`, `well-known`, `settings`, `skills`.
+Implementations MUST reject an app folder using any of these. The last two are reserved
+because they are framework route prefixes (§9.1), not because of the mount path.
 
 ---
 
@@ -201,7 +202,7 @@ MUST NOT depend on key order.
 
 | Field | Type | Req | Definition |
 |---|---|---|---|
-| `seq` | integer | ✔ | Per-device, per-app monotonic counter. Starts at 1. MUST be gapless. |
+| `seq` | integer | ✔ | Per-device, per-app monotonic counter. Starts at 1. A **writer** MUST emit it gapless. |
 | `lam` | integer | ✔ | Lamport counter. See §4.3. |
 | `ts` | string | ✔ | RFC 3339 UTC with millisecond precision and a literal `Z`. |
 | `dev` | string | ✔ | Node ID of the writer. MUST equal the log filename. |
@@ -210,6 +211,10 @@ MUST NOT depend on key order.
 | `tbl` | string | ✔ | Table name within the app. |
 | `id` | string | ✔ | ULID (26 chars, Crockford Base32). Unique within `(app, tbl)`. |
 | `d` | object | put | Column values. MUST be absent when `op` is `del`. |
+
+A **reader** MUST NOT reject, reorder, or repair a `seq` gap it finds in a local log file.
+Gap rejection belongs to sync (§10.2), where the missing range can actually be requested; a
+reader that refuses to materialize a locally edited log turns a curiosity into an outage.
 
 ### 4.2 Forward compatibility
 
@@ -247,6 +252,12 @@ To materialize table `T` of app `A`:
    lexicographic tie-break and carries no meaning.
 4. Take the last event in each group. If its `op` is `del`, the row does not exist.
    Otherwise the row is its `d`.
+
+Materialization projects only the columns named in `schema.sql`. This does not conflict with
+§4.2: preservation is a property of the log file, which is never rewritten. Keys in `d` that
+no column matches are simply not projected, and are still there the next time the log is
+read. Implementations MUST NOT attempt to round-trip unknown keys through the query
+engine.
 
 Last-write-wins is at **row** granularity, not field granularity. An app that requires
 field-level merge MUST model each field as its own row.
@@ -701,6 +712,12 @@ The framework reserves five prefixes and hands everything else to apps.
 `pv.get`, `pv.post`, and so on (`spec/lua-api.md §3.1`); a Tier 2 app serves its `web/`
 directory and defines its own paths. Beneath `/a/<slug>/` only `api/` is reserved, for the
 data API (`spec/data-api.md`).
+
+**Framework prefixes take precedence in both modes.** In host mode this never arises, since
+apps live under `/a/<slug>/`. In solo mode the app owns `/`, so an app route matching a
+reserved prefix — `pv.get('/settings')`, say — is shadowed. Implementations MUST resolve in
+favour of the framework and MUST warn at load, naming the route and the prefix. It is a
+warning rather than a refusal because the same app is legal in host mode.
 
 An earlier draft listed fixed `/v/<view>`, `/f/<form>`, and `/x/<action>` routes. Those
 belonged to a declarative tier that was removed (`spec/app-contract.md §1`), and

@@ -26,8 +26,8 @@ M(n+1) before M(n) merges; several milestones deliberately re-open earlier files
 next layer exposes what the earlier one got wrong.
 
 Section 2 lists decisions this plan makes that the spec does not. **Confirm them before
-M1.** Section 3 lists defects found in the spec; each must be fixed by a spec edit in the
-PR that first depends on it, per `AGENTS.md`.
+M1.** Section 3 records the spec defects found while writing it — all already fixed in
+`spec/`, so the checked-in specification and this plan agree.
 
 **A rule for the whole plan: do not invent CLI flags, `sys_*` column values, routes, or
 config keys.** Every one of those surfaces is specified. If Phase 1 seems to need a new one,
@@ -68,63 +68,85 @@ If a Phase 1 change would be observable to a second device, it is out of scope.
 
 ## 2. Decisions this plan makes — confirm before M1
 
-The spec assumes a finished system. Phase 1 has no pairing, so six things must be decided
-now rather than discovered in M6.
+The spec now says everything §3 found it should say. What remains here is the set of
+decisions that are genuinely Phase-specific: things true only because pairing does not exist
+yet, or true only of this implementation. Six of them.
 
 ### 2.1 Phase 1 binds loopback only, and adds no flag to say so
 
-`spec/protocol.md §8.2` forbids skipping the session layer on plain HTTP, and §13 lists
-that as a conformance item. Phase 1 has no pairing and therefore no session keys, so the
-only honest resolution is that Phase 1 never listens on a routable address.
+`spec/protocol.md §8.2` forbids skipping the session layer on plain HTTP, and §13 lists that
+as a conformance item. Phase 1 has no pairing and therefore no session keys, so the only
+honest resolution is that Phase 1 never listens on a routable address.
 
 - Default bind: `127.0.0.1`, port from `--port` (default 8420, `spec/cli.md §2`).
 - **No `--bind` flag.** `spec/cli.md §2` defines `--port`, `--solo`, `--no-discovery`, and
   `--open`, and §10 is an explicit list of what the CLI deliberately lacks. Adding surface
-  here would need a spec edit, and Phase 1 does not need one: binding loopback is a
-  property of the phase, not a user choice.
+  here would need a spec edit, and Phase 1 does not need one: binding loopback is a property
+  of the phase, not a user choice.
 - Phase 2 changes the bind address when pairing exists. It does not add a flag then either.
 
-Startup prints the loopback URL and one line stating that LAN access arrives in Phase 2
-(`spec/protocol.md §7`), so the limitation is visible rather than mysterious.
+**Three sentences of `spec/cli.md §2` describe behaviour Phase 1 cannot have**, and the
+divergence should be visible rather than silently absent:
+
+| §2 says | Phase 1 | Why |
+|---|---|---|
+| "begins discovery (`§6`)" | no discovery | mDNS and pkarr are Phase 2 and Phase 5 |
+| "prints the LAN URL" | prints the loopback URL | there is no LAN listener |
+| "`--open` additionally prints a QR code for pairing" | `--open` opens a browser | pairing is Phase 2 |
+
+Startup also prints one line saying LAN access arrives with pairing (`spec/protocol.md §7`),
+so a reader of the spec is not left wondering.
 
 A side benefit worth naming: `127.0.0.1` **is** a potentially-trustworthy origin, unlike a
 LAN IP (`docs/architecture.md §2.5`, ADR 0003). Phase 1 therefore runs in a secure context
 for free, and any browser-side capability that needs one works during development and stops
 working the moment Phase 2 binds the LAN. Do not build on that; know it.
 
-`privatium --version` prints `pv/1 (partial: phase 1)` and does not claim conformance.
+`privatium --version` prints `pv/1 (partial: phase 1)`, which `spec/cli.md §1` now requires
+of any build that does not satisfy every item in `§13`.
 
 ### 2.2 The node is the device — there is no "console device"
 
-Events need a `dev`, `csrf()` needs a session, and `sys_device` needs a row. All three are
+Events need a `dev`, `csrf()` needs a key, and `sys_device` needs a row. All three are
 already satisfied by the node's own identity; no second identity is required.
 
 - `spec/data-dictionary.md §3.2` gives `kind` a **normative** enum:
   `browser | desktop | mobile | node`. There is no `console`, and inventing one breaks the
   table for every later reader.
-- `spec/data-dictionary.md §3.1` already states that every node appears in `sys_device`
-  with `kind = 'node'`, including itself. Phase 1 writes exactly that row, with
-  `replica = true` (`spec/protocol.md §1`, *Replica*: nodes always).
-- `dev` on every event is the node ID from `identity/node.key`. No keypair is generated in
-  `local/`.
-- The HTTP layer treats any loopback request as this node. `auth_layer` exists with its
-  real signature (`spec/app-contract.md §6`) and its Phase 1 body is
-  "loopback → this node's device row, everything else → 403".
+- `spec/data-dictionary.md §3.1` already states that every node appears in `sys_device` with
+  `kind = 'node'`, including itself. Phase 1 writes exactly that row, with `replica = true`
+  (`spec/protocol.md §1`, *Replica*: nodes always).
+- `dev` on every event is the node ID derived from `identity/node.key`.
+- The HTTP layer treats any loopback request as this node. `auth_layer` exists with its real
+  signature (`spec/app-contract.md §6`) and its Phase 1 body is "loopback → this node's
+  device row, everything else → 403".
 
-CSRF tokens are HMAC over `(node_id, session_nonce, path)` with a key held in `local/`, not
-in `data/`, and not in the OS keyring (keyring access is Phase 2; do not pull it in).
+**CSRF keying, and why no new file appears.** `AGENTS.md` invariant 5 says keys live in the
+OS keyring or `identity/`, never in `data/` — and `spec/protocol.md §3` shows `local/`
+holding `state.jsonl`, nothing else. Writing a CSRF secret to `local/` would violate the
+first and quietly extend the second, which is the same mistake as the `--bind` flag.
+
+So Phase 1 stores no CSRF secret at all. The key is derived at startup:
+
+```
+csrf_key = HKDF-SHA256(ikm = node private key, info = "privatium/csrf/v1")
+```
+
+and the token is `HMAC-SHA256(csrf_key, node_id ‖ session_nonce ‖ path)`, with the nonce
+held in memory for the process lifetime. Restarting the node invalidates outstanding forms,
+which is correct and unremarkable on a single machine. No keyring access in Phase 1.
 
 Columns of `sys_device` that describe pairing — `paired_at`, `paired_via`, `ed25519_pub`,
 `x25519_pub`, `user_agent` — are populated where trivially available and left NULL
-otherwise. Do not fabricate a `paired_via` value; `lan | iroh | onion | tunnel` are all
-wrong for a node that paired with nobody.
+otherwise. Do not fabricate a `paired_via` value; `lan | iroh | onion | tunnel` are all wrong
+for a node that paired with nobody.
 
 ### 2.3 The cache may be mutated; the log may not — a clarification
 
-`AGENTS.md` invariant 3 governs **log files**. Lint rule `PV303` governs **app SQL**.
-Neither constrains the framework's privileged connection, which maintains
-`cache/<slug>.duckdb` and may apply a new event with `DELETE` + `INSERT` rather than
-re-replaying the whole log on every append.
+`AGENTS.md` invariant 3 governs **log files**. Lint rule `PV303` governs **app SQL**. Neither
+constrains the framework's privileged connection, which maintains `cache/<slug>.duckdb` and
+may apply a new event with `DELETE` + `INSERT` rather than re-replaying the whole log on
+every append.
 
 This is not a new decision, but it reads like a violation at the call site. State it in a
 comment there so the next reader does not "fix" it.
@@ -136,126 +158,79 @@ Lua handlers are values bound to one `mlua::Lua` state, and the pool holds N sta
 
 - Every VM in the pool loads the same `app.lua` and registers routes in the same order.
 - Registration order defines a **stable route index**. The router holds
-  `(method, pattern, index)` extracted from VM 0. A request matches a pattern, checks out
-  any VM, and invokes handler `index` from that VM's registry table.
-- If any VM produces a route table that differs from VM 0's by method, pattern, or count,
-  the app fails to load with `app.load_failed` naming the divergence. Non-deterministic
-  route registration is an app bug and must be loud.
+  `(method, pattern, index)` extracted from VM 0. A request matches a pattern, checks out any
+  VM, and invokes handler `index` from that VM's registry table.
+- If any VM produces a route table that differs from VM 0's by method, pattern, or count, the
+  app fails to load with `app.load_failed` naming the divergence. Non-deterministic route
+  registration is an app bug and must be loud.
 
 Getting this wrong — by, say, keeping one "registration VM" and calling its functions from
 request threads — is the single most likely way M7 produces something that works in
 development and deadlocks under concurrency.
 
-### 2.5 Named views live in `schema.sql`
+### 2.5 Incremental materialization is an optimization, not a second code path
 
-See §3.2. `views.sql` is dead; `GET /a/<slug>/api/q/<view>` resolves against `CREATE VIEW`
-statements in `schema.sql`, which `PV107` already permits.
+`spec/protocol.md §4.5` defines materialization as a full replay. Doing that on every append
+is O(log) per write and unusable by the time a log has 50,000 lines.
 
-### 2.6 Solo mode: framework prefixes win, and the linter says so
+Phase 1 keeps both paths and makes them checkable against each other: the incremental apply
+must produce byte-identical table contents to a full replay of the same log. `M3` carries a
+property test that appends a random event stream, applies it incrementally, replays from
+scratch, and diffs. If they ever differ, the incremental path is wrong — the replay is the
+definition.
 
-`spec/protocol.md §9.1` reserves `/`, `/settings`, `/api/v1/*`, `/skills/*`, and `/static/*`
-for the framework. In **host mode** apps live under `/a/<slug>/` and cannot collide. In
-**solo mode** the app owns `/`, and the spec does not say what happens when an app registers
-`pv.get('/settings')`.
+Full rematerialization is unconditional on `schema.sql` change, on restore, and on demand.
 
-Phase 1 decides: **framework prefixes take precedence in both modes**, and an app route that
-would be shadowed in solo mode is a load-time warning naming the route and the prefix. It is
-a warning rather than a refusal because the same app is perfectly legal in host mode.
+### 2.6 `_sys` is an app, and it bootstraps before any other
 
-`spec/protocol.md §1.1` reserves the slugs `_sys`, `api`, `a`, `ws`, `static`, `health`,
-`pair`, `well-known` — but not `settings` or `skills`, which are framework prefixes. See
-§3.6.
+`sys_device`, `sys_app`, `sys_app_grant`, and `sys_audit` live in `data/_sys/`
+(`spec/protocol.md §3`), which means the framework writes its own event log through the same
+writer apps use. Nothing in the spec says what happens on the very first run, when the node
+must write its own `sys_device` row before a log, a Lamport counter, or a materialized `_sys`
+schema exists.
 
----
+Order for M1, and it only works in this order:
 
-## 3. Spec defects found — fix by editing `spec/`, not by working around
+1. Create the tree, generate the keypair, derive the node ID.
+2. Open the `_sys` log writer with `lam = 0`, `seq = 0`.
+3. Append the `sys_device` self-row and the `sys_node` row.
+4. Materialize `_sys`.
+5. Only then load `apps/`.
 
-Each is a real contradiction in the checked-in specification, verified against `main`. Fix
-the spec in the PR of the milestone that first depends on it.
-
-### 3.1 `pv.action()` survives its own removal — `spec/data-api.md`
-
-§2 ("Nothing else") states the `POST /a/<slug>/api/x/<action>` endpoint was removed with
-the declarative tier. But §5 still lists `const result = await pv.action('learn', …)` in
-the `pv.js` surface, and §4 still says `/api/schema` returns "available views and
-**actions**".
-
-**Fix:** delete the `pv.action` line from §5; change §4 to "available views". Do not
-implement an action endpoint. *(Fix in M9.)*
-
-### 3.2 `views.sql` survives its own removal — `spec/app-contract.md`, `spec/data-api.md`
-
-`app-contract.md §1` says the declarative tier — "`views.sql` plus `forms.toml`" — was
-removed. `app-contract.md §5` then lists `views.sql  OPTIONAL` in the Tier 2 layout, and
-`data-api.md §1` says `/api/q/<view>` runs "a named view from `views.sql`".
-
-**Fix:** strike `views.sql` from the §5 layout; change `data-api.md §1` to "a view defined
-in `schema.sql`". `PV107` already allows `CREATE VIEW` there, so the mechanism exists and
-only the pointer is wrong. *(Fix in M5.)*
-
-### 3.3 `pv.url()` is referenced but never defined
-
-`protocol.md §9.1`, `protocol.md §10`-era prose, and lint rule `PV301` all name `pv.url()`.
-`lua-api.md §4` defines only the sandbox global `url()`.
-
-**Fix:** define `pv.url` in `lua-api.md §3` as an alias of the global, and implement both.
-Cheap, and it stops `PV301`'s own message citing a function that does not exist.
-*(Fix in M7.)*
-
-### 3.4 Lint fixtures cannot live in `apps/`
-
-`docs/roadmap.md` requires "every lint rule … has both a passing and a failing case in
-`apps/`". An app folder in `apps/` is loaded by a node; a folder that exists to fail
-`PV101` or `PV203` must never be loaded.
-
-**Fix:** put them in `apps/_lint/pass/<rule>/` and `apps/_lint/fail/<rule>/`. `_lint` is
-not a valid slug (leading underscore fails `^[a-z][a-z0-9-]{1,30}$`), so the loader
-already refuses it — but add an explicit skip for `apps/_*` in the loader so the refusal
-is intentional rather than incidental, and update the roadmap wording to name the path.
-*(Fix in M12.)*
-
-### 3.5 Forward compatibility vs. projection — clarification, not a defect
-
-`§4.2` requires unknown fields be preserved byte-for-byte. Materialization projects only
-the columns in `schema.sql`. These do not conflict: preservation is a property of the log
-file, which is never rewritten. Add one sentence to `§4.5` saying so, because an
-implementer will otherwise try to round-trip unknown keys through DuckDB. *(Fix in M3.)*
-
-### 3.6 `settings` and `skills` are framework prefixes but not reserved slugs
-
-`protocol.md §9.1` reserves `/settings` and `/skills/*` for the framework. `§1.1` reserves
-the slugs `_sys`, `api`, `a`, `ws`, `static`, `health`, `pair`, `well-known` — omitting both.
-In host mode this is harmless. In solo mode an app named `settings` mounted at `/` is
-ambiguous, and an app *route* `/settings` is shadowed silently.
-
-**Fix:** add `settings` and `skills` to the §1.1 reserved list, and add one sentence to §9.1
-stating that framework prefixes take precedence in both modes (§2.6). *(Fix in M6.)*
-
-### 3.7 The `echo` acceptance test writes a `seq` gap
-
-`§4.1` says `seq` **MUST be gapless**, and `§13` requires that sync reject gaps (§10.2).
-`apps/hello/README.md` demonstrates hand-appending a line with `"seq":99` to a log whose
-last `seq` is 3 — and that demonstration is a Phase 1 acceptance bullet in
-`docs/roadmap.md`. Following it produces a log this node's own future sync must reject.
-
-**Fix:** change the README example to the next sequential `seq`, and add one sentence to
-§4.1: the **writer** MUST produce gapless `seq`; a **reader** MUST NOT reject, reorder, or
-repair a gap it finds in a local file, because gap rejection belongs to sync (§10.2) where
-the missing range can actually be requested. *(Fix in M10, with the reader behaviour
-implemented in M2.)*
-
-### 3.8 Fixed in this pass — no milestone needed
-
-Four defects were typo-class and have been corrected directly:
-
-- `spec/data-api.md §6` and `skills/privatium-tier2-web/SKILL.md` threw `BwOffline`, a
-  leftover from the project's former name. Now `PvOffline`.
-- `spec/protocol.md §9.1` said "reserves three prefixes" above a table listing five.
-- `spec/data-dictionary.md §3.2` had the `sys_device` table split in half by an explanatory
-  paragraph, so the second half rendered as body text rather than table rows.
-- `AGENTS.md` invariant 1 had an unclosed quotation mark.
+`_sys` is not discoverable, not mountable, and not lintable — the loader skips it exactly as
+it skips the lint fixture corpus. It is a reserved slug (`§1.1`) precisely so this stays true.
 
 ---
+
+## 3. Spec defects found — all fixed, none deferred
+
+Every contradiction found while writing this plan has been corrected in `spec/` and `docs/`
+already. An implementer should not be handed a specification they have been told is wrong,
+so nothing here is left for a milestone PR. This section is the record of what changed and
+why, not a to-do list.
+
+| # | Was | Now | Files |
+|---|---|---|---|
+| 1 | `pv.action()` and "actions" survived the removal of the declarative tier that created them | Both struck; no action endpoint exists | `data-api.md §4, §5` |
+| 2 | `views.sql` survived the same removal, and `/api/q/<view>` still pointed at it | Named views resolve against `CREATE VIEW` in `schema.sql`, which `PV107` already permitted | `app-contract.md §5`, `data-api.md §1` |
+| 3 | `pv.url()` named by `PV301` and `protocol.md §9.1`, but only `url()` defined | `pv.url` specified as an alias; implementations MUST provide both | `lua-api.md §4.0` |
+| 4 | Lint fixtures required to live in `apps/`, where the loader would mount them | Fixtures live under `apps/_lint/{pass,fail}/<rule>/` | `roadmap.md` Phase 1 |
+| 5 | Unknown-field preservation appeared to conflict with column projection | One paragraph stating it does not, and forbidding round-tripping unknown keys through the query engine | `protocol.md §4.5` |
+| 6 | `/settings` and `/skills/*` were framework prefixes but not reserved slugs, and solo-mode shadowing was undefined | Both slugs reserved; framework prefixes take precedence in both modes with a load-time warning | `protocol.md §1.1, §9.1` |
+| 7 | The `echo` acceptance test wrote `"seq":99` into a log whose last `seq` was 3 — a permanent gap, against a MUST | Example uses the next `seq`; writer MUST be gapless, reader MUST NOT reject a gap | `protocol.md §4.1`, `apps/hello/README.md` |
+| 8 | `--version` unspecified, though the conformance disclaimer depends on it | Specified, and a non-conformant build MUST qualify the protocol string | `cli.md §1` |
+| 9 | Solo-mode shadowing was warn-at-load only, so CI never saw it | New lint rule `PV506` | `cli.md §5.1` |
+| 10 | `BwOffline`; "three prefixes" over a five-row table; `sys_device` table split by a paragraph; unclosed quotation mark | Corrected | `data-api.md`, `privatium-tier2-web/SKILL.md`, `protocol.md §9.1`, `data-dictionary.md §3.2`, `AGENTS.md` |
+
+Two of these are additions rather than corrections and deserve to be called out as such:
+**`PV506`** did not exist before, and **`--version`** widens the CLI surface `spec/cli.md §10`
+otherwise keeps deliberately narrow. Both were added because §2 depends on them; reject
+either and §2.1 or §2.6 needs rewriting rather than quietly proceeding.
+
+**The rule this section establishes for the rest of the project:** when implementation
+reveals a spec defect, fix the spec in the PR that found it. Do not accumulate a defect list
+and do not code around it. `docs/skills.md §7` already makes an unreflected spec change an
+incomplete change; this is the same principle one step earlier.
 
 ## 4. Workspace layout
 
@@ -364,8 +339,8 @@ The heart. Get this wrong and nothing above it can be right.
   over throughput; revisit with numbers, not vibes).
 - `seq` per `(device, app)`, **gapless on write**, recovered on startup by reading the tail.
 - **The reader tolerates gaps.** A gap in a local log file is not an error and must not be
-  repaired, reordered, or rejected — see §3.7. Gap rejection is a sync concern (`§10.2`) and
-  arrives in Phase 3.
+  repaired, reordered, or rejected (`protocol.md §4.1`). Gap rejection is a sync concern
+  (`§10.2`) and arrives in Phase 3.
 - Lamport per app: `lam = max(lam_local, lam_max_seen) + 1`, persisted in `local/` and
   re-derived from the logs if `local/` is missing.
 - Reader: `log/<dev>*.jsonl` treated as one stream ordered by `seq` (§3.2).
@@ -453,10 +428,10 @@ WHERE rn = 1 AND op = 'put';
 
 ### M5 — App loader
 
-- Discover `apps/` under the data root **and** the repo's `apps/` in dev; skip `_*`
-  (§3.4).
-- `app.toml` parse and validate: required keys, slug regex, reserved slugs (§1.1 plus the
-  two added in §3.6), directory-name match, `api` ≤ supported.
+- Discover `apps/` under the data root **and** the repo's `apps/` in dev; skip `_*` — this
+  covers both `_sys` (§2.6) and the lint fixture corpus.
+- `app.toml` parse and validate: required keys, slug regex, all ten reserved slugs of
+  `protocol.md §1.1`, directory-name match, `api` ≤ supported.
 - Refusal is per-app and loud: `app.load_failed` event, node still starts
   (`app-contract.md §3.1`).
 - Lifecycle per `app-contract.md §8`, **stopping before "advertise subtype"** — mDNS is
@@ -472,7 +447,6 @@ WHERE rn = 1 AND op = 'put';
   uses `@alpinejs/csp` precisely so this stays true. Relaxation is one-way: once `skills/`
   and the models reading them emit inline expressions, the permission can never be
   withdrawn.
-- Fix spec defect §3.2 in this PR.
 
 **Tests:** `test_spec_1_1_reserved_slug_refused`, `test_spec_3_1_slug_dir_mismatch_refused`,
 `test_spec_12_higher_api_refused`, `test_broken_app_does_not_stop_node`,
@@ -499,8 +473,8 @@ quietly lost. Build the interface first and the socket second.
   inside it and nowhere else.
 - Host mode launcher at `/`; **solo mode** mounts one app at `/` with no launcher and no
   `/a/<slug>` prefix. Both share one URL-building function so `url()` cannot drift.
-- **Solo-mode precedence per §2.6:** framework prefixes win; a shadowed app route is a
-  load-time warning. Fix spec defect §3.6 in this PR.
+- **Solo-mode precedence** per `protocol.md §9.1`: framework prefixes win; a shadowed app
+  route is a load-time warning, and `PV506` catches it in CI.
 - Security headers of `§9.3` on every response; `Cache-Control: no-store` on anything
   carrying app data.
 - `GET /api/v1/health` returns `{"v":1,"id":"..."}` only. `GET /api/v1/manifest` returns
@@ -545,7 +519,6 @@ The riskiest milestone. Budget accordingly.
 - Sandbox globals `url`, `icon`, `fmt.*`, `t`; template-only `render`, `layout`, `csrf`.
 - `pv.dec` backed by an exact decimal type. `DECIMAL` and `BIGINT` cross the boundary as
   Lua strings, always.
-- Fix spec defect §3.3 in this PR.
 
 **Tests:** `test_spec_lua_5_banned_globals_absent` (one assertion per banned name, all
 thirteen), `test_spec_lua_5_require_confined_to_lib`,
@@ -605,7 +578,6 @@ thirteen), `test_spec_lua_5_require_confined_to_lib`,
   `PV305`). Offline reads throw `PvOffline`.
 - `DECIMAL` stays a string in `pv.js`. No convenience conversion. That is the bug this
   design exists to prevent.
-- Fix spec defect §3.1 in this PR — delete `pv.action` and "actions" from `spec/data-api.md`.
 
 **Tests:** `test_spec_data_2_client_cannot_set_seq`, `test_spec_data_2_batch_atomic`,
 `test_spec_data_2_batch_limits`, `test_spec_data_1_sql_requires_permission`,
@@ -623,8 +595,7 @@ thirteen), `test_spec_lua_5_require_confined_to_lib`,
 Not new subsystems — the integration milestone that proves M2–M9. Expect to reopen earlier
 files; that is the purpose.
 
-- `hello`: three routes, one table, two templates, no JavaScript. Fix spec defect §3.7 here
-  — the README's `echo` example must not write a `seq` gap.
+- `hello`: three routes, one table, two templates, no JavaScript.
 - `animals`: recursive SQL, `pv.batch` multi-event writes, stored cursor state, the
   HTMX/`is_htmx` branch **and** the no-JavaScript redirect branch, Alpine CSP build under
   the default CSP, the `_board.lsp` partial swap.
@@ -670,7 +641,7 @@ against the flags named in `spec/cli.md`).
 Ships in Phase 1 because it is what makes `skills/` enforceable rather than advisory.
 
 - Implement every rule in `spec/cli.md §5.1`: `PV101–107`, `PV201–208`, `PV301–307`,
-  `PV401–407`, `PV501–505`.
+  `PV401–407`, `PV501–506`.
 - Lua rules over a `full_moon` AST, not regex. SQL rules over `json_serialize_sql()`.
   HTML/template rules over the LSP parse tree from M8 — the linter reuses the compiler's
   front end rather than growing a second one.
@@ -682,7 +653,7 @@ Ships in Phase 1 because it is what makes `skills/` enforceable rather than advi
   every referenced section and fails if one does not exist.
 - `--fix` applies only mechanical corrections: literal mount path → `url()`, missing
   `focusable="false"`. Never SQL, never Lua control flow.
-- Fixture corpus at `apps/_lint/{pass,fail}/<rule>/` (§3.4), one of each per rule, and a
+- Fixture corpus at `apps/_lint/{pass,fail}/<rule>/`, one of each per rule, and a
   meta-test that **fails if a rule has no fixture pair**.
 
 **Tests:** `test_lint_rule_<id>_passes` and `test_lint_rule_<id>_fails` generated over the
@@ -780,10 +751,10 @@ through the Lua host at all. If you find yourself adding a chunked-return conven
 small addition while you are in the HTTP layer. They are not. The loopback bind in §2.1 and
 the lifecycle carve-out in M5 exist partly to make the boundary physical.
 
-**R8 — Spec edits outrunning `skills/`.** Seven milestones edit `spec/`, and
-`docs/skills.md §7` makes an unreflected spec change an incomplete change. The CI drift
-check lands in M13, which is too late to be useful. Add it in M0 as a warning and promote it
-to an error in M13.
+**R8 — Spec edits outrunning `skills/`.** §3 already changed nine spec sections, and
+`docs/skills.md §7` makes an unreflected spec change an incomplete change. More will follow
+once code meets contract. The CI drift check was scheduled for M13, which is too late to be
+useful — add it in M0 as a warning and promote it to an error in M13.
 
 ---
 
@@ -793,17 +764,17 @@ to an error in M13.
 |---|---|---|---|
 | 0 | `m0-workspace` | — | — |
 | 1 | `m1-identity` | M0 | — |
-| 2 | `m2-log` | M1 | §3.7 (reader half) |
-| 3 | `m3-materialize` | M2 | §3.5 |
+| 2 | `m2-log` | M1 | — |
+| 3 | `m3-materialize` | M2 | — |
 | 4 | `m4-snapshots` | M3 | — |
-| 5 | `m5-app-loader` | M3 | §3.2 |
-| 6 | `m6-wire-http-shell` | M5 | §3.6 |
-| 7 | `m7-lua-host` | M6 | §3.3 |
+| 5 | `m5-app-loader` | M3 | — |
+| 6 | `m6-wire-http-shell` | M5 | — |
+| 7 | `m7-lua-host` | M6 | — |
 | 8 | `m8-lsp-hot-reload` | M7 | — |
-| 9 | `m9-data-api` | M6, M8 | §3.1 |
-| 10 | `m10-reference-apps` | M9 | §3.7 (README half) |
+| 9 | `m9-data-api` | M6, M8 | — |
+| 10 | `m10-reference-apps` | M9 | as found |
 | 11 | `m11-cli` | M10 | — |
-| 12 | `m12-lint` | M11 | §3.4 + roadmap wording |
+| 12 | `m12-lint` | M11 | — |
 | 13 | `m13-embedded-release` | M12 | roadmap: tick Phase 1 |
 
 ---

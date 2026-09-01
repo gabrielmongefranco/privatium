@@ -30,7 +30,8 @@ handling is required in app code.
 
 ### `GET /a/<slug>/api/q/<view>`
 
-Run a named view from `views.sql`. Query-string parameters bind to `$name` placeholders.
+Run a view defined in `schema.sql` (`CREATE VIEW`, permitted by `PV107`). Query-string
+parameters bind to `$name` placeholders.
 
 ```
 GET /a/medtracker/api/q/v_upcoming?days=30
@@ -182,7 +183,7 @@ Let's Encrypt, onion, or native transports.
 
 ### `GET /a/<slug>/api/schema`
 
-Tables, columns, types, and available views and actions. Lets a generic client render an
+Tables, columns, types, and available views. Lets a generic client render an
 app it has never seen.
 
 ### `GET /a/<slug>/api/node`
@@ -207,7 +208,6 @@ const row   = await pv.get('state', 'game');
 await pv.append([{ op:'put', tbl:'state', id:'game', d: state }]);
 await pv.put('state', 'game', state);          // sugar for the above
 await pv.del('stroke', id);
-const result = await pv.action('learn', { animal:'wombat' });
 
 const stop = pv.subscribe(ev => { if (ev.tbl === 'stroke') redraw(ev); });
 

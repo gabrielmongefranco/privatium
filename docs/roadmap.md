@@ -30,7 +30,9 @@ snapshots, three-tier restore, the Tier 2 data API and `pv.js`, and the CLI incl
 - [ ] The Lua sandbox rejects `io`, `os.execute`, and `debug`, and enforces all four limits
 - [ ] Solo mode serves one app at `/` with no launcher
 - [ ] `privatium lint` passes on all three reference apps and fails on seeded violations
-- [ ] Every lint rule in `spec/cli.md §5` has both a passing and a failing case in `apps/`
+- [ ] Every lint rule in `spec/cli.md §5` has both a passing and a failing case under
+      `apps/_lint/pass/<rule>/` and `apps/_lint/fail/<rule>/` — not in `apps/` proper, where
+      the loader would try to mount them
 - [ ] `--format json` findings each carry a resolvable `spec` reference
 - [ ] `privatium dev` reloads Lua, templates, and schema with no restart
 - [ ] `privatium-core` compiles and runs standalone in a 30-line embedded example
