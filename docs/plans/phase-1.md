@@ -220,7 +220,15 @@ why, not a to-do list.
 | 7 | The `echo` acceptance test wrote `"seq":99` into a log whose last `seq` was 3 — a permanent gap, against a MUST | Example uses the next `seq`; writer MUST be gapless, reader MUST NOT reject a gap | `protocol.md §4.1`, `apps/hello/README.md` |
 | 8 | `--version` unspecified, though the conformance disclaimer depends on it | Specified, and a non-conformant build MUST qualify the protocol string | `cli.md §1` |
 | 9 | Solo-mode shadowing was warn-at-load only, so CI never saw it | New lint rule `PV506` | `cli.md §5.1` |
+| 11 | `protocol.md §4.1` said the envelope `id` is a ULID, unqualified, while `data-dictionary.md §3.1`/`§3.2` key `sys_node` and `sys_device` by Node ID and `lua-api.md §3.3` lets a caller supply its own — `apps/animals` ships `id = 'cursor'` | `§4.1` now says row key, ULID by default, with the two exceptions named and the cross-device collision consequence stated | `protocol.md §4.1` (found in M1) |
 | 10 | `BwOffline`; "three prefixes" over a five-row table; `sys_device` table split by a paragraph; unclosed quotation mark | Corrected | `data-api.md`, `privatium-tier2-web/SKILL.md`, `protocol.md §9.1`, `data-dictionary.md §3.2`, `AGENTS.md` |
+
+Defect 11 was found during M1 rather than while writing this plan, which is the rule in
+the last paragraph of this section working as intended. It could not be coded around: the
+`sys_device` self-row must be keyed by Node ID, or every later update to it would mint a
+fresh ULID and `§4.5` would materialize a second device row instead of amending the first.
+It does not touch sync — `§10.1` is a set union over `(dev, seq)` and never reads `id`, and
+`§10.6` depends on a retry carrying the *same* `id`, not on its shape.
 
 Two of these are additions rather than corrections and deserve to be called out as such:
 **`PV506`** did not exist before, and **`--version`** widens the CLI surface `spec/cli.md §10`
@@ -282,6 +290,8 @@ rules.
 | CLI | `clap` (derive), `owo-colors` | **no `qrcode`** — QR is pairing, which is Phase 2 |
 | Errors | `thiserror` in core, `anyhow` in the binary | `AGENTS.md` |
 | Embed | `include_dir` | icons, shell assets, `pv.js` |
+| Time | `jiff` | `default-features = false`; `ts` is RFC 3339 UTC to the millisecond (`§4.1`), `§4.4` compares against it, M3 hands it to DuckDB. Added in M1 — this row was missing. |
+| Paths | `directories` | `BaseDirs::data_local_dir()`, **not** `data_dir()`: on Windows the latter is `%APPDATA%`, which roams, and a roamed `node.key` means two machines with one Node ID. Added in M1. |
 
 **Do not** parse event lines through `serde_json::Value` and re-serialize on any path that
 writes or forwards. Sync is Phase 3, but the habit starts here: raw lines are `String`/

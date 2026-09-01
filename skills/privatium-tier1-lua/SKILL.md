@@ -104,8 +104,10 @@ pv.append('fill', id, { copay_amount = x })
 ## Schema
 
 `schema.sql` is optional. Include it when you want typed tables and SQL queries; omit it to
-use the log as a document store. Every table needs `id VARCHAR PRIMARY KEY` (a ULID). Use
-`DECIMAL(18,2)` for money and `DATE` for dates — never text.
+use the log as a document store. Every table needs `id VARCHAR PRIMARY KEY`, holding a
+ULID — unless the table is a singleton you key by a constant, the way `apps/animals` keys
+its `cursor` row `'cursor'`. Use `DECIMAL(18,2)` for money and `DATE` for dates — never
+text.
 
 Changing `schema.sql` rematerializes from the logs. This is safe at any time and loses
 nothing; new columns are simply NULL for old events.

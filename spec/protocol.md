@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/protocol.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-28
+Modified: 2026-09-01
 Summary:  NORMATIVE. Wire formats, event log, discovery, pairing, session crypto, sync.
 -->
 
@@ -209,12 +209,25 @@ MUST NOT depend on key order.
 | `app` | string | ✔ | App slug. MUST equal the containing directory. |
 | `op` | string | ✔ | `put` or `del`. |
 | `tbl` | string | ✔ | Table name within the app. |
-| `id` | string | ✔ | ULID (26 chars, Crockford Base32). Unique within `(app, tbl)`. |
+| `id` | string | ✔ | Row key. Unique within `(app, tbl)` and stable across amendments to the same row. A ULID unless the table defines its own key — see below. |
 | `d` | object | put | Column values. MUST be absent when `op` is `del`. |
 
 A **reader** MUST NOT reject, reorder, or repair a `seq` gap it finds in a local log file.
 Gap rejection belongs to sync (§10.2), where the missing range can actually be requested; a
 reader that refuses to materialize a locally edited log turns a curiosity into an outage.
+
+**On `id`.** A ULID is the default, and is what the framework mints when a caller supplies
+no key. It is not the only legal value. `sys_node` and `sys_device` are keyed by Node ID
+(`spec/data-dictionary.md §3.1`, `§3.2`), and `spec/lua-api.md §3.3` lets a server-side
+caller pass its own key — `apps/animals` uses the constant `'cursor'` for a singleton row.
+Events accepted over the HTTP data API remain restricted to ULIDs (`spec/data-api.md §2`),
+because a browser client is not trusted to choose row keys.
+
+Two writers that choose the same `id` for the same `(app, tbl)` converge on one row under
+§4.5. For a deliberately shared singleton that is the intent; anywhere else it is a silent
+cross-device merge, which is why minting is the default. `id` plays no part in sync itself:
+§10.1 is a set union over `(dev, seq)`, and §10.6 depends only on a retry carrying the *same*
+`id`, not on its shape.
 
 ### 4.2 Forward compatibility
 
