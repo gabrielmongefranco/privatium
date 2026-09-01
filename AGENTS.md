@@ -71,13 +71,38 @@ Violating any of these is a bug, regardless of how well the code works:
 
 ## Style
 
-- Every source file carries the standard header block (project, file, authors,
-  created/modified, summary).
+- Every source file carries the standard header block (see below).
 - Errors: `thiserror` for library crates, `anyhow` at binary boundaries. Never `unwrap()`
   outside tests or `main()` startup.
 - Tests: every normative MUST in `spec/protocol.md` should map to a named test. Use the
   spec's section number in the test name (e.g. `test_spec_4_3_lamport_monotonic`).
 - No `unsafe` without a comment naming the invariant it upholds.
+
+### The header block
+
+Six fields — project, the file's own path, authors, created, modified, summary — in a
+comment at the top of the file. Two renderings are in use and both are correct: the
+spread-out form used throughout `spec/` and `docs/`, and the compact form used in
+`apps/`, which pairs `Project:` with `File:` and `Created:` with `Modified:`.
+
+```rust
+// Project:  Privatium™  |  File: crates/privatium-core/src/lib.rs
+// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+// Created:  2026-08-31  |  Modified: 2026-08-31
+// Summary:  What this file is for, in a sentence or three.
+```
+
+`.lsp` templates carry a reduced form: project, path, and summary. Authorship on every
+partial of an app nobody reads separately is noise.
+
+`cargo xtask header-check` enforces this over `.rs`, `.lua`, `.sql`, `.js`, `.css`,
+`.lsp`, and `.md` under `spec/` and `docs/`. Markdown elsewhere — this file, `README.md`,
+every `apps/**` README and `SKILL.md`, everything under `skills/` — is prose rather than
+source and is exempt by design. So is anything vendored, which is marked by a `VENDOR.md`
+beside it or above it and carries its own provenance.
+
+The dates are checked for shape, not for accuracy. A mechanical `Modified:` check would
+either be wrong or fight every commit that touches the file.
 
 ## Things agents get wrong here
 

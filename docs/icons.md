@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/icons.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-28
+Modified: 2026-08-31
 Summary:  Icon system. Bootstrap Icons, bundled and inlined server-side.
 -->
 
@@ -19,8 +19,8 @@ folders.
 - <cite>Available as raw SVGs, an SVG sprite, or a web font</cite>
 - No JavaScript, no dependency, no CDN required
 
-Pin one version in the repository. As of writing the current npm release is **v1.11.6**
-(May 2025); verify before pinning.
+Pin one version in the repository. The pinned release is **v1.13.1**; re-verify against
+npm before moving it.
 
 ## How they are delivered
 
@@ -60,10 +60,10 @@ kilobytes in the binary — cheaper than the complexity of a runtime sprite buil
 
 ## Template helper
 
-```jinja
-{{ icon("diagram-3") }}
-{{ icon("trash", label="Delete this fill") }}
-{{ icon("check-circle", size="1.5rem") }}
+```lsp
+<?= icon('diagram-3') ?>
+<?= icon('trash', { label = 'Delete this fill' }) ?>
+<?= icon('check-circle', { size = '1.5rem' }) ?>
 ```
 
 Emits:

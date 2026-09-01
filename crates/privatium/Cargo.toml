@@ -1,0 +1,30 @@
+# Project:  Privatium™  |  File: crates/privatium/Cargo.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-08-31  |  Modified: 2026-08-31
+# Summary:  The binary. Gains clap, the axum adapter, and terminal output in M6 and M11;
+#           at M0 it exists so that CI has a release artefact whose size means something.
+
+[package]
+name        = "privatium"
+description = "Privatium node — a personal data framework that syncs without a server."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+
+[[bin]]
+name = "privatium"
+path = "src/main.rs"
+
+[dependencies]
+privatium-core = { workspace = true }
+anyhow         = { workspace = true }
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"

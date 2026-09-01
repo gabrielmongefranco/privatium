@@ -1,0 +1,7 @@
+# Project:  Privatium™  |  File: .cargo/config.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-08-31  |  Modified: 2026-08-31
+# Summary:  `cargo xtask <command>` — the repository's own checks.
+
+[alias]
+xtask = "run --quiet --package xtask --"

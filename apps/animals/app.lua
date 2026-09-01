@@ -4,6 +4,11 @@
 -- Summary:  The guess-the-animal game. Demonstrates multi-event atomic writes,
 --           recursive SQL, stored session state, and the HTMX/Alpine boundary.
 
+-- Lineage: the "Animal" guessing game from David H. Ahl's BASIC Computer Games (1973),
+-- preserved at https://github.com/coding-horror/basic-computer-games (Unlicense).
+-- Nothing is copied from that project. The classic implementations keep the tree in
+-- memory and lose it on exit; here the tree IS the event log, which is the point.
+
 local pv   = require 'privatium'
 local tree = require 'tree'          -- lib/tree.lua
 
