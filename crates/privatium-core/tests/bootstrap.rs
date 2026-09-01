@@ -54,6 +54,10 @@ fn sys_events(node: &Node) -> Vec<Value> {
 /// had also written a CSRF secret into `local/`, which `docs/plans/phase-1.md §2.2`
 /// forbids: no secret is stored anywhere, and the key is derived at startup instead. That
 /// decision has no code of its own to test, so this is where it is enforced.
+///
+/// M2 added `local/state.jsonl` — the file `§3` already names, holding the §4.3 Lamport
+/// counter. It is one more line here and the assertion stays exhaustive; the point of this
+/// test is that a new path in `local/` cannot appear without someone typing it out.
 #[test]
 fn test_spec_3_layout_created() {
     let root = tempfile::tempdir().unwrap();
@@ -72,6 +76,7 @@ fn test_spec_3_layout_created() {
         "identity/node.key".to_owned(),
         "identity/node.pub".to_owned(),
         "local/".to_owned(),
+        "local/state.jsonl".to_owned(),
     ]
     .into_iter()
     .collect();
@@ -265,15 +270,16 @@ fn test_spec_4_1_key_order_is_greppable() {
     }
 }
 
-/// Opening a node twice never re-runs the bootstrap, and the writer that could is
-/// incapable of attaching to an existing log.
+/// Opening a node twice never re-runs the bootstrap, whatever state the log is in.
 ///
-/// `docs/plans/phase-1.md §2.6` puts step 2 in M1 while the log itself is M2, so M1's
-/// writer can only create. The guard above it is the log file's existence; this checks
-/// that the guard and the writer agree, because if the guard ever regressed, an
-/// `open`-capable writer would emit `seq: 1` over a live stream.
+/// M1 guarded this on the `_sys` log file existing, because M1's writer could only create.
+/// M2 has a reader, so the guard is what it should always have been: **the log recovered no
+/// events**. The difference is not cosmetic. A crash between creating the file and writing
+/// the first line leaves a zero-byte log, and a file-existence guard sees it, concludes this
+/// was not a first run, and skips the bootstrap forever — leaving a node with an identity,
+/// no `sys_device` row, and nothing to notice it by.
 #[test]
-fn test_bootstrap_does_not_re_open_an_existing_log() {
+fn test_bootstrap_runs_once_and_recovers_from_an_empty_log() {
     let root = tempfile::tempdir().unwrap();
 
     let first = Node::open(root.path()).unwrap();
@@ -286,6 +292,17 @@ fn test_bootstrap_does_not_re_open_an_existing_log() {
 
     assert_eq!(sys_events(&node).len(), 2);
     assert_eq!(fs::read_to_string(&log).unwrap().lines().count(), 2);
+    drop(node);
+
+    // The zero-byte log a crash between `create` and the first append would leave. The
+    // bootstrap must run, not be skipped because the file was there.
+    fs::write(&log, b"").unwrap();
+    let recovered = Node::open(root.path()).unwrap();
+    assert_eq!(
+        sys_events(&recovered).len(),
+        2,
+        "a zero-byte _sys log left the node without its own rows"
+    );
 }
 
 /// `config.toml` is optional (`docs/backup-and-restore.md §1`), and a node that starts
