@@ -23,6 +23,10 @@ all-features = false
 
 [licenses]
 confidence-threshold = 0.93
+# CC0-1.0 and MPL-2.0 below are for crates that arrive in M8 and M12 and are not in the
+# graph yet. Warning about an allowance nobody has used yet trains people to skim this
+# check's output, which is the opposite of what it is for.
+unused-allowed-license = "allow"
 allow = [
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
@@ -37,7 +41,14 @@ allow = [
     "Unicode-3.0",
     "Zlib",
 ]
-exceptions = []
+# Scoped to the one crate rather than blessing the licence generally. webpki-roots is the
+# Mozilla CA certificate set — data, not code — under a permissive data licence, and it
+# reaches us only as a build-time dependency of libduckdb-sys's build script. It is never
+# linked into the shipped binary. If it ever appears anywhere else, this stops covering it
+# and the check fails again, which is the point of scoping it.
+exceptions = [
+    { crate = "webpki-roots", allow = ["CDLA-Permissive-2.0"] },
+]
 
 # A workspace crate carrying its own licence field is not audited against the list above.
 [licenses.private]

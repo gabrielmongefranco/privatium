@@ -19,7 +19,7 @@ name = "privatium"
 path = "src/main.rs"
 
 [dependencies]
-privatium-core = { path = "../privatium-core" }
+privatium-core = { workspace = true }
 anyhow         = { workspace = true }
 
 [lints.rust]

@@ -22,6 +22,11 @@ homepage      = "https://github.com/gabrielmongefranco/privatium"
 # is what pins, so a security patch is one `cargo update -p <crate>` rather than an edit
 # here. Members opt in individually, so nothing below is an unused dependency.
 [workspace.dependencies]
+# The workspace's own crates. The version is required as well as the path: a bare path
+# dependency is a wildcard requirement, which cargo-deny rejects and which would be
+# unpublishable.
+privatium-core = { path = "crates/privatium-core", version = "0.1.0" }
+
 # HTTP — M6. `auth_layer` is a tower::Layer (spec/app-contract.md §6).
 axum       = "0.8.9"
 tower      = "0.5.3"
