@@ -20,6 +20,24 @@ pub const DEVICE: &str = "sys_device";
 /// `sys_node` (`spec/data-dictionary.md §3.1`).
 pub const NODE: &str = "sys_node";
 
+/// `sys_audit` (`spec/data-dictionary.md §3.10`).
+pub const AUDIT: &str = "sys_audit";
+
+/// An event was refused on ingest. `spec/protocol.md §4.4` requires the rejection to be
+/// recorded, and this is the `kind` `§3.10` already reserves for it.
+pub const KIND_EVENT_REJECTED: &str = "event.rejected";
+
+/// This node's own clock appears to have moved backwards (`§4.4`, second sentence).
+pub const KIND_CLOCK_SKEW: &str = "clock.skew";
+
+/// `§3.10` allows a device ID or the literal `system`. Neither of these is a device's doing.
+const ACTOR_SYSTEM: &str = "system";
+
+/// `§3.10`'s three severities. Only `key.mismatch`, `node.admitted`, `cluster.rotated`, and
+/// `restore.tier3` MUST be `alert`; neither kind written here is one of them, and inflating
+/// a warning into an alert would train the owner to ignore alerts.
+const SEVERITY_WARN: &str = "warn";
+
 /// The `d` of a `sys_device` row.
 ///
 /// Every column of `§3.2` appears here, including the ones Phase 1 leaves NULL, so that
@@ -131,6 +149,49 @@ impl<'a> NodeRow<'a> {
             cluster_id: None,
             cert: None,
             cert_expires_at: None,
+        }
+    }
+}
+
+/// The `d` of a `sys_audit` row (`spec/data-dictionary.md §3.10`).
+///
+/// One trap worth naming, because it is invisible until something reads the table: `detail`
+/// is typed `VARCHAR` and described as "JSON object", and `spec/data-dictionary.md §2.1`
+/// encodes `VARCHAR` as a **string**. So `detail` is a JSON string that *contains* JSON —
+/// `"detail":"{\"dev\":\"…\"}"` — not a nested object. `§3.9`'s `row_counts` is the same
+/// shape. Emitting a real object here would type the column as `JSON` in M3 and diverge
+/// from the dictionary on the one table whose job is to be trustworthy.
+///
+/// `at` is this row's own timestamp and will differ from the envelope's `ts` by whatever
+/// time passes between building the row and appending it — under a millisecond. They are
+/// two different facts (`§3.10`'s column, `§4.1`'s envelope field), and collapsing them
+/// would mean handing the writer a caller-supplied `ts` again.
+#[derive(Debug, Serialize)]
+pub(crate) struct AuditRow<'a> {
+    pub at: &'a str,
+    pub kind: &'a str,
+    pub actor: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject: Option<&'a str>,
+    pub detail: &'a str,
+    pub severity: &'a str,
+}
+
+impl<'a> AuditRow<'a> {
+    /// A `warn` from the framework itself, about `subject`.
+    pub(crate) fn warn(
+        at: &'a str,
+        kind: &'a str,
+        subject: Option<&'a str>,
+        detail: &'a str,
+    ) -> Self {
+        Self {
+            at,
+            kind,
+            actor: ACTOR_SYSTEM,
+            subject,
+            detail,
+            severity: SEVERITY_WARN,
         }
     }
 }

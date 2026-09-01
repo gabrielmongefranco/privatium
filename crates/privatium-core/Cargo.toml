@@ -42,6 +42,12 @@ sha2          = { workspace = true }
 base64        = { workspace = true }
 zeroize       = { workspace = true }
 
+# M2 — sys_audit rows are keyed by a ULID (spec/data-dictionary.md §3.10). The only
+# minting site in Phase 1: §4.1 makes a ULID the default row key, but sys_device and
+# sys_node are keyed by Node ID, and the Lua and HTTP callers that mint their own arrive
+# in M7 and M9.
+ulid = { workspace = true }
+
 # M1 — the §3 data root, the `ts` field, config.toml, and the two bootstrap events.
 directories = { workspace = true }
 jiff        = { workspace = true }

@@ -236,7 +236,7 @@ impl Config {
 
         let config: Self = toml::from_str(&text).map_err(|source| Error::Config {
             path: path.to_path_buf(),
-            source,
+            source: Box::new(source),
         })?;
         config.validate(path)?;
         Ok(config)
