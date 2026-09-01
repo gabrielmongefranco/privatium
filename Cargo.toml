@@ -1,0 +1,74 @@
+# Project:  Privatium™  |  File: Cargo.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-08-31  |  Modified: 2026-08-31
+# Summary:  Workspace root. Three crates per docs/plans/phase-1.md §4, one pinned
+#           dependency table, and the MSRV every member inherits.
+
+[workspace]
+resolver = "3"
+members = ["crates/privatium-core", "crates/privatium", "crates/xtask"]
+
+[workspace.package]
+version       = "0.1.0"
+edition       = "2024"
+rust-version  = "1.90.0"
+license       = "GPL-3.0-or-later"
+authors       = ["Gabriel Mongefranco (@gabrielmongefranco)"]
+repository    = "https://github.com/gabrielmongefranco/privatium"
+homepage      = "https://github.com/gabrielmongefranco/privatium"
+
+# Every version here was verified against the crates.io index on 2026-08-31 and is the
+# current maximum stable release. Caret requirements plus a committed Cargo.lock: the lock
+# is what pins, so a security patch is one `cargo update -p <crate>` rather than an edit
+# here. Members opt in individually, so nothing below is an unused dependency.
+[workspace.dependencies]
+# HTTP — M6. `auth_layer` is a tower::Layer (spec/app-contract.md §6).
+axum       = "0.8.9"
+tower      = "0.5.3"
+tower-http = "0.7.1"
+tokio      = "1.53.1"
+
+# Lua — M7. lua54 (not LuaJIT, not Luau: AGENTS.md), vendored so no system Lua is needed.
+mlua = "0.12.1"
+
+# SQL — M3. Bundled, so the C++ build is ours and extension autoload stays off.
+duckdb = "1.10505.0"
+
+# Crypto — M1 node identity, M6 CSRF. No session crypto in Phase 1.
+ed25519-dalek = "3.0.0"
+sha2          = "0.11.0"
+hmac          = "0.13.0"
+hkdf          = "0.13.0"
+rand          = "0.10.2"
+
+# Events — M2. Crockford Base32, 26 characters.
+ulid = "3.0.0"
+
+# Serde. serde_json's `preserve_order` stays OFF: raw event lines are String/&[u8] end to
+# end and are never re-serialized on a write path (spec/protocol.md §4.2).
+serde      = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+toml       = "1.1.4"
+
+# Watching — M8, `privatium dev`. notify 9 is release-candidate only; staying on stable.
+notify                = "8.2.0"
+notify-debouncer-full = "0.7.0"
+
+# Lua AST for the linter — M12. MPL-2.0; see deny.toml.
+full_moon = "2.2.0"
+
+# CLI — M11.
+clap        = { version = "4.6.6", features = ["derive"] }
+owo-colors  = "4.4.0"
+
+# Errors: thiserror in the library, anyhow at binary boundaries (AGENTS.md, Style).
+thiserror = "2.0.20"
+anyhow    = "1.0.104"
+
+# Embedding icons, shell assets, and pv.js into the binary — M6.
+include_dir = "0.7.4"
+
+[profile.release]
+lto           = "thin"
+codegen-units = 1
+strip         = "debuginfo"

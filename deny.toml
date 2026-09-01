@@ -1,0 +1,62 @@
+# Project:  Privatium™  |  File: deny.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-08-31  |  Modified: 2026-08-31
+# Summary:  Licence and supply-chain policy, checked by `cargo deny check` in CI.
+#           ADR 0001 declined Barracuda/BAS partly because it is GPL-2.0-only and so
+#           incompatible with this project's GPL-3.0-or-later. That was a judgement call
+#           made once; this file makes it mechanical, so the same mistake cannot arrive
+#           later as a transitive dependency nobody read the licence of.
+#
+#           Written for cargo-deny 0.20.x, which is allow-list only: there is no `deny`
+#           list any more, and anything not named below fails. GPL-2.0-only is therefore
+#           rejected by omission, as is every non-commercial or source-available licence.
+
+[graph]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+]
+all-features = false
+
+[licenses]
+confidence-threshold = 0.93
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",              # ed25519-dalek, curve25519-dalek
+    "BSL-1.0",
+    "CC0-1.0",                   # notify — public-domain dedication, not copyleft
+    "GPL-3.0-or-later",          # this workspace's own crates
+    "ISC",
+    "MIT",
+    "MPL-2.0",                   # full_moon — file-level copyleft, GPL-3.0 compatible
+    "Unicode-3.0",
+    "Zlib",
+]
+exceptions = []
+
+# A workspace crate carrying its own licence field is not audited against the list above.
+[licenses.private]
+ignore = true
+
+[advisories]
+yanked = "deny"
+# "workspace" rather than "all": an unmaintained advisory on a direct dependency is a
+# decision to make (risk R4 is exactly this question about full_moon); one buried four
+# levels down usually is not.
+unmaintained = "workspace"
+ignore = []
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+deny = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

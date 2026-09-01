@@ -1,4 +1,6 @@
-<?-- Project: Privatium™ | apps/hello/views/edit.lsp --?>
+<?-- Project: Privatium™ | apps/hello/views/edit.lsp
+     Summary: The name form. One field, one POST, and the csrf() token PV204
+              requires of every non-GET form. --?>
 
 <h1>What should I call you?</h1>
 

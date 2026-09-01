@@ -122,6 +122,13 @@ Questions, bug reports, enhancement ideas and requests are welcome as GitHub iss
   password-authenticated key exchange protocols used for device pairing.
 - [Magic Wormhole](https://github.com/magic-wormhole/magic-wormhole) — inspiration for the
   short human-readable pairing code experience. No code from that project was used.
+- [Animal](https://github.com/coding-horror/basic-computer-games/tree/main/03_Animal) —
+  the `apps/animals` example follows the classic "Animal" guessing game from
+  David H. Ahl's *BASIC Computer Games* (1973), preserved and ported to many
+  languages by the basic-computer-games project under the Unlicense. No code is
+  copied: that project's Lua port is a console program with an in-memory tree,
+  while this one stores the tree as an append-only event log so it can sync
+  across devices.
 
 ## License
 

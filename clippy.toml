@@ -1,0 +1,6 @@
+# Project:  Privatium™  |  File: clippy.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-08-31  |  Modified: 2026-08-31
+# Summary:  Clippy knows the MSRV so it does not suggest APIs newer than it.
+
+msrv = "1.90.0"

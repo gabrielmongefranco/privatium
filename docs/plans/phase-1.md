@@ -250,7 +250,7 @@ crates/
 │   │   ├── http/             shell, settings, data API, SSE, auth_layer
 │   │   ├── lint/             rules, fixer, json output
 │   │   └── sys.rs            sys_* event helpers
-│   ├── assets/icons/         vendored twbs/icons + LICENSE + VERSION
+│   ├── assets/icons/         vendored twbs/icons + LICENSE + VERSION (M6)
 │   ├── examples/embedded.rs  the 30-line Tier 3 proof
 │   └── tests/                spec-named integration tests
 ├── privatium/                the binary; clap, subcommands, axum adapter, terminal output
@@ -299,16 +299,22 @@ Scaffolding only. No behaviour.
 - Workspace, three crates, MSRV pinned, `rust-toolchain.toml`.
 - `xtask header-check`: every source file carries the standard header block (`AGENTS.md`,
   Style). Fails CI.
-- `xtask icons-verify`: every icon name referenced anywhere in `apps/` and the shell
-  exists in `assets/icons/`, per `docs/icons.md` and `PV503`.
+- `xtask spec-drift`: warns when `spec/` has changed since `skills/` was last reconciled
+  (R8). A hash manifest, not a diff — the generator that could diff is M13, and this is
+  replaced by it there.
 - CI matrix: Linux, macOS, Windows. `fmt`, `clippy -D warnings`, `test`.
 - Lint config denying `clippy::unwrap_used` and `clippy::expect_used` in
   `privatium-core`, allowed in `tests/` and in `main()` startup only.
 - `deny.toml`: fail on GPL-2.0-only and non-commercial licences (ADR 0001 is a licence
   decision; make it mechanical). ADR 0004 §5 explains why this matters more than it looks.
+- R1 and R2 build gates: `privatium-core` really links bundled DuckDB and vendored Lua,
+  and CI runs the release binary and reports its size on all three platforms. The
+  `ed25519-dalek`/`rand`/`sha2` trio is compiled here too, so M1 does not open with a
+  `rand_core` version conflict.
 
-**Done when:** CI is green on an empty workspace and `xtask header-check` fails when a
-header is deleted.
+**Done when:** CI is green on all three platforms and `xtask header-check` fails when a
+header is deleted. Not "green on an empty workspace" — R1 requires the bundled DuckDB
+build to be proven here, and a workspace with no dependencies would prove nothing.
 
 ---
 
@@ -484,6 +490,13 @@ quietly lost. Build the interface first and the socket second.
 - `auth_layer` per §2.2. Loopback bind per §2.1.
 - Shell: server-rendered HTML + HTMX, Bootstrap Icons inlined via `include_dir`. No
   bundler, no `node_modules` in the runtime path.
+- Vendor `twbs/icons` v1.13.1 in full into `assets/icons/`, with `LICENSE`, `VERSION`, a
+  `VENDOR.md`, and the attribution in `NOTICE`. Not a build-time subset: apps are
+  installed at runtime and declare their own icon (`docs/icons.md`).
+- `xtask icons-verify`: every icon name referenced anywhere in `apps/` and the shell, and
+  every name in the `docs/icons.md` vocabulary table, exists in the vendored set — per
+  `docs/icons.md` and `PV503`. This was M0 in an earlier draft, where there was neither a
+  vendored set to check against nor any HTML that rendered an icon.
 - Settings pages: node identity, installed apps, data directory, backup instructions. The
   devices page renders this node's own row and says pairing arrives in Phase 2.
 
@@ -754,7 +767,10 @@ the lifecycle carve-out in M5 exist partly to make the boundary physical.
 **R8 — Spec edits outrunning `skills/`.** §3 already changed nine spec sections, and
 `docs/skills.md §7` makes an unreflected spec change an incomplete change. More will follow
 once code meets contract. The CI drift check was scheduled for M13, which is too late to be
-useful — add it in M0 as a warning and promote it to an error in M13.
+useful — add it in M0 as a warning and promote it to an error in M13. In M0 it cannot be
+a diff: `skills/*/reference/` holds placeholders and the generator is M13. What it can be,
+and is, is a recorded SHA-256 per `spec/` document that warns when one changes; M13
+replaces it with the real thing.
 
 ---
 

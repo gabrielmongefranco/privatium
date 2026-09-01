@@ -1,0 +1,10 @@
+# Project:  Privatium™  |  File: rust-toolchain.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-08-31  |  Modified: 2026-08-31
+# Summary:  The MSRV, pinned exactly so every machine and every CI leg build the same
+#           compiler. CI additionally runs a `stable` leg to catch upcoming breakage.
+
+[toolchain]
+channel    = "1.90.0"
+components = ["rustfmt", "clippy"]
+profile    = "minimal"

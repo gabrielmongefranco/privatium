@@ -1,0 +1,97 @@
+# Project:  Privatium™  |  File: .github/workflows/ci.yml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-08-31  |  Modified: 2026-08-31
+# Summary:  The gate. Three platforms, because "runs on Linux, Windows and macOS from a
+#           single binary" is a Phase 1 acceptance bullet and finding out at M13 that the
+#           bundled DuckDB build never worked on one of them would be too late.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The toolchain comes from rust-toolchain.toml — 1.90.0 exactly, with rustfmt and
+  # clippy — so every leg of this matrix builds with the same compiler a developer has.
+  check:
+    name: check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Formatting is platform-independent; checking it three times says nothing extra.
+      - name: Format
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+      - name: Header block on every source file
+        run: cargo xtask header-check
+
+      # Warn-only until M13, when the skill reference generator can say what drifted.
+      - name: Spec against skills
+        run: cargo xtask spec-drift
+
+      - name: Release build
+        run: cargo build --workspace --release --locked
+
+      # Risk R1: the bundled DuckDB build is a multi-minute C++ compile and it inflates
+      # the binary. Running the artefact proves both engines really linked; printing its
+      # size is the number the decision to revisit static extensions would be made on.
+      - name: Linked engines and binary size
+        shell: bash
+        run: |
+          binary="target/release/privatium"
+          [ "${{ matrix.os }}" = "windows-latest" ] && binary="target/release/privatium.exe"
+          "$binary"
+          ls -l "$binary"
+
+  # A second opinion from current stable, so a compiler change that will break us lands
+  # as one failing job rather than as a surprise the next time the MSRV moves.
+  stable:
+    name: stable
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo +stable check --workspace --all-targets --locked
+
+  # ADR 0001 declined a GPL-2.0-only dependency on licence grounds. deny.toml is that
+  # judgement made mechanical, so it cannot be lost to a transitive dependency later.
+  deny:
+    name: licences and advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --version 0.20.2 --locked
+      - run: cargo deny check

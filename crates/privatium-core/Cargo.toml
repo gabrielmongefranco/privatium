@@ -1,0 +1,42 @@
+# Project:  Privatium™  |  File: crates/privatium-core/Cargo.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-08-31  |  Modified: 2026-08-31
+# Summary:  The library. One core crate per ADR 0002 — the server, the shells, and
+#           (later) uniffi all consume this and nothing else.
+
+[package]
+name        = "privatium-core"
+description = "Privatium core: event log, store, app host, and the Request/Response interface."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+
+[dependencies]
+# M0 links these two and nothing else. They are here rather than under dev-dependencies
+# because risk R1 is about the shipped artefact: if DuckDB and Lua were test-only, the
+# binary size CI reports would not be the size of the binary we ship.
+duckdb    = { workspace = true, features = ["bundled"] }
+mlua      = { workspace = true, features = ["lua54", "vendored", "send"] }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+# Promoted to [dependencies] in M1, which is the first milestone with a node identity.
+# Present now so that rand_core/digest version skew across these four fails in M0 rather
+# than on M1's first day.
+ed25519-dalek = { workspace = true, features = ["rand_core"] }
+rand          = { workspace = true }
+sha2          = { workspace = true }
+
+[lints.rust]
+# AGENTS.md, Style: no `unsafe` without a comment naming the invariant it upholds. Deny
+# rather than forbid, so such a site can opt out explicitly and be reviewed.
+unsafe_code = "deny"
+
+[lints.clippy]
+# AGENTS.md, Style: never unwrap() outside tests or main() startup. Integration tests
+# under tests/ opt out at the top of the file.
+unwrap_used = "deny"
+expect_used = "deny"
