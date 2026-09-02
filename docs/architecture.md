@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/architecture.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-31
+Modified: 2026-09-02
 Summary:  Explanatory architecture overview. Non-normative; see spec/ for the contract.
 -->
 
@@ -43,9 +43,9 @@ views against it. DuckDB earns the slot over SQLite for two specific reasons:
 
 - **Real types.** `DECIMAL`, `DATE`, `INTERVAL`, `TIMESTAMPTZ` are native. An app tracking
   money and dates does not have to encode cents as integers and dates as strings.
-- **It reads the truth directly.** `read_json_auto()` and `read_parquet()` query the log
-  and snapshot files in place, so the "materializer" is a `CREATE TABLE AS SELECT`, not a
-  subsystem.
+- **It reads the truth directly.** `read_json()` — with an explicit `columns` list, never
+  type inference — and `read_parquet()` query the log and snapshot files in place, so the
+  "materializer" is a `CREATE TABLE AS SELECT`, not a subsystem.
 
 The database file lives in `cache/` and is rebuilt on demand. Its format compatibility
 across DuckDB versions is therefore irrelevant.
@@ -254,7 +254,7 @@ path in the system.
 ### Read
 ```
 1. cache/<app>.duckdb fresh?              → query it
-2. else: read_parquet(snap/**) + read_json_auto(log/**) WHERE lam > watermark
+2. else: read_parquet(snap/**) + read_json(log/**, columns = {…}) WHERE lam > watermark
 3. Parquet unreadable?  → CSV + schema.sql + log tail
 4. Snapshots gone?      → full log replay from zero
 ```

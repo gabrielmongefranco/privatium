@@ -1,6 +1,6 @@
 # Project:  Privatium™  |  File: crates/xtask/spec-hashes.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-08-31  |  Modified: 2026-08-31
+# Created:  2026-08-31  |  Modified: 2026-09-02
 # Summary:  SHA-256 of every normative document as of the last time skills/ was brought
 #           into line with it (docs/skills.md §7). Regenerate with
 #           `cargo xtask spec-drift --update`, and only once skills/ actually agrees —
@@ -10,9 +10,9 @@
 #           removed, so a Windows working tree and a Linux one agree.
 
 [hashes]
-"spec/app-contract.md" = "995d448fe6bba42dfc5cffcbd962fd8f913ea8828af5f59aec958898528c9a02"
+"spec/app-contract.md" = "104bbb3a4d3c442324c8b0393cf475dbecfb37ea564ecc4276fc7f35403907c8"
 "spec/cli.md" = "c88391c60d9e4c704e9df723a43c406846bf16ec5f8be9ef12e4d0f8d9823335"
 "spec/data-api.md" = "58c8a261216b01794ec01e1347a33d5c54d20edcd55b2c281611b959b79252fa"
 "spec/data-dictionary.md" = "91449cc997a98f56046d03aa9311d643ae4483cdd7a40c55f7b28e969c90bacf"
 "spec/lua-api.md" = "c12e62396c44f4feada55b2c83a1f0861bee181545a5c897d7db89f3b975b036"
-"spec/protocol.md" = "ad73723b1d3d0f215ce4ef663eb99ca709a63c06efdae9122b59efa3a0cb7e36"
+"spec/protocol.md" = "1ea31ee08e9ca0b03f52943715d1b998f22d42d2bab11de72dc052d574338b88"

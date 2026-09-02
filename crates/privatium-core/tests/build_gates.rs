@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/build_gates.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-08-31  |  Modified: 2026-08-31
+// Created:  2026-08-31  |  Modified: 2026-09-02
 // Summary:  M0's only tests. Each one retires a build risk from docs/plans/phase-1.md §8
 //           on all three CI platforms, before the milestone that depends on it exists.
 //           They are named for the risk they close, not for a spec section, because none

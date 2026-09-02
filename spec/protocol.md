@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/protocol.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-01
+Modified: 2026-09-02
 Summary:  NORMATIVE. Wire formats, event log, discovery, pairing, session crypto, sync.
 -->
 
@@ -296,9 +296,10 @@ Such a key names one logical row for the life of the app, so re-asserting it is 
 amendment rather than a reuse, and §4.5 gives the expected answer with no special case.
 Server-side callers choose their own keys and are trusted to mean it.
 
-Materialization does not enforce any of this. A replay follows §4.5 over whatever the log
-contains, because §4.1 forbids a reader to reject what it finds; the constraint is on
-writers.
+Materialization does not enforce any of this. A replay follows §4.5 over whatever survives
+§4.4's clock hygiene — the only filter a reader is required to apply. §4.1's mercy for a
+`seq` gap is the same principle: a reader materializes what it finds rather than judging
+it. The constraint is on writers.
 
 Implementations MUST NOT offer a "hard delete" that rewrites logs. The supported way to
 destroy data irrecoverably is to destroy the `data/` directory.

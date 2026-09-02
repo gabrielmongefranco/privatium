@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-01
+// Created:  2026-09-01  |  Modified: 2026-09-02
 // Summary:  One app's cache/<slug>.duckdb: the privileged connection that materializes it
 //           from the log, the seal that turns it into spec/app-contract.md §7's sandbox,
 //           and the watermark that notices a log someone appended to by hand.
@@ -97,6 +97,15 @@ pub struct Store {
     target_schema: Option<&'static str>,
     sealed: bool,
     watermark: Materialized,
+    /// Whether `cache/<slug>.duckdb` did not exist when this store opened it.
+    ///
+    /// `spec/protocol.md §3` calls `cache/` fully disposable and `§3.1` requires that
+    /// deleting it loses nothing — and an owner who deletes it will usually leave `local/`
+    /// alone, since `§3` says nothing about the two going together. A watermark read back
+    /// from `local/state.jsonl` then describes tables that were in a file which no longer
+    /// exists, and adopting it would let [`refresh`](Self::refresh) conclude an empty
+    /// database is current. See [`restore_watermark`](Self::restore_watermark).
+    fresh: bool,
 }
 
 impl Store {
@@ -124,6 +133,9 @@ impl Store {
             })?;
         }
 
+        // Before `Connection::open`, which creates the file if it is absent: afterwards
+        // there is no way to tell a cache the owner deleted from one that was always here.
+        let fresh = !path.is_file();
         let conn = Connection::open(&path).map_err(StoreError::Duck)?;
         conn.execute_batch(
             "SET autoinstall_known_extensions = false;
@@ -151,6 +163,7 @@ impl Store {
             target_schema,
             sealed: false,
             watermark: Materialized::default(),
+            fresh,
         })
     }
 
@@ -167,6 +180,10 @@ impl Store {
         }
 
         let glob = self.log_glob();
+        // `read_json()` refuses a glob that matches no file, and a log directory with no
+        // segment yet is ordinary — a schema-less app nobody has written to still has to
+        // open. The stat is taken once, here, so every statement below agrees about it.
+        let has_segments = !self.take_watermark()?.segments.is_empty();
         for table in &self.schema.tables {
             let sql = materialize::replay_sql(
                 &self.qualified(&table.name),
@@ -174,11 +191,12 @@ impl Store {
                 table,
                 &glob,
                 cutoff,
+                has_segments,
             );
             self.conn.execute_batch(&sql).map_err(StoreError::Duck)?;
         }
 
-        let sql = materialize::tombstone_sql(&self.slug, &self.schema.tables, &glob, cutoff);
+        let sql = materialize::tombstone_sql(&self.slug, &glob, cutoff, has_segments);
         self.conn.execute_batch(&sql).map_err(StoreError::Duck)?;
 
         for view in &self.schema.views {
@@ -229,61 +247,54 @@ impl Store {
         id: &str,
         d: Option<&D>,
     ) -> Result<(), StoreError> {
-        let Some(table) = self.schema.table(tbl).cloned() else {
-            // An event for a table `schema.sql` does not declare. Ordinary: a schema-less
-            // app has none at all (`spec/app-contract.md §5.3`), and a column added later
-            // does not retroactively make old events invalid.
-            return Ok(());
-        };
-
-        let target = self.qualified(&table.name);
-        let (delete, insert) = materialize::apply_sql(&target, &table);
+        // The tombstone set first, and for **every** table, declared or not. It mirrors
+        // `materialize::tombstone_sql`, whose scope is every `tbl` in the log because
+        // `spec/data-api.md §2` accepts writes to a schema-less app and `spec/protocol.md
+        // §4.6` still has to be enforceable there. Doing it before the schema lookup is
+        // what keeps an undeclared table's `del` reportable through `is_tombstoned`.
+        //
+        // Delete before insert, so a second `del` on the same id does not add a second
+        // row. The replay produces one row per *currently* tombstoned id, and
+        // `docs/plans/phase-1.md §2.5` requires this path to match it — an accumulating
+        // set would still answer `is_tombstoned` correctly and would still be wrong,
+        // which is exactly the sort of drift the property test exists to catch.
         self.conn
-            .execute(&delete, duckdb::params![id])
+            .execute(
+                &format!(
+                    "DELETE FROM {} WHERE tbl = ? AND id = ?",
+                    materialize::TOMBSTONE_TABLE
+                ),
+                duckdb::params![tbl, id],
+            )
             .map_err(StoreError::Duck)?;
+        if d.is_none() {
+            self.conn
+                .execute(
+                    &format!(
+                        "INSERT INTO {} (tbl, id) VALUES (?, ?)",
+                        materialize::TOMBSTONE_TABLE
+                    ),
+                    duckdb::params![tbl, id],
+                )
+                .map_err(StoreError::Duck)?;
+        }
 
-        match d {
-            Some(value) => {
+        // The table itself, only if `schema.sql` declares one. An event for a table it
+        // does not is ordinary: a schema-less app has none at all
+        // (`spec/app-contract.md §5.3`), and a column added later does not retroactively
+        // make old events invalid.
+        if let Some(table) = self.schema.table(tbl).cloned() {
+            let target = self.qualified(&table.name);
+            let (delete, insert) = materialize::apply_sql(&target, &table);
+            self.conn
+                .execute(&delete, duckdb::params![id])
+                .map_err(StoreError::Duck)?;
+            if let Some(value) = d {
                 let json = serde_json::to_string(value).map_err(|source| StoreError::Schema {
                     problem: source.to_string(),
                 })?;
                 self.conn
                     .execute(&insert, duckdb::params![id, json])
-                    .map_err(StoreError::Duck)?;
-                self.conn
-                    .execute(
-                        &format!(
-                            "DELETE FROM {} WHERE tbl = ? AND id = ?",
-                            materialize::TOMBSTONE_TABLE
-                        ),
-                        duckdb::params![tbl, id],
-                    )
-                    .map_err(StoreError::Duck)?;
-            }
-            None => {
-                // Delete before insert, so a second `del` on the same id does not add a
-                // second row. The replay produces one row per *currently* tombstoned id,
-                // and `docs/plans/phase-1.md §2.5` requires this path to match it — an
-                // accumulating set would still answer `is_tombstoned` correctly and would
-                // still be wrong, which is exactly the sort of drift the property test
-                // exists to catch.
-                self.conn
-                    .execute(
-                        &format!(
-                            "DELETE FROM {} WHERE tbl = ? AND id = ?",
-                            materialize::TOMBSTONE_TABLE
-                        ),
-                        duckdb::params![tbl, id],
-                    )
-                    .map_err(StoreError::Duck)?;
-                self.conn
-                    .execute(
-                        &format!(
-                            "INSERT INTO {} (tbl, id) VALUES (?, ?)",
-                            materialize::TOMBSTONE_TABLE
-                        ),
-                        duckdb::params![tbl, id],
-                    )
                     .map_err(StoreError::Duck)?;
             }
         }
@@ -437,8 +448,23 @@ impl Store {
         state.set_materialized(&self.slug, self.watermark.clone());
     }
 
-    /// Adopt a watermark read back from `local/state.jsonl`.
+    /// Adopt a watermark read back from `local/state.jsonl` — unless the cache file it
+    /// describes is gone.
+    ///
+    /// The watermark says "the tables were built from these segments at these lengths".
+    /// That is only a fact about a database that still exists. If `cache/<slug>.duckdb`
+    /// was absent when this store opened, `Connection::open` has just created an empty
+    /// one, and the recorded segments match the untouched logs exactly — so
+    /// [`refresh`](Self::refresh) would find nothing changed and leave the owner with a
+    /// database that has schemas and no tables. Ignoring the record here, rather than
+    /// teaching `refresh` a second reason to rebuild, keeps `refresh`'s contract simple:
+    /// watermark equals disk means the tables are current, and a fresh file has no
+    /// watermark. A no-op costs one full replay, which is what deleting `cache/` is
+    /// documented to cost (`docs/backup-and-restore.md`).
     pub fn restore_watermark(&mut self, recorded: Materialized) {
+        if self.fresh {
+            return;
+        }
         self.watermark = recorded;
     }
 }
