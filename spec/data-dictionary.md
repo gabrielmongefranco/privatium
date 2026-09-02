@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/data-dictionary.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-28
+Modified: 2026-09-02
 Summary:  NORMATIVE. System tables, app index, type mappings, and field definitions.
 -->
 
@@ -199,6 +199,15 @@ about.
 - The app index is replicated, so all your devices agree on which apps exist. The app
   *folders* are not replicated — a device that lacks the folder shows the app as
   unavailable rather than pretending it is gone.
+- `source` says where the folder came from. `bundled` is a folder shipped with the
+  framework — the repository's `apps/` in a development checkout, the package's at
+  install. `local` is `<data-root>/apps/<slug>/`, the owner's, writable and surviving
+  upgrades. `url:<origin>` is reserved: `pv/1` has no registry (`spec/app-contract.md
+  §9`).
+- One row per folder whose name is a valid, unreserved slug, written whether or not the
+  app loaded: a refusal at any step of `spec/app-contract.md §8` sets `last_error` on it.
+  `installed_at` is when the app first loaded cleanly and is NULL for a folder that never
+  has; `enabled` is the owner's and survives every reload.
 - Removing a folder MUST NOT delete the index row or the app's data. It sets
   `last_error = "folder missing"`.
 - Uninstalling is an explicit owner action that sets `enabled = false`. Data deletion is a

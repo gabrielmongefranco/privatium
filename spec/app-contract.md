@@ -132,6 +132,11 @@ A node MUST refuse to load an app and MUST record `app.load_failed` when the slu
 reserved or malformed, when it collides with an installed app, or when `api` exceeds what
 the framework implements.
 
+Folders are discovered from the owner's `<data-root>/apps/` before any bundled `apps/`
+(`spec/data-dictionary.md §3.4` defines the two), and by name within each. When two folders
+declare one slug, the one discovered second is the one refused, so the owner's copy always
+wins and the outcome does not depend on the order a directory listing happens to return.
+
 Tier-specific validation applies only to that tier. Refusal is per-app and loud; one broken
 app MUST NOT prevent the node from starting.
 
@@ -358,16 +363,22 @@ Some things need more. Declare it and take the warning:
 
 ```toml
 [permissions]
-inline_script = false   # allows 'unsafe-inline' — avoid; use an external file
-wasm          = false   # allows 'wasm-unsafe-eval'
-eval          = false   # allows 'unsafe-eval'; some older WASM loaders need it
-remote        = []      # additional origins for script-src/img-src/connect-src
-sql           = false   # allow ad-hoc read-only SQL via pv.sql()
+inline_script         = false   # allows 'unsafe-inline' — avoid; use an external file
+wasm                  = false   # allows 'wasm-unsafe-eval'
+eval                  = false   # allows 'unsafe-eval'; some older WASM loaders need it
+remote                = []      # additional origins for script-src/img-src/connect-src
+sql                   = false   # allow ad-hoc read-only SQL via pv.sql()
+cross_origin_isolated = false   # COOP/COEP for SharedArrayBuffer; solo mode only
 ```
 
 Every non-default permission is shown to the owner at install time in plain language.
 `remote` in particular means "this app phones out," which is the one thing this project
-exists to avoid; the installer says so.
+exists to avoid; the installer says so. Each `remote` entry MUST be an origin —
+`http(s)://host[:port]` and nothing more — because it is written into a header verbatim.
+
+`cross_origin_isolated` is refused at load in host mode: the headers it needs are
+document-level on one origin and would break every other app on the node
+(`docs/frameworks.md §5.4`). It is honoured only for the solo app.
 
 ---
 
@@ -438,7 +449,7 @@ responsibility.
 ```
 folder appears in apps/
   → parse app.toml                       (fail → app.load_failed, stop)
-  → validate slug, api, tier
+  → validate slug, api, tier             (fail → app.load_failed, stop)
   → tier 1: load app.lua in a sandboxed VM, register routes, compile views/, hash
   → tier 2: verify web/index.html exists; compute CSP from [permissions]
   → tier 3: (linked at compile time; index entry only)
@@ -446,6 +457,16 @@ folder appears in apps/
   → materialize from data/<slug>/        (if the app has tables)
   → mount, advertise subtype
 ```
+
+**A stop still writes the row.** `sys_app` is keyed by the slug, and the slug equals the
+folder name (§3.1), so the folder name is the row's key before anything is parsed. Every
+folder whose name is a valid, unreserved slug has a row whether or not it loaded: a stop at
+any step above writes it with `last_error` set and whatever the manifest yielded
+(`spec/data-dictionary.md §3.4`), which is what lets settings say why an app is not
+running. A folder whose name could never be a slug has no row to carry the error and gets
+the `app.load_failed` audit alone. The upsert step above is where a clean load writes the
+row; a refused one writes it where it stopped. The row is amended only when it would
+change — a start that finds nothing different appends nothing.
 
 ---
 
@@ -461,6 +482,14 @@ sandboxed from the filesystem, but treat installing a third-party app the way yo
 treat running a script someone emailed you — because that is what it is.
 
 Include `sample/seed.jsonl` (synthetic events only) so an owner can see the app populated.
+
+A seed is one event envelope per line (`spec/protocol.md §4.1`). A node loading it takes
+`op`, `tbl`, `id` and `d` from each line and discards `seq`, `lam`, `ts`, `dev` and `app`:
+the events are appended through the node's own log, as the node's, with every envelope
+field minted afresh — never copied as another device's file (`spec/protocol.md §3.1`).
+Loading is an explicit owner action and MUST NOT happen on its own, and it MUST be refused
+when the app's log already holds an event from any device: a seed populates an empty app
+or nothing.
 
 ---
 

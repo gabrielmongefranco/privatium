@@ -5,7 +5,7 @@
 //           of the bootstrap order in docs/plans/phase-1.md §2.6 — the sink that turns
 //           what a log scan found into sys_audit rows (spec/protocol.md §4.4), and the
 //           node-level snapshot, restore, verify, prune and maintenance API of
-//           spec/app-contract.md §6 (M4).
+//           spec/app-contract.md §6 (M4), routed to every loaded app's store (M5).
 
 //! Privatium core.
 //!
@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
+pub mod app;
 pub mod config;
 pub mod identity;
 pub mod local;
@@ -25,6 +26,10 @@ pub mod log;
 pub mod store;
 pub mod sys;
 
+pub use app::{
+    App, AppRoot, Csp, LoadFailure, LoadReport, Manifest, Permissions, Seeded, Source, Stage,
+    Warning,
+};
 pub use config::{Config, LuaConfig, Mode, NodeConfig, Paths};
 pub use identity::{Identity, NodeId};
 pub use log::{AppLog, Durability, Op};
@@ -142,13 +147,44 @@ pub enum Error {
 
     /// The node holds no store for this app.
     ///
-    /// Until the app loader (M5) opens app stores, `_sys` is the only one, and asking for
-    /// another is answered with this rather than with a silent success an embedder would
-    /// build on.
+    /// `_sys` always has one; any other slug has one only after [`Node::load_apps`]
+    /// loaded it. Asking for anything else is answered with this rather than with a
+    /// silent success an embedder would build on.
     #[error("{slug}: no store is open for this app")]
     AppNotLoaded {
         /// The app.
         slug: String,
+    },
+
+    /// `sample/seed.jsonl` was not loaded because the app already has events
+    /// (`spec/app-contract.md §9`).
+    #[error(
+        "{slug}: sample/seed.jsonl was not loaded — the log already holds {events} event(s) \
+         (spec/app-contract.md §9)"
+    )]
+    SeedRefused {
+        /// The app.
+        slug: String,
+        /// Events across every device's log.
+        events: u64,
+    },
+
+    /// The app ships no `sample/seed.jsonl`.
+    #[error("{slug}: no sample/seed.jsonl to load")]
+    NoSeed {
+        /// The app.
+        slug: String,
+    },
+
+    /// A seed line is not an event.
+    #[error("{path}: line {line}: {problem}")]
+    Seed {
+        /// The seed file.
+        path: PathBuf,
+        /// 1-based line.
+        line: usize,
+        /// What is wrong with it.
+        problem: String,
     },
 }
 
@@ -183,8 +219,10 @@ pub struct Maintenance {
 /// M2 completed steps 1 to 3 of that order — the tree and the keypair, the `_sys` log with
 /// its recovered `seq` and Lamport counter, and this node's two rows in it. M3 adds step 4,
 /// materializing `_sys` into the DuckDB schema `sys`; M4 makes that a three-tier restore.
-/// Step 5, loading `apps/`, belongs to M5: it comes after this returns and is not stubbed
-/// here.
+/// Step 5, loading `apps/`, is [`load_apps`](Self::load_apps): explicit rather than part
+/// of `open`, because embedded mode (`spec/app-contract.md §2.3`) opens a node and has no
+/// folders to scan, and because only the caller knows where a development checkout's
+/// bundled `apps/` is.
 #[derive(Debug)]
 pub struct Node {
     paths: Paths,
@@ -193,6 +231,9 @@ pub struct Node {
     sys: AppLog,
     store: Store,
     state: local::State,
+    /// Every loaded app, by slug (`app::App`). Owned here so a sealed store can be
+    /// dropped and reopened for its privileged window.
+    apps: BTreeMap<String, App>,
 }
 
 impl Node {
@@ -246,15 +287,14 @@ impl Node {
 
         // 6. Step 4 of §2.6: materialize `_sys`, by spec/protocol.md §5.3's three tiers.
         //    Everything above it had to happen first — the rows this replays are the ones
-        //    step 4 just wrote — and step 5, loading `apps/`, is M5's and is deliberately
-        //    absent.
+        //    step 4 just wrote — and step 5, loading `apps/`, is `load_apps`, which the
+        //    caller runs once this has returned.
         //
         //    The store is left **unsealed**. `spec/app-contract.md §7`'s sandbox is
         //    instance-wide rather than per-connection (see `store::Store`), so sealing
         //    here would cost the snapshot writer the privileged window it needs, and
-        //    nothing serves app SQL out of `_sys` in the first place. `Store::seal` is
-        //    implemented and tested; the app loader in M5 is its first caller, because M5
-        //    is where an app's store first exists.
+        //    nothing serves app SQL out of `_sys` in the first place. App stores are
+        //    sealed by the loader, and reopened for their windows (`app::Node::reopen_privileged`).
         let previous = state
             .get(sys::SLUG)
             .and_then(|record| record.materialized.restore.clone());
@@ -285,6 +325,7 @@ impl Node {
             sys,
             store,
             state,
+            apps: BTreeMap::new(),
         })
     }
 
@@ -296,6 +337,10 @@ impl Node {
     pub fn flush(&mut self) -> Result<()> {
         self.sys.save_to(&mut self.state);
         self.store.save_to(&mut self.state);
+        for app in self.apps.values() {
+            app.log().save_to(&mut self.state);
+            app.store().save_to(&mut self.state);
+        }
         self.state.flush()
     }
 
@@ -316,9 +361,23 @@ impl Node {
     }
 
     /// [`snapshot`](Self::snapshot) at a given instant, which is what names the snapshot.
+    ///
+    /// An app's store is sealed and `COPY … TO` is file I/O, so for an app this is the
+    /// privileged window of `spec/app-contract.md §7`: the sealed store is dropped, a
+    /// fresh one opened, the snapshot written, and the store sealed again — whether or not
+    /// the write succeeded. `_sys` is never sealed and needs none of that.
     pub fn snapshot_at(&mut self, app: &str, now: jiff::Timestamp) -> Result<Snapshot> {
         let dev = self.identity.id().clone();
-        let snapshot = self.store_for(app)?.snapshot(&dev, now).map_err(boxed)?;
+        let snapshot = if app == sys::SLUG {
+            self.store.snapshot(&dev, now).map_err(boxed)?
+        } else {
+            self.reopen_privileged(app)?;
+            let written = self.store_for(app)?.snapshot(&dev, now).map_err(boxed);
+            let resealed = self.reseal(app);
+            let snapshot = written?;
+            resealed?;
+            snapshot
+        };
         self.record_snapshot(&snapshot)?;
         Ok(snapshot)
     }
@@ -356,18 +415,35 @@ impl Node {
 
     /// Rebuild `app`'s cache by `spec/protocol.md §5.3`'s three tiers, reporting which one
     /// succeeded, and audit a fall-through (`spec/data-dictionary.md §3.10`).
+    ///
+    /// For an app this is the same privileged window [`snapshot_at`](Self::snapshot_at)
+    /// opens, closed again before this returns.
     pub fn restore(&mut self, app: &str) -> Result<Restored> {
         let previous = self.restore_record(app);
+        let is_app = app != sys::SLUG;
+        if is_app {
+            self.reopen_privileged(app)?;
+        }
         let restored = self
             .store_for_mut(app)?
             .restore(&store::cutoff_now())
-            .map_err(boxed)?;
-        if audit_restore(&mut self.sys, app, &restored, previous.as_ref(), false)?
-            && app == sys::SLUG
-        {
+            .map_err(boxed);
+        let restored = match restored {
+            Ok(restored) => restored,
+            Err(error) => {
+                if is_app {
+                    let _ = self.reseal(app);
+                }
+                return Err(error);
+            }
+        };
+        if audit_restore(&mut self.sys, app, &restored, previous.as_ref(), false)? && !is_app {
             self.store.refresh(&store::cutoff_now()).map_err(boxed)?;
         }
         note_health(&self.store, self.store_for(app)?, app)?;
+        if is_app {
+            self.reseal(app)?;
+        }
         self.flush()?;
         Ok(restored)
     }
@@ -512,14 +588,18 @@ impl Node {
         &mut self.store
     }
 
-    /// The store for `app`. Only `_sys` until M5 opens app stores.
+    /// The store for `app`: `_sys`'s, or a loaded app's (sealed, unless a privileged
+    /// window is open on it).
     fn store_for(&self, app: &str) -> Result<&Store> {
         if app == sys::SLUG {
             Ok(&self.store)
         } else {
-            Err(Error::AppNotLoaded {
-                slug: app.to_owned(),
-            })
+            self.apps
+                .get(app)
+                .map(App::store)
+                .ok_or_else(|| Error::AppNotLoaded {
+                    slug: app.to_owned(),
+                })
         }
     }
 
@@ -527,28 +607,36 @@ impl Node {
         if app == sys::SLUG {
             Ok(&mut self.store)
         } else {
-            Err(Error::AppNotLoaded {
-                slug: app.to_owned(),
-            })
+            self.apps
+                .get_mut(app)
+                .map(App::store_mut)
+                .ok_or_else(|| Error::AppNotLoaded {
+                    slug: app.to_owned(),
+                })
         }
     }
 
-    /// The highest `seq` per device in `app`'s log. Only `_sys` until M5.
+    /// The highest `seq` per device in `app`'s log.
     fn heads_for(&self, app: &str) -> Result<BTreeMap<String, u64>> {
         if app == sys::SLUG {
             Ok(self.sys.heads().clone())
         } else {
-            Err(Error::AppNotLoaded {
-                slug: app.to_owned(),
-            })
+            self.apps
+                .get(app)
+                .map(|loaded| loaded.log().heads().clone())
+                .ok_or_else(|| Error::AppNotLoaded {
+                    slug: app.to_owned(),
+                })
         }
     }
 
-    /// The restore record for `app`: the live store's for `_sys`, `local/state.jsonl`'s
-    /// for anything else.
+    /// The restore record for `app`: the live store's where one is open, and
+    /// `local/state.jsonl`'s for an app this node materialized on some earlier run.
     fn restore_record(&self, app: &str) -> Option<RestoreRecord> {
         if app == sys::SLUG {
             self.store.restore_record().cloned()
+        } else if let Some(loaded) = self.apps.get(app) {
+            loaded.store().restore_record().cloned()
         } else {
             self.state
                 .get(app)

@@ -10,9 +10,9 @@
 #           removed, so a Windows working tree and a Linux one agree.
 
 [hashes]
-"spec/app-contract.md" = "104bbb3a4d3c442324c8b0393cf475dbecfb37ea564ecc4276fc7f35403907c8"
+"spec/app-contract.md" = "1d417cf255cd55c68d7f09606d1c9a42268c6712df9ba668b58d2c3dbe7f51bd"
 "spec/cli.md" = "c88391c60d9e4c704e9df723a43c406846bf16ec5f8be9ef12e4d0f8d9823335"
 "spec/data-api.md" = "58c8a261216b01794ec01e1347a33d5c54d20edcd55b2c281611b959b79252fa"
-"spec/data-dictionary.md" = "91449cc997a98f56046d03aa9311d643ae4483cdd7a40c55f7b28e969c90bacf"
+"spec/data-dictionary.md" = "6eb0a9eef5c899ec6a20d38204dca0f267f8d634d17a881bf4df087dce13516a"
 "spec/lua-api.md" = "c12e62396c44f4feada55b2c83a1f0861bee181545a5c897d7db89f3b975b036"
-"spec/protocol.md" = "a96d5587498a382d4b2dbf74ea3948cc7f9dac5947801270cac9c1f7f4ca9bcb"
+"spec/protocol.md" = "ac17be57c2bc228752793d386e16749f84aad6398bb425c52acab2e0bbe6a931"
