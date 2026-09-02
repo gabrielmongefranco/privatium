@@ -1,6 +1,6 @@
 # Project:  Privatium™  |  File: Cargo.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-08-31  |  Modified: 2026-09-01
+# Created:  2026-08-31  |  Modified: 2026-09-02
 # Summary:  Workspace root. Three crates per docs/plans/phase-1.md §4, one pinned
 #           dependency table, and the MSRV every member inherits.
 
@@ -97,3 +97,13 @@ tempfile = "3.27.0"
 lto           = "thin"
 codegen-units = 1
 strip         = "debuginfo"
+
+# libduckdb-sys compiles DuckDB's C++ with whatever profile cargo hands its build script:
+# `cc` takes OPT_LEVEL from the environment and the script reads DEBUG itself
+# (build_bundled_cc.rs), so the dev profile's -O0 plus debug info made every feature-set
+# variant a ~5 GB build directory that cargo never removes — target/ reached 90 GB during
+# M4 and filled the disk. This overrides only that package and only in dev.
+# [profile.release] above is untouched, so the shipped binary is unaffected.
+[profile.dev.package.libduckdb-sys]
+opt-level = 3
+debug     = false

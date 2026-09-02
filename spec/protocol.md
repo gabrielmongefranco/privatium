@@ -1032,6 +1032,10 @@ A node MAY host a Tor onion service in-process via `arti-client` with the
 - Minor additions MUST be backward compatible by §4.2 (preserve unknown fields).
 - `app.api` in an app manifest declares the framework API the app was written against. A
   node MUST refuse to load an app declaring a higher `api` than it implements.
+- `api` names the version of `spec/app-contract.md` — its `api = 1` — and MUST be a
+  positive integer. A build that speaks `pv/1` implements `api = 1` whether or not it
+  satisfies every item of §13; the qualifier `spec/cli.md §1` puts on `--version` is a
+  statement about conformance, not about which contract an app may target.
 
 ---
 

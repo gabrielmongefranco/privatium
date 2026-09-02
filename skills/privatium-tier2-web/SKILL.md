@@ -10,7 +10,7 @@ encryption. `web/index.html` is served at the app's mount point. Nothing is inje
 
 ```
 apps/<slug>/
-├── app.toml          tier = "custom"
+├── app.toml          tier = "web"
 ├── web/
 │   ├── index.html
 │   ├── app.js

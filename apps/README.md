@@ -39,6 +39,10 @@ survives upgrades. The framework loads both and records the origin in `sys_app.s
 cp -r apps/hello ~/.local/share/privatium/apps/myapp
 ```
 
+then set `slug = "myapp"` (and the title) in the copy's `app.toml`: the loader refuses a
+folder whose name and slug differ (`spec/app-contract.md §3.1`). `privatium new myapp
+--from hello` does the copy and the rewrite in one step.
+
 ## The first real application
 
 The medication fill and prior-authorization tracker that motivated this framework will

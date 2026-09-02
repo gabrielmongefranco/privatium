@@ -1,14 +1,16 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/common/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-02  |  Modified: 2026-09-02
-// Summary:  What tests/store.rs and tests/snapshot.rs share: a node plus one app store,
-//           the event line of spec/protocol.md §4.1 spelled by hand, `echo >>`, and the
-//           digests the §2.5 comparisons are made with.
+// Summary:  What tests/store.rs, tests/snapshot.rs and tests/apps.rs share: a node plus
+//           one app store, the event line of spec/protocol.md §4.1 spelled by hand,
+//           `echo >>`, the digests the §2.5 comparisons are made with, app folders written
+//           into a data root, and the sys tables read back as JSON.
 
 // AGENTS.md, Style: unwrap() is permitted in tests. Each test binary uses a different
 // subset of these helpers, so the unused ones are not a finding.
 #![allow(clippy::unwrap_used, clippy::expect_used, dead_code)]
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -17,6 +19,8 @@ use privatium_core::Node;
 use privatium_core::local::State;
 use privatium_core::log::{AppLog, Durability};
 use privatium_core::store::{self, Restored, Snapshot, Store};
+use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 /// An ordinary app, so these tests exercise the path an app author gets rather than a
 /// special case reserved for `_sys`.
@@ -238,4 +242,148 @@ pub fn flip_byte(path: &Path) {
     let middle = bytes.len() / 2;
     bytes[middle] ^= 0xFF;
     fs::write(path, bytes).unwrap();
+}
+
+// ---------------------------------------------------------------------------------------
+// App folders (tests/apps.rs)
+// ---------------------------------------------------------------------------------------
+
+/// The repository's `apps/` — the three reference apps, loaded as `bundled`.
+pub fn repo_apps_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("apps")
+}
+
+/// The smallest valid Tier 1 manifest for `slug` (`spec/app-contract.md §3`).
+pub fn lua_manifest(slug: &str) -> String {
+    format!(
+        "[app]\nslug = \"{slug}\"\ntitle = \"{slug}\"\nversion = \"1.0.0\"\napi = 1\ntier = \"lua\"\n"
+    )
+}
+
+/// Write an app folder under `apps_dir/<folder>/`: `app.toml` if given, plus `files` as
+/// `(relative path, contents)`. Returns the folder.
+pub fn write_app(
+    apps_dir: &Path,
+    folder: &str,
+    toml: Option<&str>,
+    files: &[(&str, &str)],
+) -> PathBuf {
+    let dir = apps_dir.join(folder);
+    fs::create_dir_all(&dir).unwrap();
+    if let Some(toml) = toml {
+        fs::write(dir.join("app.toml"), toml).unwrap();
+    }
+    for (name, contents) in files {
+        let path = dir.join(name);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, contents).unwrap();
+    }
+    dir
+}
+
+/// A loadable Tier 1 app: the manifest and an empty `app.lua`, plus `files`.
+pub fn write_lua_app(apps_dir: &Path, slug: &str, files: &[(&str, &str)]) -> PathBuf {
+    let mut all: Vec<(&str, &str)> = vec![("app.lua", "")];
+    all.extend_from_slice(files);
+    write_app(apps_dir, slug, Some(&lua_manifest(slug)), &all)
+}
+
+/// SHA-256, lowercase hex — what `sys_app.schema_hash` and `manifest_hash` hold.
+pub fn sha256_hex(text: &str) -> String {
+    Sha256::digest(text.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// One `sys.<table>` row as JSON, keyed by `id`, after the caller has refreshed `_sys`.
+pub fn sys_row(node: &Node, table: &str, id: &str) -> Option<Value> {
+    let sql = format!("SELECT to_json(t) FROM sys.{table} t WHERE id = ?");
+    let text: Option<String> = node
+        .store()
+        .conn()
+        .query_row(&sql, duckdb::params![id], |row| row.get(0))
+        .ok();
+    text.map(|t| serde_json::from_str(&t).unwrap())
+}
+
+/// The `sys_app` row for `slug`.
+pub fn sys_app_row(node: &Node, slug: &str) -> Option<Value> {
+    sys_row(node, "sys_app", slug)
+}
+
+/// Every `sys_audit` row of one kind, oldest first, as JSON.
+pub fn audit_rows(node: &Node, kind: &str) -> Vec<Value> {
+    let mut statement = node
+        .store()
+        .conn()
+        .prepare("SELECT to_json(t) FROM sys.sys_audit t WHERE kind = ? ORDER BY \"at\", id")
+        .unwrap();
+    statement
+        .query_map(duckdb::params![kind], |row| row.get::<_, String>(0))
+        .unwrap()
+        .map(|r| serde_json::from_str(&r.unwrap()).unwrap())
+        .collect()
+}
+
+/// A log file's lines, parsed.
+pub fn log_lines(path: &Path) -> Vec<Value> {
+    fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
+}
+
+/// This node's `_sys` log, parsed.
+pub fn sys_lines(node: &Node) -> Vec<Value> {
+    log_lines(&node.paths().app_log("_sys", node.id()))
+}
+
+/// The names directly inside `dir`.
+pub fn files_in(dir: &Path) -> BTreeSet<String> {
+    fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect()
+}
+
+/// Every path below `root`, relative and slash-separated, directories with a trailing `/`
+/// — the exhaustive shape `test_spec_3_layout_created` asserts.
+pub fn tree(root: &Path) -> BTreeSet<String> {
+    fn walk(base: &Path, dir: &Path, into: &mut BTreeSet<String>) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            let relative = path
+                .strip_prefix(base)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            if entry.file_type().unwrap().is_dir() {
+                into.insert(format!("{relative}/"));
+                walk(base, &path, into);
+            } else {
+                into.insert(relative);
+            }
+        }
+    }
+    let mut found = BTreeSet::new();
+    walk(root, root, &mut found);
+    found
+}
+
+/// A deterministic fingerprint of a table's contents through a sandboxed connection.
+pub fn digest_via(conn: &duckdb::Connection, table: &str) -> String {
+    conn.query_row(
+        &format!(
+            "SELECT coalesce(md5(string_agg(t::VARCHAR, '|' ORDER BY t.id)), 'empty') FROM \"{table}\" t"
+        ),
+        [],
+        |row| row.get::<_, String>(0),
+    )
+    .unwrap()
 }

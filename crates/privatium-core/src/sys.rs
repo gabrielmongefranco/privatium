@@ -4,7 +4,7 @@
 // Summary:  The framework's own tables (spec/data-dictionary.md §3), written through the
 //           same event log apps use. M1 writes two rows: this node's sys_device entry and
 //           its sys_node singleton. M2 adds sys_audit; M4 adds sys_snapshot and the
-//           snapshot and restore audit kinds.
+//           snapshot and restore audit kinds; M5 adds sys_app and the app.* kinds.
 
 use serde::Serialize;
 
@@ -30,6 +30,20 @@ pub const SNAPSHOT: &str = "sys_snapshot";
 
 /// `sys_setting` (`spec/data-dictionary.md §3.6`).
 pub const SETTING: &str = "sys_setting";
+
+/// `sys_app` (`spec/data-dictionary.md §3.4`) — the app index. One row per app folder
+/// the node knows about, keyed by slug.
+pub const APP: &str = "sys_app";
+
+/// `sys_app.last_error` for a row whose folder is gone (`§3.4`, rules). The row and the
+/// app's data stay.
+pub const FOLDER_MISSING: &str = "folder missing";
+
+/// An app folder was refused (`spec/app-contract.md §3.1`: "MUST record `app.load_failed`").
+pub const KIND_APP_LOAD_FAILED: &str = "app.load_failed";
+
+/// An app loaded cleanly for the first time on this index.
+pub const KIND_APP_INSTALLED: &str = "app.installed";
 
 /// An event was refused on ingest. `spec/protocol.md §4.4` requires the rejection to be
 /// recorded, and this is the `kind` `§3.10` already reserves for it.
@@ -289,12 +303,120 @@ impl<'a> SnapshotRow<'a> {
     }
 }
 
+/// The `d` of a `sys_app` row (`spec/data-dictionary.md §3.4`). `id` is the envelope's
+/// and is the slug — a caller-chosen key (`spec/protocol.md §4.1`), so every load that
+/// changes something is a `put` amending one row.
+///
+/// Every column, in the dictionary's order, owned rather than borrowed because the loader
+/// reads the current row back out of the cache and compares it with the one it would
+/// write. `api` and `nav_order` are `INTEGER`, a type `§2.1`'s table does not list; they
+/// fit a double exactly and cross as JSON numbers. A NULL is an omitted key.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct AppRow {
+    /// `title`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// `version`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// `api`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub api: Option<i32>,
+    /// `tier`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tier: Option<String>,
+    /// `icon`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    /// `source`: `local` or `bundled`.
+    pub source: String,
+    /// `enabled`. The owner's; carried forward across loads.
+    pub enabled: bool,
+    /// `nav_order`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nav_order: Option<i32>,
+    /// `installed_at`: when the app first loaded cleanly. NULL while it never has.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub installed_at: Option<String>,
+    /// `updated_at`: when this row was written.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+    /// `schema_hash`: SHA-256 of `schema.sql`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schema_hash: Option<String>,
+    /// `manifest_hash`: SHA-256 of `app.toml`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manifest_hash: Option<String>,
+    /// `advertise`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub advertise: Option<bool>,
+    /// `permissions`: JSON text of the non-default permissions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<String>,
+    /// `last_error`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+}
+
+impl AppRow {
+    /// Whether two rows say the same thing about an app, `updated_at` aside — the test
+    /// for whether a load has anything to append.
+    #[must_use]
+    pub fn same_facts(&self, other: &Self) -> bool {
+        let a = Self {
+            updated_at: None,
+            ..self.clone()
+        };
+        let b = Self {
+            updated_at: None,
+            ..other.clone()
+        };
+        a == b
+    }
+}
+
 // AGENTS.md, Style: unwrap() is permitted in tests. The crate-level deny reaches unit
 // tests inside src/, so each one opts out where it is declared.
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `§3.4`, every column present when known; `§2.1`, NULL as an omitted key.
+    #[test]
+    fn the_app_row_carries_every_column_and_omits_nulls() {
+        let row = AppRow {
+            title: Some("Hello".into()),
+            version: Some("1.0.0".into()),
+            api: Some(1),
+            tier: Some("lua".into()),
+            icon: None,
+            source: "bundled".into(),
+            enabled: true,
+            nav_order: Some(10),
+            installed_at: Some("2026-09-02T00:00:00.000Z".into()),
+            updated_at: Some("2026-09-02T00:00:00.000Z".into()),
+            schema_hash: Some("s".into()),
+            manifest_hash: Some("m".into()),
+            advertise: Some(true),
+            permissions: Some("{}".into()),
+            last_error: None,
+        };
+        assert_eq!(
+            serde_json::to_string(&row).unwrap(),
+            r#"{"title":"Hello","version":"1.0.0","api":1,"tier":"lua","source":"bundled","enabled":true,"nav_order":10,"installed_at":"2026-09-02T00:00:00.000Z","updated_at":"2026-09-02T00:00:00.000Z","schema_hash":"s","manifest_hash":"m","advertise":true,"permissions":"{}"}"#
+        );
+        let later = AppRow {
+            updated_at: Some("2026-09-03T00:00:00.000Z".into()),
+            ..row.clone()
+        };
+        assert!(row.same_facts(&later));
+        let changed = AppRow {
+            last_error: Some("x".into()),
+            ..row.clone()
+        };
+        assert!(!row.same_facts(&changed));
+    }
 
     /// A NULL column is an absent key, not `"key": null`. Both are legal
     /// (`spec/data-dictionary.md §2.1`); this pins which one is emitted, because the log

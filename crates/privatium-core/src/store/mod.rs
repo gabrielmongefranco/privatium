@@ -185,10 +185,16 @@ impl Store {
         } else {
             Schema::parse(ddl)?
         };
-        Self::with_schema(paths, slug, schema)
+        Self::open_with(paths, slug, schema)
     }
 
-    fn with_schema(paths: &Paths, slug: &str, schema: Schema) -> Result<Self, StoreError> {
+    /// [`open`](Self::open) with a `schema.sql` that has already been parsed.
+    ///
+    /// The app loader parses the schema once, early, so a broken `schema.sql` is refused
+    /// before a log is opened; parsing it again here would spin up a second in-memory
+    /// instance for nothing. The same call is what reopens a sealed store for its
+    /// privileged window (`spec/app-contract.md §7`).
+    pub fn open_with(paths: &Paths, slug: &str, schema: Schema) -> Result<Self, StoreError> {
         let path = paths.app_cache_db(slug);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|source| StoreError::Schema {
@@ -277,12 +283,21 @@ impl Store {
     ///
     /// Returns whether it rebuilt.
     pub fn refresh(&mut self, cutoff: &str) -> Result<bool, StoreError> {
-        let current = self.take_inputs()?;
-        if current.same_inputs(&self.watermark) && !self.watermark.schema_hash.is_empty() {
+        if !self.is_stale()? {
             return Ok(false);
         }
         self.restore(cutoff)?;
         Ok(true)
+    }
+
+    /// Whether [`refresh`](Self::refresh) would rebuild: the log or `schema.sql` has moved
+    /// since the tables were built, or nothing has been built yet.
+    ///
+    /// A stat, no DuckDB — so it is answerable on a sealed store, which is what lets the
+    /// loader decide whether an app needs its privileged window reopened at all.
+    pub fn is_stale(&self) -> Result<bool, StoreError> {
+        let current = self.take_inputs()?;
+        Ok(!current.same_inputs(&self.watermark) || self.watermark.schema_hash.is_empty())
     }
 
     /// Apply one event this node just appended, without replaying the log.
