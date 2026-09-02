@@ -1,0 +1,1222 @@
+// Project:  Privatium™  |  File: crates/privatium-core/tests/store.rs
+// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+// Created:  2026-09-01  |  Modified: 2026-09-01
+// Summary:  Materialization against spec/protocol.md §4.5 and §4.6 — last-write-wins at row
+//           granularity, tombstones, the §4.4 horizon, the §2.1 encodings, a cache that can
+//           be deleted, and a log anyone may append to by hand.
+
+// AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
+// behind `?` is worse than one that panics with a line number.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
+use std::fs;
+use std::io::Write as _;
+use std::path::{Path, PathBuf};
+
+use privatium_core::Node;
+use privatium_core::local::State;
+use privatium_core::log::{AppLog, Durability};
+use privatium_core::store::{self, Store};
+
+/// An ordinary app, so these tests exercise the path an app author gets rather than a
+/// special case reserved for `_sys`.
+const APP: &str = "hello";
+
+/// `apps/hello/schema.sql`, near enough — one table, one column.
+const HELLO_DDL: &str = "CREATE TABLE profile (
+     id           VARCHAR PRIMARY KEY,
+     display_name VARCHAR NOT NULL
+ );";
+
+/// A schema exercising every row of `spec/data-dictionary.md §2.1`.
+const TYPED_DDL: &str = "CREATE TABLE thing (
+     id           VARCHAR PRIMARY KEY,
+     name         VARCHAR,
+     copay_amount DECIMAL(18,2),
+     count        BIGINT,
+     ok           BOOLEAN,
+     filled_on    DATE,
+     seen_at      TIMESTAMPTZ,
+     tags         VARCHAR[]
+ );";
+
+/// A node plus a store over one app, which is what M5 will assemble for real.
+struct Fixture {
+    root: tempfile::TempDir,
+    node: Node,
+    store: Store,
+    dev: String,
+}
+
+impl Fixture {
+    fn open(ddl: &str) -> Self {
+        let root = tempfile::tempdir().unwrap();
+        Self::open_in(root, ddl)
+    }
+
+    fn open_in(root: tempfile::TempDir, ddl: &str) -> Self {
+        let node = Node::open(root.path()).unwrap();
+        let dev = node.id().as_str().to_owned();
+        // The app's log directory has to exist before the store globs it.
+        let state = State::load(&node.paths().local_state()).unwrap();
+        let (_log, _) = AppLog::open(node.paths(), APP, node.id(), Durability::Os, &state).unwrap();
+        let mut store = Store::open(node.paths(), APP, ddl).unwrap();
+        store.materialize(&store::cutoff_now()).unwrap();
+        Self {
+            root,
+            node,
+            store,
+            dev,
+        }
+    }
+
+    /// Reopen the store the way a restart would, keeping the same data root.
+    ///
+    /// The store is dropped explicitly and first: DuckDB holds an exclusive lock on
+    /// `cache/<slug>.duckdb`, so opening the replacement before releasing it fails with
+    /// "being used by another process".
+    fn reopen(self, ddl: &str) -> Self {
+        let Fixture {
+            root, node, store, ..
+        } = self;
+        drop(store);
+        drop(node);
+        Self::open_in(root, ddl)
+    }
+
+    fn log_path(&self) -> PathBuf {
+        self.node.paths().app_log(APP, self.node.id())
+    }
+
+    fn append(&self, line: &str) {
+        hand_append(&self.log_path(), line, "\n");
+    }
+
+    fn rematerialize(&mut self) {
+        self.store.materialize(&store::cutoff_now()).unwrap();
+    }
+
+    /// One column of one row, as a string. `<NULL>` where the row exists but the value is
+    /// NULL; `<MISSING>` where there is no row at all.
+    fn cell(&self, table: &str, id: &str, column: &str) -> String {
+        let sql = format!(
+            "SELECT coalesce(CAST(\"{column}\" AS VARCHAR), '<NULL>') FROM \"{table}\" WHERE id = ?"
+        );
+        self.store
+            .conn()
+            .query_row(&sql, duckdb::params![id], |row| row.get::<_, String>(0))
+            .unwrap_or_else(|_| "<MISSING>".to_owned())
+    }
+
+    fn count(&self, table: &str) -> i64 {
+        self.store
+            .conn()
+            .query_row(&format!("SELECT count(*) FROM \"{table}\""), [], |row| {
+                row.get(0)
+            })
+            .unwrap()
+    }
+
+    /// A deterministic fingerprint of a table's whole contents.
+    fn digest(&self, table: &str) -> String {
+        self.store
+            .conn()
+            .query_row(
+                &format!(
+                    "SELECT coalesce(md5(string_agg(t::VARCHAR, '|' ORDER BY t.id)), 'empty')
+                     FROM \"{table}\" t"
+                ),
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .unwrap()
+    }
+}
+
+/// Append a line by hand, exactly as `apps/hello/README.md` blesses `echo >>`.
+fn hand_append(path: &Path, line: &str, terminator: &str) {
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .unwrap();
+    file.write_all(line.as_bytes()).unwrap();
+    file.write_all(terminator.as_bytes()).unwrap();
+}
+
+/// One event line, spelled the way `spec/protocol.md §4.1` spells one.
+fn event(seq: u64, lam: u64, ts: &str, dev: &str, tbl: &str, id: &str, d: Option<&str>) -> String {
+    match d {
+        Some(d) => format!(
+            r#"{{"seq":{seq},"lam":{lam},"ts":"{ts}","dev":"{dev}","app":"{APP}","op":"put","tbl":"{tbl}","id":"{id}","d":{d}}}"#
+        ),
+        // §4.1: `d` MUST be absent on a del — not null, not `{}`.
+        None => format!(
+            r#"{{"seq":{seq},"lam":{lam},"ts":"{ts}","dev":"{dev}","app":"{APP}","op":"del","tbl":"{tbl}","id":"{id}"}}"#
+        ),
+    }
+}
+
+/// An RFC 3339 UTC timestamp offset from now, to the millisecond (`§4.1`).
+fn ts_offset_secs(seconds: i64) -> String {
+    privatium_core::log::format_ts(
+        jiff::Timestamp::now() + jiff::SignedDuration::from_secs(seconds),
+    )
+}
+
+// ---------------------------------------------------------------------------------------
+// §4.5 — replay and merge
+// ---------------------------------------------------------------------------------------
+
+/// `spec/protocol.md §4.5` step 3 — order by `(lam, ts, dev)` ascending, take the last.
+///
+/// Three writers on one `id`, arranged so that each key in turn is the one that decides:
+/// a higher `lam` beats a lower one whatever its `ts`; equal `lam` falls to `ts`; equal
+/// `lam` and `ts` fall to `dev`, which `§4.5` says is a deterministic tie-break carrying no
+/// meaning. A materializer that ordered by `ts` first would pass the first case and fail
+/// the second.
+#[test]
+fn test_spec_4_5_lww_by_lam_ts_dev() {
+    let fixture = Fixture::open(HELLO_DDL);
+    let early = ts_offset_secs(-600);
+    let late = ts_offset_secs(-60);
+
+    // `lam` decides, even though the loser is later in wall-clock time.
+    fixture.append(&event(
+        1,
+        9,
+        &late,
+        "aaaaaaaa",
+        "profile",
+        "by-lam",
+        Some(r#"{"display_name":"loser"}"#),
+    ));
+    fixture.append(&event(
+        2,
+        10,
+        &early,
+        "aaaaaaaa",
+        "profile",
+        "by-lam",
+        Some(r#"{"display_name":"winner"}"#),
+    ));
+
+    // `lam` ties, so `ts` decides.
+    fixture.append(&event(
+        3,
+        5,
+        &early,
+        "aaaaaaaa",
+        "profile",
+        "by-ts",
+        Some(r#"{"display_name":"loser"}"#),
+    ));
+    fixture.append(&event(
+        4,
+        5,
+        &late,
+        "aaaaaaaa",
+        "profile",
+        "by-ts",
+        Some(r#"{"display_name":"winner"}"#),
+    ));
+
+    // `lam` and `ts` both tie, so `dev` decides — lexicographically, highest wins.
+    fixture.append(&event(
+        5,
+        7,
+        &early,
+        "aaaaaaaa",
+        "profile",
+        "by-dev",
+        Some(r#"{"display_name":"loser"}"#),
+    ));
+    let other = fixture.log_path().with_file_name("zzzzzzzz.jsonl");
+    hand_append(
+        &other,
+        &event(
+            1,
+            7,
+            &early,
+            "zzzzzzzz",
+            "profile",
+            "by-dev",
+            Some(r#"{"display_name":"winner"}"#),
+        ),
+        "\n",
+    );
+
+    let mut fixture = fixture;
+    fixture.rematerialize();
+
+    assert_eq!(fixture.cell("profile", "by-lam", "display_name"), "winner");
+    assert_eq!(fixture.cell("profile", "by-ts", "display_name"), "winner");
+    assert_eq!(fixture.cell("profile", "by-dev", "display_name"), "winner");
+}
+
+/// `§4.5` — last-write-wins is at **row** granularity, not field granularity.
+///
+/// The second event omits a column the first supplied. The row is replaced by the later
+/// `d`, so the omitted column is NULL; it is not merged forward. An app needing field-level
+/// merge must model each field as its own row, and this is the assertion that keeps that
+/// true.
+#[test]
+fn test_spec_4_5_row_granularity_not_field() {
+    let ddl = "CREATE TABLE profile (
+        id           VARCHAR PRIMARY KEY,
+        display_name VARCHAR,
+        nickname     VARCHAR
+    );";
+    let mut fixture = Fixture::open(ddl);
+    let ts = ts_offset_secs(-60);
+
+    fixture.append(&event(
+        1,
+        1,
+        &ts,
+        &fixture.dev.clone(),
+        "profile",
+        "r",
+        Some(r#"{"display_name":"Gabriel","nickname":"Gabe"}"#),
+    ));
+    fixture.append(&event(
+        2,
+        2,
+        &ts,
+        &fixture.dev.clone(),
+        "profile",
+        "r",
+        Some(r#"{"display_name":"Gabriel"}"#),
+    ));
+    fixture.rematerialize();
+
+    assert_eq!(fixture.cell("profile", "r", "display_name"), "Gabriel");
+    assert_eq!(
+        fixture.cell("profile", "r", "nickname"),
+        "<NULL>",
+        "§4.5 is row-granularity; the earlier field must not survive the later event"
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// §4.6 — deletion
+// ---------------------------------------------------------------------------------------
+
+/// `§4.6` — `op: "del"` writes a tombstone and the row does not exist.
+#[test]
+fn test_spec_4_6_tombstone_removes_row() {
+    let mut fixture = Fixture::open(HELLO_DDL);
+    let ts = ts_offset_secs(-60);
+    let dev = fixture.dev.clone();
+
+    fixture.append(&event(
+        1,
+        1,
+        &ts,
+        &dev,
+        "profile",
+        "gone",
+        Some(r#"{"display_name":"Gabriel"}"#),
+    ));
+    fixture.append(&event(
+        2,
+        2,
+        &ts,
+        &dev,
+        "profile",
+        "stays",
+        Some(r#"{"display_name":"Ada"}"#),
+    ));
+    fixture.append(&event(3, 3, &ts, &dev, "profile", "gone", None));
+    fixture.rematerialize();
+
+    assert_eq!(fixture.cell("profile", "gone", "display_name"), "<MISSING>");
+    assert_eq!(fixture.cell("profile", "stays", "display_name"), "Ada");
+    assert_eq!(fixture.count("profile"), 1);
+
+    // The tombstone is remembered, which is what the §4.6 rule below is enforced from.
+    assert!(fixture.store.is_tombstoned("profile", "gone").unwrap());
+    assert!(!fixture.store.is_tombstoned("profile", "stays").unwrap());
+}
+
+/// `§4.6` — a deleted `id` MUST NOT be reused, narrowed to what it protects.
+///
+/// The rule as written forbids a reference app: `apps/animals` deletes and recreates its
+/// `'cursor'` singleton every round (`app.lua:113`, `:129` against `:51`, `:62`), and
+/// `§4.1` explicitly blesses that key. So `§4.6` is about **minted** ids — a ULID that
+/// belonged to one row must not become the key of a different one — and this PR amends the
+/// spec to say so.
+///
+/// Three halves, and the split matters:
+///
+/// 1. The materializer **reports** the tombstone. That is the fact M9's data API refuses
+///    on, since `spec/data-api.md §2` already restricts client-supplied ids to ULIDs, and
+///    a browser is the only caller `§4.1` does not trust to choose a row key.
+/// 2. A caller-supplied stable key may be re-asserted after a tombstone; the row returns.
+/// 3. A hand-appended `put` after a `del` materializes per `§4.5`, because the materializer
+///    follows `§4.5` and does not invent a rule of its own. Enforcement belongs on the
+///    write path, and `§4.1` says a reader must not reject what it finds in a log.
+#[test]
+fn test_spec_4_6_deleted_id_not_reusable() {
+    let mut fixture = Fixture::open(HELLO_DDL);
+    let ts = ts_offset_secs(-60);
+    let dev = fixture.dev.clone();
+    let ulid = "01J9YQ2W7C8XKF3M0N5RTVB6ZP";
+
+    // 1. A minted ULID, deleted. The tombstone is the fact M9 will refuse on.
+    fixture.append(&event(
+        1,
+        1,
+        &ts,
+        &dev,
+        "profile",
+        ulid,
+        Some(r#"{"display_name":"Gabriel"}"#),
+    ));
+    fixture.append(&event(2, 2, &ts, &dev, "profile", ulid, None));
+    fixture.rematerialize();
+    assert!(
+        fixture.store.is_tombstoned("profile", ulid).unwrap(),
+        "a deleted ULID must be reportable, or nothing can enforce §4.6"
+    );
+
+    // 2. A caller-supplied stable key. `apps/animals` does this every round, and it must
+    //    keep working: the row comes back.
+    fixture.append(&event(
+        3,
+        3,
+        &ts,
+        &dev,
+        "profile",
+        "cursor",
+        Some(r#"{"display_name":"round one"}"#),
+    ));
+    fixture.append(&event(4, 4, &ts, &dev, "profile", "cursor", None));
+    fixture.append(&event(
+        5,
+        5,
+        &ts,
+        &dev,
+        "profile",
+        "cursor",
+        Some(r#"{"display_name":"round two"}"#),
+    ));
+    fixture.rematerialize();
+    assert_eq!(
+        fixture.cell("profile", "cursor", "display_name"),
+        "round two"
+    );
+    assert!(
+        !fixture.store.is_tombstoned("profile", "cursor").unwrap(),
+        "a re-asserted key is no longer tombstoned"
+    );
+
+    // 3. §4.5 decides what a log says, even where §4.6 says the writer should not have.
+    fixture.append(&event(
+        6,
+        6,
+        &ts,
+        &dev,
+        "profile",
+        ulid,
+        Some(r#"{"display_name":"resurrected"}"#),
+    ));
+    fixture.rematerialize();
+    assert_eq!(
+        fixture.cell("profile", ulid, "display_name"),
+        "resurrected",
+        "the materializer follows §4.5; §4.6 is enforced on the write path"
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// §3.1 — the cache is disposable
+// ---------------------------------------------------------------------------------------
+
+/// `§3.1` and `§13`'s first conformance line — deleting `cache/` loses zero data.
+///
+/// `local/` goes too, because `§3` says it is not required for restore and `AGENTS.md`
+/// says never to sync it: a node restored from a correct backup has neither. What comes
+/// back must be identical, not merely similar, so the comparison is a digest of the whole
+/// table rather than a row count.
+#[test]
+fn test_spec_3_1_delete_cache_loses_nothing() {
+    let mut fixture = Fixture::open(HELLO_DDL);
+    let ts = ts_offset_secs(-60);
+    let dev = fixture.dev.clone();
+
+    fixture.append(&event(
+        1,
+        1,
+        &ts,
+        &dev,
+        "profile",
+        "a",
+        Some(r#"{"display_name":"Gabriel"}"#),
+    ));
+    fixture.append(&event(
+        2,
+        2,
+        &ts,
+        &dev,
+        "profile",
+        "b",
+        Some(r#"{"display_name":"Ada"}"#),
+    ));
+    fixture.append(&event(
+        3,
+        3,
+        &ts,
+        &dev,
+        "profile",
+        "a",
+        Some(r#"{"display_name":"Amended"}"#),
+    ));
+    fixture.append(&event(4, 4, &ts, &dev, "profile", "b", None));
+    fixture.rematerialize();
+
+    let before = fixture.digest("profile");
+    let rows = fixture.count("profile");
+    assert_eq!(rows, 1);
+
+    // Release DuckDB's lock on the cache without dropping the `TempDir`, which would take
+    // the whole data root — including the logs this test is about — with it.
+    let Fixture {
+        root, node, store, ..
+    } = fixture;
+    drop(store);
+    drop(node);
+
+    fs::remove_dir_all(root.path().join("cache")).unwrap();
+    fs::remove_dir_all(root.path().join("local")).unwrap();
+    assert!(!root.path().join("cache").exists());
+    assert!(
+        root.path().join("data").join(APP).join("log").exists(),
+        "the log must survive"
+    );
+
+    let node = Node::open(root.path()).unwrap();
+    let state = State::load(&node.paths().local_state()).unwrap();
+    let (_log, _) = AppLog::open(node.paths(), APP, node.id(), Durability::Os, &state).unwrap();
+    let mut store = Store::open(node.paths(), APP, HELLO_DDL).unwrap();
+    store.materialize(&store::cutoff_now()).unwrap();
+
+    let after: String = store
+        .conn()
+        .query_row(
+            "SELECT coalesce(md5(string_agg(t::VARCHAR, '|' ORDER BY t.id)), 'empty') FROM profile t",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        after, before,
+        "the rebuilt table differs from the one deleted"
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// §2.1 — the JSON encodings
+// ---------------------------------------------------------------------------------------
+
+/// `spec/data-dictionary.md §2.1` — `DECIMAL` crosses as a **string**, and arrives exact.
+///
+/// This is the reason DuckDB was chosen over SQLite (`docs/decisions/0001 §3`). The second
+/// half is the one that would rot silently: a client that wrongly sent a JSON *number* must
+/// still land exactly, because `json_extract_string` hands back the number's own text and
+/// `VARCHAR → DECIMAL` parses it rather than routing it through a double.
+#[test]
+fn test_decimal_arrives_as_string() {
+    let mut fixture = Fixture::open(TYPED_DDL);
+    let ts = ts_offset_secs(-60);
+    let dev = fixture.dev.clone();
+
+    fixture.append(&event(
+        1,
+        1,
+        &ts,
+        &dev,
+        "thing",
+        "s",
+        Some(r#"{"copay_amount":"12.34"}"#),
+    ));
+    fixture.append(&event(
+        2,
+        2,
+        &ts,
+        &dev,
+        "thing",
+        "n",
+        Some(r#"{"copay_amount":12.34}"#),
+    ));
+    fixture.append(&event(
+        3,
+        3,
+        &ts,
+        &dev,
+        "thing",
+        "big",
+        Some(r#"{"copay_amount":"99999999999.99"}"#),
+    ));
+    fixture.rematerialize();
+
+    assert_eq!(fixture.cell("thing", "s", "copay_amount"), "12.34");
+    assert_eq!(
+        fixture.cell("thing", "n", "copay_amount"),
+        "12.34",
+        "a JSON number must not round-trip through a double"
+    );
+    assert_eq!(
+        fixture.cell("thing", "big", "copay_amount"),
+        "99999999999.99"
+    );
+
+    // Exact arithmetic, which a float would report as 0.30000000000000004.
+    let sum: String = fixture
+        .store
+        .conn()
+        .query_row(
+            "SELECT CAST(sum(copay_amount) AS VARCHAR) FROM thing WHERE id IN ('s','n')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(sum, "24.68");
+
+    // And the declared type really is DECIMAL, not something inferred.
+    let ty: String = fixture
+        .store
+        .conn()
+        .query_row(
+            "SELECT data_type FROM duckdb_columns()
+             WHERE table_name = 'thing' AND column_name = 'copay_amount'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(ty, "DECIMAL(18,2)");
+}
+
+/// `spec/data-dictionary.md §2.1` — one assertion per row of the encoding table.
+#[test]
+fn test_spec_2_1_json_encoding_round_trip() {
+    let mut fixture = Fixture::open(TYPED_DDL);
+    let ts = ts_offset_secs(-60);
+    let dev = fixture.dev.clone();
+
+    let d = r#"{"name":"Gabriel","copay_amount":"12.34","count":"9007199254740993",
+                "ok":true,"filled_on":"2026-08-28","seen_at":"2026-08-28T14:03:11.412Z",
+                "tags":["a","b"]}"#
+        .replace('\n', "")
+        .replace("                ", "");
+    fixture.append(&event(1, 1, &ts, &dev, "thing", "x", Some(&d)));
+    // Every column absent — §2.1 makes an omitted key equivalent to null.
+    fixture.append(&event(2, 2, &ts, &dev, "thing", "empty", Some("{}")));
+    fixture.rematerialize();
+
+    assert_eq!(fixture.cell("thing", "x", "name"), "Gabriel");
+    assert_eq!(fixture.cell("thing", "x", "copay_amount"), "12.34");
+    // 2^53 + 1: a parser that took JSON numbers as doubles would return ...992.
+    assert_eq!(fixture.cell("thing", "x", "count"), "9007199254740993");
+    assert_eq!(fixture.cell("thing", "x", "ok"), "true");
+    assert_eq!(fixture.cell("thing", "x", "filled_on"), "2026-08-28");
+    assert!(
+        fixture
+            .cell("thing", "x", "seen_at")
+            .starts_with("2026-08-28")
+    );
+    assert_eq!(fixture.cell("thing", "x", "tags"), "[a, b]");
+
+    for column in [
+        "name",
+        "copay_amount",
+        "count",
+        "ok",
+        "filled_on",
+        "seen_at",
+        "tags",
+    ] {
+        assert_eq!(
+            fixture.cell("thing", "empty", column),
+            "<NULL>",
+            "an omitted key must be NULL, not a default"
+        );
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// §4.2 and §4.4 — what a log that anyone may append to contains
+// ---------------------------------------------------------------------------------------
+
+/// `§4.2` and `§4.5`'s projection paragraph — a `pv/2` line materializes its known columns
+/// and keeps everything else in the log.
+///
+/// Preservation is a property of the file, which is never rewritten; projection simply does
+/// not read what no column matches. Both halves are asserted, because passing one and
+/// failing the other is exactly the bug `§4.5` warns about.
+#[test]
+fn test_spec_4_2_unknown_fields_do_not_break_materialization() {
+    let mut fixture = Fixture::open(HELLO_DDL);
+    let ts = ts_offset_secs(-60);
+    let dev = fixture.dev.clone();
+
+    let future_line = format!(
+        r#"{{"seq":1,"lam":1,"ts":"{ts}","dev":"{dev}","app":"{APP}","op":"put","tbl":"profile","id":"a","d":{{"display_name":"Gabriel","mood":"curious"}},"origin":"pv/2","trace":[1,2,3]}}"#
+    );
+    fixture.append(&future_line);
+    let before = fs::read(fixture.log_path()).unwrap();
+    fixture.rematerialize();
+
+    assert_eq!(fixture.cell("profile", "a", "display_name"), "Gabriel");
+    assert_eq!(fixture.count("profile"), 1);
+    assert_eq!(
+        fs::read(fixture.log_path()).unwrap(),
+        before,
+        "materializing rewrote the log"
+    );
+}
+
+/// `§4.4` — an event more than 24 hours ahead does not win its row.
+///
+/// M2 excludes such an event from the Lamport fold, but the line is still in the file and
+/// `read_json()` sees it. If it materialized it would own the row permanently, and a
+/// rejection that only withholds a counter increment is not a rejection.
+///
+/// The second half is the mercy M2's reader also grants: a `ts` this node cannot parse
+/// carries no information and is **accepted**, because dropping it would be gap rejection
+/// by another name and `§4.1` forbids a reader that.
+#[test]
+fn test_spec_4_4_future_event_does_not_win_the_row() {
+    let mut fixture = Fixture::open(HELLO_DDL);
+    let dev = fixture.dev.clone();
+    let ts = ts_offset_secs(-60);
+    let far_future = ts_offset_secs(48 * 60 * 60);
+
+    fixture.append(&event(
+        1,
+        1,
+        &ts,
+        &dev,
+        "profile",
+        "r",
+        Some(r#"{"display_name":"honest"}"#),
+    ));
+    fixture.append(&event(
+        2,
+        9999,
+        &far_future,
+        &dev,
+        "profile",
+        "r",
+        Some(r#"{"display_name":"FUTURE"}"#),
+    ));
+    fixture.append(&event(
+        3,
+        3,
+        "not-a-timestamp",
+        &dev,
+        "profile",
+        "odd",
+        Some(r#"{"display_name":"unparseable ts"}"#),
+    ));
+    fixture.rematerialize();
+
+    assert_eq!(
+        fixture.cell("profile", "r", "display_name"),
+        "honest",
+        "a §4.4-rejected event took the row despite its huge lam"
+    );
+    assert_eq!(
+        fixture.cell("profile", "odd", "display_name"),
+        "unparseable ts",
+        "an unparseable ts is accepted, exactly as M2's reader accepts it"
+    );
+
+    // An event just inside the horizon is ordinary and must materialize.
+    fixture.append(&event(
+        4,
+        10,
+        &ts_offset_secs(60 * 60),
+        &dev,
+        "profile",
+        "soon",
+        Some(r#"{"display_name":"an hour ahead"}"#),
+    ));
+    fixture.rematerialize();
+    assert_eq!(
+        fixture.cell("profile", "soon", "display_name"),
+        "an hour ahead"
+    );
+}
+
+/// `§4.4` — materializing does not re-audit what M2 already reported once.
+///
+/// A log cannot be edited to remove the offending line, so a node that reported it on every
+/// materialization would append to `sys_audit` forever.
+#[test]
+fn test_a_future_event_is_not_audited_twice_by_materializing() {
+    let root = tempfile::tempdir().unwrap();
+    let (dev, sys_log) = {
+        let node = Node::open(root.path()).unwrap();
+        (
+            node.id().as_str().to_owned(),
+            node.paths().app_log("_sys", node.id()),
+        )
+    };
+
+    hand_append(
+        &sys_log,
+        &format!(
+            r#"{{"seq":3,"lam":9999,"ts":"{}","dev":"{dev}","app":"_sys","op":"put","tbl":"sys_setting","id":"x","d":{{}}}}"#,
+            ts_offset_secs(48 * 60 * 60)
+        ),
+        "\n",
+    );
+
+    // Two opens. The first audits the rejection; the second must not.
+    let _ = Node::open(root.path()).unwrap();
+    let node = Node::open(root.path()).unwrap();
+
+    let audits: i64 = node
+        .store()
+        .conn()
+        .query_row("SELECT count(*) FROM sys.sys_audit", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(audits, 1, "the same rejection was audited twice");
+}
+
+// ---------------------------------------------------------------------------------------
+// The `echo >>` acceptance property
+// ---------------------------------------------------------------------------------------
+
+/// `apps/hello/README.md` — append an event by hand, then reload the page.
+///
+/// Reload, not restart: the store has to notice a log file that grew behind it, which is
+/// what `Store::refresh` is for.
+///
+/// Run twice, and the second time is the one that matters. PowerShell's `>>` terminates
+/// lines with `0d 0a`, so a Windows owner following the README writes a `\r` the writer
+/// never emits. M2's reader tolerates it because JSON treats it as whitespace; whether
+/// DuckDB's `read_json(format = 'newline_delimited')` does was unverified until here.
+#[test]
+fn test_hand_appended_line_appears() {
+    for (label, terminator) in [("lf", "\n"), ("crlf", "\r\n")] {
+        let mut fixture = Fixture::open(HELLO_DDL);
+        let ts = ts_offset_secs(-60);
+        let dev = fixture.dev.clone();
+
+        hand_append(
+            &fixture.log_path(),
+            &event(
+                1,
+                1,
+                &ts,
+                &dev,
+                "profile",
+                "the-ulid",
+                Some(r#"{"display_name":"Gabriel"}"#),
+            ),
+            terminator,
+        );
+        assert!(fixture.store.refresh(&store::cutoff_now()).unwrap());
+        assert_eq!(
+            fixture.cell("profile", "the-ulid", "display_name"),
+            "Gabriel",
+            "{label}: the first hand-appended line never appeared"
+        );
+
+        // The README's own example: the next unused seq, amending the same id.
+        hand_append(
+            &fixture.log_path(),
+            &event(
+                2,
+                2,
+                &ts,
+                &dev,
+                "profile",
+                "the-ulid",
+                Some(r#"{"display_name":"Someone Else"}"#),
+            ),
+            terminator,
+        );
+        assert!(
+            fixture.store.refresh(&store::cutoff_now()).unwrap(),
+            "{label}: refresh did not notice the log growing"
+        );
+        assert_eq!(
+            fixture.cell("profile", "the-ulid", "display_name"),
+            "Someone Else",
+            "{label}: the amendment never appeared"
+        );
+        assert_eq!(
+            fixture.count("profile"),
+            1,
+            "{label}: an amendment made a second row"
+        );
+
+        // And a refresh with nothing new does not rebuild.
+        assert!(
+            !fixture.store.refresh(&store::cutoff_now()).unwrap(),
+            "{label}: refresh rebuilt with nothing to do"
+        );
+
+        // The CR is still in the file: §3.1 forbids repairing a log.
+        if terminator == "\r\n" {
+            let raw = fs::read(fixture.log_path()).unwrap();
+            assert!(raw.contains(&b'\r'), "the hand-written CR was removed");
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------
+// §2.5 — the incremental path is an optimization, and the replay is the definition
+// ---------------------------------------------------------------------------------------
+
+/// `docs/plans/phase-1.md §2.5` — an incremental apply must produce identical table
+/// contents to a full replay of the same log.
+///
+/// A pseudo-random stream with a fixed seed: puts and dels over a small id space, so rows
+/// are amended and resurrected rather than merely accumulated. Applied incrementally as it
+/// is written, then replayed from scratch, then compared by digest. If these ever differ,
+/// the incremental path is wrong — the replay is the definition.
+///
+/// Both runs are handed the **same** cutoff. Reading the clock twice would let a test fail
+/// because time passed rather than because the two paths disagree.
+#[test]
+fn test_incremental_matches_full_replay() {
+    let mut fixture = Fixture::open(TYPED_DDL);
+    let cutoff = store::cutoff_now();
+    let dev = fixture.dev.clone();
+    let ts = ts_offset_secs(-60);
+
+    // A tiny xorshift, so the stream is identical on every platform and every run.
+    let mut seed = 0x2026_0901_u64;
+    let mut next = move || {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed
+    };
+
+    for n in 1..200u64 {
+        let roll = next();
+        let id = format!("id-{}", roll % 12);
+        let put = roll % 4 != 0;
+        let d = format!(
+            r#"{{"name":"n{n}","copay_amount":"{}.{:02}","count":"{}","ok":{},"tags":["t{}"]}}"#,
+            roll % 1000,
+            roll % 100,
+            roll % 9_007_199_254_740_993_u64,
+            roll % 2 == 0,
+            roll % 5
+        );
+
+        fixture.append(&event(
+            n,
+            n,
+            &ts,
+            &dev,
+            "thing",
+            &id,
+            put.then_some(d.as_str()),
+        ));
+        if put {
+            let value: serde_json::Value = serde_json::from_str(&d).unwrap();
+            fixture.store.apply("thing", &id, Some(&value)).unwrap();
+        } else {
+            fixture
+                .store
+                .apply::<serde_json::Value>("thing", &id, None)
+                .unwrap();
+        }
+    }
+
+    let incremental = fixture.digest("thing");
+    let incremental_rows = fixture.count("thing");
+    let incremental_tombs: i64 = fixture
+        .store
+        .conn()
+        .query_row("SELECT count(*) FROM pv._tombstone", [], |row| row.get(0))
+        .unwrap();
+
+    // Now the definition: a full replay of the very same log.
+    fixture.store.materialize(&cutoff).unwrap();
+
+    assert_eq!(
+        fixture.count("thing"),
+        incremental_rows,
+        "row counts diverged"
+    );
+    assert_eq!(
+        fixture.digest("thing"),
+        incremental,
+        "the incremental path and the full replay disagree; §4.5 says the replay is right"
+    );
+    let replayed_tombs: i64 = fixture
+        .store
+        .conn()
+        .query_row("SELECT count(*) FROM pv._tombstone", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(replayed_tombs, incremental_tombs, "tombstone sets diverged");
+}
+
+// ---------------------------------------------------------------------------------------
+// spec/app-contract.md §7 — the sandbox
+// ---------------------------------------------------------------------------------------
+
+/// `spec/app-contract.md §7` — after sealing, app SQL cannot reach the filesystem.
+///
+/// The privilege boundary is in **time**, not in the handle: DuckDB makes
+/// `enable_external_access` and `lock_configuration` `GLOBAL_ONLY`, so the seal covers
+/// every connection on the instance, the framework's included. That is stronger than §7
+/// asks and is the only shape the engine allows — which is why the last assertion here,
+/// that the privileged connection is caught too, is a feature rather than a defect.
+#[test]
+fn test_spec_app_contract_7_sealed_connection_cannot_read_files() {
+    let mut fixture = Fixture::open(HELLO_DDL);
+    let key = fixture
+        .node
+        .paths()
+        .node_key()
+        .display()
+        .to_string()
+        .replace('\\', "/");
+
+    assert!(
+        fixture.store.app_conn().is_err(),
+        "an unsealed store has no sandboxed handle"
+    );
+    fixture.store.seal().unwrap();
+    assert!(fixture.store.is_sealed());
+
+    let app = fixture.store.app_conn().unwrap();
+
+    // Reading the table it was made for still works.
+    let rows: i64 = app
+        .query_row("SELECT count(*) FROM profile", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(rows, 0);
+
+    // Everything that reaches the filesystem does not. `identity/node.key` is the file
+    // §7 names as the reason this exists.
+    for sql in [
+        format!("SELECT * FROM read_json('{key}')"),
+        format!("SELECT * FROM read_csv('{key}')"),
+        "COPY (SELECT 1) TO 'leak.csv'".to_owned(),
+        "INSTALL httpfs".to_owned(),
+        "ATTACH 'other.duckdb'".to_owned(),
+    ] {
+        assert!(
+            app.execute_batch(&sql).is_err(),
+            "app SQL was allowed to run: {sql}"
+        );
+    }
+
+    // And the sandbox cannot be lifted, which is what `lock_configuration` last buys.
+    assert!(
+        app.execute_batch("SET enable_external_access = true")
+            .is_err()
+    );
+
+    // The seal is instance-wide, so rematerializing now needs a fresh store rather than
+    // this one. Reported rather than silently producing an empty table.
+    assert!(fixture.store.materialize(&store::cutoff_now()).is_err());
+}
+
+// ---------------------------------------------------------------------------------------
+// schema.sql
+// ---------------------------------------------------------------------------------------
+
+/// `spec/app-contract.md §4.5` and `§5.3` — an app with no `schema.sql` has no tables and
+/// still has its log. This is `apps/sketch`.
+#[test]
+fn test_schemaless_app_materializes_no_tables() {
+    let mut fixture = Fixture::open("");
+    let ts = ts_offset_secs(-60);
+    let dev = fixture.dev.clone();
+
+    fixture.append(&event(
+        1,
+        1,
+        &ts,
+        &dev,
+        "stroke",
+        "s1",
+        Some(r#"{"points":[[0,0],[4,9]]}"#),
+    ));
+    fixture.rematerialize();
+
+    assert!(fixture.store.schema().tables.is_empty());
+    let tables: i64 = fixture
+        .store
+        .conn()
+        .query_row(
+            "SELECT count(*) FROM duckdb_tables() WHERE schema_name = 'main'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(tables, 0, "a schema-less app created a table");
+
+    // The event is still in the log, which is the whole point of §5.3.
+    let raw = fs::read_to_string(fixture.log_path()).unwrap();
+    assert!(raw.contains("\"tbl\":\"stroke\""));
+}
+
+/// `spec/app-contract.md §4.5` — changing `schema.sql` rematerializes from the logs, and a
+/// new column is NULL for events that predate it.
+#[test]
+fn test_a_changed_schema_rematerializes_and_new_columns_are_null() {
+    let mut fixture = Fixture::open(HELLO_DDL);
+    let ts = ts_offset_secs(-60);
+    let dev = fixture.dev.clone();
+    fixture.append(&event(
+        1,
+        1,
+        &ts,
+        &dev,
+        "profile",
+        "a",
+        Some(r#"{"display_name":"Gabriel"}"#),
+    ));
+    fixture.rematerialize();
+    assert_eq!(fixture.cell("profile", "a", "display_name"), "Gabriel");
+
+    let widened = "CREATE TABLE profile (
+        id           VARCHAR PRIMARY KEY,
+        display_name VARCHAR NOT NULL,
+        nickname     VARCHAR
+    );";
+    let fixture = fixture.reopen(widened);
+
+    assert_eq!(fixture.cell("profile", "a", "display_name"), "Gabriel");
+    assert_eq!(
+        fixture.cell("profile", "a", "nickname"),
+        "<NULL>",
+        "a column added later must be NULL for events that predate it"
+    );
+}
+
+/// `spec/app-contract.md §5` and `spec/data-api.md §1` — a `CREATE VIEW` in `schema.sql`
+/// resolves, and survives being materialized more than once.
+///
+/// Both halves are the point. Views are re-created from DuckDB's own rendering of them, so
+/// this pins that the rendering can be re-executed: if it could not, the second
+/// materialization would fail with "view already exists" rather than quietly doing nothing,
+/// and every rematerialize — a schema change, a restore, a hand-appended line — would break.
+#[test]
+fn test_a_view_resolves_and_survives_rematerializing() {
+    let ddl = "CREATE TABLE node (
+        id   VARCHAR PRIMARY KEY,
+        kind VARCHAR,
+        name VARCHAR
+    );
+    CREATE VIEW v_animals AS SELECT id, name FROM node WHERE kind = 'a';";
+
+    let mut fixture = Fixture::open(ddl);
+    let ts = ts_offset_secs(-60);
+    let dev = fixture.dev.clone();
+
+    fixture.append(&event(
+        1,
+        1,
+        &ts,
+        &dev,
+        "node",
+        "n1",
+        Some(r#"{"kind":"a","name":"wombat"}"#),
+    ));
+    fixture.append(&event(
+        2,
+        2,
+        &ts,
+        &dev,
+        "node",
+        "n2",
+        Some(r#"{"kind":"q","name":"does it swim?"}"#),
+    ));
+    fixture.rematerialize();
+
+    let animals: i64 = fixture
+        .store
+        .conn()
+        .query_row("SELECT count(*) FROM v_animals", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        animals, 1,
+        "the view did not resolve against the materialized table"
+    );
+
+    // Again. This is the assertion that would fail if the view SQL could not be re-run.
+    fixture.rematerialize();
+    fixture.rematerialize();
+    let animals: i64 = fixture
+        .store
+        .conn()
+        .query_row("SELECT count(*) FROM v_animals", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(animals, 1);
+}
+
+/// The `sys` schema of `spec/data-dictionary.md §1` and `§3`, materialized by `Node::open`.
+///
+/// Step 4 of `docs/plans/phase-1.md §2.6`, checked through the two rows the bootstrap
+/// wrote: they are events like any other, and they arrive in `sys` by the same §4.5 replay
+/// an app's table gets.
+#[test]
+fn test_sys_materializes_the_bootstrap_rows() {
+    let root = tempfile::tempdir().unwrap();
+    let node = Node::open(root.path()).unwrap();
+
+    let kind: String = node
+        .store()
+        .conn()
+        .query_row(
+            "SELECT kind FROM sys.sys_device WHERE id = ?",
+            duckdb::params![node.id().as_str()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(kind, "node");
+
+    let replica: bool = node
+        .store()
+        .conn()
+        .query_row(
+            "SELECT replica FROM sys.sys_device WHERE id = ?",
+            duckdb::params![node.id().as_str()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(replica, "spec/protocol.md §1: nodes are always replicas");
+
+    let protocol: String = node
+        .store()
+        .conn()
+        .query_row("SELECT protocol FROM sys.sys_node", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(protocol, "pv/1");
+
+    // §1 of the data dictionary: `_sys` materializes into the schema `sys`, so nothing of
+    // it lands in `main`.
+    let stray: i64 = node
+        .store()
+        .conn()
+        .query_row(
+            "SELECT count(*) FROM duckdb_tables() WHERE schema_name = 'main'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(stray, 0);
+
+    // §4's views resolve. `sys.v_health` is M4's and is deliberately not here.
+    let devices: i64 = node
+        .store()
+        .conn()
+        .query_row("SELECT count(*) FROM sys.v_device_active", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(devices, 1);
+}

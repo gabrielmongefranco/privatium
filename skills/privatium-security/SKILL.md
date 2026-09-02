@@ -23,6 +23,11 @@ Applies to every tier. Load alongside the tier skill.
 6. **Never claim data is deleted.** `del` writes a tombstone; the original line stays in the
    log forever. That is deliberate. The only way to destroy data is to destroy `data/` and
    every synced copy — say so plainly in any UI that offers deletion.
+7. **Never reuse a ULID.** Once the framework has minted an `id` for a row, that `id` names
+   that row forever — deleted or not. Writing a different row under it merges two histories
+   under last-write-wins, silently and across devices. Mint a new one. (A key *you* chose,
+   like a `'cursor'` singleton, is a different thing: deleting and re-asserting it is an
+   amendment to the same logical row and is fine.)
 
 ## Tier 1 (Lua)
 
@@ -30,9 +35,15 @@ Applies to every tier. Load alongside the tier skill.
 `package.loadlib` are removed from the sandbox. Do not attempt to reach them; do not
 suggest a workaround. `require` is confined to the app's own `lib/`.
 
-The DuckDB connection runs with `enable_external_access = false`, extension autoload off,
-and `lock_configuration = true`. This is not adjustable hardening — unsandboxed, DuckDB can
-read `identity/node.key`.
+The DuckDB connection your SQL runs on has `enable_external_access = false`, extension
+autoload off, and `lock_configuration = true`. This is not adjustable hardening —
+unsandboxed, DuckDB can read `identity/node.key`.
+
+Those settings belong to the whole database instance, not to one connection, so the
+framework applies them **after** it has materialized your tables from the log and never
+lifts them again. Nothing you can write in SQL reaches the filesystem: no `read_csv` of a
+path you chose, no `COPY ... TO`, no `ATTACH`, no `INSTALL`. Read your data from your
+tables and views.
 
 Watch instruction and memory limits. An unbounded loop over synced data aborts the request.
 

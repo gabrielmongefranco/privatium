@@ -222,6 +222,8 @@ why, not a to-do list.
 | 9 | Solo-mode shadowing was warn-at-load only, so CI never saw it | New lint rule `PV506` | `cli.md §5.1` |
 | 11 | `protocol.md §4.1` said the envelope `id` is a ULID, unqualified, while `data-dictionary.md §3.1`/`§3.2` key `sys_node` and `sys_device` by Node ID and `lua-api.md §3.3` lets a caller supply its own — `apps/animals` ships `id = 'cursor'` | `§4.1` now says row key, ULID by default, with the two exceptions named and the cross-device collision consequence stated | `protocol.md §4.1` (found in M1) |
 | 10 | `BwOffline`; "three prefixes" over a five-row table; `sys_device` table split by a paragraph; unclosed quotation mark | Corrected | `data-api.md`, `privatium-tier2-web/SKILL.md`, `protocol.md §9.1`, `data-dictionary.md §3.2`, `AGENTS.md` |
+| 12 | `app-contract.md §7` described a privileged connection and a sandboxed one coexisting over one app's cache. DuckDB makes all four of those settings `GLOBAL_ONLY` and locks the database file exclusively, so that arrangement cannot be built — and an implementation that appeared to have both would have sandboxed neither | §7 now specifies the boundary as open-privileged → materialize → seal → serve, with rematerializing and snapshotting needing a fresh instance | `app-contract.md §7` (found in M3) |
+| 13 | `§4.6`'s "an `id` that has been deleted MUST NOT be reused" forbade `apps/animals`, which deletes and recreates its `'cursor'` singleton every round on a key `§4.1` explicitly blesses | `§4.6` now names what it protects — a **minted** ULID must not become the key of a different row — and states that a caller-chosen key may be re-asserted, that enforcement is the data API's, and that materialization follows `§4.5` regardless | `protocol.md §4.6` (found in M3) |
 
 Defect 11 was found during M1 rather than while writing this plan, which is the rule in
 the last paragraph of this section working as intended. It could not be coded around: the
@@ -384,9 +386,26 @@ The heart. Get this wrong and nothing above it can be right.
 
 - Privileged DuckDB connection on `cache/<slug>.duckdb`; app-facing connection configured
   per `app-contract.md §7` with `lock_configuration = true` **last**.
-- Parse `schema.sql` with DuckDB's own parser via `json_serialize_sql()` rather than a
-  regex or a third-party SQL crate — it gives table names, column names, and types from
-  the engine that will execute them, and it is what `PV106`/`PV107` should also use.
+- Learn what `schema.sql` declares from **DuckDB's own catalog**, not from a parser we
+  wrote. Execute the file into a throwaway in-memory instance that is sealed first —
+  external access off, autoload off, `lock_configuration` on — then read `duckdb_tables()`,
+  `duckdb_columns()`, `duckdb_constraints()` and `duckdb_views()`, filtered to
+  `schema_name = 'main' AND NOT internal`. That gives names, exact types, `NOT NULL` and
+  `CHECK` from the engine that will execute them, and it is neither a regex nor a
+  third-party SQL crate.
+
+  **Not `json_serialize_sql()`**, which an earlier draft of this plan named. It refuses
+  every statement that is not a `SELECT` — handed DDL it returns
+  `{"error":true,"error_message":"Only SELECT statements can be serialized to json!"}` —
+  so it cannot read a `schema.sql` at all. `test_r1_duckdb_json_is_statically_linked` pins
+  that, so a later DuckDB lifting the restriction is noticed rather than assumed.
+
+- **`duckdb = { features = ["bundled", "json"] }`.** `libduckdb-sys` compiles an extension
+  only when its cargo feature is on, so `bundled` alone has no `read_json()` and nothing
+  below is possible. The feature is also what satisfies `AGENTS.md`'s "statically linked":
+  it defines `DUCKDB_EXTENSION_JSON_LINKED`. Autoload is **not** off by default — that
+  build sets `DUCKDB_EXTENSION_AUTOLOAD_DEFAULT=1` — so every connection turns it off
+  explicitly. `parquet` waits for M4.
 - Materialize each table as an explicit projection. No type inference anywhere:
 
 ```sql
@@ -398,19 +417,52 @@ WITH ev AS (
                  columns = {seq:'BIGINT', lam:'BIGINT', ts:'VARCHAR', dev:'VARCHAR',
                             app:'VARCHAR', op:'VARCHAR', tbl:'VARCHAR',
                             id:'VARCHAR', d:'JSON'})
-  WHERE tbl = 'profile'
+  WHERE app = 'hello' AND tbl = 'profile'
+    AND seq IS NOT NULL AND lam IS NOT NULL AND id IS NOT NULL
+    AND (try_cast(ts AS TIMESTAMPTZ) IS NULL
+         OR try_cast(ts AS TIMESTAMPTZ) <= TIMESTAMPTZ '<now + 24h>')
 ), ranked AS (
-  SELECT *, row_number() OVER (PARTITION BY id ORDER BY lam DESC, ts DESC, dev DESC) AS rn
+  SELECT *, row_number() OVER (
+    PARTITION BY id ORDER BY lam DESC NULLS LAST, ts DESC NULLS LAST, dev DESC NULLS LAST
+  ) AS rn
   FROM ev
 )
 SELECT id,
-       CAST(json_extract_string(d, '$.display_name') AS VARCHAR) AS display_name
+       CAST(json_extract_string(d, '$."display_name"') AS VARCHAR) AS display_name
 FROM ranked
 WHERE rn = 1 AND op = 'put';
 ```
 
-- Column list generated from `schema.sql`; `NOT NULL` and `CHECK` enforced before append
-  (`data-api.md §2`), not after materialization.
+Four things in that `WHERE` are not decoration, and an earlier draft of this sketch had
+none of them:
+
+- **`app = 'hello'`.** §4.5 step 1 is "every event where `app = A` **and** `tbl = T`". The
+  earlier sketch declared the `app` column and then never used it.
+- **The NULL guards.** `read_json()` with an explicit `columns` list yields NULL for a
+  field it cannot find, so a line that is not an envelope becomes a row of NULLs rather
+  than an error, and a row with no `lam` has no business in a causal ordering.
+- **The `ts` clause is §4.4.** A future-dated event is still in the file whether or not the
+  reader folded its `lam` in, and letting it materialize hands it the row permanently — a
+  rejection that only withholds a counter increment is not a rejection. `try_cast` mirrors
+  the reader's one mercy: a `ts` this node cannot parse carries no information and is
+  *accepted*, because dropping it would be gap rejection by another name. The horizon is
+  passed **in** rather than read from the clock, so §2.5's two paths cannot disagree merely
+  because time passed between them.
+- **`op = 'put'`**, not "anything that is not a `del`". §4.5 step 4 says "otherwise the row
+  is its `d`", which read literally would treat an unknown future `op` as a full put.
+  Within `pv/1` there are exactly two ops and the readings agree, so this is a comment at
+  the call site rather than a spec edit — tightening the wording would be speculating about
+  `pv/2`.
+
+Per-column extraction is type-directed, not one expression for everything: scalars go
+through `json_extract_string` and cast the text, which is what unwraps §2.1's string
+encoding for `DECIMAL`/`BIGINT` (and rescues a client that wrongly sent a JSON number);
+`VARCHAR[]` and other structured types go through `json_extract` and cast the JSON value.
+
+- Column list generated from `schema.sql`. `NOT NULL` and `CHECK` are extracted as
+  **metadata** and the materialized table deliberately carries no constraints — they are
+  enforced before append (`data-api.md §2`), which is M7's and M9's call site, not M3's.
+  There is no append caller in M3 to validate.
 - Schema-less apps: no tables, event log only (`sketch`).
 - Incremental apply on append (§2.3), full rematerialize on `schema.sql` change, on
   restore, and on demand.
@@ -673,9 +725,19 @@ Ships in Phase 1 because it is what makes `skills/` enforceable rather than advi
 
 - Implement every rule in `spec/cli.md §5.1`: `PV101–107`, `PV201–208`, `PV301–307`,
   `PV401–407`, `PV501–506`.
-- Lua rules over a `full_moon` AST, not regex. SQL rules over `json_serialize_sql()`.
-  HTML/template rules over the LSP parse tree from M8 — the linter reuses the compiler's
-  front end rather than growing a second one.
+- Lua rules over a `full_moon` AST, not regex. HTML/template rules over the LSP parse tree
+  from M8 — the linter reuses the compiler's front end rather than growing a second one.
+- SQL rules: `PV106` (every table has `id VARCHAR PRIMARY KEY`) reuses M3's catalog
+  introspection, which already refuses a table with no `id`. **`PV107` is unresolved and
+  is M12's to settle.** "Contains only `CREATE TABLE`, `CREATE VIEW`, `CREATE MACRO`,
+  `COMMENT ON`" is statement *classification*, and the catalog cannot answer it — an
+  `INSERT` leaves no catalog trace. `json_serialize_sql()`, which an earlier draft named
+  here, only handles `SELECT` (see M3). DuckDB exposes no classifier to safe Rust:
+  `duckdb_prepared_statement_type` is raw FFI that `duckdb-rs` does not re-export, and
+  `duckdb_prepared_statements()` carries no statement type. The candidates are a scoped
+  `unsafe` FFI call, or executing into the sealed instance M3 already builds and asserting
+  that nothing but tables, views and macros appeared and that every table is empty. Decide
+  it in M12, with the fixture corpus in front of you.
 - `PV502` (`cross_origin_isolated` only in solo mode) needs the solo-mode knowledge from
   M6; wire it, do not stub it. `docs/frameworks.md §5.4` explains why, and the
   `duckdb-wasm` note there is the case that will actually trip someone.
@@ -725,7 +787,7 @@ CI should assert them by name:
 | Deleting `cache/` and all `snap/` directories loses no data (§3.1, §5) | M3 |
 | Preserves unknown envelope and `d` fields byte-for-byte (§4.2) | M2 |
 | Lamport counter is monotonic across restart and sync (§4.3) — restart half only | M2 |
-| Rejects events > 24h in the future (§4.4) | M2 |
+| Rejects events > 24h in the future (§4.4) | M2 (log scan) + M3 (materialization) |
 | Row-granularity LWW ordered by `(lam, ts, dev)` (§4.5) | M3 |
 | Three-tier read fallback, with the tier used recorded (§5.3) | M4 |
 | Never prunes the oldest snapshot (§5.4) | M4 |
