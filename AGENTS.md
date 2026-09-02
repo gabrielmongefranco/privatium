@@ -5,8 +5,9 @@ Guidance for AI coding agents working in this repository.
 ## What this repository is
 
 A specification-first project. `spec/` is normative; `docs/` is explanatory; `apps/` holds
-example applications that double as the reference templates. As of this writing there is
-no implementation.
+example applications that double as the reference templates. Implementation
+is underway, docs/plans/phase-1.md is the first plan of record, and the git history
+names the milestones landed.
 
 **If you are asked to write code, read `spec/protocol.md` and `spec/app-contract.md`
 first, in full.** They are the contract. Deviating from them silently is the single worst
