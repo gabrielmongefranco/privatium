@@ -3,179 +3,22 @@
 // Created:  2026-09-01  |  Modified: 2026-09-02
 // Summary:  Materialization against spec/protocol.md §4.5 and §4.6 — last-write-wins at row
 //           granularity, tombstones, the §4.4 horizon, the §2.1 encodings, a cache that can
-//           be deleted, and a log anyone may append to by hand.
+//           be deleted, a log anyone may append to by hand, and the §2.5 property that the
+//           incremental apply, the full replay, and a restore from a snapshot all agree.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use std::fs;
-use std::io::Write as _;
-use std::path::{Path, PathBuf};
+mod common;
 
+use std::fs;
+
+use common::{APP, Fixture, HELLO_DDL, TYPED_DDL, event, flip_byte, hand_append, ts_offset_secs};
 use privatium_core::Node;
 use privatium_core::local::State;
 use privatium_core::log::{AppLog, Durability};
-use privatium_core::store::{self, Store};
-
-/// An ordinary app, so these tests exercise the path an app author gets rather than a
-/// special case reserved for `_sys`.
-const APP: &str = "hello";
-
-/// `apps/hello/schema.sql`, near enough — one table, one column.
-const HELLO_DDL: &str = "CREATE TABLE profile (
-     id           VARCHAR PRIMARY KEY,
-     display_name VARCHAR NOT NULL
- );";
-
-/// A schema exercising every row of `spec/data-dictionary.md §2.1`.
-const TYPED_DDL: &str = "CREATE TABLE thing (
-     id           VARCHAR PRIMARY KEY,
-     name         VARCHAR,
-     copay_amount DECIMAL(18,2),
-     count        BIGINT,
-     ok           BOOLEAN,
-     filled_on    DATE,
-     seen_at      TIMESTAMPTZ,
-     tags         VARCHAR[]
- );";
-
-/// A node plus a store over one app, which is what M5 will assemble for real.
-struct Fixture {
-    root: tempfile::TempDir,
-    node: Node,
-    store: Store,
-    dev: String,
-}
-
-impl Fixture {
-    fn open(ddl: &str) -> Self {
-        let root = tempfile::tempdir().unwrap();
-        Self::open_in(root, ddl)
-    }
-
-    fn open_in(root: tempfile::TempDir, ddl: &str) -> Self {
-        let node = Node::open(root.path()).unwrap();
-        let dev = node.id().as_str().to_owned();
-        // The app's log directory has to exist before the store globs it.
-        let state = State::load(&node.paths().local_state()).unwrap();
-        let (_log, _) = AppLog::open(node.paths(), APP, node.id(), Durability::Os, &state).unwrap();
-        let mut store = Store::open(node.paths(), APP, ddl).unwrap();
-        store.materialize(&store::cutoff_now()).unwrap();
-        Self {
-            root,
-            node,
-            store,
-            dev,
-        }
-    }
-
-    /// Reopen the store the way a restart would, keeping the same data root.
-    ///
-    /// The store is dropped explicitly and first: DuckDB holds an exclusive lock on
-    /// `cache/<slug>.duckdb`, so opening the replacement before releasing it fails with
-    /// "being used by another process".
-    fn reopen(self, ddl: &str) -> Self {
-        let Fixture {
-            root, node, store, ..
-        } = self;
-        drop(store);
-        drop(node);
-        Self::open_in(root, ddl)
-    }
-
-    fn log_path(&self) -> PathBuf {
-        self.node.paths().app_log(APP, self.node.id())
-    }
-
-    fn append(&self, line: &str) {
-        hand_append(&self.log_path(), line, "\n");
-    }
-
-    fn rematerialize(&mut self) {
-        self.store.materialize(&store::cutoff_now()).unwrap();
-    }
-
-    /// One column of one row, as a string. `<NULL>` where the row exists but the value is
-    /// NULL; `<MISSING>` where there is no row at all.
-    fn cell(&self, table: &str, id: &str, column: &str) -> String {
-        let sql = format!(
-            "SELECT coalesce(CAST(\"{column}\" AS VARCHAR), '<NULL>') FROM \"{table}\" WHERE id = ?"
-        );
-        self.store
-            .conn()
-            .query_row(&sql, duckdb::params![id], |row| row.get::<_, String>(0))
-            .unwrap_or_else(|_| "<MISSING>".to_owned())
-    }
-
-    fn count(&self, table: &str) -> i64 {
-        self.store
-            .conn()
-            .query_row(&format!("SELECT count(*) FROM \"{table}\""), [], |row| {
-                row.get(0)
-            })
-            .unwrap()
-    }
-
-    /// A deterministic fingerprint of the whole tombstone set, `(tbl, id)` pairs in order.
-    fn tombstone_digest(&self) -> String {
-        self.store
-            .conn()
-            .query_row(
-                "SELECT coalesce(md5(string_agg(tbl || ':' || id, '|' ORDER BY tbl, id)), 'empty')
-                 FROM pv._tombstone",
-                [],
-                |row| row.get::<_, String>(0),
-            )
-            .unwrap()
-    }
-
-    /// A deterministic fingerprint of a table's whole contents.
-    fn digest(&self, table: &str) -> String {
-        self.store
-            .conn()
-            .query_row(
-                &format!(
-                    "SELECT coalesce(md5(string_agg(t::VARCHAR, '|' ORDER BY t.id)), 'empty')
-                     FROM \"{table}\" t"
-                ),
-                [],
-                |row| row.get::<_, String>(0),
-            )
-            .unwrap()
-    }
-}
-
-/// Append a line by hand, exactly as `apps/hello/README.md` blesses `echo >>`.
-fn hand_append(path: &Path, line: &str, terminator: &str) {
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path)
-        .unwrap();
-    file.write_all(line.as_bytes()).unwrap();
-    file.write_all(terminator.as_bytes()).unwrap();
-}
-
-/// One event line, spelled the way `spec/protocol.md §4.1` spells one.
-fn event(seq: u64, lam: u64, ts: &str, dev: &str, tbl: &str, id: &str, d: Option<&str>) -> String {
-    match d {
-        Some(d) => format!(
-            r#"{{"seq":{seq},"lam":{lam},"ts":"{ts}","dev":"{dev}","app":"{APP}","op":"put","tbl":"{tbl}","id":"{id}","d":{d}}}"#
-        ),
-        // §4.1: `d` MUST be absent on a del — not null, not `{}`.
-        None => format!(
-            r#"{{"seq":{seq},"lam":{lam},"ts":"{ts}","dev":"{dev}","app":"{APP}","op":"del","tbl":"{tbl}","id":"{id}"}}"#
-        ),
-    }
-}
-
-/// An RFC 3339 UTC timestamp offset from now, to the millisecond (`§4.1`).
-fn ts_offset_secs(seconds: i64) -> String {
-    privatium_core::log::format_ts(
-        jiff::Timestamp::now() + jiff::SignedDuration::from_secs(seconds),
-    )
-}
+use privatium_core::store::{self, Store, Tier};
 
 // ---------------------------------------------------------------------------------------
 // §4.5 — replay and merge
@@ -495,11 +338,7 @@ fn test_spec_3_1_delete_cache_loses_nothing() {
 
     // Release DuckDB's lock on the cache without dropping the `TempDir`, which would take
     // the whole data root — including the logs this test is about — with it.
-    let Fixture {
-        root, node, store, ..
-    } = fixture;
-    drop(store);
-    drop(node);
+    let root = fixture.release();
 
     fs::remove_dir_all(root.path().join("cache")).unwrap();
     fs::remove_dir_all(root.path().join("local")).unwrap();
@@ -572,11 +411,7 @@ fn test_spec_3_1_delete_cache_only_still_materializes() {
     fixture.store.save_to(&mut state);
     state.flush().unwrap();
 
-    let Fixture {
-        root, node, store, ..
-    } = fixture;
-    drop(store);
-    drop(node);
+    let root = fixture.release();
 
     fs::remove_dir_all(root.path().join("cache")).unwrap();
     assert!(
@@ -985,31 +820,48 @@ fn test_hand_appended_line_appears() {
 // ---------------------------------------------------------------------------------------
 
 /// `docs/plans/phase-1.md §2.5` — an incremental apply must produce identical table
-/// contents to a full replay of the same log.
+/// contents to a full replay of the same log, and so must a restore from a snapshot plus
+/// the log tail (`spec/protocol.md §5.3`), at every tier.
 ///
 /// A pseudo-random stream per fixed seed: puts and dels over a small id space, so rows
 /// are amended and resurrected rather than merely accumulated, spread over a declared
 /// table **and one `schema.sql` does not declare**, because `spec/data-api.md §2` accepts
-/// such writes and the tombstone set has to agree about them too. Applied incrementally as
-/// it is written, then replayed from scratch, then compared by digest — the table's
-/// contents and the whole of `pv._tombstone`, not a count of it. If these ever differ,
-/// the incremental path is wrong — the replay is the definition.
+/// such writes and the tombstone set has to agree about them too. Values are chosen to
+/// hurt the CSV tier — commas, quotes, newlines, empty strings, NULLs, lists of them.
 ///
-/// Both runs are handed the **same** cutoff. Reading the clock twice would let a test fail
-/// because time passed rather than because the two paths disagree.
+/// Halfway through the stream a snapshot is taken from the log; the rest of the stream is
+/// the tail. Then, in order: the incremental tables, a full replay, a tier-1 restore, a
+/// tier-2 restore with the Parquet file corrupted on disk, and a tier-3 restore with the
+/// CSV corrupted too — every one compared by digest against the replay, the table's
+/// contents and the whole of `pv._tombstone`. If any of them ever differ, that path is
+/// wrong — the replay is the definition.
 ///
-/// Several seeds rather than one, so "enough iterations to trust it" is a property of the
-/// test and not of whoever last ran it by hand.
+/// Every run is handed the **same** cutoff. Reading the clock twice would let a test fail
+/// because time passed rather than because two paths disagree.
+///
+/// Four fixed seeds by default; `PRIVATIUM_PROPERTY_SEEDS=<n>` runs `n` derived seeds so
+/// "enough iterations to trust it" is a number in a PR rather than whoever last ran it.
 #[test]
 fn test_incremental_matches_full_replay() {
-    for seed in [0x2026_0901_u64, 0x2026_0902, 0x0BAD_5EED, 0xDEAD_BEEF] {
-        incremental_matches_full_replay(seed);
+    let seeds: Vec<u64> = match std::env::var("PRIVATIUM_PROPERTY_SEEDS") {
+        Ok(count) => {
+            let count: u64 = count.parse().expect("PRIVATIUM_PROPERTY_SEEDS is a number");
+            (0..count)
+                .map(|i| 0x2026_0901_u64.wrapping_add(i.wrapping_mul(0x9E37_79B9_7F4A_7C15)))
+                .collect()
+        }
+        Err(_) => vec![0x2026_0901, 0x2026_0902, 0x0BAD_5EED, 0xDEAD_BEEF],
+    };
+    for seed in &seeds {
+        incremental_matches_full_replay(*seed);
     }
+    println!("§2.5 property held over {} seed(s)", seeds.len());
 }
 
 fn incremental_matches_full_replay(seed: u64) {
     let mut fixture = Fixture::open(TYPED_DDL);
-    let cutoff = store::cutoff_now();
+    let now = jiff::Timestamp::now();
+    let cutoff = store::cutoff_from(now);
     let dev = fixture.dev.clone();
     let ts = ts_offset_secs(-60);
 
@@ -1022,7 +874,11 @@ fn incremental_matches_full_replay(seed: u64) {
         seed
     };
 
+    let mut snapshot = None;
     for n in 1..200u64 {
+        if n == 100 {
+            snapshot = Some(fixture.snapshot(now));
+        }
         let roll = next();
         let id = format!("id-{}", roll % 12);
         let put = roll % 4 != 0;
@@ -1033,14 +889,25 @@ fn incremental_matches_full_replay(seed: u64) {
         } else {
             "thing"
         };
-        let d = format!(
-            r#"{{"name":"n{n}","copay_amount":"{}.{:02}","count":"{}","ok":{},"tags":["t{}"]}}"#,
-            roll % 1000,
-            roll % 100,
-            roll % 9_007_199_254_740_993_u64,
-            roll % 2 == 0,
-            roll % 5
-        );
+        let name = match roll % 5 {
+            0 => String::new(),
+            1 => format!("n{n}, \"quoted\"\nsecond line"),
+            2 => format!("n{n} 'apostrophe' [bracket]"),
+            _ => format!("n{n}"),
+        };
+        let mut d = serde_json::json!({
+            "name": name,
+            "copay_amount": format!("{}.{:02}", roll % 1000, roll % 100),
+            "count": (roll % 9_007_199_254_740_993_u64).to_string(),
+            "ok": roll % 2 == 0,
+            "tags": [format!("t{}", roll % 5), "a,b", "", "q't"],
+        });
+        if roll % 7 == 0 {
+            // §2.1: an omitted key is NULL.
+            d.as_object_mut().unwrap().remove("name");
+            d.as_object_mut().unwrap().remove("tags");
+        }
+        let d = serde_json::to_string(&d).unwrap();
 
         fixture.append(&event(n, n, &ts, &dev, tbl, &id, put.then_some(d.as_str())));
         if put {
@@ -1053,35 +920,61 @@ fn incremental_matches_full_replay(seed: u64) {
                 .unwrap();
         }
     }
+    let snapshot = snapshot.unwrap();
+    assert_eq!(snapshot.manifest.hi_lam, 99, "seed {seed:#x}");
 
-    let incremental = fixture.digest("thing");
+    let incremental = fixture.digests("thing");
     let incremental_rows = fixture.count("thing");
-    let incremental_tombs = fixture.tombstone_digest();
 
     // Now the definition: a full replay of the very same log.
     fixture.store.materialize(&cutoff).unwrap();
-
+    let replay = fixture.digests("thing");
     assert_eq!(
         fixture.count("thing"),
         incremental_rows,
         "seed {seed:#x}: row counts diverged"
     );
     assert_eq!(
-        fixture.digest("thing"),
-        incremental,
-        "seed {seed:#x}: the incremental path and the full replay disagree; §4.5 says the replay is right"
+        replay, incremental,
+        "seed {seed:#x}: the incremental path and the full replay disagree (table, tombstones); §4.5 says the replay is right"
+    );
+
+    // Tier 1: Parquet plus the tail written after the snapshot.
+    let restored = fixture.store.restore(&cutoff).unwrap();
+    assert_eq!(restored.tier, Tier::Parquet, "seed {seed:#x}: {restored:?}");
+    assert_eq!(
+        restored.snapshot.as_deref(),
+        Some(snapshot.id.to_string().as_str())
     );
     assert_eq!(
-        fixture.tombstone_digest(),
-        incremental_tombs,
-        "seed {seed:#x}: tombstone sets diverged"
+        fixture.digests("thing"),
+        replay,
+        "seed {seed:#x}: tier 1 and the full replay disagree"
+    );
+
+    // Tier 2: the Parquet file is corrupted on disk, so CSV plus schema.sql plus the tail.
+    flip_byte(&snapshot.dir.join("thing.parquet"));
+    let restored = fixture.store.restore(&cutoff).unwrap();
+    assert_eq!(restored.tier, Tier::Csv, "seed {seed:#x}: {restored:?}");
+    assert_eq!(
+        fixture.digests("thing"),
+        replay,
+        "seed {seed:#x}: tier 2 and the full replay disagree"
+    );
+
+    // Tier 3: both files gone bad; the replay, reported as unexpected.
+    flip_byte(&snapshot.dir.join("thing.csv"));
+    let restored = fixture.store.restore(&cutoff).unwrap();
+    assert_eq!(restored.tier, Tier::Replay, "seed {seed:#x}: {restored:?}");
+    assert!(restored.unexpected(), "seed {seed:#x}: {restored:?}");
+    assert_eq!(
+        fixture.digests("thing"),
+        replay,
+        "seed {seed:#x}: tier 3 is the replay"
     );
 
     // The undeclared table left tombstones and nothing else.
-    assert_ne!(
-        incremental_tombs, "empty",
-        "seed {seed:#x}: no tombstones at all"
-    );
+    assert_ne!(replay.1, "empty", "seed {seed:#x}: no tombstones at all");
     let ghost_tables: i64 = fixture
         .store
         .conn()
@@ -1151,8 +1044,8 @@ fn test_spec_4_6_tombstone_reportable_without_schema() {
 /// The privilege boundary is in **time**, not in the handle: DuckDB makes
 /// `enable_external_access` and `lock_configuration` `GLOBAL_ONLY`, so the seal covers
 /// every connection on the instance, the framework's included. That is stronger than §7
-/// asks and is the only shape the engine allows — which is why the last assertion here,
-/// that the privileged connection is caught too, is a feature rather than a defect.
+/// asks and is the only shape the engine allows — which is why the last assertions here,
+/// that the privileged connection is caught too, are a feature rather than a defect.
 #[test]
 fn test_spec_app_contract_7_sealed_connection_cannot_read_files() {
     let mut fixture = Fixture::open(HELLO_DDL);
@@ -1184,7 +1077,9 @@ fn test_spec_app_contract_7_sealed_connection_cannot_read_files() {
     for sql in [
         format!("SELECT * FROM read_json('{key}')"),
         format!("SELECT * FROM read_csv('{key}')"),
+        format!("SELECT * FROM read_parquet('{key}')"),
         "COPY (SELECT 1) TO 'leak.csv'".to_owned(),
+        "COPY (SELECT 1) TO 'leak.parquet' (FORMAT PARQUET)".to_owned(),
         "INSTALL httpfs".to_owned(),
         "ATTACH 'other.duckdb'".to_owned(),
     ] {
@@ -1200,9 +1095,18 @@ fn test_spec_app_contract_7_sealed_connection_cannot_read_files() {
             .is_err()
     );
 
-    // The seal is instance-wide, so rematerializing now needs a fresh store rather than
-    // this one. Reported rather than silently producing an empty table.
+    // The seal is instance-wide, so rematerializing, restoring and snapshotting now need
+    // a fresh store rather than this one. Reported rather than silently producing an
+    // empty table or an empty snapshot.
     assert!(fixture.store.materialize(&store::cutoff_now()).is_err());
+    assert!(fixture.store.restore(&store::cutoff_now()).is_err());
+    assert!(fixture.store.restore_dry_run(&store::cutoff_now()).is_err());
+    assert!(
+        fixture
+            .store
+            .snapshot(fixture.node.id(), jiff::Timestamp::now())
+            .is_err()
+    );
 }
 
 // ---------------------------------------------------------------------------------------
@@ -1420,7 +1324,7 @@ fn test_sys_materializes_the_bootstrap_rows() {
         .unwrap();
     assert_eq!(stray, 0);
 
-    // §4's views resolve. `sys.v_health` is M4's and is deliberately not here.
+    // §4's views resolve, `v_health` included: a first run is the replay, with no snapshot.
     let devices: i64 = node
         .store()
         .conn()
@@ -1429,4 +1333,16 @@ fn test_sys_materializes_the_bootstrap_rows() {
         })
         .unwrap();
     assert_eq!(devices, 1);
+    let (tier, snapshot): (i32, Option<String>) = node
+        .store()
+        .conn()
+        .query_row(
+            "SELECT restore_tier, snapshot_id FROM sys.v_health WHERE app_id = '_sys'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(tier, 3);
+    assert_eq!(snapshot, None);
+    assert_eq!(node.restore_tier("_sys"), Some(Tier::Replay));
 }

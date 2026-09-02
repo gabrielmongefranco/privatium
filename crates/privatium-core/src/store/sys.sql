@@ -1,6 +1,6 @@
 -- Project:  Privatium™  |  File: crates/privatium-core/src/store/sys.sql
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
--- Created:  2026-09-01  |  Modified: 2026-09-01
+-- Created:  2026-09-01  |  Modified: 2026-09-02
 -- Summary:  The framework's own schema.sql (spec/data-dictionary.md §3). `_sys` is an app
 --           and is materialized by exactly the machinery any app gets; this is the file it
 --           would have shipped if it had a folder.
@@ -129,9 +129,12 @@ CREATE TABLE sys_audit (
 -- Framework views (spec/data-dictionary.md §4). Apps MAY read these; they MUST NOT write
 -- to sys tables.
 --
--- `sys.v_health` is the fourth and is NOT here. It reports the restore tier in use, the
--- last snapshot age and log sizes — none of which exists until M4 builds the three-tier
--- read fallback of §5.3. It is M4's to add, in the milestone that can make it true.
+-- `sys.v_health` is the fourth and is NOT here. It reads `pv.health`, a table the
+-- framework maintains in cache/_sys.duckdb with each app's restore tier (§5.3), and this
+-- file is parsed in an in-memory instance that has no such table for a view to bind
+-- against. `Store::ensure_health` creates both, after every rebuild, beside the views
+-- below. The restore tier is node-local by nature — a fact about this node's cache — which
+-- is why it is a cache table joined to the replicated `sys_snapshot` rather than an event.
 
 CREATE VIEW v_app_nav AS
     SELECT id, title, icon, nav_order

@@ -1,9 +1,10 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/sys.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-01
+// Created:  2026-09-01  |  Modified: 2026-09-02
 // Summary:  The framework's own tables (spec/data-dictionary.md §3), written through the
 //           same event log apps use. M1 writes two rows: this node's sys_device entry and
-//           its sys_node singleton.
+//           its sys_node singleton. M2 adds sys_audit; M4 adds sys_snapshot and the
+//           snapshot and restore audit kinds.
 
 use serde::Serialize;
 
@@ -23,6 +24,13 @@ pub const NODE: &str = "sys_node";
 /// `sys_audit` (`spec/data-dictionary.md §3.10`).
 pub const AUDIT: &str = "sys_audit";
 
+/// `sys_snapshot` (`spec/data-dictionary.md §3.9`) — the replicated index of what is in
+/// `data/<slug>/snap/`.
+pub const SNAPSHOT: &str = "sys_snapshot";
+
+/// `sys_setting` (`spec/data-dictionary.md §3.6`).
+pub const SETTING: &str = "sys_setting";
+
 /// An event was refused on ingest. `spec/protocol.md §4.4` requires the rejection to be
 /// recorded, and this is the `kind` `§3.10` already reserves for it.
 pub const KIND_EVENT_REJECTED: &str = "event.rejected";
@@ -30,13 +38,29 @@ pub const KIND_EVENT_REJECTED: &str = "event.rejected";
 /// This node's own clock appears to have moved backwards (`§4.4`, second sentence).
 pub const KIND_CLOCK_SKEW: &str = "clock.skew";
 
-/// `§3.10` allows a device ID or the literal `system`. Neither of these is a device's doing.
+/// A snapshot was written (`spec/protocol.md §5`).
+pub const KIND_SNAPSHOT_CREATED: &str = "snapshot.created";
+
+/// A snapshot was deleted by retention (`§5.4`).
+pub const KIND_SNAPSHOT_PRUNED: &str = "snapshot.pruned";
+
+/// A restore fell back to CSV (`§5.3`, tier 2).
+pub const KIND_RESTORE_TIER2: &str = "restore.tier2";
+
+/// A restore fell through to the full replay (`§5.3`, tier 3). `§3.10` makes this an
+/// `alert` that MUST surface in the UI.
+pub const KIND_RESTORE_TIER3: &str = "restore.tier3";
+
+/// `§3.10` allows a device ID or the literal `system`. Nothing written here is a device's
+/// doing.
 const ACTOR_SYSTEM: &str = "system";
 
 /// `§3.10`'s three severities. Only `key.mismatch`, `node.admitted`, `cluster.rotated`, and
-/// `restore.tier3` MUST be `alert`; neither kind written here is one of them, and inflating
-/// a warning into an alert would train the owner to ignore alerts.
+/// `restore.tier3` MUST be `alert`; inflating anything else would train the owner to ignore
+/// alerts.
+const SEVERITY_INFO: &str = "info";
 const SEVERITY_WARN: &str = "warn";
+const SEVERITY_ALERT: &str = "alert";
 
 /// The `d` of a `sys_device` row.
 ///
@@ -185,13 +209,82 @@ impl<'a> AuditRow<'a> {
         subject: Option<&'a str>,
         detail: &'a str,
     ) -> Self {
+        Self::system(at, kind, subject, detail, SEVERITY_WARN)
+    }
+
+    /// An `info` from the framework itself, about `subject`.
+    pub(crate) fn info(
+        at: &'a str,
+        kind: &'a str,
+        subject: Option<&'a str>,
+        detail: &'a str,
+    ) -> Self {
+        Self::system(at, kind, subject, detail, SEVERITY_INFO)
+    }
+
+    /// An `alert` from the framework itself. `§3.10` reserves this for four kinds;
+    /// `restore.tier3` is the one Phase 1 can produce.
+    pub(crate) fn alert(
+        at: &'a str,
+        kind: &'a str,
+        subject: Option<&'a str>,
+        detail: &'a str,
+    ) -> Self {
+        Self::system(at, kind, subject, detail, SEVERITY_ALERT)
+    }
+
+    fn system(
+        at: &'a str,
+        kind: &'a str,
+        subject: Option<&'a str>,
+        detail: &'a str,
+        severity: &'a str,
+    ) -> Self {
         Self {
             at,
             kind,
             actor: ACTOR_SYSTEM,
             subject,
             detail,
-            severity: SEVERITY_WARN,
+            severity,
+        }
+    }
+}
+
+/// The `d` of a `sys_snapshot` row (`spec/data-dictionary.md §3.9`).
+///
+/// `id` is the envelope's and is the snapshot id — a caller-chosen key (`§4.1`), so a
+/// later `put` with `verified_at` amends the row and a `del` on prune removes it, both
+/// blessed by `§4.6`. `hi_lam` and `bytes` are `BIGINT` and therefore JSON **strings**
+/// (`§2.1`); `row_counts` is `VARCHAR` holding JSON, like [`AuditRow::detail`].
+#[derive(Debug, Serialize)]
+pub(crate) struct SnapshotRow<'a> {
+    pub app_id: &'a str,
+    pub created_at: &'a str,
+    pub hi_lam: String,
+    pub row_counts: &'a str,
+    pub bytes: String,
+    pub created_by: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verified_at: Option<&'a str>,
+}
+
+impl<'a> SnapshotRow<'a> {
+    /// The row for a snapshot as written, or as re-asserted after a verification.
+    pub(crate) fn new(
+        snapshot: &'a crate::store::Snapshot,
+        row_counts: &'a str,
+        created_by: &'a str,
+        verified_at: Option<&'a str>,
+    ) -> Self {
+        Self {
+            app_id: &snapshot.manifest.app,
+            created_at: &snapshot.manifest.created,
+            hi_lam: snapshot.manifest.hi_lam.to_string(),
+            row_counts,
+            bytes: snapshot.bytes.to_string(),
+            created_by,
+            verified_at,
         }
     }
 }
@@ -222,6 +315,32 @@ mod tests {
         assert_eq!(
             json,
             r#"{"pubkey":"QUJD","created_at":"2026-09-01T00:00:00.000Z","protocol":"pv/1","build":"custom"}"#
+        );
+    }
+
+    /// `§2.1`: `BIGINT` crosses as a string, and `row_counts` is a string holding JSON.
+    #[test]
+    fn the_snapshot_row_encodes_bigints_as_strings() {
+        let snapshot = crate::store::Snapshot {
+            id: "2026-W35-k7m2q9xf-8830".parse().unwrap(),
+            dir: std::path::PathBuf::new(),
+            manifest: crate::store::Manifest {
+                v: 1,
+                snapshot_id: "2026-W35-k7m2q9xf-8830".into(),
+                app: "hello".into(),
+                created: "2026-08-30T03:00:00.000Z".into(),
+                hi_lam: 8830,
+                hi_seq: Default::default(),
+                engine: "duckdb 1.5.5".into(),
+                tables: Vec::new(),
+            },
+            bytes: 4096,
+        };
+        let json =
+            serde_json::to_string(&SnapshotRow::new(&snapshot, "{}", "k7m2q9xf", None)).unwrap();
+        assert_eq!(
+            json,
+            r#"{"app_id":"hello","created_at":"2026-08-30T03:00:00.000Z","hi_lam":"8830","row_counts":"{}","bytes":"4096","created_by":"k7m2q9xf"}"#
         );
     }
 }

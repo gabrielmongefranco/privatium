@@ -322,7 +322,8 @@ data/<slug>/snap/<snapshot-id>/
 
 `<snapshot-id>` MUST be `<ISO-year>-W<week>-<dev>-<hi_lam>`, e.g. `2026-W35-k7m2q9xf-8830`.
 The high-water `lam` in the name means the read predicate is derivable from a directory
-listing alone.
+listing alone. `<week>` is two digits, zero-padded, as ISO 8601 spells it — `W05`,
+never `W5`.
 
 ### 5.2 MANIFEST.json
 
@@ -334,13 +335,17 @@ listing alone.
   "created": "2026-08-30T03:00:00.000Z",
   "hi_lam": 8830,
   "hi_seq": {"k7m2q9xf": 1041, "b3nn8t2q": 87},
-  "engine": "duckdb 1.4.3",
+  "engine": "duckdb 1.5.5",
   "tables": [
     {"name":"profile","rows":1,
      "parquet_sha256":"...","csv_sha256":"..."}
   ]
 }
 ```
+
+`engine` is the string `duckdb ` followed by the engine's own reported version with any
+leading `v` removed. The value above is illustrative: it names whichever engine wrote the
+Parquet files, and a reader MUST NOT expect a particular version.
 
 ### 5.3 Read precedence
 
@@ -354,6 +359,26 @@ An implementation MUST attempt, in order, and MUST record which tier succeeded:
 
 Tier 2 MUST create tables from `schema.sql` before loading CSV. Implementations MUST NOT
 use CSV type inference.
+
+**The log tail.** For a snapshot with high-water marks `hi_lam` and `hi_seq`, the log tail is
+every event that survives §4.4 and has `lam > hi_lam`. A snapshot **applies** to a log only
+when all three hold:
+
+1. The events its `hi_seq` did not cover — `seq > hi_seq[dev]`, or a `dev` absent from
+   `hi_seq` — are exactly the events with `lam > hi_lam`. An event the snapshot never saw
+   whose `lam` is not above `hi_lam` is §4.1's cross-device case: the snapshot's rows carry
+   no `(lam, ts, dev)` to compare it against, so no tier but the replay can place it.
+2. The log holds every event `hi_seq` claims — `max(seq) ≥ hi_seq[dev]` for every `dev`
+   listed. A snapshot carries no authority and MUST NOT resurrect an event the log has lost.
+3. The snapshot's `schema.sql` matches the app's current declared types
+   (`spec/app-contract.md §4.5`: a changed `schema.sql` rematerializes from the logs).
+
+A snapshot that does not apply is skipped for tiers 1 and 2 and the replay is used. That is
+the expected outcome, not a failure of the snapshot; falling through to tier 3
+*unexpectedly* (`spec/cli.md §7`) means a snapshot that applied could not be read. The tier
+used is node-local state — a fact about this node's cache — and is never an event; a tier 2
+and an unexpected tier 3 are additionally recorded in `sys_audit` as `restore.tier2` and
+`restore.tier3` (`spec/data-dictionary.md §3.10`).
 
 ### 5.4 Retention
 
