@@ -59,7 +59,7 @@ fn test_r1_duckdb_has_native_date_and_decimal() {
 /// turning it off is something the code has to do, and json has to keep working afterwards
 /// — which it does only because it is linked rather than loaded on demand.
 ///
-/// `parquet` is deliberately absent until M4 needs it for snapshots.
+/// `parquet` is the other one, checked below.
 #[test]
 fn test_r1_duckdb_json_is_statically_linked() {
     let conn = duckdb::Connection::open_in_memory().unwrap();
@@ -134,4 +134,48 @@ fn test_m1_ed25519_and_sha256_agree_on_rand_core_and_digest() {
     // the signature crate can be handed the same bytes in one build.
     let digest = Sha256::digest(verifying.as_bytes());
     assert_eq!(digest.len(), 32);
+}
+
+/// `AGENTS.md` again, for the second extension: `parquet` is tier 1 of the restore path
+/// (`spec/protocol.md §5.3`), and `COPY … (FORMAT PARQUET)` and `read_parquet()` exist only
+/// because the cargo feature compiled it in. Linked, never loaded on demand.
+#[test]
+fn test_r1_duckdb_parquet_is_statically_linked() {
+    let conn = duckdb::Connection::open_in_memory().unwrap();
+
+    let mode: String = conn
+        .query_row(
+            "SELECT CAST(install_mode AS VARCHAR) FROM duckdb_extensions() \
+             WHERE extension_name = 'parquet' AND loaded",
+            [],
+            |row| row.get(0),
+        )
+        .expect("the parquet extension is not loaded; check the `parquet` cargo feature");
+    assert_eq!(mode, "STATICALLY_LINKED");
+
+    conn.execute_batch(
+        "SET autoload_known_extensions = false; SET autoinstall_known_extensions = false;",
+    )
+    .unwrap();
+
+    // A round trip through a real file, with autoload off.
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir
+        .path()
+        .join("t.parquet")
+        .display()
+        .to_string()
+        .replace(std::path::MAIN_SEPARATOR, "/");
+    conn.execute_batch(&format!(
+        "COPY (SELECT 'a' AS id, CAST(12.34 AS DECIMAL(18,2)) AS amount) TO '{path}' (FORMAT PARQUET)"
+    ))
+    .unwrap();
+    let amount: String = conn
+        .query_row(
+            &format!("SELECT CAST(amount AS VARCHAR) FROM read_parquet('{path}')"),
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(amount, "12.34");
 }

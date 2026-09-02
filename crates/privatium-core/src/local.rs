@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/local.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-01
+// Created:  2026-09-01  |  Modified: 2026-09-02
 // Summary:  local/state.jsonl — the node-local state of spec/protocol.md §3. Never synced,
 //           never backed up, and never required for restore. In M2 it holds one record per
 //           app: the Lamport counter and the highest `seq` seen per device.
@@ -46,6 +46,11 @@ pub struct Record {
     /// `local/` holding `state.jsonl` and nothing else, and because it is a cache in
     /// exactly the way the rest of this record is: lose it and the next start
     /// rematerializes, which costs work and no data.
+    ///
+    ///
+    /// M4 adds which restore tier built the tables and from which snapshot
+    /// (`store::RestoreRecord`). Node-local for the same reason as the rest: a tier is a
+    /// fact about this node's cache, and copying it to another machine would be a lie.
     ///
     /// `#[serde(default)]` so a `state.jsonl` written by M2 still loads.
     #[serde(default)]

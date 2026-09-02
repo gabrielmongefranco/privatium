@@ -1,9 +1,11 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lib.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-08-31  |  Modified: 2026-09-01
+// Created:  2026-08-31  |  Modified: 2026-09-02
 // Summary:  Crate root. The error type, the M0 linkage probe, `Node::open` — steps 1 to 4
-//           of the bootstrap order in docs/plans/phase-1.md §2.6 — and the sink that turns
-//           what a log scan found into sys_audit rows (spec/protocol.md §4.4).
+//           of the bootstrap order in docs/plans/phase-1.md §2.6 — the sink that turns
+//           what a log scan found into sys_audit rows (spec/protocol.md §4.4), and the
+//           node-level snapshot, restore, verify, prune and maintenance API of
+//           spec/app-contract.md §6 (M4).
 
 //! Privatium core.
 //!
@@ -11,6 +13,7 @@
 //! Neither is optional reading, and where this code and those documents disagree, they
 //! are right and this is a bug.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use thiserror::Error;
@@ -25,7 +28,9 @@ pub mod sys;
 pub use config::{Config, LuaConfig, Mode, NodeConfig, Paths};
 pub use identity::{Identity, NodeId};
 pub use log::{AppLog, Durability, Op};
-pub use store::{Schema, Store, StoreError};
+pub use store::{Restored, Schema, Snapshot, SnapshotId, Store, StoreError, Tier};
+
+use store::{Pruned, RestoreRecord, SnapshotError, SnapshotPolicy, Verification, snapshot};
 
 /// The protocol this build speaks (`spec/protocol.md §12`).
 ///
@@ -134,6 +139,17 @@ pub enum Error {
     /// in the crate would otherwise pay for the rarest failure there is.
     #[error(transparent)]
     Store(#[from] Box<StoreError>),
+
+    /// The node holds no store for this app.
+    ///
+    /// Until the app loader (M5) opens app stores, `_sys` is the only one, and asking for
+    /// another is answered with this rather than with a silent success an embedder would
+    /// build on.
+    #[error("{slug}: no store is open for this app")]
+    AppNotLoaded {
+        /// The app.
+        slug: String,
+    },
 }
 
 /// The crate's result type.
@@ -150,6 +166,15 @@ pub(crate) fn io_at(path: &Path) -> impl FnOnce(std::io::Error) -> Error {
     }
 }
 
+/// What one [`Node::maintain`] did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Maintenance {
+    /// The snapshot written, if one was due.
+    pub snapshot: Option<Snapshot>,
+    /// What retention removed and kept.
+    pub pruned: Pruned,
+}
+
 /// One installation of the Privatium server (`spec/protocol.md §1`).
 ///
 /// Opening a node is the bootstrap order of `docs/plans/phase-1.md §2.6`, and the order
@@ -157,8 +182,9 @@ pub(crate) fn io_at(path: &Path) -> impl FnOnce(std::io::Error) -> Error {
 /// same log an app would use, before a materialized `_sys` or an app loader exists to help.
 /// M2 completed steps 1 to 3 of that order — the tree and the keypair, the `_sys` log with
 /// its recovered `seq` and Lamport counter, and this node's two rows in it. M3 adds step 4,
-/// materializing `_sys` into the DuckDB schema `sys`. Step 5, loading `apps/`, belongs to
-/// M5: it comes after this returns and is not stubbed here.
+/// materializing `_sys` into the DuckDB schema `sys`; M4 makes that a three-tier restore.
+/// Step 5, loading `apps/`, belongs to M5: it comes after this returns and is not stubbed
+/// here.
 #[derive(Debug)]
 pub struct Node {
     paths: Paths,
@@ -208,7 +234,8 @@ impl Node {
         //    log, and a file-existence guard would see it, conclude this was not a first
         //    run, and skip the bootstrap forever — a node with an identity and no
         //    `sys_device` row, with nothing to notice it by.
-        if sys.seq() == 0 {
+        let first_run = sys.seq() == 0;
+        if first_run {
             bootstrap_sys(&mut sys, &identity)?;
         }
 
@@ -217,21 +244,34 @@ impl Node {
         //    behind it yet — and on a first run there is nothing to report anyway.
         audit_recovery(&mut sys, sys::SLUG, &recovered)?;
 
-        // 6. Step 4 of §2.6: materialize `_sys`. Everything above it had to happen first —
-        //    the rows this replays are the ones step 4 just wrote — and step 5, loading
-        //    `apps/`, is M5's and is deliberately absent.
+        // 6. Step 4 of §2.6: materialize `_sys`, by spec/protocol.md §5.3's three tiers.
+        //    Everything above it had to happen first — the rows this replays are the ones
+        //    step 4 just wrote — and step 5, loading `apps/`, is M5's and is deliberately
+        //    absent.
         //
         //    The store is left **unsealed**. `spec/app-contract.md §7`'s sandbox is
         //    instance-wide rather than per-connection (see `store::Store`), so sealing
-        //    here would cost M4 the privileged window its snapshots need, and nothing
-        //    serves app SQL out of `_sys` in the first place. `Store::seal` is
+        //    here would cost the snapshot writer the privileged window it needs, and
+        //    nothing serves app SQL out of `_sys` in the first place. `Store::seal` is
         //    implemented and tested; the app loader in M5 is its first caller, because M5
         //    is where an app's store first exists.
+        let previous = state
+            .get(sys::SLUG)
+            .and_then(|record| record.materialized.restore.clone());
         let mut store = Store::open(&paths, sys::SLUG, store::SYS_DDL).map_err(boxed)?;
         if let Some(record) = state.get(sys::SLUG) {
             store.restore_watermark(record.materialized.clone());
         }
         store.refresh(&store::cutoff_now()).map_err(boxed)?;
+
+        // What §5.3 found, if it is worth an audit row — and if it is, the row is an event
+        // in the very log the tables were built from, so they are refreshed once more.
+        if let Some(restored) = store.restored().cloned()
+            && audit_restore(&mut sys, sys::SLUG, &restored, previous.as_ref(), first_run)?
+        {
+            store.refresh(&store::cutoff_now()).map_err(boxed)?;
+        }
+        note_health(&store, &store, sys::SLUG)?;
 
         // 7. Record what we now know.
         sys.save_to(&mut state);
@@ -257,6 +297,169 @@ impl Node {
         self.sys.save_to(&mut self.state);
         self.store.save_to(&mut self.state);
         self.state.flush()
+    }
+
+    /// Rematerialize `_sys` if its log has grown behind the tables — the read-path check
+    /// M6 will make per request. Returns whether it rebuilt.
+    pub fn refresh(&mut self) -> Result<bool> {
+        self.store.refresh(&store::cutoff_now()).map_err(boxed)
+    }
+
+    // -----------------------------------------------------------------------------------
+    // spec/app-contract.md §6 — `snapshot`, `restore`, `restore_tier` (M4)
+    // -----------------------------------------------------------------------------------
+
+    /// Write a snapshot of `app` now (`spec/protocol.md §5`), and record it as a
+    /// `sys_snapshot` event.
+    pub fn snapshot(&mut self, app: &str) -> Result<Snapshot> {
+        self.snapshot_at(app, jiff::Timestamp::now())
+    }
+
+    /// [`snapshot`](Self::snapshot) at a given instant, which is what names the snapshot.
+    pub fn snapshot_at(&mut self, app: &str, now: jiff::Timestamp) -> Result<Snapshot> {
+        let dev = self.identity.id().clone();
+        let snapshot = self.store_for(app)?.snapshot(&dev, now).map_err(boxed)?;
+        self.record_snapshot(&snapshot)?;
+        Ok(snapshot)
+    }
+
+    /// Append the `sys_snapshot` row (`spec/data-dictionary.md §3.9`) and the
+    /// `snapshot.created` audit row for a snapshot written through any store — this
+    /// node's `_sys`, or an app store the loader holds.
+    ///
+    /// One batch: the index row and the audit row describe one act.
+    pub fn record_snapshot(&mut self, snapshot: &Snapshot) -> Result<()> {
+        let id = snapshot.id.to_string();
+        let counts = snapshot.manifest.row_counts_json();
+        let created_by = self.identity.id().as_str().to_owned();
+        let detail = serde_json::to_string(&serde_json::json!({
+            "app": snapshot.manifest.app,
+            "hi_lam": snapshot.manifest.hi_lam,
+            "tables": snapshot.manifest.tables.len(),
+            "bytes": snapshot.bytes,
+        }))?;
+        let at = log::now();
+        self.sys.batch(|batch| {
+            batch.put(
+                sys::SNAPSHOT,
+                &id,
+                &sys::SnapshotRow::new(snapshot, &counts, &created_by, None),
+            )?;
+            batch.put(
+                sys::AUDIT,
+                &new_ulid(),
+                &sys::AuditRow::info(&at, sys::KIND_SNAPSHOT_CREATED, Some(&id), &detail),
+            )
+        })?;
+        Ok(())
+    }
+
+    /// Rebuild `app`'s cache by `spec/protocol.md §5.3`'s three tiers, reporting which one
+    /// succeeded, and audit a fall-through (`spec/data-dictionary.md §3.10`).
+    pub fn restore(&mut self, app: &str) -> Result<Restored> {
+        let previous = self.restore_record(app);
+        let restored = self
+            .store_for_mut(app)?
+            .restore(&store::cutoff_now())
+            .map_err(boxed)?;
+        if audit_restore(&mut self.sys, app, &restored, previous.as_ref(), false)?
+            && app == sys::SLUG
+        {
+            self.store.refresh(&store::cutoff_now()).map_err(boxed)?;
+        }
+        note_health(&self.store, self.store_for(app)?, app)?;
+        self.flush()?;
+        Ok(restored)
+    }
+
+    /// Which tier built `app`'s cache — what `pv.node()` and `/api/node` report.
+    ///
+    /// `None` for an app this node has never materialized.
+    #[must_use]
+    pub fn restore_tier(&self, app: &str) -> Option<Tier> {
+        self.restore_record(app).map(|record| record.tier)
+    }
+
+    /// Recompute a snapshot's checksums (`spec/cli.md §7`, `--verify`), and if every file
+    /// matches, re-assert its `sys_snapshot` row with `verified_at` set.
+    pub fn verify_snapshot(&mut self, app: &str, id: &SnapshotId) -> Result<Verification> {
+        let dir = self.paths.app_snap_dir(app).join(id.to_string());
+        let verification = snapshot::verify(&dir).map_err(snap_err)?;
+        if verification.ok() {
+            let snapshot = Snapshot::read(&dir).map_err(snap_err)?;
+            let counts = snapshot.manifest.row_counts_json();
+            let created_by = self.identity.id().as_str().to_owned();
+            let now = log::now();
+            self.sys.put(
+                sys::SNAPSHOT,
+                &id.to_string(),
+                &sys::SnapshotRow::new(&snapshot, &counts, &created_by, Some(&now)),
+            )?;
+        }
+        Ok(verification)
+    }
+
+    /// Apply `spec/protocol.md §5.4` to `app`'s snapshots at `now`, tombstoning each
+    /// removed `sys_snapshot` row and auditing `snapshot.pruned`.
+    ///
+    /// Works from the directory alone, so it does not need the app's store to be open.
+    pub fn prune_snapshots(&mut self, app: &str, now: jiff::Timestamp) -> Result<Pruned> {
+        let retention = self.snapshot_policy()?.retention();
+        let pruned =
+            snapshot::prune(&self.paths.app_snap_dir(app), now, &retention).map_err(snap_err)?;
+        for id in &pruned.removed {
+            let id = id.to_string();
+            let detail = serde_json::to_string(&serde_json::json!({
+                "app": app,
+                "retention_days": retention.snapshot_days,
+            }))?;
+            let at = log::now();
+            self.sys.batch(|batch| {
+                batch.del(sys::SNAPSHOT, &id)?;
+                batch.put(
+                    sys::AUDIT,
+                    &new_ulid(),
+                    &sys::AuditRow::info(&at, sys::KIND_SNAPSHOT_PRUNED, Some(&id), &detail),
+                )
+            })?;
+        }
+        Ok(pruned)
+    }
+
+    /// The `snapshot.*` settings of `spec/data-dictionary.md §3.6`, from `sys_setting`,
+    /// with the dictionary's defaults for anything unset.
+    pub fn snapshot_policy(&self) -> Result<SnapshotPolicy> {
+        let mut policy = SnapshotPolicy::default();
+        if let Some(days) = self.setting_u64("snapshot.retention_days")? {
+            policy.retention_days = u32::try_from(days).unwrap_or(u32::MAX);
+        }
+        if let Some(days) = self.setting_u64("snapshot.interval_days")? {
+            policy.interval_days = u32::try_from(days).unwrap_or(u32::MAX);
+        }
+        if let Some(events) = self.setting_u64("snapshot.min_events")? {
+            policy.min_events = events;
+        }
+        Ok(policy)
+    }
+
+    /// The scheduled maintenance of `spec/protocol.md §5`: a snapshot if one is due under
+    /// the policy, then retention. The caller owns the timer — M6's server loop weekly,
+    /// M11's `privatium snapshot` on demand.
+    pub fn maintain(&mut self, app: &str, now: jiff::Timestamp) -> Result<Maintenance> {
+        let policy = self.snapshot_policy()?;
+        let snap_dir = self.paths.app_snap_dir(app);
+        let newest = snapshot::newest(&snap_dir)
+            .map_err(snap_err)?
+            .and_then(|id| snapshot::read_manifest(&snap_dir.join(id.to_string())).ok());
+        let heads = self.heads_for(app)?;
+        let due = snapshot::due(newest.as_ref(), &heads, now, &policy).map_err(snap_err)?;
+        let snapshot = if due {
+            Some(self.snapshot_at(app, now)?)
+        } else {
+            None
+        };
+        let pruned = self.prune_snapshots(app, now)?;
+        Ok(Maintenance { snapshot, pruned })
     }
 
     /// Where this node's files are.
@@ -308,11 +511,105 @@ impl Node {
     pub fn store_mut(&mut self) -> &mut Store {
         &mut self.store
     }
+
+    /// The store for `app`. Only `_sys` until M5 opens app stores.
+    fn store_for(&self, app: &str) -> Result<&Store> {
+        if app == sys::SLUG {
+            Ok(&self.store)
+        } else {
+            Err(Error::AppNotLoaded {
+                slug: app.to_owned(),
+            })
+        }
+    }
+
+    fn store_for_mut(&mut self, app: &str) -> Result<&mut Store> {
+        if app == sys::SLUG {
+            Ok(&mut self.store)
+        } else {
+            Err(Error::AppNotLoaded {
+                slug: app.to_owned(),
+            })
+        }
+    }
+
+    /// The highest `seq` per device in `app`'s log. Only `_sys` until M5.
+    fn heads_for(&self, app: &str) -> Result<BTreeMap<String, u64>> {
+        if app == sys::SLUG {
+            Ok(self.sys.heads().clone())
+        } else {
+            Err(Error::AppNotLoaded {
+                slug: app.to_owned(),
+            })
+        }
+    }
+
+    /// The restore record for `app`: the live store's for `_sys`, `local/state.jsonl`'s
+    /// for anything else.
+    fn restore_record(&self, app: &str) -> Option<RestoreRecord> {
+        if app == sys::SLUG {
+            self.store.restore_record().cloned()
+        } else {
+            self.state
+                .get(app)
+                .and_then(|record| record.materialized.restore.clone())
+        }
+    }
+
+    /// One `sys_setting` value as an integer, if set and integral.
+    ///
+    /// `value` is a JSON-encoded scalar (`§3.6`), so `365` and `"365"` both read as 365.
+    fn setting_u64(&self, key: &str) -> Result<Option<u64>> {
+        let value: Option<String> = match self.store.conn().query_row(
+            &format!(
+                "SELECT value FROM {}.{} WHERE id = ?",
+                store::SYS_SCHEMA,
+                sys::SETTING
+            ),
+            duckdb::params![key],
+            |row| row.get(0),
+        ) {
+            Ok(value) => Some(value),
+            Err(duckdb::Error::QueryReturnedNoRows) => None,
+            Err(error) => return Err(boxed(StoreError::Duck(error))),
+        };
+        let Some(value) = value else {
+            return Ok(None);
+        };
+        let parsed: serde_json::Value = match serde_json::from_str(&value) {
+            Ok(parsed) => parsed,
+            Err(_) => return Ok(None),
+        };
+        Ok(parsed
+            .as_u64()
+            .or_else(|| parsed.as_str().and_then(|s| s.trim().parse().ok())))
+    }
 }
 
 /// `StoreError` is boxed inside [`Error`]; this is the conversion at the call sites.
 fn boxed(source: StoreError) -> Error {
     Error::Store(Box::new(source))
+}
+
+fn snap_err(source: SnapshotError) -> Error {
+    boxed(StoreError::Snapshot(source))
+}
+
+/// Write `app`'s restore facts into `sys.v_health` through the `_sys` store.
+fn note_health(sys_store: &Store, app_store: &Store, app: &str) -> Result<()> {
+    if let Some(record) = app_store.restore_record() {
+        let log_bytes = app_store.log_bytes().map_err(boxed)?;
+        sys_store
+            .note_health(
+                app,
+                record.tier,
+                record.snapshot.as_deref(),
+                &record.at,
+                log_bytes,
+            )
+            .map_err(boxed)?;
+    }
+    Ok(())
 }
 
 /// Write this node's `sys_device` and `sys_node` rows, once, on first run.
@@ -397,6 +694,60 @@ fn audit_recovery(sys_log: &mut AppLog, app: &str, recovered: &log::Recovered) -
     Ok(())
 }
 
+/// Turn what a `spec/protocol.md §5.3` restore did into a `sys_audit` row, when it is
+/// worth one. Returns whether a row was written.
+///
+/// Bounded on purpose, because `Store::refresh` may run per request once M6 exists and a
+/// row per refresh would append to `sys_audit` forever:
+///
+/// - `restore.tier2` (warn) when CSV rescued a snapshot whose Parquet failed, once per
+///   `(tier, snapshot)` — `previous` is what `local/state.jsonl` last recorded.
+/// - `restore.tier3` (alert, `§3.10`) when a snapshot that applied could not be read at
+///   all, once per `(tier, snapshot)` likewise — or when the replay rebuilt a cache that
+///   did not exist for a log that has events, which is `docs/backup-and-restore.md §3`'s
+///   "I rebuilt from scratch" and happens once per deletion. Not on a first run, when the
+///   only events are the ones this very open just wrote.
+///
+/// An *expected* tier 3 — no snapshot yet, a changed `schema.sql`, a tail that is not
+/// causal — is not audited. `sys.v_health` still says what happened.
+fn audit_restore(
+    sys_log: &mut AppLog,
+    app: &str,
+    restored: &Restored,
+    previous: Option<&RestoreRecord>,
+    first_run: bool,
+) -> Result<bool> {
+    let transition =
+        previous.is_none_or(|p| p.tier != restored.tier || p.snapshot != restored.snapshot);
+    let (kind, alert) = match restored.tier {
+        Tier::Parquet => return Ok(false),
+        Tier::Csv if transition => (sys::KIND_RESTORE_TIER2, false),
+        Tier::Replay
+            if (restored.unexpected() && transition) || (restored.from_scratch && !first_run) =>
+        {
+            (sys::KIND_RESTORE_TIER3, true)
+        }
+        _ => return Ok(false),
+    };
+
+    let detail = serde_json::to_string(&serde_json::json!({
+        "app": app,
+        "tier": restored.tier.as_u8(),
+        "snapshot": restored.snapshot,
+        "skipped": restored.skipped,
+        "from_scratch": restored.from_scratch,
+    }))?;
+    let at = log::now();
+    let subject = restored.snapshot.as_deref().unwrap_or(app);
+    let row = if alert {
+        sys::AuditRow::alert(&at, kind, Some(subject), &detail)
+    } else {
+        sys::AuditRow::warn(&at, kind, Some(subject), &detail)
+    };
+    sys_log.put(sys::AUDIT, &new_ulid(), &row)?;
+    Ok(true)
+}
+
 /// A fresh ULID, Crockford Base32, 26 characters (`spec/protocol.md §4.1`).
 fn new_ulid() -> String {
     ulid::Ulid::generate().to_string()
@@ -416,7 +767,7 @@ fn file_name(path: &Path) -> String {
 /// discarded them as unreferenced.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkedEngines {
-    /// DuckDB's own `version()`, e.g. `v1.5.1`.
+    /// DuckDB's own `version()`, e.g. `v1.5.5`.
     pub duckdb: String,
     /// Lua's `_VERSION`, which must be `Lua 5.4` — not LuaJIT, not Luau (`AGENTS.md`).
     pub lua: String,

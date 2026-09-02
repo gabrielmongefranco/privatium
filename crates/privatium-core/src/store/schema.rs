@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/schema.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-01
+// Created:  2026-09-01  |  Modified: 2026-09-02
 // Summary:  What a schema.sql declares, learned from DuckDB's own catalog rather than
 //           from a parser we wrote. Tables, column types, NOT NULL and CHECK, and views —
 //           everything spec/protocol.md §4.5's projection is generated from.
@@ -443,7 +443,8 @@ mod tests {
         let audit = schema.table("sys_audit").unwrap();
         assert!(audit.columns.iter().any(|c| c.name == "at"), "{audit:?}");
 
-        // §4's views, less `v_health`, which needs M4's restore tier.
+        // §4's views, less `v_health`, which the materializer creates over `pv.health`
+        // rather than this file (see sys.sql).
         let views: Vec<&str> = schema.views.iter().map(|v| v.name.as_str()).collect();
         assert_eq!(
             views,
