@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/plans/phase-1.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-31
-Modified: 2026-09-01
+Modified: 2026-09-02
 Summary:  Implementation plan for Phase 1 — a node that works on one machine.
           Non-normative. Where this plan and spec/ disagree, spec/ wins and this
           file is wrong.
@@ -224,6 +224,7 @@ why, not a to-do list.
 | 10 | `BwOffline`; "three prefixes" over a five-row table; `sys_device` table split by a paragraph; unclosed quotation mark | Corrected | `data-api.md`, `privatium-tier2-web/SKILL.md`, `protocol.md §9.1`, `data-dictionary.md §3.2`, `AGENTS.md` |
 | 12 | `app-contract.md §7` described a privileged connection and a sandboxed one coexisting over one app's cache. DuckDB makes all four of those settings `GLOBAL_ONLY` and locks the database file exclusively, so that arrangement cannot be built — and an implementation that appeared to have both would have sandboxed neither | §7 now specifies the boundary as open-privileged → materialize → seal → serve, with rematerializing and snapshotting needing a fresh instance | `app-contract.md §7` (found in M3) |
 | 13 | `§4.6`'s "an `id` that has been deleted MUST NOT be reused" forbade `apps/animals`, which deletes and recreates its `'cursor'` singleton every round on a key `§4.1` explicitly blesses | `§4.6` now names what it protects — a **minted** ULID must not become the key of a different row — and states that a caller-chosen key may be re-asserted, that enforcement is the data API's, and that materialization follows `§4.5` regardless | `protocol.md §4.6` (found in M3) |
+| 14 | `§4.6` justified "a replay follows `§4.5` over whatever the log contains" by citing `§4.1` as forbidding a reader to reject what it finds. `§4.1` forbids rejecting a `seq` gap, specifically — and `§4.4` affirmatively **requires** rejecting a future-dated event, which the materializer does | The paragraph now says a replay follows `§4.5` over whatever survives `§4.4`'s clock hygiene, the only filter a reader is required to apply, and that `§4.1`'s mercy for `seq` gaps is the same principle. Behaviour unchanged; the citation was wrong | `protocol.md §4.6` (found in the M3 audit) |
 
 Defect 11 was found during M1 rather than while writing this plan, which is the rule in
 the last paragraph of this section working as intended. It could not be coded around: the

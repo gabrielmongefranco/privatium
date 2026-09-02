@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/materialize.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-01
+// Created:  2026-09-01  |  Modified: 2026-09-02
 // Summary:  spec/protocol.md §4.5 as SQL — the full replay that is the definition, and the
 //           incremental apply that has to agree with it byte for byte
 //           (docs/plans/phase-1.md §2.5).
@@ -33,19 +33,21 @@ const ENVELOPE_COLUMNS: &str = "{seq:'BIGINT', lam:'BIGINT', ts:'VARCHAR', dev:'
 /// `log_glob` is `data/<app>/log/*.jsonl` — every device's segments, which is what §4.5
 /// step 1 asks for. `cutoff` is the `§4.4` horizon, passed in rather than read from the
 /// clock here so that a replay and an incremental apply compared against each other
-/// cannot disagree merely because time passed between them.
+/// cannot disagree merely because time passed between them. `has_segments` is whether
+/// that glob matches anything at all; see [`source`].
 pub(crate) fn replay_sql(
     target: &str,
     app: &str,
     table: &Table,
     log_glob: &str,
     cutoff: &str,
+    has_segments: bool,
 ) -> String {
     format!(
         "CREATE OR REPLACE TABLE {target} AS
          WITH ev AS (
            SELECT seq, lam, ts, dev, op, id, d
-           FROM read_json('{glob}', format = 'newline_delimited', columns = {cols})
+           FROM {source}
            WHERE {filter}
          ), ranked AS (
            SELECT *, row_number() OVER (PARTITION BY id ORDER BY {order}) AS rn
@@ -54,8 +56,7 @@ pub(crate) fn replay_sql(
          SELECT {projection}
          FROM ranked
          WHERE rn = 1 AND op = 'put';",
-        glob = escape_literal(log_glob),
-        cols = ENVELOPE_COLUMNS,
+        source = source(log_glob, has_segments),
         filter = row_filter(app, &table.name, cutoff),
         order = LWW_ORDER,
         projection = projection(&table.columns),
@@ -64,36 +65,63 @@ pub(crate) fn replay_sql(
 
 /// The tombstone set, from the same replay (`spec/protocol.md §4.6`).
 ///
-/// The mirror image of [`replay_sql`]: the same winning event per `id`, kept when it is a
-/// `del` rather than when it is a `put`. Derived, disposable, and in `cache/` — it is the
-/// set M9's data API consults to refuse a client-supplied ULID that has been deleted.
-pub(crate) fn tombstone_sql(app: &str, tables: &[Table], log_glob: &str, cutoff: &str) -> String {
-    if tables.is_empty() {
-        return format!("CREATE OR REPLACE TABLE {TOMBSTONE_TABLE} (tbl VARCHAR, id VARCHAR);");
-    }
-    let names = tables
-        .iter()
-        .map(|table| format!("'{}'", escape_literal(&table.name)))
-        .collect::<Vec<_>>()
-        .join(", ");
+/// The mirror image of [`replay_sql`]: the same winning event per `(tbl, id)`, kept when
+/// it is a `del` rather than when it is a `put`. Derived, disposable, and in `cache/` — it
+/// is the set M9's data API consults to refuse a client-supplied ULID that has been
+/// deleted.
+///
+/// **Scope is every `tbl` in the app's log, not only the tables `schema.sql` declares.**
+/// `spec/data-api.md §2` accepts writes to an app with no `schema.sql` — "`d` is stored
+/// as-is" — so a schema-less app's tables exist only as `tbl` values in its log, and
+/// `spec/protocol.md §4.6` still requires the data API to refuse a client-supplied `id`
+/// that names a tombstoned row there. An earlier version filtered on the declared tables
+/// and so answered "not tombstoned" for every table `apps/sketch` has, which left M9
+/// nothing to consult. The `app` filter and [`sane_row`] stay: they are `§4.5` step 1 and
+/// `§4.4`, not a scope choice.
+pub(crate) fn tombstone_sql(app: &str, log_glob: &str, cutoff: &str, has_segments: bool) -> String {
     format!(
         "CREATE OR REPLACE TABLE {TOMBSTONE_TABLE} AS
          WITH ev AS (
            SELECT seq, lam, ts, dev, op, tbl, id
-           FROM read_json('{glob}', format = 'newline_delimited', columns = {cols})
-           WHERE app = '{app}' AND tbl IN ({names})
+           FROM {source}
+           WHERE app = '{app}' AND tbl IS NOT NULL
              AND {sane}
          ), ranked AS (
            SELECT *, row_number() OVER (PARTITION BY tbl, id ORDER BY {order}) AS rn
            FROM ev
          )
          SELECT tbl, id FROM ranked WHERE rn = 1 AND op = 'del';",
-        glob = escape_literal(log_glob),
-        cols = ENVELOPE_COLUMNS,
+        source = source(log_glob, has_segments),
         app = escape_literal(app),
         sane = sane_row(cutoff),
         order = LWW_ORDER,
     )
+}
+
+/// Where the envelope rows come from: the log, or a zero-row stand-in shaped like it.
+///
+/// `read_json()` refuses a glob that matches no file — "No files found that match the
+/// pattern" — and an app whose log directory holds no segment yet is not an error: a
+/// schema-less app that has not been written to still has to open, and so does a declared
+/// table before its first event. Rather than special-case every statement that reads the
+/// log, the source is swapped for an empty relation with the same columns and types, so
+/// the filters, the ranking and the projection above run unchanged and produce the empty
+/// table they would have produced from an empty file.
+fn source(log_glob: &str, has_segments: bool) -> String {
+    if has_segments {
+        format!(
+            "read_json('{glob}', format = 'newline_delimited', columns = {cols})",
+            glob = escape_literal(log_glob),
+            cols = ENVELOPE_COLUMNS,
+        )
+    } else {
+        "(SELECT CAST(NULL AS BIGINT) AS seq, CAST(NULL AS BIGINT) AS lam, \
+                 CAST(NULL AS VARCHAR) AS ts, CAST(NULL AS VARCHAR) AS dev, \
+                 CAST(NULL AS VARCHAR) AS app, CAST(NULL AS VARCHAR) AS op, \
+                 CAST(NULL AS VARCHAR) AS tbl, CAST(NULL AS VARCHAR) AS id, \
+                 CAST(NULL AS JSON) AS d WHERE false)"
+            .to_owned()
+    }
 }
 
 /// Apply one event this node just wrote, without re-reading the log
@@ -290,6 +318,7 @@ mod tests {
             &table,
             "/root/log/*.jsonl",
             "2026-09-02T00:00:00.000Z",
+            true,
         );
         let (_, insert) = apply_sql("profile", &table);
 
@@ -319,10 +348,57 @@ mod tests {
             &table,
             "/root/log/*.jsonl",
             "2026-09-02T00:00:00.000Z",
+            true,
         );
         assert!(sql.contains("app = 'hello'"), "{sql}");
         assert!(sql.contains("tbl = 'profile'"), "{sql}");
         assert!(sql.contains("rn = 1 AND op = 'put'"), "{sql}");
+    }
+
+    /// `spec/data-api.md §2` + `spec/protocol.md §4.6`: the tombstone set covers every
+    /// table in the log. A `tbl IN (...)` filter here is the bug this pins.
+    #[test]
+    fn the_tombstone_set_is_not_scoped_to_declared_tables() {
+        let sql = tombstone_sql(
+            "sketch",
+            "/root/log/*.jsonl",
+            "2026-09-02T00:00:00.000Z",
+            true,
+        );
+        assert!(sql.contains("app = 'sketch'"), "{sql}");
+        assert!(!sql.contains("tbl IN"), "{sql}");
+        assert!(sql.contains("PARTITION BY tbl, id"), "{sql}");
+        assert!(sql.contains("rn = 1 AND op = 'del'"), "{sql}");
+    }
+
+    /// With no segment on disk the log is not read at all, because `read_json()` refuses
+    /// a glob that matches nothing; the same statements run over an empty relation.
+    #[test]
+    fn no_segments_means_the_log_is_not_read() {
+        let table = Table {
+            name: "profile".to_owned(),
+            columns: vec![column("display_name", "VARCHAR")],
+            checks: Vec::new(),
+        };
+        let replay = replay_sql(
+            "profile",
+            "hello",
+            &table,
+            "/root/log/*.jsonl",
+            "2026-09-02T00:00:00.000Z",
+            false,
+        );
+        let tombs = tombstone_sql(
+            "hello",
+            "/root/log/*.jsonl",
+            "2026-09-02T00:00:00.000Z",
+            false,
+        );
+        for sql in [&replay, &tombs] {
+            assert!(!sql.contains("read_json"), "{sql}");
+            assert!(sql.contains("WHERE false"), "{sql}");
+        }
+        assert!(replay.contains(&projection(&table.columns)));
     }
 
     /// `id` is the envelope's. A `d.id` must not be able to reach the row key.
@@ -339,6 +415,7 @@ mod tests {
             &table,
             "/root/log/*.jsonl",
             "2026-09-02T00:00:00.000Z",
+            true,
         );
         assert!(!sql.contains("json_extract_string(d, '$.\"id\"')"), "{sql}");
     }

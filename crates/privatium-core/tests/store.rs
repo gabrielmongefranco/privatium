@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/store.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-01
+// Created:  2026-09-01  |  Modified: 2026-09-02
 // Summary:  Materialization against spec/protocol.md §4.5 and §4.6 — last-write-wins at row
 //           granularity, tombstones, the §4.4 horizon, the §2.1 encodings, a cache that can
 //           be deleted, and a log anyone may append to by hand.
@@ -114,6 +114,19 @@ impl Fixture {
             .query_row(&format!("SELECT count(*) FROM \"{table}\""), [], |row| {
                 row.get(0)
             })
+            .unwrap()
+    }
+
+    /// A deterministic fingerprint of the whole tombstone set, `(tbl, id)` pairs in order.
+    fn tombstone_digest(&self) -> String {
+        self.store
+            .conn()
+            .query_row(
+                "SELECT coalesce(md5(string_agg(tbl || ':' || id, '|' ORDER BY tbl, id)), 'empty')
+                 FROM pv._tombstone",
+                [],
+                |row| row.get::<_, String>(0),
+            )
             .unwrap()
     }
 
@@ -355,7 +368,8 @@ fn test_spec_4_6_tombstone_removes_row() {
 /// 2. A caller-supplied stable key may be re-asserted after a tombstone; the row returns.
 /// 3. A hand-appended `put` after a `del` materializes per `§4.5`, because the materializer
 ///    follows `§4.5` and does not invent a rule of its own. Enforcement belongs on the
-///    write path, and `§4.1` says a reader must not reject what it finds in a log.
+///    write path: `§4.4`'s clock hygiene is the only filter a reader is required to apply,
+///    and `§4.1`'s mercy for a `seq` gap is the same principle.
 #[test]
 fn test_spec_4_6_deleted_id_not_reusable() {
     let mut fixture = Fixture::open(HELLO_DDL);
@@ -512,6 +526,104 @@ fn test_spec_3_1_delete_cache_loses_nothing() {
     assert_eq!(
         after, before,
         "the rebuilt table differs from the one deleted"
+    );
+}
+
+/// `§3.1` again, with `local/` **kept** — which is what an owner actually does, since `§3`
+/// calls `cache/` "fully disposable" and says nothing about the two going together.
+///
+/// The trap: `local/state.jsonl` still records the watermark the deleted tables were
+/// built from, the logs have not moved, so a store that adopted that watermark would see
+/// nothing to rebuild and leave a database with schemas and no tables. Both halves are
+/// checked — `_sys` through `Node::open`, which restores the watermark itself, and an app
+/// store through the same two calls M5's loader will make.
+#[test]
+fn test_spec_3_1_delete_cache_only_still_materializes() {
+    let mut fixture = Fixture::open(HELLO_DDL);
+    let ts = ts_offset_secs(-60);
+    let dev = fixture.dev.clone();
+
+    fixture.append(&event(
+        1,
+        1,
+        &ts,
+        &dev,
+        "profile",
+        "a",
+        Some(r#"{"display_name":"Gabriel"}"#),
+    ));
+    fixture.append(&event(
+        2,
+        2,
+        &ts,
+        &dev,
+        "profile",
+        "b",
+        Some(r#"{"display_name":"Ada"}"#),
+    ));
+    fixture.append(&event(3, 3, &ts, &dev, "profile", "b", None));
+    fixture.rematerialize();
+    let before = fixture.digest("profile");
+    assert!(fixture.store.is_tombstoned("profile", "b").unwrap());
+
+    // Record the watermark the way a running node does, so the reopen below has one to
+    // restore. Without this line the test could not reproduce the bug.
+    let mut state = State::load(&fixture.node.paths().local_state()).unwrap();
+    fixture.store.save_to(&mut state);
+    state.flush().unwrap();
+
+    let Fixture {
+        root, node, store, ..
+    } = fixture;
+    drop(store);
+    drop(node);
+
+    fs::remove_dir_all(root.path().join("cache")).unwrap();
+    assert!(
+        root.path().join("local").join("state.jsonl").is_file(),
+        "local/ must survive: the point is that only cache/ went"
+    );
+
+    // `_sys`: `Node::open` restores its own watermark and refreshes.
+    let node = Node::open(root.path()).unwrap();
+    for table in ["sys_device", "sys_node"] {
+        let rows: i64 = node
+            .store()
+            .conn()
+            .query_row(&format!("SELECT count(*) FROM sys.{table}"), [], |row| {
+                row.get(0)
+            })
+            .unwrap_or_else(|error| {
+                panic!("sys.{table} is missing after cache/ was deleted: {error}")
+            });
+        assert_eq!(rows, 1, "sys.{table}");
+    }
+
+    // The app store, restored from the same `local/state.jsonl`.
+    let state = State::load(&node.paths().local_state()).unwrap();
+    let (_log, _) = AppLog::open(node.paths(), APP, node.id(), Durability::Os, &state).unwrap();
+    let mut store = Store::open(node.paths(), APP, HELLO_DDL).unwrap();
+    store.restore_watermark(state.get(APP).unwrap().materialized.clone());
+    assert!(
+        store.refresh(&store::cutoff_now()).unwrap(),
+        "refresh trusted a watermark for tables that no longer exist"
+    );
+
+    let after: String = store
+        .conn()
+        .query_row(
+            "SELECT coalesce(md5(string_agg(t::VARCHAR, '|' ORDER BY t.id)), 'empty') FROM profile t",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        after, before,
+        "the rebuilt table differs from the one deleted"
+    );
+    assert!(
+        store.is_tombstoned("profile", "b").unwrap(),
+        "pv._tombstone must exist and hold the same set"
     );
 }
 
@@ -875,22 +987,34 @@ fn test_hand_appended_line_appears() {
 /// `docs/plans/phase-1.md §2.5` — an incremental apply must produce identical table
 /// contents to a full replay of the same log.
 ///
-/// A pseudo-random stream with a fixed seed: puts and dels over a small id space, so rows
-/// are amended and resurrected rather than merely accumulated. Applied incrementally as it
-/// is written, then replayed from scratch, then compared by digest. If these ever differ,
+/// A pseudo-random stream per fixed seed: puts and dels over a small id space, so rows
+/// are amended and resurrected rather than merely accumulated, spread over a declared
+/// table **and one `schema.sql` does not declare**, because `spec/data-api.md §2` accepts
+/// such writes and the tombstone set has to agree about them too. Applied incrementally as
+/// it is written, then replayed from scratch, then compared by digest — the table's
+/// contents and the whole of `pv._tombstone`, not a count of it. If these ever differ,
 /// the incremental path is wrong — the replay is the definition.
 ///
 /// Both runs are handed the **same** cutoff. Reading the clock twice would let a test fail
 /// because time passed rather than because the two paths disagree.
+///
+/// Several seeds rather than one, so "enough iterations to trust it" is a property of the
+/// test and not of whoever last ran it by hand.
 #[test]
 fn test_incremental_matches_full_replay() {
+    for seed in [0x2026_0901_u64, 0x2026_0902, 0x0BAD_5EED, 0xDEAD_BEEF] {
+        incremental_matches_full_replay(seed);
+    }
+}
+
+fn incremental_matches_full_replay(seed: u64) {
     let mut fixture = Fixture::open(TYPED_DDL);
     let cutoff = store::cutoff_now();
     let dev = fixture.dev.clone();
     let ts = ts_offset_secs(-60);
 
     // A tiny xorshift, so the stream is identical on every platform and every run.
-    let mut seed = 0x2026_0901_u64;
+    let mut seed = seed;
     let mut next = move || {
         seed ^= seed << 13;
         seed ^= seed >> 7;
@@ -902,6 +1026,13 @@ fn test_incremental_matches_full_replay() {
         let roll = next();
         let id = format!("id-{}", roll % 12);
         let put = roll % 4 != 0;
+        // `ghost` is not in `TYPED_DDL`. Its events reach the log and the tombstone set
+        // and nothing else.
+        let tbl = if (roll >> 32) % 3 == 0 {
+            "ghost"
+        } else {
+            "thing"
+        };
         let d = format!(
             r#"{{"name":"n{n}","copay_amount":"{}.{:02}","count":"{}","ok":{},"tags":["t{}"]}}"#,
             roll % 1000,
@@ -911,33 +1042,21 @@ fn test_incremental_matches_full_replay() {
             roll % 5
         );
 
-        fixture.append(&event(
-            n,
-            n,
-            &ts,
-            &dev,
-            "thing",
-            &id,
-            put.then_some(d.as_str()),
-        ));
+        fixture.append(&event(n, n, &ts, &dev, tbl, &id, put.then_some(d.as_str())));
         if put {
             let value: serde_json::Value = serde_json::from_str(&d).unwrap();
-            fixture.store.apply("thing", &id, Some(&value)).unwrap();
+            fixture.store.apply(tbl, &id, Some(&value)).unwrap();
         } else {
             fixture
                 .store
-                .apply::<serde_json::Value>("thing", &id, None)
+                .apply::<serde_json::Value>(tbl, &id, None)
                 .unwrap();
         }
     }
 
     let incremental = fixture.digest("thing");
     let incremental_rows = fixture.count("thing");
-    let incremental_tombs: i64 = fixture
-        .store
-        .conn()
-        .query_row("SELECT count(*) FROM pv._tombstone", [], |row| row.get(0))
-        .unwrap();
+    let incremental_tombs = fixture.tombstone_digest();
 
     // Now the definition: a full replay of the very same log.
     fixture.store.materialize(&cutoff).unwrap();
@@ -945,19 +1064,82 @@ fn test_incremental_matches_full_replay() {
     assert_eq!(
         fixture.count("thing"),
         incremental_rows,
-        "row counts diverged"
+        "seed {seed:#x}: row counts diverged"
     );
     assert_eq!(
         fixture.digest("thing"),
         incremental,
-        "the incremental path and the full replay disagree; §4.5 says the replay is right"
+        "seed {seed:#x}: the incremental path and the full replay disagree; §4.5 says the replay is right"
     );
-    let replayed_tombs: i64 = fixture
+    assert_eq!(
+        fixture.tombstone_digest(),
+        incremental_tombs,
+        "seed {seed:#x}: tombstone sets diverged"
+    );
+
+    // The undeclared table left tombstones and nothing else.
+    assert_ne!(
+        incremental_tombs, "empty",
+        "seed {seed:#x}: no tombstones at all"
+    );
+    let ghost_tables: i64 = fixture
         .store
         .conn()
-        .query_row("SELECT count(*) FROM pv._tombstone", [], |row| row.get(0))
+        .query_row(
+            "SELECT count(*) FROM duckdb_tables() WHERE table_name = 'ghost'",
+            [],
+            |row| row.get(0),
+        )
         .unwrap();
-    assert_eq!(replayed_tombs, incremental_tombs, "tombstone sets diverged");
+    assert_eq!(
+        ghost_tables, 0,
+        "seed {seed:#x}: an undeclared table was created"
+    );
+}
+
+/// `spec/protocol.md §4.6` with `spec/data-api.md §2` — a `del` in an app with no
+/// `schema.sql` is still a tombstone, and `is_tombstoned` reports it.
+///
+/// This is what M9's data API has to consult to refuse a client-supplied ULID naming a
+/// deleted row, and `apps/sketch` is exactly such an app. Both paths are checked: the
+/// replay, for a hand-appended `del`, and the incremental apply, for one this node wrote.
+#[test]
+fn test_spec_4_6_tombstone_reportable_without_schema() {
+    let mut fixture = Fixture::open("");
+    let ts = ts_offset_secs(-60);
+    let dev = fixture.dev.clone();
+
+    fixture.append(&event(
+        1,
+        1,
+        &ts,
+        &dev,
+        "stroke",
+        "s1",
+        Some(r#"{"points":[[0,0],[4,9]]}"#),
+    ));
+    fixture.append(&event(2, 2, &ts, &dev, "stroke", "s1", None));
+    fixture.rematerialize();
+    assert!(
+        fixture.store.is_tombstoned("stroke", "s1").unwrap(),
+        "a schema-less app's del must be reportable"
+    );
+    assert!(!fixture.store.is_tombstoned("stroke", "s2").unwrap());
+
+    // The incremental path, for an event this node wrote.
+    fixture
+        .store
+        .apply::<serde_json::Value>("stroke", "s2", None)
+        .unwrap();
+    assert!(fixture.store.is_tombstoned("stroke", "s2").unwrap());
+
+    // And a re-asserted key clears it, on both paths alike.
+    let value = serde_json::json!({"points": []});
+    fixture.store.apply("stroke", "s2", Some(&value)).unwrap();
+    assert!(!fixture.store.is_tombstoned("stroke", "s2").unwrap());
+
+    // Still no table: the app has no schema.
+    assert!(fixture.store.schema().tables.is_empty());
 }
 
 // ---------------------------------------------------------------------------------------
@@ -1026,6 +1208,34 @@ fn test_spec_app_contract_7_sealed_connection_cannot_read_files() {
 // ---------------------------------------------------------------------------------------
 // schema.sql
 // ---------------------------------------------------------------------------------------
+
+/// An app whose log directory holds no segment yet still opens — schema-less or not.
+///
+/// `read_json()` refuses a glob that matches no file, and the tombstone set is now built
+/// for every app rather than only those with declared tables, so this is the case that
+/// would fail first: a `sketch` that nobody has drawn on. The declared-table half is the
+/// same guard, checked because it is the same statement shape.
+#[test]
+fn test_an_app_with_no_log_yet_still_opens() {
+    let root = tempfile::tempdir().unwrap();
+    let node = Node::open(root.path()).unwrap();
+    assert!(!node.paths().app_log_dir("sketch").exists());
+
+    for (slug, ddl) in [("sketch", ""), ("blank", HELLO_DDL)] {
+        let mut store = Store::open(node.paths(), slug, ddl).unwrap();
+        store
+            .materialize(&store::cutoff_now())
+            .unwrap_or_else(|error| panic!("{slug}: {error}"));
+        assert!(!store.is_tombstoned("stroke", "s1").unwrap());
+        if !ddl.is_empty() {
+            let rows: i64 = store
+                .conn()
+                .query_row("SELECT count(*) FROM profile", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(rows, 0, "{slug}: a table from no log must be empty");
+        }
+    }
+}
 
 /// `spec/app-contract.md §4.5` and `§5.3` — an app with no `schema.sql` has no tables and
 /// still has its log. This is `apps/sketch`.

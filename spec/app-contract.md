@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/app-contract.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-31
+Modified: 2026-09-02
 Summary:  NORMATIVE. What an app is, the three tiers of app, and the three
           deployment modes. The declarative tier is one option, not the model.
 -->
