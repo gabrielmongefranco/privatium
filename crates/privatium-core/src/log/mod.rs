@@ -36,7 +36,16 @@ const TIMESTAMP: jiff::fmt::temporal::DateTimePrinter =
 /// The current instant, formatted as `ts`.
 #[must_use]
 pub fn now() -> String {
-    TIMESTAMP.timestamp_to_string(&jiff::Timestamp::now())
+    format_ts(jiff::Timestamp::now())
+}
+
+/// Any instant, formatted as `ts`.
+///
+/// The `§4.4` horizon M3 compares against has to be printed the same way the envelope's
+/// own `ts` is, or the comparison is between two different spellings of a timestamp.
+#[must_use]
+pub fn format_ts(at: jiff::Timestamp) -> String {
+    TIMESTAMP.timestamp_to_string(&at)
 }
 
 /// One app's event log: every segment on disk, the one this node writes, and the app's

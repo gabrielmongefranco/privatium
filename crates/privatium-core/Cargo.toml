@@ -27,7 +27,18 @@ repository.workspace   = true
 # are unconditional build-dependencies and so compile regardless — build time and
 # supply-chain surface, not a network call, and the reason deny.toml carries a scoped
 # licence exception. Checked against libduckdb-sys 1.10505.0; re-check on a major bump.
-duckdb    = { workspace = true, features = ["bundled"] }
+#
+# M3 — `json` is not optional and is not a convenience. `libduckdb-sys`'s
+# `build_bundled_cc.rs` compiles an extension only when its cargo feature is on, so with
+# `bundled` alone the binary has no `read_json()`, no `JSON` type, and no
+# `json_extract_string()` — which is the whole of the §4.5 projection. Turning it on is
+# also what satisfies `AGENTS.md`'s "extensions statically linked": the feature defines
+# `DUCKDB_EXTENSION_JSON_LINKED` and `LoadAllExtensions` loads it at instance
+# construction, so nothing is ever autoloaded. That same build sets
+# `DUCKDB_EXTENSION_AUTOLOAD_DEFAULT=1`, so autoload-**off** is not free and every
+# connection turns it off explicitly; `test_r1_duckdb_json_is_statically_linked` is the
+# proof. `parquet` is deliberately absent — it belongs to M4's snapshots.
+duckdb    = { workspace = true, features = ["bundled", "json"] }
 mlua      = { workspace = true, features = ["lua54", "vendored", "send"] }
 thiserror = { workspace = true }
 

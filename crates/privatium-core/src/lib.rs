@@ -1,7 +1,7 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lib.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-08-31  |  Modified: 2026-09-01
-// Summary:  Crate root. The error type, the M0 linkage probe, `Node::open` — steps 1 to 3
+// Summary:  Crate root. The error type, the M0 linkage probe, `Node::open` — steps 1 to 4
 //           of the bootstrap order in docs/plans/phase-1.md §2.6 — and the sink that turns
 //           what a log scan found into sys_audit rows (spec/protocol.md §4.4).
 
@@ -19,11 +19,13 @@ pub mod config;
 pub mod identity;
 pub mod local;
 pub mod log;
+pub mod store;
 pub mod sys;
 
 pub use config::{Config, LuaConfig, Mode, NodeConfig, Paths};
 pub use identity::{Identity, NodeId};
 pub use log::{AppLog, Durability, Op};
+pub use store::{Schema, Store, StoreError};
 
 /// The protocol this build speaks (`spec/protocol.md §12`).
 ///
@@ -125,6 +127,13 @@ pub enum Error {
     /// A statically linked engine failed to answer (`AGENTS.md`, Language and stack).
     #[error(transparent)]
     Engine(#[from] EngineError),
+
+    /// Maintaining an app's `cache/<slug>.duckdb` failed (`spec/protocol.md §4.5`).
+    ///
+    /// Boxed for the same reason `Config` is: `duckdb::Error` is wide, and every `Result`
+    /// in the crate would otherwise pay for the rarest failure there is.
+    #[error(transparent)]
+    Store(#[from] Box<StoreError>),
 }
 
 /// The crate's result type.
@@ -146,16 +155,17 @@ pub(crate) fn io_at(path: &Path) -> impl FnOnce(std::io::Error) -> Error {
 /// Opening a node is the bootstrap order of `docs/plans/phase-1.md §2.6`, and the order
 /// is not negotiable: the framework's own `sys_device` row has to be written through the
 /// same log an app would use, before a materialized `_sys` or an app loader exists to help.
-/// M2 completes steps 1 to 3 of that order — the tree and the keypair, the `_sys` log with
-/// its recovered `seq` and Lamport counter, and this node's two rows in it. Materializing
-/// `_sys` is step 4 and belongs to M3; loading `apps/` is step 5 and belongs to M5. Both
-/// come after this returns, and neither is stubbed here.
+/// M2 completed steps 1 to 3 of that order — the tree and the keypair, the `_sys` log with
+/// its recovered `seq` and Lamport counter, and this node's two rows in it. M3 adds step 4,
+/// materializing `_sys` into the DuckDB schema `sys`. Step 5, loading `apps/`, belongs to
+/// M5: it comes after this returns and is not stubbed here.
 #[derive(Debug)]
 pub struct Node {
     paths: Paths,
     config: Config,
     identity: Identity,
     sys: AppLog,
+    store: Store,
     state: local::State,
 }
 
@@ -207,8 +217,25 @@ impl Node {
         //    behind it yet — and on a first run there is nothing to report anyway.
         audit_recovery(&mut sys, sys::SLUG, &recovered)?;
 
-        // 6. Record what we now know.
+        // 6. Step 4 of §2.6: materialize `_sys`. Everything above it had to happen first —
+        //    the rows this replays are the ones step 4 just wrote — and step 5, loading
+        //    `apps/`, is M5's and is deliberately absent.
+        //
+        //    The store is left **unsealed**. `spec/app-contract.md §7`'s sandbox is
+        //    instance-wide rather than per-connection (see `store::Store`), so sealing
+        //    here would cost M4 the privileged window its snapshots need, and nothing
+        //    serves app SQL out of `_sys` in the first place. `Store::seal` is
+        //    implemented and tested; the app loader in M5 is its first caller, because M5
+        //    is where an app's store first exists.
+        let mut store = Store::open(&paths, sys::SLUG, store::SYS_DDL).map_err(boxed)?;
+        if let Some(record) = state.get(sys::SLUG) {
+            store.restore_watermark(record.materialized.clone());
+        }
+        store.refresh(&store::cutoff_now()).map_err(boxed)?;
+
+        // 7. Record what we now know.
         sys.save_to(&mut state);
+        store.save_to(&mut state);
         state.flush()?;
 
         Ok(Self {
@@ -216,6 +243,7 @@ impl Node {
             config,
             identity,
             sys,
+            store,
             state,
         })
     }
@@ -227,6 +255,7 @@ impl Node {
     /// that never flushes is a node that does a little more work at its next start.
     pub fn flush(&mut self) -> Result<()> {
         self.sys.save_to(&mut self.state);
+        self.store.save_to(&mut self.state);
         self.state.flush()
     }
 
@@ -268,6 +297,22 @@ impl Node {
     pub fn sys_log_mut(&mut self) -> &mut AppLog {
         &mut self.sys
     }
+
+    /// `_sys` materialized into the DuckDB schema `sys` (`spec/data-dictionary.md §3`).
+    #[must_use]
+    pub fn store(&self) -> &Store {
+        &self.store
+    }
+
+    /// The same, for the framework's own maintenance of it.
+    pub fn store_mut(&mut self) -> &mut Store {
+        &mut self.store
+    }
+}
+
+/// `StoreError` is boxed inside [`Error`]; this is the conversion at the call sites.
+fn boxed(source: StoreError) -> Error {
+    Error::Store(Box::new(source))
 }
 
 /// Write this node's `sys_device` and `sys_node` rows, once, on first run.

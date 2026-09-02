@@ -278,7 +278,27 @@ field-level merge MUST model each field as its own row.
 ### 4.6 Deletion
 
 `op: "del"` writes a tombstone. Tombstones are permanent; they are never garbage
-collected in `pv/1`. An `id` that has been deleted MUST NOT be reused.
+collected in `pv/1`.
+
+**An `id` the framework minted MUST NOT be reused as the key of a different row.** Once a
+ULID has identified one row it identifies that row forever, deleted or not. Reusing it
+would merge two unrelated histories under §4.5 — silently, and across devices, since a
+tombstone written on one node and a `put` written on another converge on a single row.
+Implementations MUST reject a client-supplied `id` naming a tombstoned row; §9.2's data
+API is the surface where this applies, because it is the only one that accepts an `id`
+from something untrusted, and it already restricts `id` to ULIDs
+(`spec/data-api.md §2`).
+
+This does **not** forbid deleting and re-asserting a *caller-chosen* key. `sys_node` and
+`sys_device` are keyed by Node ID, and `apps/animals` deletes its `'cursor'` singleton at
+the end of a round and writes it again at the start of the next — both blessed by §4.1.
+Such a key names one logical row for the life of the app, so re-asserting it is an
+amendment rather than a reuse, and §4.5 gives the expected answer with no special case.
+Server-side callers choose their own keys and are trusted to mean it.
+
+Materialization does not enforce any of this. A replay follows §4.5 over whatever the log
+contains, because §4.1 forbids a reader to reject what it finds; the constraint is on
+writers.
 
 Implementations MUST NOT offer a "hard delete" that rewrites logs. The supported way to
 destroy data irrecoverably is to destroy the `data/` directory.

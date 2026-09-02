@@ -34,6 +34,22 @@ pub struct Record {
     /// what a sync receiver compares a peer's heads against (`§10.1`).
     #[serde(default)]
     pub heads: BTreeMap<String, u64>,
+    /// What the app's `cache/<slug>.duckdb` was last built from (M3).
+    ///
+    /// The `schema.sql` hash and a length per log segment. Two jobs, both of them
+    /// "notice that the tables are stale": a changed hash is `spec/app-contract.md §4.5`'s
+    /// rematerialize-on-schema-change, and a changed length is a line someone appended by
+    /// hand, which `apps/hello/README.md` blesses and expects to see on the next page load
+    /// rather than the next restart.
+    ///
+    /// It goes here rather than in a file of its own because `spec/protocol.md §3` shows
+    /// `local/` holding `state.jsonl` and nothing else, and because it is a cache in
+    /// exactly the way the rest of this record is: lose it and the next start
+    /// rematerializes, which costs work and no data.
+    ///
+    /// `#[serde(default)]` so a `state.jsonl` written by M2 still loads.
+    #[serde(default)]
+    pub materialized: crate::store::Materialized,
     /// When the record was written. For a human reading the file; nothing parses it.
     pub at: String,
 }
@@ -90,18 +106,48 @@ impl State {
         self.records.get(app)
     }
 
-    /// Record what is now known about one app.
+    /// Record what is now known about one app's log.
+    ///
+    /// Leaves the materialization watermark alone: the log counter and the cache's state
+    /// are set by different callers at different moments, and folding them into one write
+    /// would mean whichever ran second erased the other.
     pub fn set(&mut self, app: &str, lam: u64, heads: BTreeMap<String, u64>) {
-        let record = Record {
+        self.update(app, |record| {
+            record.lam = lam;
+            record.heads = heads;
+        });
+    }
+
+    /// Record what one app's `cache/<slug>.duckdb` was built from (M3).
+    pub fn set_materialized(&mut self, app: &str, materialized: crate::store::Materialized) {
+        self.update(app, |record| record.materialized = materialized);
+    }
+
+    /// Amend one app's record in place, marking the file dirty only if something changed.
+    ///
+    /// The comparison deliberately ignores `at`. It is a human-readable breadcrumb that
+    /// nothing parses, and including it would make every call a change — which would
+    /// rewrite `local/state.jsonl` on every request once M6 calls `refresh` on the read
+    /// path.
+    fn update<F: FnOnce(&mut Record)>(&mut self, app: &str, amend: F) {
+        let existing = self.records.get(app);
+        let mut amended = existing.cloned().unwrap_or_else(|| Record {
             app: app.to_owned(),
-            lam,
-            heads,
-            at: crate::log::now(),
-        };
-        if self.records.get(app) != Some(&record) {
-            self.records.insert(app.to_owned(), record);
-            self.dirty = true;
+            ..Record::default()
+        });
+        amend(&mut amended);
+
+        // Compare with `at` held equal, so only the facts count.
+        amended
+            .at
+            .clone_from(&existing.map(|r| r.at.clone()).unwrap_or_default());
+        if existing == Some(&amended) {
+            return;
         }
+
+        amended.at = crate::log::now();
+        self.records.insert(app.to_owned(), amended);
+        self.dirty = true;
     }
 
     /// Write the file, if anything changed.

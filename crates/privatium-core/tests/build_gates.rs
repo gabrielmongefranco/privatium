@@ -50,6 +50,62 @@ fn test_r1_duckdb_has_native_date_and_decimal() {
     assert_eq!(sum, "0.30");
 }
 
+/// `AGENTS.md`, Language and stack — "extensions statically linked, autoload disabled".
+///
+/// Both halves, mechanically, because neither is free. `libduckdb-sys` compiles an
+/// extension only when its cargo feature is on, so with `bundled` alone this build has no
+/// `read_json()` at all and M3 cannot materialize anything. And the bundled build sets
+/// `DUCKDB_EXTENSION_AUTOLOAD_DEFAULT=1`, so `autoload_known_extensions` starts **true**:
+/// turning it off is something the code has to do, and json has to keep working afterwards
+/// — which it does only because it is linked rather than loaded on demand.
+///
+/// `parquet` is deliberately absent until M4 needs it for snapshots.
+#[test]
+fn test_r1_duckdb_json_is_statically_linked() {
+    let conn = duckdb::Connection::open_in_memory().unwrap();
+
+    let mode: String = conn
+        .query_row(
+            "SELECT CAST(install_mode AS VARCHAR) FROM duckdb_extensions() \
+             WHERE extension_name = 'json' AND loaded",
+            [],
+            |row| row.get(0),
+        )
+        .expect("the json extension is not loaded; check the `json` cargo feature");
+    assert_eq!(mode, "STATICALLY_LINKED");
+
+    // Autoload off, and json still answers — which is the whole point of linking it.
+    conn.execute_batch(
+        "SET autoload_known_extensions = false; SET autoinstall_known_extensions = false;",
+    )
+    .unwrap();
+
+    let value: String = conn
+        .query_row(
+            "SELECT json_extract_string('{\"a\":\"b\"}', '$.a')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(value, "b");
+
+    // `json_serialize_sql()` exists and refuses DDL. Pinned because the plan named it as
+    // M3's schema.sql parser and it cannot be one: it round-trips SELECT ASTs only, so the
+    // schema is read from DuckDB's catalog instead (`store::schema`). If a later DuckDB
+    // lifts this restriction, this assertion is where that shows up.
+    let serialized: String = conn
+        .query_row(
+            "SELECT json_serialize_sql('CREATE TABLE t (id VARCHAR PRIMARY KEY)')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(
+        serialized.contains("\"error\":true"),
+        "json_serialize_sql now accepts DDL: {serialized}"
+    );
+}
+
 /// R2 — the vendored Lua C build compiles and links, and it is 5.4.
 ///
 /// Not LuaJIT (iOS forbids JIT) and not Luau (a dialect fragments the documentation and

@@ -405,8 +405,28 @@ SET autoload_known_extensions = false;
 SET lock_configuration = true;        -- must be last
 ```
 
-Only the framework's privileged connection performs file I/O. This is not optional
-hardening — DuckDB with external access enabled can read `identity/node.key`.
+This is not optional hardening — DuckDB with external access enabled can read
+`identity/node.key`.
+
+**The boundary is in time, not in two connection handles.** These four settings are
+`GLOBAL_ONLY` in DuckDB: they belong to the database instance, not to a connection. A
+`.duckdb` file is also locked exclusively, so a second instance cannot open one app's cache
+alongside the first. There is therefore no arrangement in which a privileged connection and
+a sandboxed connection coexist over the same cache, and an implementation that appears to
+have both has really sandboxed neither.
+
+What an implementation MUST do instead:
+
+1. Open the cache **privileged** — external access on, autoload and autoinstall off, since
+   materializing reads the log files through `read_json()`.
+2. Materialize.
+3. Apply the four settings above, `lock_configuration` last. From this point **no**
+   connection on the instance can perform file I/O, the framework's own included.
+4. Serve app SQL from that instance.
+
+Rematerializing, and writing a snapshot (`spec/protocol.md §5`), need step 1 again and
+therefore a fresh instance. Applying a newly appended event does not: it is `DELETE` plus
+`INSERT` over values the framework already holds, and touches no file.
 
 Tier 3 runs in your own process and is not sandboxed. That is the trade: full power, full
 responsibility.
