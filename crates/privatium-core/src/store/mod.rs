@@ -23,18 +23,22 @@ pub mod decimal;
 mod events;
 pub mod materialize;
 pub mod normalize;
+pub mod params;
 pub mod restore;
 pub mod sandbox;
 pub mod schema;
 pub mod snapshot;
+pub mod validate;
 
 pub use decimal::Decimal;
+pub use params::Params;
 pub use restore::{Restored, SkipReason, Skipped, Tier};
 pub use schema::{Column, Kind, Schema, Table, View};
 pub use snapshot::{
     LogRetention, Manifest, ManifestTable, Pruned, Retention, Snapshot, SnapshotError, SnapshotId,
     SnapshotPolicy, TableCheck, Verification,
 };
+pub use validate::{Violation, validate};
 
 use events::Event;
 
@@ -152,6 +156,9 @@ pub struct Store {
     schema: Schema,
     /// Whether this is `_sys`, which carries the framework's health table and view.
     is_sys: bool,
+    /// `cache/_sys.sqlite`, attached as `sys` on every app connection
+    /// (`spec/data-dictionary.md §4`). `None` for `_sys` itself.
+    sys_path: Option<PathBuf>,
     watermark: Materialized,
     /// Whether `cache/<slug>.sqlite` did not exist when this store opened it, and no
     /// rebuild has happened since.
@@ -197,7 +204,11 @@ impl Store {
         let conn = Connection::open(&path).map_err(StoreError::Sql)?;
         conn.busy_timeout(BUSY).map_err(StoreError::Sql)?;
         decimal::register(&conn).map_err(StoreError::Sql)?;
+        // A view may read `$name` (`params`); on the framework's own connection every
+        // placeholder is NULL, which is all a rebuild or a snapshot ever needs of one.
+        params::register(&conn).map_err(StoreError::Sql)?;
 
+        let is_sys = slug == crate::sys::SLUG;
         Ok(Self {
             slug: slug.to_owned(),
             path,
@@ -205,7 +216,8 @@ impl Store {
             snap_dir: paths.app_snap_dir(slug),
             conn,
             schema,
-            is_sys: slug == crate::sys::SLUG,
+            is_sys,
+            sys_path: (!is_sys).then(|| paths.app_cache_db(crate::sys::SLUG)),
             watermark: Materialized::default(),
             fresh,
             restored: None,
@@ -322,10 +334,17 @@ impl Store {
 
     /// A connection for app SQL (`spec/app-contract.md §7`): read-only at the file,
     /// `query_only` at the connection, and an authorizer that refuses every write, every
-    /// `PRAGMA`, `ATTACH` and extension loading. Fresh each time; drop it when the request
-    /// is done.
+    /// `PRAGMA`, `ATTACH` and extension loading — with `cache/_sys.sqlite` attached
+    /// read-only as `sys` first (`spec/data-dictionary.md §4`). Fresh each time; drop it
+    /// when the request is done.
     pub fn app_conn(&self) -> Result<Connection, StoreError> {
-        sandbox::open_readonly(&self.path).map_err(StoreError::Sql)
+        self.app_conn_bound().map(|(conn, _)| conn)
+    }
+
+    /// [`app_conn`](Self::app_conn) together with the table its `$name` placeholders
+    /// read from (`spec/data-api.md §1`) — what `/api/q/<view>` binds before it queries.
+    pub fn app_conn_bound(&self) -> Result<(Connection, Params), StoreError> {
+        sandbox::open_readonly(&self.path, self.sys_path.as_deref()).map_err(StoreError::Sql)
     }
 
     /// The framework's connection, for its own reads and writes.

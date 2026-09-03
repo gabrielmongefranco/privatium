@@ -2,12 +2,13 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-03  |  Modified: 2026-09-03
 // Summary:  /static/* (spec/protocol.md §9.1): the shell's own assets, embedded from
-//           assets/shell/ — its stylesheet and the vendored htmx. pv.js is M9's and is not
-//           here; until then the path is a 404 like any other file the shell does not ship.
+//           assets/shell/ — its stylesheet, the vendored htmx, and pv.js, the data API
+//           helper of spec/data-api.md §5.
 
 use include_dir::{Dir, include_dir};
 
-/// `assets/shell/`: `shell.css`, `htmx.min.js`, and the `VENDOR.md` that is not served.
+/// `assets/shell/`: `shell.css`, `htmx.min.js`, `pv.js`, and the `VENDOR.md` that is not
+/// served.
 static SHELL: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/assets/shell");
 
 /// One embedded asset.
@@ -46,7 +47,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_shell_ships_its_stylesheet_and_htmx_and_nothing_else() {
+    fn the_shell_ships_its_stylesheet_htmx_and_pv_js_and_nothing_else() {
         assert_eq!(
             get("shell.css").unwrap().content_type,
             "text/css; charset=utf-8"
@@ -54,8 +55,19 @@ mod tests {
         let htmx = get("htmx.min.js").unwrap();
         assert_eq!(htmx.content_type, "text/javascript; charset=utf-8");
         assert!(htmx.bytes.starts_with(b"var htmx="));
+        let pv = get("pv.js").unwrap();
+        assert_eq!(pv.content_type, "text/javascript; charset=utf-8");
+        assert!(
+            std::str::from_utf8(pv.bytes)
+                .unwrap()
+                .contains("export const pv")
+        );
+        assert!(
+            pv.bytes.len() < 8 * 1024,
+            "{} bytes: ~4 KB, no build",
+            pv.bytes.len()
+        );
         assert!(get("VENDOR.md").is_none());
         assert!(get("../icons/LICENSE").is_none());
-        assert!(get("pv.js").is_none(), "pv.js is M9's");
     }
 }

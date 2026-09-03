@@ -292,6 +292,11 @@ data directory, tunnel credentials) live in `config.toml` and the OS keyring, no
 | `pairing.max_attempts` | `5` | |
 | `ui.locale` | `en-US` | |
 | `ui.date_format` | `iso` | `iso` \| `us` \| `eu` |
+| `api.sql_rate` | `20` | Ad-hoc SQL requests per second per session (`spec/data-api.md §7`) |
+| `api.max_batch` | `1000` | Events per `POST /api/events` |
+| `api.max_body` | `4194304` | Bytes per data API request |
+| `api.max_rows` | `10000` | The most a query returns; a larger `limit` is clamped |
+| `api.max_streams` | `8` | Open `/api/stream` connections per device |
 
 ### 3.7 `sys_peer` — **local store only**
 
@@ -418,8 +423,11 @@ none occurred.
 ## 4. Framework views
 
 Views the framework exposes to apps and to the shell UI, spelled as an app sees them —
-`cache/_sys.sqlite` attached read-only as `sys` (§1). Apps MAY read these; they MUST NOT
-write to `sys` tables, and cannot: the attachment is read-only.
+`cache/_sys.sqlite` attached read-only as `sys` (§1) on every app connection, by the
+framework and before the authorizer that refuses `ATTACH` goes on
+(`spec/app-contract.md §7`), so `pv.query` and `/api/sql` read `sys.v_app_nav` as they
+read the app's own tables. Apps MAY read these; they MUST NOT write to `sys` tables, and
+cannot: the attachment is read-only, as `main` is, and cannot be detached.
 
 | View | Returns |
 |---|---|

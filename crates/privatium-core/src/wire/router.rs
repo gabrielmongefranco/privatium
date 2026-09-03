@@ -161,6 +161,18 @@ impl Router {
             return match rest {
                 "/v1/health" => Route::Health,
                 "/v1/manifest" => Route::Manifest,
+                // In solo mode the mount is `/`, so `/api/…` is also the solo app's data
+                // API (`spec/data-api.md`); `§9.2`'s `/api/v1/*` stays the framework's.
+                _ if self.mode == Mode::Solo && rest.len() > 1 && !rest.starts_with("/v1") => {
+                    match self.mounts.get("/") {
+                        Some(slug) => Route::App {
+                            slug: slug.clone(),
+                            mount: "/".to_owned(),
+                            rest: path.to_owned(),
+                        },
+                        None => Route::NotFound,
+                    }
+                }
                 _ => Route::NotFound,
             };
         }
@@ -302,6 +314,28 @@ mod tests {
         }
     }
 
+    /// Beneath the solo mount `/`, `api/` is the app's data API (`spec/protocol.md §9.1`):
+    /// `/api/q/x` reaches the app, `/api/v1/*` stays the framework's, and in host mode
+    /// nothing else under `/api` exists.
+    #[test]
+    fn solo_api_is_the_apps_data_api_and_v1_stays_the_frameworks() {
+        assert_eq!(
+            solo().resolve("/api/q/v_x"),
+            app("sketch", "/", "/api/q/v_x")
+        );
+        assert_eq!(
+            solo().resolve("/api/stream"),
+            app("sketch", "/", "/api/stream")
+        );
+        assert_eq!(solo().resolve("/api/v1/health"), Route::Health);
+        assert_eq!(solo().resolve("/api/v1/nope"), Route::NotFound);
+        assert_eq!(host().resolve("/api/q/v_x"), Route::NotFound);
+        assert_eq!(
+            Router::new(Mode::Solo, []).resolve("/api/q/v_x"),
+            Route::NotFound
+        );
+    }
+
     #[test]
     fn framework_prefixes_resolve_the_same_in_both_modes() {
         for router in [host(), solo()] {
@@ -322,8 +356,9 @@ mod tests {
             assert_eq!(router.resolve("/settings/apps/Bad/seed"), Route::NotFound);
             assert_eq!(router.resolve("/api/v1/health"), Route::Health);
             assert_eq!(router.resolve("/api/v1/manifest"), Route::Manifest);
-            assert_eq!(router.resolve("/api/v2/health"), Route::NotFound);
+            assert_eq!(router.resolve("/api/v1/nope"), Route::NotFound);
             assert_eq!(router.resolve("/api"), Route::NotFound);
+            assert_eq!(router.resolve("/api/"), Route::NotFound);
             assert_eq!(
                 router.resolve("/skills/privatium-overview.md"),
                 Route::Skill {

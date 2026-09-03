@@ -341,7 +341,8 @@ document store:
 
 ```js
 await pv.append([{ op:'put', tbl:'state', id:'game', d: myEntireGameState }]);
-const { d } = await pv.get('state', 'game');
+const saved = await pv.get('state', 'game');   // the winning event, or null
+if (saved) restore(saved.d);
 ```
 
 You still get sync, replication, snapshots, and plain-text backup. You just do not get SQL
@@ -423,6 +424,12 @@ be, at minimum:
 
 This is not optional hardening — a connection that can `ATTACH` can read
 `identity/node.key` into a table, and one that can `VACUUM INTO` can write it anywhere.
+
+The one attachment is the framework's own, made before the authorizer is installed:
+`cache/_sys.sqlite` as `sys`, read-only like `main`, so an app reads `sys.v_app_nav` and
+the other views of `spec/data-dictionary.md §4` on the same connection. It cannot be
+detached; nothing else can be attached. The connection also carries `pv_param`, the
+function a view's `$name` placeholder becomes (`spec/data-api.md §1`).
 
 **The boundary is the connection.** The framework's own connection — the one that reads the
 log, materializes, restores and writes snapshots — is a separate handle on the same file and

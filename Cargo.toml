@@ -32,6 +32,11 @@ axum       = { version = "0.8.9", default-features = false }
 tower      = "0.5.3"
 tower-http = "0.7.1"
 tokio      = "1.53.1"
+# Streams — M9. The SSE body of spec/data-api.md §3 is a channel receiver polled as a
+# stream, and `Body::from_stream` wants a `futures_core::Stream`. The trait crate alone —
+# already in the graph beneath axum, so no new compile unit — rather than `tokio-stream`
+# (a new crate for one wrapper) or the `futures` facade.
+futures-core = "0.3.34"
 
 # Lua — M7. lua54 (not LuaJIT, not Luau: AGENTS.md), vendored so no system Lua is needed.
 mlua = "0.12.1"

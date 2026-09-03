@@ -188,6 +188,9 @@ pub struct ColumnType {
     /// The declared kind, for a column read from a table or through a view. `None` for an
     /// expression such as `count(*)`, which arrives by its storage class.
     pub kind: Option<Kind>,
+    /// The declared type as written — `DECIMAL(18,2)` — for the same column; what the data
+    /// API reports in `columns` (`spec/data-api.md §1`).
+    pub ty: Option<String>,
 }
 
 /// Type every column of a prepared statement against the schema
@@ -202,16 +205,16 @@ pub fn column_types(statement: &rusqlite::Statement<'_>, schema: &Schema) -> Vec
         .columns_with_metadata()
         .into_iter()
         .map(|column| {
-            let kind = match (column.table_name(), column.origin_name()) {
+            let declared = match (column.table_name(), column.origin_name()) {
                 (Some(table), Some(origin)) => schema
                     .table(table)
-                    .and_then(|t| t.columns.iter().find(|c| c.name == origin))
-                    .map(|c| c.kind),
+                    .and_then(|t| t.columns.iter().find(|c| c.name == origin)),
                 _ => None,
             };
             ColumnType {
                 name: column.name().to_owned(),
-                kind,
+                kind: declared.map(|c| c.kind),
+                ty: declared.map(|c| c.ty.clone()),
             }
         })
         .collect()

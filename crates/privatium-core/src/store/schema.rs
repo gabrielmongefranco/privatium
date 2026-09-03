@@ -12,8 +12,7 @@ use std::fmt::Write as _;
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 
-use crate::store::decimal;
-use crate::store::{StoreError, sandbox};
+use crate::store::{StoreError, decimal, params, sandbox};
 
 /// The column every table must have (`spec/app-contract.md §4.5`).
 pub const ID_COLUMN: &str = "id";
@@ -120,8 +119,12 @@ pub struct Table {
 pub struct View {
     /// The view name.
     pub name: String,
-    /// The `CREATE VIEW` statement, as the author wrote it.
+    /// The `CREATE VIEW` statement as SQLite holds it: the author's text with every
+    /// `$name` rewritten to `pv_param('name')` (`params`).
     pub sql: String,
+    /// The `$name` placeholders the view reads, in order of first appearance — what
+    /// `/api/q/<view>` binds from the query string (`spec/data-api.md §1`).
+    pub params: Vec<String>,
 }
 
 /// Everything a `schema.sql` declares.
@@ -136,6 +139,9 @@ pub struct Schema {
     /// This is `sys_app.schema_hash` (`spec/data-dictionary.md §3.4`), and a change to it
     /// is what forces a full rematerialization (`spec/app-contract.md §4.5`).
     pub hash: String,
+    /// The DDL as it ran: the source with `$name` rewritten (`params::rewrite`). What the
+    /// constraint check of `spec/data-api.md §2` executes in its throwaway database.
+    pub ddl: String,
 }
 
 impl Schema {
@@ -167,10 +173,14 @@ impl Schema {
     pub fn parse(sql: &str) -> Result<Self, StoreError> {
         let conn = Connection::open_in_memory().map_err(StoreError::Sql)?;
         decimal::register(&conn).map_err(StoreError::Sql)?;
+        params::register(&conn).map_err(StoreError::Sql)?;
         conn.authorizer(Some(sandbox::authorize_ddl))
             .map_err(StoreError::Sql)?;
 
-        conn.execute_batch(sql)
+        // SQLite refuses a `$name` inside a view; the framework's `pv_param('name')` is
+        // what runs in its place (`spec/data-api.md §1`, `params`).
+        let ddl = params::rewrite(sql);
+        conn.execute_batch(&ddl)
             .map_err(|source| StoreError::Schema {
                 problem: first_line(&source.to_string()),
             })?;
@@ -185,6 +195,7 @@ impl Schema {
             tables: read_tables(&conn)?,
             views: read_views(&conn)?,
             hash: hash_of(sql),
+            ddl,
         };
         schema.tables.sort_by(|a, b| a.name.cmp(&b.name));
         schema.views.sort_by(|a, b| a.name.cmp(&b.name));
@@ -277,7 +288,8 @@ fn read_views(conn: &Connection) -> Result<Vec<View>, StoreError> {
     let mut views = Vec::new();
     for row in rows {
         let (name, sql) = row.map_err(StoreError::Sql)?;
-        views.push(View { name, sql });
+        let params = params::placeholders(&sql);
+        views.push(View { name, sql, params });
     }
     Ok(views)
 }
@@ -349,6 +361,30 @@ mod tests {
         assert_eq!(schema.views.len(), 1);
         assert_eq!(schema.views[0].name, "v_leaves");
         assert!(schema.views[0].sql.starts_with("CREATE VIEW v_leaves"));
+        assert!(schema.views[0].params.is_empty());
+    }
+
+    /// `spec/data-api.md §1` — a view may read `$name`, which SQLite alone refuses
+    /// ("parameters are not allowed in views"); the schema loads with the placeholder
+    /// rewritten to the framework's function and the view knows its names.
+    #[test]
+    fn a_view_may_read_a_named_placeholder() {
+        let source = "CREATE TABLE fill (id VARCHAR PRIMARY KEY, due_on DATE);
+             CREATE VIEW v_upcoming AS SELECT id FROM fill
+               WHERE due_on <= date('now', '+' || $days || ' days') AND $days IS NOT NULL;";
+        let schema = Schema::parse(source).unwrap();
+        assert_eq!(schema.views[0].params, vec!["days"]);
+        assert!(
+            schema.views[0].sql.contains("pv_param('days')"),
+            "{}",
+            schema.views[0].sql
+        );
+        assert!(!schema.ddl.contains("$days"));
+        assert_eq!(
+            schema.hash,
+            hash_of(source),
+            "the hash is over the author's text"
+        );
     }
 
     #[test]

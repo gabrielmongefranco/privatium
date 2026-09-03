@@ -30,6 +30,10 @@ pub const JSON: &str = "application/json";
 pub const TEXT: &str = "text/plain; charset=utf-8";
 pub const MARKDOWN: &str = "text/markdown; charset=utf-8";
 pub const ZIP: &str = "application/zip";
+/// Raw event lines, one per line (`spec/data-api.md §1`).
+pub const NDJSON: &str = "application/x-ndjson";
+/// Server-Sent Events (`spec/data-api.md §3`).
+pub const EVENT_STREAM: &str = "text/event-stream";
 
 /// Apply `§9.3` to a response: the CSP given if none is set yet, `nosniff`, and
 /// `no-referrer`. Idempotent, so a response built with an app's policy keeps it when the

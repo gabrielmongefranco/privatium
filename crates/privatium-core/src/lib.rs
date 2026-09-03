@@ -215,9 +215,26 @@ pub enum Error {
         app: String,
         /// The table.
         tbl: String,
+        /// The event's position in the batch, from 0 — what the data API reports as the
+        /// offending index (`spec/data-api.md §2`).
+        index: usize,
         /// The column whose value was refused.
         column: String,
         /// What was wrong with it.
+        problem: String,
+    },
+
+    /// A row breaks a `NOT NULL` or `CHECK` constraint of `schema.sql`
+    /// (`spec/data-api.md §2`, `spec/lua-api.md §3.3`). Refused before the append.
+    #[error("{app}: {tbl}: event {index}: {problem}")]
+    Constraint {
+        /// The app.
+        app: String,
+        /// The table.
+        tbl: String,
+        /// The event's position in the batch, from 0.
+        index: usize,
+        /// What SQLite said.
         problem: String,
     },
 }

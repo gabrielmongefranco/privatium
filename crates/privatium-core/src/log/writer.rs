@@ -186,7 +186,9 @@ impl Writer {
         Ok(seq)
     }
 
-    /// Append several events atomically, under one `ts` and contiguous `seq`.
+    /// Append several events atomically, under one `ts` and contiguous `seq`. Returns the
+    /// lines exactly as they went to the file, one per event and without the newline —
+    /// what the data API's stream forwards, byte for byte (`spec/protocol.md §4.2`).
     ///
     /// The closure builds the batch; nothing reaches the file until it returns `Ok`, and an
     /// `Err` leaves `seq`, the Lamport counter, and the file untouched. This is the shape
@@ -201,11 +203,11 @@ impl Writer {
     /// prefix, a checksum footer, or a temp-file rename would each buy true atomicity, and
     /// each would break `AGENTS.md` invariant 1 — the live tail has to stay appendable by
     /// `echo`.
-    pub fn batch<F>(&mut self, lam: &mut Lamport, build: F) -> Result<usize>
+    pub fn batch<F>(&mut self, lam: &mut Lamport, build: F) -> Result<Vec<Vec<u8>>>
     where
         F: FnOnce(&mut Batch<'_>) -> Result<()>,
     {
-        let (buf, seq, staged, count) = {
+        let (buf, seq, staged, lines) = {
             let mut batch = Batch {
                 app: &self.app,
                 dev: &self.dev,
@@ -213,20 +215,20 @@ impl Writer {
                 seq: self.seq,
                 lam: *lam,
                 buf: Vec::new(),
-                count: 0,
+                lines: Vec::new(),
             };
             build(&mut batch)?;
-            (batch.buf, batch.seq, batch.lam, batch.count)
+            (batch.buf, batch.seq, batch.lam, batch.lines)
         };
 
-        if count == 0 {
-            return Ok(0);
+        if lines.is_empty() {
+            return Ok(lines);
         }
 
         self.commit(&buf)?;
         self.seq = seq;
         *lam = staged;
-        Ok(count)
+        Ok(lines)
     }
 
     /// One `write_all`, then the durability policy.
@@ -248,6 +250,12 @@ impl Writer {
         self.seq
     }
 
+    /// Continue from `seq` when the file holds more than this writer wrote — a line
+    /// appended by hand while the node ran. Never moves backwards.
+    pub(crate) fn resume(&mut self, seq: u64) {
+        self.seq = self.seq.max(seq);
+    }
+
     /// The file being appended to.
     #[must_use]
     pub fn path(&self) -> &Path {
@@ -267,7 +275,8 @@ pub struct Batch<'a> {
     seq: u64,
     lam: Lamport,
     buf: Vec<u8>,
-    count: usize,
+    /// Each staged line without its newline, in order — handed back once written.
+    lines: Vec<Vec<u8>>,
 }
 
 impl Batch<'_> {
@@ -285,8 +294,7 @@ impl Batch<'_> {
             id,
             Some(d),
         )?;
-        self.buf.extend_from_slice(&line);
-        self.count += 1;
+        self.stage(line);
         Ok(())
     }
 
@@ -304,9 +312,14 @@ impl Batch<'_> {
             id,
             None,
         )?;
-        self.buf.extend_from_slice(&line);
-        self.count += 1;
+        self.stage(line);
         Ok(())
+    }
+
+    fn stage(&mut self, mut line: Vec<u8>) {
+        self.buf.extend_from_slice(&line);
+        line.pop();
+        self.lines.push(line);
     }
 
     /// The instant every event in this batch carries.

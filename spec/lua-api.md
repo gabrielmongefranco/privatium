@@ -114,10 +114,14 @@ local one  = pv.query1('SELECT count(*) AS n FROM fill')
 local row  = pv.get_row('fill', id)
 ```
 
-Runs on the sandboxed SQLite connection (`spec/app-contract.md §7`). Parameters are bound,
-never interpolated; string concatenation into SQL MUST be rejected by the linter. Sums
-over `DECIMAL` columns use `decimal_sum()`; date arithmetic uses `date(x, '+30 days')`
-(`spec/data-dictionary.md §2`).
+Runs on the sandboxed SQLite connection (`spec/app-contract.md §7`), with
+`cache/_sys.sqlite` attached read-only as `sys`, so `pv.query('SELECT * FROM
+sys.v_app_nav')` answers (`spec/data-dictionary.md §4`). Parameters are bound, never
+interpolated; string concatenation into SQL MUST be rejected by the linter. Sums over
+`DECIMAL` columns use `decimal_sum()`; date arithmetic uses `date(x, '+30 days')`
+(`spec/data-dictionary.md §2`). A view that reads a `$name` placeholder
+(`spec/data-api.md §1`) reads NULL here — the query string that binds one belongs to the
+data API — so a handler that needs the parameter writes the `SELECT` itself.
 
 **How a result column is typed.** What SQLite holds, as Lua holds it — the rule every
 SQLite binding follows: an `INTEGER` is a Lua integer, a `REAL` a Lua number, `TEXT` a
@@ -201,6 +205,12 @@ Where a numeric date's day and month are both twelve or less, `ui.date_format = 
 reads the day first and anything else the month first; a two-digit year `00`–`69` is this
 century and `70`–`99` the last. The same normalization applies to `sample/seed.jsonl` and
 to the data API.
+
+**Constraints.** After normalization, every put is held against the schema's `NOT NULL`
+and `CHECK` constraints — the author's own DDL, run by the engine — and a violation refuses
+the whole append naming the table, the event's index in the batch and what SQLite said.
+`spec/data-api.md §2` promises this for the API; there is one write path, so `pv.append`,
+`pv.batch` and the seed get the same answer.
 
 Inside `pv.batch`, `pv.append` and `pv.delete` are errors — `tx.append` and `tx.delete`
 are the batch — and `pv.batch` does not nest; a `tx` used after its function returned is

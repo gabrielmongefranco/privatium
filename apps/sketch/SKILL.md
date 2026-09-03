@@ -24,6 +24,8 @@ a drawing app.
   that syncs to every device.
 - `pv.subscribe` handles strokes from *other* devices, including ones that arrived via sync
   while this tab was closed. Do not assume local input is the only source.
+- Boot reads the log in order through `pv.events({ tbl: 'stroke' })` — a `del` removes a
+  stroke — and `pv.on('resync', load)` reads it again when the node rebuilt its cache.
 - No CDN. Nothing is vendored today; if something is, it goes in `web/vendor/`.
 - No inline `<script>` — the CSP forbids it, and `[permissions]` is deliberately all false.
 
