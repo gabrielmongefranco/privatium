@@ -53,7 +53,13 @@ Helpers in every template: `render`, `layout`, `icon`, `url`, `fmt.date`, `fmt.m
 ## MUST
 
 - Bind SQL parameters: `pv.query('... WHERE drug = ?', {name})`
-- Treat `DECIMAL`/`BIGINT` as strings; use `pv.dec()` for arithmetic
+- Read a row as SQLite holds it: a `BIGINT` and `count(*)` are Lua integers, a `DECIMAL`
+  is a string, a `BOOLEAN` a boolean, a `JSON` column a table. Print or `fmt.money` a
+  `DECIMAL` as it is; for arithmetic wrap it in `pv.dec()` — `+ - * /` are exact, `/`
+  rounds half away from zero at the larger scale, `a:div(b, 4)` names the scale
+- Write dates, times and timestamps in any common spelling — `3/9/2026`, `March 9, 2026`,
+  `2:30 pm`, `2026-09-03 14:03` — the framework normalizes them to ISO on write and
+  refuses what it cannot read, naming the column
 - Wrap every internal link in `url()`
 - Put `<?= csrf() ?>` in every non-GET form
 - Give every icon-only control a label: `icon('trash', 'Delete this fill')`
@@ -62,10 +68,14 @@ Helpers in every template: `render`, `layout`, `icon`, `url`, `fmt.date`, `fmt.m
 ## MUST NOT
 
 - Concatenate values into SQL
-- Call `io`, `os.execute`, `os.getenv`, `debug`, `load`, `dofile` — all removed
+- Call `io`, `os.execute`, `os.getenv`, `os.setlocale`, `debug`, `load`, `dofile` — all removed
 - Write `INSERT`/`UPDATE`/`DELETE` — reads are SQL, writes are `pv.append`/`pv.delete`
-- Store state in a Lua global expecting it to persist — VMs are pooled, globals are per-VM
+- Store state in a Lua global expecting it to persist — a global assigned in a handler
+  lasts one request; `app.lua`'s definitions are the baseline every request starts from
 - Set `seq`, `lam`, `ts`, `dev`, or `app` on an event
+- Call `pv.append` inside `pv.batch` (use `tx.append`), or `pv.query`/`pv.append` while
+  `app.lua` loads — reads and writes run inside a handler
+- Catch a limit error with `pcall` and carry on — the request fails regardless
 
 ## Anti-patterns
 

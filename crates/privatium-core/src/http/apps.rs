@@ -3,18 +3,20 @@
 // Created:  2026-09-03  |  Modified: 2026-09-03
 // Summary:  What answers beneath an app's mount (spec/protocol.md §9.1). Tier 2: web/ served
 //           as-is with index.html at the mount point, streamed in 64 KiB frames, under that
-//           app's own CSP (spec/app-contract.md §5, §5.4). Tier 1: the mount exists and says
-//           plainly that this build has no handler, until M7.
+//           app's own CSP (spec/app-contract.md §5, §5.4). Tier 1: what a Lua handler
+//           answered, as a response with the same headers — and, until M8, the page that
+//           stands in for a view.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use axum::body::Body;
-use axum::http::header::{CONTENT_SECURITY_POLICY, CONTENT_TYPE, HeaderValue};
+use axum::http::header::{ALLOW, CONTENT_SECURITY_POLICY, CONTENT_TYPE, HeaderValue};
 use axum::http::{Request as HttpRequest, StatusCode};
 use tower::ServiceExt as _;
 use tower_http::services::ServeDir;
 
 use crate::http::{headers, shell};
+use crate::lua::LuaResponse;
 use crate::wire::{Request, Response};
 
 /// Serve `rest` — the path beneath the mount, `/` for the mount point — out of `web_dir`.
@@ -78,6 +80,82 @@ pub fn no_handler(slug: &str, csp: &str, solo: bool) -> Response {
         StatusCode::SERVICE_UNAVAILABLE,
         shell::no_handler(slug, solo),
     );
+    app_headers(&mut response, csp);
+    response
+}
+
+/// What a Lua handler answered, as a response (`spec/lua-api.md §3.1`). A `pv.render` is
+/// answered here until M8's compiler exists: a 503 naming the view when it is on disk, a
+/// 500 when it is not.
+#[must_use]
+pub fn lua_response(
+    answer: LuaResponse,
+    slug: &str,
+    dir: &Path,
+    csp: &str,
+    solo: bool,
+) -> Response {
+    let mut response = match answer {
+        LuaResponse::Html(body) => headers::with_body(StatusCode::OK, headers::HTML, body),
+        LuaResponse::Text(body) => headers::with_body(StatusCode::OK, headers::TEXT, body),
+        LuaResponse::Json(body) => headers::with_body(StatusCode::OK, headers::JSON, body),
+        LuaResponse::Redirect(location) => headers::redirect(StatusCode::SEE_OTHER, &location),
+        LuaResponse::NoContent => {
+            let mut response = Response::new(Body::empty());
+            *response.status_mut() = StatusCode::NO_CONTENT;
+            response
+        }
+        LuaResponse::Render(view) => {
+            let template = dir.join("views").join(format!("{view}.lsp"));
+            if template.is_file() {
+                headers::html(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    shell::view_not_rendered(slug, &view, solo),
+                )
+            } else {
+                headers::html(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    shell::error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        &format!("{slug}: pv.render('{view}') names no views/{view}.lsp"),
+                        solo,
+                    ),
+                )
+            }
+        }
+    };
+    app_headers(&mut response, csp);
+    response
+}
+
+/// A failure beneath a Tier 1 mount — a Lua error, a limit, a panic — as the shell's error
+/// page under the app's own headers. `detail` is the error's text; the owner reads it.
+#[must_use]
+pub fn lua_failure(status: StatusCode, detail: &str, csp: &str, solo: bool) -> Response {
+    let mut response = headers::html(status, shell::error(status, detail, solo));
+    app_headers(&mut response, csp);
+    response
+}
+
+/// No route registered at `path` beneath a Tier 1 mount.
+#[must_use]
+pub fn not_found_under(path: &str, csp: &str, solo: bool) -> Response {
+    let mut response = headers::html(StatusCode::NOT_FOUND, shell::not_found(path, solo));
+    app_headers(&mut response, csp);
+    response
+}
+
+/// A route exists at the path but not for this method.
+#[must_use]
+pub fn method_not_allowed_under(allow: &[String], csp: &str) -> Response {
+    let allow = allow.join(", ");
+    let mut response = headers::text(
+        StatusCode::METHOD_NOT_ALLOWED,
+        format!("405 Method Not Allowed — allowed: {allow}\n"),
+    );
+    if let Ok(value) = HeaderValue::from_str(&allow) {
+        response.headers_mut().insert(ALLOW, value);
+    }
     app_headers(&mut response, csp);
     response
 }

@@ -95,6 +95,12 @@ include_dir = "0.7.4"
 # Test-only: an isolated data root per test, removed on drop. M1 onward.
 tempfile = "3.27.0"
 
+# `panic` stays at its default, unwind, and that is load-bearing: mlua raises a Lua error
+# out of a Rust callback — the instruction hook, every `pv.*` function — by unwinding
+# through the callback frame. With `panic = "abort"` the release binary died on the first
+# Lua limit trip ("panic in a function that cannot unwind … aborting"), taking the whole
+# node with it; with unwind the same request is a 500 and the node lives. Verified against
+# the running binary, not assumed (docs/plans/phase-1.md, the Lua host milestone).
 [profile.release]
 lto           = "thin"
 codegen-units = 1

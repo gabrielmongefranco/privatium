@@ -26,7 +26,12 @@ repository.workspace   = true
 # `window` and `collation` are the framework's exact-decimal SQL surface
 # (spec/data-dictionary.md §2.1, `store::decimal`); `hooks` is the authorizer that makes
 # an app's connection read-only (spec/app-contract.md §7, `store::sandbox`).
-rusqlite  = { workspace = true, features = ["bundled", "functions", "window", "collation", "hooks"] }
+#
+# `column_metadata` (M7) compiles the amalgamation with SQLITE_ENABLE_COLUMN_METADATA, so
+# a result column reports the table and column it originates in — through views too —
+# which is how pv.query finds a column's declared type (spec/lua-api.md §3.2): the cache
+# declares storage types, and DECIMAL or BIGINT lives only in the schema.
+rusqlite  = { workspace = true, features = ["bundled", "functions", "window", "collation", "hooks", "column_metadata"] }
 mlua      = { workspace = true, features = ["lua54", "vendored", "send"] }
 thiserror = { workspace = true }
 
@@ -62,14 +67,15 @@ toml        = { workspace = true }
 # router, no `serve`; nothing in this crate listens on a socket. `tower` is the
 # `Layer`/`Service` shape `auth_layer` has (spec/app-contract.md §6). `tower-http`'s
 # `ServeDir` streams a Tier 2 app's `web/` in 64 KiB frames and refuses `..`; `tokio` is
-# what it reads files through — the runtime itself belongs to the adapter. `hmac` and
+# what it reads files through, and (`rt`, M7) what hands a Lua handler to a blocking
+# thread — the runtime itself belongs to the adapter. `hmac` and
 # `hkdf` derive the CSRF key of docs/plans/phase-1.md §2.2 from the node key, so no
 # secret is written anywhere. `include_dir` embeds the icons, the shell's assets and
 # `skills/` (docs/icons.md, spec/cli.md §6).
 axum        = { workspace = true }
 tower       = { workspace = true, features = ["util"] }
 tower-http  = { workspace = true, features = ["fs"] }
-tokio       = { workspace = true, features = ["fs"] }
+tokio       = { workspace = true, features = ["fs", "rt"] }
 hmac        = { workspace = true }
 hkdf        = { workspace = true }
 include_dir = { workspace = true }

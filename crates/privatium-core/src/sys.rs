@@ -4,7 +4,8 @@
 // Summary:  The framework's own tables (spec/data-dictionary.md §3), written through the
 //           same event log apps use. M1 writes two rows: this node's sys_device entry and
 //           its sys_node singleton. M2 adds sys_audit; M4 adds sys_snapshot and the
-//           snapshot and restore audit kinds; M5 adds sys_app and the app.* kinds.
+//           snapshot and restore audit kinds; M5 adds sys_app and the app.* kinds; M7 adds
+//           lua.limit_exceeded.
 
 use serde::Serialize;
 
@@ -64,6 +65,10 @@ pub const KIND_RESTORE_TIER2: &str = "restore.tier2";
 /// A restore fell through to the full replay (`§5.3`, tier 3). `§3.10` makes this an
 /// `alert` that MUST surface in the UI.
 pub const KIND_RESTORE_TIER3: &str = "restore.tier3";
+
+/// A Tier 1 request exceeded one of the `[lua]` limits (`spec/lua-api.md §5`). The request
+/// failed; the node did not.
+pub const KIND_LUA_LIMIT_EXCEEDED: &str = "lua.limit_exceeded";
 
 /// `§3.10` allows a device ID or the literal `system`. Nothing written here is a device's
 /// doing.

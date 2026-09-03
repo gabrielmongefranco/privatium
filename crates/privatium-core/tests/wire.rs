@@ -5,7 +5,7 @@
 //           with no listener, the headers of §9.3 on every response, nothing leaked
 //           unauthenticated (§9.2), solo mode at `/` with the framework prefixes winning
 //           (§9.1), Tier 2 served under its own CSP (spec/app-contract.md §5.4), the seed
-//           behind a POST (§9), and bodies that stream.
+//           behind a POST (§9), and bodies that stream. Tier 1 routes are tests/lua.rs.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.
@@ -111,7 +111,7 @@ const HOST_ROUTES: &[(&str, u16)] = &[
     ("/a/sketch/", 200),
     ("/a/sketch/style.css", 200),
     ("/a/hello/", 503),
-    ("/a/animals/play", 503),
+    ("/a/animals/play", 404),
     ("/a/sketch", 308),
     ("/a/nope/", 404),
     ("/a/", 404),
@@ -127,7 +127,7 @@ const HOST_ROUTES: &[(&str, u16)] = &[
 // ---------------------------------------------------------------------------------------
 
 /// `spec/protocol.md §9.1`, ADR 0003 — every namespace answers through `handle`, an
-/// unknown slug is a 404 and not a panic, and a Tier 1 route is a clear 503 until M7.
+/// unknown slug is a 404 and not a panic, and a Tier 1 view is a clear 503 until M8.
 #[tokio::test]
 async fn test_spec_9_1_every_prefix_reachable_through_handle() {
     let root = tempfile::tempdir().unwrap();
@@ -140,8 +140,9 @@ async fn test_spec_9_1_every_prefix_reachable_through_handle() {
     assert_eq!(header(&redirect, &LOCATION), "/a/sketch/");
     let tier1 = handler.handle(get("/a/hello/")).await;
     let text = body_of(tier1).await;
-    assert!(text.contains("no Lua host"), "{text}");
+    assert!(text.contains("no LSP compiler"), "{text}");
     assert!(text.contains("hello"), "{text}");
+    assert!(text.contains("index"), "{text}");
 
     // HEAD answers like GET without a body; the wrong method says which would work.
     let head = handler.handle(request(Method::HEAD, "/settings")).await;

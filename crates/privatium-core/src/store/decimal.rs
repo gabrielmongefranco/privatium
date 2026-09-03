@@ -5,7 +5,8 @@
 //           as a Rust type and as the SQL functions and collation registered on every
 //           connection — decimal(), decimal_add/sub/mul/cmp, decimal_sum(), and the
 //           `decimal` collating sequence that sorts a DECIMAL column numerically. The same
-//           type backs pv.dec (M7).
+//           type backs pv.dec (M7), through the checked operations, which error where the
+//           SQL functions saturate, and the one explicit-scale division.
 
 use std::cmp::Ordering;
 use std::fmt;
@@ -120,6 +121,130 @@ impl Decimal {
     pub fn is_negative(self) -> bool {
         self.mantissa < 0
     }
+
+    /// Whether the value is zero, at any scale.
+    #[must_use]
+    pub fn is_zero(self) -> bool {
+        self.mantissa == 0
+    }
+
+    /// An integer, exactly, at scale 0.
+    #[must_use]
+    pub fn from_i64(value: i64) -> Self {
+        Self {
+            mantissa: i128::from(value),
+            scale: 0,
+        }
+    }
+
+    /// Whether the mantissa still fits [`MAX_DIGITS`] — the bound every checked operation
+    /// enforces, so a value can never grow past what `parse` would accept.
+    fn fits(self) -> Option<Self> {
+        (self.mantissa.unsigned_abs() < pow10_u(MAX_DIGITS)).then_some(self)
+    }
+
+    /// [`with_scale`](Self::with_scale), or `None` if padding would overflow.
+    #[must_use]
+    pub fn checked_with_scale(self, scale: u8) -> Option<Self> {
+        if scale > self.scale {
+            let factor = 10_i128.checked_pow(u32::from(scale - self.scale))?;
+            return Self {
+                mantissa: self.mantissa.checked_mul(factor)?,
+                scale,
+            }
+            .fits();
+        }
+        Some(self.with_scale(scale))
+    }
+
+    fn checked_aligned(self, other: Self) -> Option<(i128, i128, u8)> {
+        let scale = self.scale.max(other.scale);
+        Some((
+            self.checked_with_scale(scale)?.mantissa,
+            other.checked_with_scale(scale)?.mantissa,
+            scale,
+        ))
+    }
+
+    /// `a + b`, or `None` on overflow. What `pv.dec` uses: an app's arithmetic errors rather
+    /// than saturating, because a saturated amount is a wrong amount.
+    #[must_use]
+    pub fn checked_add(self, other: Self) -> Option<Self> {
+        let (a, b, scale) = self.checked_aligned(other)?;
+        Self {
+            mantissa: a.checked_add(b)?,
+            scale,
+        }
+        .fits()
+    }
+
+    /// `a - b`, or `None` on overflow.
+    #[must_use]
+    pub fn checked_sub(self, other: Self) -> Option<Self> {
+        let (a, b, scale) = self.checked_aligned(other)?;
+        Self {
+            mantissa: a.checked_sub(b)?,
+            scale,
+        }
+        .fits()
+    }
+
+    /// `a × b`, or `None` on overflow.
+    #[must_use]
+    pub fn checked_mul(self, other: Self) -> Option<Self> {
+        Self {
+            mantissa: self.mantissa.checked_mul(other.mantissa)?,
+            scale: self.scale.checked_add(other.scale)?,
+        }
+        .fits()
+    }
+
+    /// `-a`, or `None` on overflow.
+    #[must_use]
+    pub fn checked_neg(self) -> Option<Self> {
+        Self {
+            mantissa: self.mantissa.checked_neg()?,
+            scale: self.scale,
+        }
+        .fits()
+    }
+
+    /// `a ÷ b` at exactly `scale` places, rounded half away from zero — the one division
+    /// there is (`spec/lua-api.md §3.2`). `None` for a zero divisor or on overflow.
+    #[must_use]
+    pub fn div_scaled(self, other: Self, scale: u8) -> Option<Self> {
+        if other.mantissa == 0 {
+            return None;
+        }
+        // result = a.m × 10^(scale + b.s − a.s) ÷ b.m, with the shift on whichever side keeps
+        // it an integer.
+        let shift = i32::from(scale) + i32::from(other.scale) - i32::from(self.scale);
+        let (numerator, denominator) = if shift >= 0 {
+            let factor = 10_i128.checked_pow(shift.unsigned_abs())?;
+            (self.mantissa.checked_mul(factor)?, other.mantissa)
+        } else {
+            let factor = 10_i128.checked_pow(shift.unsigned_abs())?;
+            (self.mantissa, other.mantissa.checked_mul(factor)?)
+        };
+        let quotient = numerator.checked_div(denominator)?;
+        let remainder = numerator.checked_rem(denominator)?;
+        let round_up = remainder.unsigned_abs().checked_mul(2)? >= denominator.unsigned_abs();
+        let sign = if (numerator < 0) != (denominator < 0) {
+            -1
+        } else {
+            1
+        };
+        let mantissa = if round_up && remainder != 0 {
+            quotient.checked_add(sign)?
+        } else {
+            quotient
+        };
+        Self { mantissa, scale }.fits()
+    }
+}
+
+fn pow10_u(places: usize) -> u128 {
+    10_u128.saturating_pow(u32::try_from(places).unwrap_or(u32::MAX))
 }
 
 /// `a + b`, exact, at the larger of the two scales.

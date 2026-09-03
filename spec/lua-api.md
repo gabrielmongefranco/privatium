@@ -92,6 +92,15 @@ Handlers return one of:
 `req` fields: `method`, `path`, `params`, `query`, `form`, `body`, `headers`, `device`
 (the paired device's ID), `is_htmx` (true when `HX-Request` is present).
 
+`path` is the path beneath the app's mount, `/` for the mount point. `query` is the query
+string decoded, `form` an `application/x-www-form-urlencoded` body decoded, `body` the
+body as received — at most 64 KiB, because Tier 1 does not stream — and `headers` is keyed
+by lower-case name. `device` is the ID of the device the request was authenticated as;
+in Phase 1 that is always this node's own ID (`docs/plans/phase-1.md §2.2`), and a paired
+device's arrives with pairing. Routes register while `app.lua` loads and are matched in
+registration order; a path that matches a pattern with no route for the method is a 405,
+one that matches nothing a 404.
+
 ### 3.2 Reading
 
 ```lua
@@ -105,9 +114,31 @@ never interpolated; string concatenation into SQL MUST be rejected by the linter
 over `DECIMAL` columns use `decimal_sum()`; date arithmetic uses `date(x, '+30 days')`
 (`spec/data-dictionary.md §2`).
 
-`DECIMAL` and `BIGINT` columns arrive as **strings**, for the reason in
-`spec/data-dictionary.md §2.1`. `pv.dec(s)` returns a decimal userdata supporting
-`+ - * /` and comparison with exact semantics. Never convert money to a Lua number.
+**How a result column is typed.** What SQLite holds, as Lua holds it — the rule every
+SQLite binding follows: an `INTEGER` is a Lua integer, a `REAL` a Lua number, `TEXT` a
+string, and a `NULL` an absent key in the row's table, never a value. So a `BIGINT` column
+is a Lua integer — 64-bit and exact, since the reason JSON needs a string
+(`spec/data-dictionary.md §2.1`) does not apply to Lua — `count(*) AS n` is a number, and
+a `DECIMAL` column, which is text in the cache, is a **string**: Lua has no exact decimal,
+and a float would lose what the text keeps. Two conveniences apply to a column that
+originates in a declared column, read directly or through a view: `BOOLEAN` arrives as a
+Lua boolean (an `INTEGER` `0` would be truthy in Lua), and `JSON` (`VARCHAR[]`) arrives
+decoded into a table. A computed column has no declaration and follows the storage rule
+alone, so `decimal_sum()` is a string. `pv.query1` returns `nil` when there is no row;
+`pv.get_row` returns `nil` for an id that is absent **or whose winning event is a
+tombstone** — `spec/protocol.md §4.5` materializes no row for one, exactly as the data API
+answers 404 for both.
+
+`pv.dec(s)` returns a decimal userdata from a string, an integer or another decimal —
+never from a Lua float, which is refused because it is already inexact. It supports `+`,
+`-`, `*`, `/`, unary minus, `==`, `<`, `<=`, `tostring`, `d:with_scale(n)`, `d:scale()`
+and `d:compare(other)`, exact at the larger scale of the operands, and an operation whose
+result does not fit 36 digits is an error rather than a saturated value. A quotient is not
+exact, so `/` rounds half away from zero at the larger scale of the two operands —
+`pv.dec('10.00') / 3` is `3.33` — and `a:div(b, scale)` does the same at a scale the
+author names; a zero divisor is an error either way. Display and storage never need any
+of this: a template prints the string, `fmt.money` formats it, and totals belong in SQL
+(`decimal_sum`). Never convert money to a Lua number.
 
 ### 3.3 Writing
 
@@ -137,22 +168,80 @@ create-or-amend without a branch.
 
 `tx.append` returns the minted ULID **before** the batch is written, so later events in the
 same batch may reference it. A `pv.batch` either appends every event or none; the framework
-assigns contiguous `seq` values to the batch.
+assigns contiguous `seq` values to the batch, under one `ts`.
+
+**Encoding `data`.** `data` is a Lua table with string keys, written as the JSON object
+`d`: a string as a string, an integer as an integer, a boolean as a boolean, a `pv.dec` as
+its digits in a string, and a nested table as an array when its keys are exactly `1..n`
+(an empty table is an empty array) or an object when they are all strings. A key whose
+value is `nil` is absent (`spec/data-dictionary.md §2.1`).
+
+**Typed writes.** When `schema.sql` declares the table, every value that names a declared
+column is checked and normalized before the append, and a value that is not its type
+refuses the whole append — the batch too — with an error naming the table and column.
+Nothing reaches the log, so the log stays clean and nothing has to materialize as NULL
+later (`spec/data-dictionary.md §2.1`). Keys naming no declared column pass through
+untouched.
+
+| Declared | Accepted | Written |
+|---|---|---|
+| `BIGINT` | a Lua integer, or a string of digits | the digits, as a string |
+| `DECIMAL(p,s)` | a string, an integer, a Lua number, a `pv.dec` | the digits at scale `s`, as a string; more fractional digits than `s` holds is refused, not rounded |
+| `BOOLEAN` | `true`/`false`, `'true'`/`'false'`, `'yes'`/`'no'`, `1`/`0` | `true`/`false` |
+| `DATE` | `2026-09-03`, `2026/09/03`, `20260903`, `3/9/2026`, `3-9-26`, `03.09.2026`, `March 9, 2026`, `9 March 2026`, `9-Mar-2026`, `09-SEP-26`, an epoch in seconds or milliseconds, a timestamp | `YYYY-MM-DD` |
+| `TIME` | `14:03`, `14:03:11`, `2:03 pm`, `9am` | `HH:MM:SS` |
+| `TIMESTAMPTZ` | RFC 3339 with `Z` or an offset, `2026-09-03 14:03[:11]` or with `T` (read as UTC), a date (midnight UTC), `3/9/2026 2:30 pm`, an epoch | RFC 3339 UTC to the millisecond |
+
+Where a numeric date's day and month are both twelve or less, `ui.date_format = "eu"`
+reads the day first and anything else the month first; a two-digit year `00`–`69` is this
+century and `70`–`99` the last. The same normalization applies to `sample/seed.jsonl` and
+to the data API.
+
+Inside `pv.batch`, `pv.append` and `pv.delete` are errors — `tx.append` and `tx.delete`
+are the batch — and `pv.batch` does not nest; a `tx` used after its function returned is
+an error. An error raised anywhere in the function discards the batch. `pv.on('append')`
+handlers run for each event after the batch is written, in the VM that wrote it; a
+handler that errors fails the request, but the batch is already durable.
 
 ### 3.4 Other
 
 ```lua
 pv.ulid()                     -- fresh ULID
 pv.now()                      -- RFC 3339 UTC string
-pv.device()                   -- this device's node ID
+pv.device()                   -- the device this request is from; this node's ID in Phase 1
 pv.node()                     -- { id, name, solo, peers, restore_tier }
-pv.setting('key', default)    -- read a sys_setting
-pv.log('info', 'message')     -- structured log; never write to stdout directly
+pv.setting('key', default)    -- read a sys_setting; `default` when the key is unset
+pv.log('info', 'message')     -- the diagnostic log; never write to stdout directly
 pv.on('append', function(ev) ... end)   -- server-side reaction to any event
 ```
 
-`pv.on('append', ...)` fires for events arriving via sync from other devices too, which is
-how you write "when a fill lands, recompute the refill window."
+`pv.node()`: `id` is the Node ID; `name` is `sys_node.display_name`, or the Node ID while
+the owner has set none (as `spec/protocol.md §9.2`'s manifest does); `solo` is whether the
+node runs in solo mode; `peers` is the number of paired peers, `0` until pairing exists;
+`restore_tier` is `1`, `2` or `3` for the tier that built this app's cache
+(`spec/protocol.md §5.3`), or `nil` for an app this node has not materialized.
+
+`pv.setting(key, default)` returns `sys_setting.value` decoded from its JSON — `"365"` is
+the string, `365` the number — or `default` when no row has that key; with no default,
+`nil`.
+
+`pv.log(level, message)`, with `level` one of `debug`, `info`, `warn`, `error`, writes one
+line to the node's **diagnostic log** — its standard error in Phase 1, prefixed with the
+app's slug — and nowhere else: never the event log, never `sys_audit`. `print` is routed
+there too, as `info`, so an app cannot write to the node's standard output at all.
+
+`pv.on('append', fn)` fires `fn(ev)` — `ev` being the envelope of `spec/protocol.md §4.1`
+with `d` decoded — for **every event this node appends**: a handler's `pv.append`,
+`pv.delete` or `pv.batch`, and the owner loading `sample/seed.jsonl`
+(`spec/app-contract.md §9`). It fires synchronously after the write, in the VM that wrote
+(any VM, for the seed), once per event in order; a handler that appends fires it again,
+bounded only by the request's limits, so guard against loops. When sync exists it fires
+for events arriving from other devices too, which is how you write "when a fill lands,
+recompute the refill window."
+
+Routes and `pv.on` register only while `app.lua` loads; `pv.query`, `pv.append`,
+`pv.node`, `pv.setting` and their kin run only inside a request. Calling either at the
+wrong time is an error.
 
 ---
 
@@ -225,6 +314,21 @@ is rejected by `privatium lint` rule `PV301`.
 `url()` is not cosmetic — hardcoding `/a/myapp/...` breaks the app in solo mode. The linter
 flags literal mount paths.
 
+`icon(name[, label])` takes the label as a **string**, the second positional argument;
+there is no options table and no `size` option — an icon is `1em` and scales with
+`font-size`. `fmt.date` follows `ui.date_format` (`iso` | `us` | `eu`); `fmt.money`
+renders two places, grouped, with the point and the group separator `ui.locale` implies
+(`spec/data-dictionary.md §3.6`); `fmt.rel` is a relative time (`just now`, `3 days ago`,
+`in 2 hours`). Each returns a value it cannot parse unchanged. `t(key)` returns `key`
+unchanged while no `locales/` format exists, which is all of `pv/1`.
+
+`csrf()` emits a hidden `_csrf` field whose token is bound to the app's mount for the life
+of the process (`docs/plans/phase-1.md §2.2`). The host MUST verify it on every non-GET
+request beneath the mount — as the `_csrf` form field, or as an `X-CSRF-Token` header for
+a request that carries no form, such as `hx-delete` on a button — and refuse a request
+without it with 403. Verification lands with the templates that can emit the token (the
+LSP compiler); until then a non-GET request is answered without one.
+
 ### 4.2 Why LSP and not Jinja
 
 The handler is Lua; the template should be Lua. Two syntaxes for one app is a tax on the
@@ -245,6 +349,7 @@ The Lua state MUST be created with these removed or replaced:
 | `package.loadlib`, `package.cpath` | Loading native code |
 | `debug` | Escapes every other restriction |
 | `load`, `loadstring`, `dofile`, `loadfile` | Arbitrary code from data |
+| `os.setlocale` | Process-wide state: one app's call would change how every other app, and the node, formats a number |
 
 `require` MUST be replaced with a loader confined to the app's own `lib/` directory plus
 the framework's whitelisted modules.
@@ -264,9 +369,29 @@ Instruction limits are enforced with a debug hook installed by the host before a
 runs; memory via a custom allocator. Exceeding a limit aborts the request, returns 500, and
 writes a `lua.limit_exceeded` audit event. It MUST NOT take down the node.
 
-Lua states are not thread-safe. The host maintains a pool; one request holds one VM. Global
-state in an app is therefore **per-VM and not shared** — apps needing shared state MUST use
-the event log. This is documented as a footgun and checked by the linter.
+**What "aborts" means.** The count is to the nearest thousand instructions. The error a
+limit raises is an ordinary Lua error — a `pcall` can observe it — but the verdict is the
+host's, not the handler's: the request fails with 500 and the audit row whether or not the
+error was caught; from the first trip the hook fires at every instruction, so a handler
+cannot loop inside a `pcall`; and the VM that tripped is discarded and rebuilt for the next
+request, so a limit never poisons the pool. The wall clock is checked by the same hook
+and, while a statement runs inside SQLite where the hook cannot fire, by the connection's
+progress handler, which interrupts the statement on the same deadline. A single operation
+that runs entirely inside the interpreter's C code — a pathological `string.find` pattern
+— is stopped at its next instruction. The memory limit is the allocator refusing: an app
+that catches that and lets go of what it held has not exceeded the limit; one that does
+not is refused again. `app.lua` loads under the same limits.
+
+Lua states are not thread-safe. The host maintains a pool; one request holds one VM.
+**Global state.** A global assigned while `app.lua` loads — a helper function, a constant,
+a table — is the VM's baseline and is visible to every request on that VM. A global
+assigned inside a handler, or in a `lib/` module a handler calls, **lives until that
+request ends and is never seen by another request**, on that VM or any other: the host runs
+app code in an environment whose assignments are request-scoped, so one request's data
+cannot leak into the next and nothing can be cached across requests by assignment. What a
+handler can still do is mutate a table the baseline holds (`cache[k] = v` where `cache =
+{}` was defined at load); that persists per VM and is not shared, which is the footgun the
+linter checks. Apps needing shared state MUST use the event log.
 
 ---
 
