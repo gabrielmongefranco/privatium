@@ -157,10 +157,12 @@ mod tests {
         let again = Identity::load_or_create(dir.path()).unwrap();
         assert_eq!(first.csrf_key().as_bytes(), again.csrf_key().as_bytes());
         assert_ne!(first.csrf_key().as_bytes(), &[0u8; 32]);
-        let files: Vec<String> = std::fs::read_dir(dir.path())
+        let mut files: Vec<String> = std::fs::read_dir(dir.path())
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
+        // `read_dir` order is the filesystem's — macOS returned `node.pub` first.
+        files.sort();
         assert_eq!(files, ["node.key", "node.pub"]);
     }
 }
