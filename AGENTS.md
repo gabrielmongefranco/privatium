@@ -159,6 +159,14 @@ either be wrong or fight every commit that touches the file.
   app folders.
 - **Do not put Tier 1 application logic in the browser.** Tier 1 renders server-side. This
   says nothing about Tier 2, which owns its browser code entirely.
+- **Do not set `panic = "abort"` in any profile.** mlua raises a Lua error out of a Rust
+  callback by unwinding through it; with abort, the first Lua limit an app trips takes the
+  whole node down instead of failing one request. Verified against the release binary.
+- **Do not make a Lua limit the handler's decision.** The hook's error is an ordinary Lua
+  error a `pcall` can catch; the request fails anyway, the audit row is written anyway, and
+  the VM is discarded. Never run a Lua handler under the node lock either — it runs on a
+  blocking thread with its own read-only connection, and only `pv.append`, `pv.batch` and
+  `pv.setting` take the lock, briefly.
 - **Do not weaken LSP escaping.** `<?= ?>` escapes, always, with no configuration flag.
   `<?raw ?>` is the documented exception and every use is linted.
 - **Do not add a second icon set** to the *framework*, or hand-draw an SVG because Bootstrap

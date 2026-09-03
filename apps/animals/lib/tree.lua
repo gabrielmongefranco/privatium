@@ -1,6 +1,6 @@
 -- Project:  Privatium™  |  File: apps/animals/lib/tree.lua
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
--- Created:  2026-08-28  |  Modified: 2026-08-31
+-- Created:  2026-08-28  |  Modified: 2026-09-03
 -- Summary:  Queries over the decision tree. Kept out of app.lua so the routes
 --           stay readable — the same split any growing app should make.
 
@@ -44,7 +44,7 @@ function M.knowledge()
                     || p.text || ': ' || t.answer
       FROM walk w
       JOIN node p ON p.id = w.id AND p.kind = 'q'
-      CROSS JOIN (VALUES ('yes'), ('no')) AS t(answer)
+      CROSS JOIN (SELECT 'yes' AS answer UNION ALL SELECT 'no') AS t
       JOIN node c ON c.id = CASE WHEN t.answer = 'yes' THEN p.yes_id ELSE p.no_id END
     )
     SELECT w.depth, w.path, n.id AS animal_id, n.text AS animal

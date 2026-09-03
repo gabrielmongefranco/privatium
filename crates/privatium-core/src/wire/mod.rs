@@ -6,20 +6,23 @@
 //           Node::mounts(); the auth layer runs here so every adapter gets it; the §9.3
 //           headers go on every response on the way out. How the Node is shared is decided
 //           here too — one mutex, taken for the synchronous part of a request and released
-//           before anything awaits.
+//           before anything awaits; a Lua handler runs on a blocking thread outside it.
 
+use std::collections::BTreeMap;
 use std::net::Ipv4Addr;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use axum::body::to_bytes;
-use axum::http::header::{CONTENT_LENGTH, HOST};
+use axum::http::header::{CONTENT_LENGTH, CONTENT_TYPE, HOST};
 use axum::http::{Method, StatusCode};
 use tower::{Layer as _, ServiceExt as _};
 
-use crate::app::{LoadReport, Tier};
+use crate::app::{Appended, LoadReport, Tier};
 use crate::config::Mode;
 use crate::http::shell::{Context, Notice, NoticeKind};
 use crate::http::{self, AuthLayer, Csrf, api, apps, assets, headers, shell, skills};
+use crate::lua::{Host, LuaRequest, NodeFacts, RequestCtx, Resolved, RunError, UiSettings};
 use crate::{Error, Node};
 
 pub mod router;
@@ -52,9 +55,16 @@ pub use crate::http::auth::{Device, Peer};
 /// rule — never hold one across a privileged window — true without further machinery. An
 /// actor would give the same serialization with a channel in between; the mutex is the
 /// same guarantee with less to read, and `refresh_app`/`load_seed` need `&mut Node` anyway.
-/// A settings page holds the lock for the milliseconds its reads take. When the data API
-/// arrives (M9) and app SQL runs per request, the thing to revisit is a read-write split per
-/// app, not the mutex.
+/// A settings page holds the lock for the milliseconds its reads take.
+///
+/// **A Lua handler runs outside the lock.** The lock is taken once before it — to refresh
+/// the app, open its read-only connection and take the facts `pv.node()` reports — and
+/// released; the VM then runs on a blocking thread with that connection, so a handler
+/// that takes `lua.max_seconds` blocks neither the shell nor another app. Only
+/// `pv.append`, `pv.batch` and `pv.setting` take the lock, for the milliseconds a batch
+/// write and its incremental apply take. The connection is opened after the refresh and
+/// closed when the run ends; no VM keeps one across requests, which keeps M5's rule
+/// without machinery. When the data API arrives (M9) it takes the same shape.
 pub struct Handler {
     node: Arc<Mutex<Node>>,
     report: LoadReport,
@@ -269,24 +279,254 @@ impl Handler {
             };
             let csp = app.csp().header_for(&origin);
             match app.manifest().app.tier {
-                Tier::Web => Ok((app.dir().join("web"), csp)),
-                Tier::Lua => Err(apps::no_handler(slug, &csp, self.solo())),
+                Tier::Web => Plan::Web {
+                    web_dir: app.dir().join("web"),
+                    csp,
+                },
+                Tier::Lua => match app.lua_host() {
+                    Some(host) => {
+                        let conn = match app.store().app_conn() {
+                            Ok(conn) => conn,
+                            Err(error) => return self.failure(&Error::Store(Box::new(error))),
+                        };
+                        Plan::Lua(LuaPlan {
+                            host: Arc::clone(host),
+                            dir: app.dir().to_path_buf(),
+                            csp,
+                            conn,
+                            facts: node_facts(&node, slug),
+                            ui: ui_settings(&node),
+                        })
+                    }
+                    None => Plan::Done(apps::no_handler(slug, &csp, self.solo())),
+                },
                 // A tier 3 entry is never mounted (`App::mount`), so the router never gets
                 // here; if it ever did, nothing is served.
                 Tier::Rust => return self.not_found(request.uri().path()),
             }
         };
         match plan {
-            Ok((web_dir, csp)) => {
+            Plan::Web { web_dir, csp } => {
                 apps::serve_web(web_dir, mount, rest, request, &csp, self.solo()).await
             }
-            Err(response) => response,
+            Plan::Done(response) => response,
+            Plan::Lua(plan) => self.lua(slug, mount, rest, request, plan).await,
+        }
+    }
+
+    /// A Tier 1 route: resolve it against the app's route table, read the body — bounded,
+    /// Tier 1 does not stream (`docs/plans/phase-1.md §8`, R6) — and run the handler on a
+    /// blocking thread with the connection and facts taken under the lock.
+    async fn lua(
+        &self,
+        slug: &str,
+        mount: &str,
+        rest: &str,
+        request: Request,
+        plan: LuaPlan,
+    ) -> Response {
+        let solo = self.solo();
+        let method = request.method().clone();
+        let (index, params) = match plan.host.resolve(method.as_str(), rest) {
+            Resolved::Match { index, params } => (index, params),
+            Resolved::MethodNotAllowed { allow } => {
+                return apps::method_not_allowed_under(&allow, &plan.csp);
+            }
+            Resolved::NotFound => {
+                return apps::not_found_under(&url(mount, rest), &plan.csp, solo);
+            }
+        };
+
+        let declared = request
+            .headers()
+            .get(CONTENT_LENGTH)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.parse::<usize>().ok());
+        if declared.is_some_and(|length| length > http::FORM_LIMIT) {
+            return apps::lua_failure(StatusCode::PAYLOAD_TOO_LARGE, TOO_LARGE, &plan.csp, solo);
+        }
+        let (parts, body) = request.into_parts();
+        let body = match to_bytes(body, http::FORM_LIMIT).await {
+            Ok(body) => body,
+            Err(_) => {
+                return apps::lua_failure(
+                    StatusCode::PAYLOAD_TOO_LARGE,
+                    TOO_LARGE,
+                    &plan.csp,
+                    solo,
+                );
+            }
+        };
+        let query = parts
+            .uri
+            .query()
+            .map(|q| http::parse_form(q.as_bytes()))
+            .unwrap_or_default();
+        let content_type = parts
+            .headers
+            .get(CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let form = if content_type.starts_with("application/x-www-form-urlencoded")
+            || (content_type.is_empty() && !body.is_empty())
+        {
+            http::parse_form(&body)
+        } else {
+            BTreeMap::new()
+        };
+        let headers = parts
+            .headers
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.as_str().to_owned(),
+                    String::from_utf8_lossy(value.as_bytes()).into_owned(),
+                )
+            })
+            .collect();
+        let is_htmx = parts.headers.contains_key("hx-request");
+        let device = parts
+            .extensions
+            .get::<Device>()
+            .map(|device| device.0.as_str().to_owned())
+            .unwrap_or_else(|| plan.facts.id.clone());
+        let lua_request = LuaRequest {
+            method: method.as_str().to_owned(),
+            path: rest.to_owned(),
+            params,
+            query,
+            form,
+            body: body.to_vec(),
+            headers,
+            device: device.clone(),
+            is_htmx,
+        };
+        let route = format!(
+            "{method} {}",
+            plan.host
+                .routes()
+                .get(index)
+                .map_or(rest, |route| route.pattern.as_str())
+        );
+        let ctx = RequestCtx {
+            conn: plan.conn,
+            node: Arc::clone(&self.node),
+            facts: plan.facts,
+            device,
+            ui: plan.ui,
+        };
+        let host = Arc::clone(&plan.host);
+        let outcome = tokio::task::spawn_blocking(move || host.run(index, lua_request, ctx)).await;
+
+        let response = match outcome {
+            Ok(Ok(answer)) => apps::lua_response(answer, slug, &plan.dir, &plan.csp, solo),
+            Ok(Err(RunError::Limit { kind, detail })) => {
+                let audit = serde_json::json!({
+                    "app": slug,
+                    "route": route,
+                    "limit": kind.as_str(),
+                    "detail": detail,
+                })
+                .to_string();
+                if let Err(error) = self.lock().audit_lua_limit(slug, &audit) {
+                    eprintln!("privatium: {slug}: could not write lua.limit_exceeded: {error}");
+                }
+                eprintln!("privatium: {slug}: {route}: {kind} limit exceeded: {detail}");
+                apps::lua_failure(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    &format!(
+                        "{slug}: {route}: the {kind} limit was exceeded (spec/lua-api.md §5). \
+                         The request was abandoned; the node and the next request are \
+                         unaffected."
+                    ),
+                    &plan.csp,
+                    solo,
+                )
+            }
+            Ok(Err(error)) => {
+                eprintln!("privatium: {slug}: {route}: {error}");
+                apps::lua_failure(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    &format!("{slug}: {route}: {error}"),
+                    &plan.csp,
+                    solo,
+                )
+            }
+            Err(join) => {
+                eprintln!("privatium: {slug}: {route}: the handler's thread panicked: {join}");
+                apps::lua_failure(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    &format!("{slug}: {route}: the handler's thread panicked: {join}"),
+                    &plan.csp,
+                    solo,
+                )
+            }
+        };
+        if method == Method::HEAD {
+            headers::strip_body(response)
+        } else {
+            response
+        }
+    }
+
+    /// Fire a Tier 1 app's `pv.on('append')` handlers for a batch written outside a
+    /// handler — the seed. A failing handler is the app's bug and is logged, not the
+    /// owner's act undone: the batch is already durable.
+    async fn fire_append(&self, slug: &str, appended: Appended, device: Option<String>) {
+        let (host, ctx) = {
+            let node = self.lock();
+            let Some(app) = node.app(slug) else {
+                return;
+            };
+            let Some(host) = app.lua_host() else {
+                return;
+            };
+            let conn = match app.store().app_conn() {
+                Ok(conn) => conn,
+                Err(error) => {
+                    eprintln!("privatium: {slug}: pv.on('append') not fired: {error}");
+                    return;
+                }
+            };
+            let facts = node_facts(&node, slug);
+            let ctx = RequestCtx {
+                conn,
+                node: Arc::clone(&self.node),
+                device: device.unwrap_or_else(|| facts.id.clone()),
+                facts,
+                ui: ui_settings(&node),
+            };
+            (Arc::clone(host), ctx)
+        };
+        let outcome = tokio::task::spawn_blocking(move || host.fire(&appended, ctx)).await;
+        match outcome {
+            Ok(Ok(())) => {}
+            Ok(Err(RunError::Limit { kind, detail })) => {
+                let audit = serde_json::json!({
+                    "app": slug,
+                    "route": "pv.on('append')",
+                    "limit": kind.as_str(),
+                    "detail": detail,
+                })
+                .to_string();
+                if let Err(error) = self.lock().audit_lua_limit(slug, &audit) {
+                    eprintln!("privatium: {slug}: could not write lua.limit_exceeded: {error}");
+                }
+                eprintln!("privatium: {slug}: pv.on('append'): {kind} limit exceeded: {detail}");
+            }
+            Ok(Err(error)) => eprintln!("privatium: {slug}: pv.on('append'): {error}"),
+            Err(join) => eprintln!("privatium: {slug}: pv.on('append'): thread panicked: {join}"),
         }
     }
 
     /// `POST /settings/apps/<slug>/seed`: the owner's explicit act
     /// (`spec/app-contract.md §9`), behind `csrf()`.
     async fn seed(&self, slug: &str, path: &str, request: Request) -> Response {
+        let device = request
+            .extensions()
+            .get::<Device>()
+            .map(|device| device.0.as_str().to_owned());
         // A declared length past the limit is refused before the body is read at all, so a
         // client that sent `Expect: 100-continue` never sends it. A body with no declared
         // length is read up to the limit and refused there; the rest is never read.
@@ -335,7 +575,12 @@ impl Handler {
                 if let Ok(value) = axum::http::HeaderValue::from_str(SettingsPage::Apps.path()) {
                     response.headers_mut().insert("hx-redirect", value);
                 }
-                let _ = seeded;
+                // The seed is this node's own append, so a Tier 1 app's `pv.on('append')`
+                // sees it (`spec/lua-api.md §3.4`) — after the lock is released, since a
+                // handler may append in turn.
+                if let Some(appended) = seeded.appended.filter(|a| !a.changes.is_empty()) {
+                    self.fire_append(slug, appended, device).await;
+                }
                 response
             }
             Err(error) => {
@@ -407,6 +652,63 @@ impl Handler {
             shell::error(status, &error.to_string(), self.solo()),
         )
     }
+}
+
+/// What `app` decided under the lock, to be served after it.
+enum Plan {
+    /// Tier 2: stream `web/`.
+    Web { web_dir: PathBuf, csp: String },
+    /// Tier 1: run a handler.
+    Lua(LuaPlan),
+    /// Already answered.
+    Done(Response),
+}
+
+/// Everything a Tier 1 request takes from under the lock.
+struct LuaPlan {
+    host: Arc<Host>,
+    dir: PathBuf,
+    csp: String,
+    conn: rusqlite::Connection,
+    facts: NodeFacts,
+    ui: UiSettings,
+}
+
+/// The 413 a Tier 1 request gets for a body past `http::FORM_LIMIT`.
+const TOO_LARGE: &str = "413 Payload Too Large: a Tier 1 request body is at most 64 KiB — \
+                         Tier 1 does not stream (docs/plans/phase-1.md §8, R6)";
+
+/// What `pv.node()` reports, taken while the lock is held.
+fn node_facts(node: &Node, slug: &str) -> NodeFacts {
+    let id = node.id().as_str().to_owned();
+    let name = api::display_name(node)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| id.clone());
+    NodeFacts {
+        id,
+        name,
+        solo: node.config().node.mode == Mode::Solo,
+        restore_tier: node.restore_tier(slug).map(|tier| tier.as_u8()),
+    }
+}
+
+/// The `ui.*` settings `fmt.*` reads, taken while the lock is held.
+fn ui_settings(node: &Node) -> UiSettings {
+    let read = |key: &str| {
+        node.setting_value(key)
+            .ok()
+            .flatten()
+            .and_then(|text| serde_json::from_str::<String>(&text).ok())
+    };
+    let mut ui = UiSettings::default();
+    if let Some(locale) = read("ui.locale") {
+        ui.locale = locale;
+    }
+    if let Some(format) = read("ui.date_format") {
+        ui.date_format = format;
+    }
+    ui
 }
 
 /// `host[:port]` and nothing else: letters, digits, `.`, `-`, `:`, and brackets for IPv6.

@@ -4,17 +4,21 @@
 // Summary:  The app loader — step 5 of docs/plans/phase-1.md §2.6 and the lifecycle of
 //           spec/app-contract.md §8 up to and including mount. Discovers app folders,
 //           refuses per app and loudly (§3.1), keeps sys_app as events (§3.4), and owns
-//           each app's log and store.
+//           each app's log, store and — for Tier 1 — its Lua host. The node's one public
+//           append path, `Node::append`, is here too, beside load_seed, so nothing above
+//           this module ever holds an app's log.
 
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use serde::Serialize;
 
 use crate::config::Mode;
 use crate::log::{self, AppLog, Durability};
+use crate::lua::Host;
 use crate::store::{self, Schema, Store, StoreError};
 use crate::{
     Error, Node, Result, audit_recovery, audit_restore, boxed, io_at, new_ulid, note_health, sys,
@@ -102,7 +106,8 @@ pub enum Stage {
     Parse,
     /// `§3.1`: slug, folder, `api`, and the rest of `§3`'s constraints.
     Validate,
-    /// `§8`'s tier check: `app.lua` or `web/index.html`.
+    /// `§8`'s tier step: `app.lua` or `web/index.html` present, and for Tier 1 `app.lua`
+    /// loaded into the VM pool with its routes registered identically in every VM.
     Tier,
     /// `schema.sql` does not declare tables the engine will accept.
     Schema,
@@ -179,7 +184,7 @@ pub enum Warning {
     /// A route of the solo app matches a framework prefix and is shadowed by it
     /// (`spec/protocol.md §9.1`: MUST warn at load, naming the route and the prefix). For a
     /// Tier 2 app the routes are the paths under `web/`, so this is a top-level entry there;
-    /// a Tier 1 app's registered routes get the same warning from the Lua host (M7).
+    /// for a Tier 1 app it is a pattern `app.lua` registered.
     RouteShadowed {
         /// The app.
         slug: String,
@@ -264,9 +269,42 @@ pub struct Seeded {
     pub slug: String,
     /// Events appended, as this node's, in one batch.
     pub events: usize,
+    /// The batch as written, for whatever reacts to an append — `pv.on('append')` in a
+    /// Tier 1 app. `None` when the seed was empty.
+    pub appended: Option<Appended>,
 }
 
-/// A loaded app: its manifest, its folder, its log, and its cache.
+/// One event to append: a `put` with `d`, or a tombstone without (`spec/protocol.md
+/// §4.1`). The id is the caller's — minted by it, or a key it chose (`§4.1`, `§4.6`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Change {
+    /// The table.
+    pub tbl: String,
+    /// The row key.
+    pub id: String,
+    /// The column values, or `None` for a `del`.
+    pub d: Option<serde_json::Value>,
+}
+
+/// What one [`Node::append`] wrote: one batch, one `ts`, contiguous `seq` and `lam` from
+/// the first event's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Appended {
+    /// The batch's `ts`.
+    pub ts: String,
+    /// The first event's `seq`; each later one is one higher.
+    pub seq: u64,
+    /// The first event's `lam`; each later one is one higher.
+    pub lam: u64,
+    /// This node's ID.
+    pub dev: String,
+    /// The app.
+    pub app: String,
+    /// The events, in order.
+    pub changes: Vec<Change>,
+}
+
+/// A loaded app: its manifest, its folder, its log, its cache, and for Tier 1 its VMs.
 #[derive(Debug)]
 pub struct App {
     manifest: Manifest,
@@ -278,6 +316,9 @@ pub struct App {
     warnings: Vec<Warning>,
     log: AppLog,
     store: Store,
+    /// The VM pool, for a Tier 1 app. Shared with a request in flight, which runs its
+    /// handler outside the node lock.
+    lua: Option<Arc<Host>>,
 }
 
 impl App {
@@ -349,6 +390,12 @@ impl App {
         &mut self.store
     }
 
+    /// The Lua host, for a Tier 1 app (`spec/lua-api.md`).
+    #[must_use]
+    pub fn lua_host(&self) -> Option<&Arc<Host>> {
+        self.lua.as_ref()
+    }
+
     /// `sample/seed.jsonl`, if the folder ships one (`spec/app-contract.md §9`).
     #[must_use]
     pub fn seed_path(&self) -> Option<PathBuf> {
@@ -405,6 +452,7 @@ struct Prepared {
     mount: Option<String>,
     csp: Csp,
     warnings: Vec<Warning>,
+    lua: Option<Arc<Host>>,
 }
 
 /// Where `prepare` stopped, with whatever it had learned by then — the row still gets
@@ -564,31 +612,104 @@ impl Node {
             return Ok(Seeded {
                 slug: slug.to_owned(),
                 events: 0,
+                appended: None,
             });
         }
 
+        let changes: Vec<Change> = events
+            .into_iter()
+            .map(|event| Change {
+                tbl: event.tbl,
+                id: event.id,
+                d: event.d,
+            })
+            .collect();
+        let appended = self.append(slug, changes)?;
+        Ok(Seeded {
+            slug: slug.to_owned(),
+            events: appended.changes.len(),
+            appended: Some(appended),
+        })
+    }
+
+    /// Append `changes` to a loaded app as one batch of this node's events, and apply each
+    /// to the cache incrementally (`docs/plans/phase-1.md §2.3`).
+    ///
+    /// The one public write path: `pv.append`, `pv.delete` and `pv.batch` reach the log
+    /// through here (`spec/lua-api.md §3.3`), and so does [`load_seed`](Self::load_seed).
+    /// All or nothing — the log writer stages the batch and writes it once — with one `ts`
+    /// and contiguous `seq`, as `§3.3` promises. An empty `changes` writes nothing.
+    pub fn append(&mut self, slug: &str, changes: Vec<Change>) -> Result<Appended> {
+        let app = self.apps.get_mut(slug).ok_or_else(|| Error::AppNotLoaded {
+            slug: slug.to_owned(),
+        })?;
+        let dev = self.identity.id().as_str().to_owned();
+        if changes.is_empty() {
+            return Ok(Appended {
+                ts: log::now(),
+                seq: app.log.seq().saturating_add(1),
+                lam: app.log.lam().saturating_add(1),
+                dev,
+                app: slug.to_owned(),
+                changes,
+            });
+        }
+
+        let mut ts = String::new();
         app.log.batch(|batch| {
-            for event in &events {
-                match &event.d {
-                    Some(d) => batch.put(&event.tbl, &event.id, d)?,
-                    None => batch.del(&event.tbl, &event.id)?,
+            ts = batch.ts().to_owned();
+            for change in &changes {
+                match &change.d {
+                    Some(d) => batch.put(&change.tbl, &change.id, d)?,
+                    None => batch.del(&change.tbl, &change.id)?,
                 }
             }
             Ok(())
         })?;
-        for event in &events {
+        for change in &changes {
             app.store
-                .apply(&event.tbl, &event.id, event.d.as_ref())
+                .apply(&change.tbl, &change.id, change.d.as_ref())
                 .map_err(boxed)?;
         }
         app.log.save_to(&mut self.state);
         app.store.save_to(&mut self.state);
         self.state.flush()?;
 
-        Ok(Seeded {
-            slug: slug.to_owned(),
-            events: events.len(),
+        let count = changes.len() as u64;
+        Ok(Appended {
+            ts,
+            seq: app.log.seq().saturating_add(1).saturating_sub(count),
+            lam: app.log.lam().saturating_add(1).saturating_sub(count),
+            dev,
+            app: slug.to_owned(),
+            changes,
         })
+    }
+
+    /// One `sys_setting` value, as the JSON text `§3.6` stores, if the key is set.
+    pub fn setting_value(&self, key: &str) -> Result<Option<String>> {
+        match self.store.conn().query_row(
+            &format!("SELECT value FROM {} WHERE id = ?", sys::SETTING),
+            rusqlite::params![key],
+            |row| row.get::<_, Option<String>>(0),
+        ) {
+            Ok(value) => Ok(value),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(error) => Err(boxed(StoreError::Sql(error))),
+        }
+    }
+
+    /// `lua.limit_exceeded` (`spec/lua-api.md §5`, `spec/data-dictionary.md §3.10`): a Tier 1
+    /// request of `slug` exceeded a `[lua]` limit. `detail` is a JSON object naming the
+    /// route, the limit and what was measured.
+    pub fn audit_lua_limit(&mut self, slug: &str, detail: &str) -> Result<()> {
+        let at = log::now();
+        self.sys.put(
+            sys::AUDIT,
+            &new_ulid(),
+            &sys::AuditRow::warn(&at, sys::KIND_LUA_LIMIT_EXCEEDED, Some(slug), detail),
+        )?;
+        Ok(())
     }
 
     /// Rebuild a loaded app's cache if its log or `schema.sql` moved underneath it — the
@@ -678,6 +799,7 @@ impl Node {
                 warnings: prepared.warnings,
                 log,
                 store,
+                lua: prepared.lua,
             }))),
             Err(error) => {
                 let failure = LoadFailure {
@@ -744,7 +866,8 @@ impl Node {
             .validate(&candidate.folder, self.config.node.mode)
             .map_err(|error| refused_with(Stage::Validate, error.to_string()))?;
 
-        // Tier check. `app.lua` is looked for and not loaded — the Lua host is M7.
+        // Tier check: the file first; `app.lua` is loaded below, once the schema and the
+        // mount it needs are known.
         if let Some(file) = manifest.app.tier.required_file()
             && !candidate.dir.join(file).is_file()
         {
@@ -798,10 +921,37 @@ impl Node {
                 icon: icon.clone(),
             });
         }
-        // `§9.1`: the solo app owns `/`, so a top-level entry of its `web/` named after a
-        // framework prefix is unreachable. Named here, once, rather than discovered by a 404.
-        if mount.as_deref() == Some("/") && manifest.app.tier == Tier::Web {
-            for route in shadowed_web_routes(&candidate.dir.join("web")) {
+        // `§8`, tier 1: load `app.lua` in a sandboxed VM and register its routes — in
+        // every VM of the pool, identically (`docs/plans/phase-1.md §2.4`). A load that
+        // fails is refused here, before any log or cache is touched.
+        let lua = if manifest.app.tier == Tier::Lua {
+            let host = Host::build(
+                slug,
+                &candidate.dir,
+                mount.as_deref(),
+                schema.clone(),
+                &self.config.lua,
+            )
+            .map_err(|reason| refused_with(Stage::Tier, reason))?;
+            Some(Arc::new(host))
+        } else {
+            None
+        };
+
+        // `§9.1`: the solo app owns `/`, so a route named after a framework prefix is
+        // unreachable — a top-level entry of a Tier 2 app's `web/`, or a pattern a Tier 1
+        // app registered. Named here, once, rather than discovered by a 404.
+        if mount.as_deref() == Some("/") {
+            let shadowed: Vec<String> = match &lua {
+                Some(host) => host
+                    .routes()
+                    .iter()
+                    .map(|route| route.pattern.clone())
+                    .filter(|pattern| crate::wire::router::shadowing_prefix(pattern).is_some())
+                    .collect(),
+                None => shadowed_web_routes(&candidate.dir.join("web")),
+            };
+            for route in shadowed {
                 let prefix = crate::wire::router::shadowing_prefix(&route).unwrap_or_default();
                 warnings.push(Warning::RouteShadowed {
                     slug: slug.clone(),
@@ -818,6 +968,7 @@ impl Node {
             mount,
             csp,
             warnings,
+            lua,
         })
     }
 

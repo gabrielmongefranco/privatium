@@ -6,7 +6,8 @@
 //           what a log scan found into sys_audit rows (spec/protocol.md §4.4), and the
 //           node-level snapshot, restore, verify, prune and maintenance API of
 //           spec/app-contract.md §6 (M4), routed to every loaded app's store (M5), and
-//           auth_layer (M6). core::handle itself is wire::Handler.
+//           auth_layer (M6). core::handle itself is wire::Handler; the Lua host behind a
+//           Tier 1 mount is `lua` (M7).
 
 //! Privatium core.
 //!
@@ -26,6 +27,7 @@ pub mod icons;
 pub mod identity;
 pub mod local;
 pub mod log;
+pub mod lua;
 pub mod store;
 pub mod sys;
 pub mod wire;

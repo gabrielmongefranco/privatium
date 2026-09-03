@@ -685,6 +685,22 @@ pub fn no_handler(slug: &str, solo: bool) -> String {
     layout("No handler in this build", Active::None, solo, &body)
 }
 
+/// A handler answered `pv.render` in a build without the template engine (M8): the app
+/// and its routes work, the view does not yet. A clear 503, not a routing bug.
+#[must_use]
+pub fn view_not_rendered(slug: &str, view: &str, solo: bool) -> String {
+    let body = format!(
+        "<h2>Templates are not in this build</h2>\n<p class=\"pv-error\">{} <code>{}</code> \
+         answered with <code>pv.render('{}')</code>. <code>views/{}.lsp</code> exists, but this \
+         build has no LSP compiler yet; the view renders once it does.</p>\n",
+        icon("info-circle"),
+        escape(slug),
+        escape(view),
+        escape(view)
+    );
+    layout("Templates are not in this build", Active::None, solo, &body)
+}
+
 /// A failure page. `detail` is the error's own text; the owner is the only reader.
 #[must_use]
 pub fn error(status: StatusCode, detail: &str, solo: bool) -> String {

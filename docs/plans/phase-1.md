@@ -253,6 +253,21 @@ why, not a to-do list.
 | 26 | `§9.3`'s "every response containing app data" named no set, so `no-store` on a stylesheet and `no-store` on nothing were both readings | Everything except the embedded `/static/*` assets and the `/skills/*` documents; the four headers are on every response, refusals included | `protocol.md §9.3` (found in M6) |
 | 27 | `app-contract.md §6` called `auth_layer` a Tower middleware, and ADR 0003 forbids an adapter from adding anything, which left unsaid whether `core::handle` applies it or each adapter does | It is a `tower::Layer`; `core::handle` applies it itself, so adapters do nothing; an embedder wraps their own router with it (`§2.3`) | `app-contract.md §6` (found in M6) |
 | 28 | `§9.1` described solo-mode shadowing in terms of `pv.get(…)` routes, which a Tier 2 app has none of | A Tier 2 app's routes are its `web/` paths, so a top-level entry named after a prefix is what is shadowed, and the warning names it that way | `protocol.md §9.1` (found in M6) |
+| 29 | `lua-api.md §3.2` said `DECIMAL` and `BIGINT` arrive as strings but not how a result column finds its declared type — the cache declares storage types, and `sqlite3_column_decltype` returns `TEXT`/`INTEGER` — nor what an expression such as `count(*)` arrives as, nor what `BOOLEAN` and `JSON` become | A column originating in a declared column (directly or through a view, by column-origin metadata against the schema) is typed by its declaration: `DECIMAL`/`BIGINT` strings, `BOOLEAN` a boolean, `JSON` decoded; a computed column arrives by storage class, so `count(*)` is a number and `decimal_sum()` a string; NULL is an absent key | `lua-api.md §3.2` (found in M7) |
+| 30 | `§3.2` promised `/` on `pv.dec` while `store::Decimal` has no division on purpose — a quotient is not exact — and its arithmetic saturates | No `/`: `a:div(b, scale)` at an explicit scale, rounded half away from zero; `pv.dec` errors on overflow and refuses a float; the SQL functions keep saturating | `lua-api.md §3.2`, `data-dictionary.md §2.1` (found in M7) |
+| 31 | `docs/icons.md` spelled the helper `icon('trash', { label = … })` with a `size` option; `lua-api.md §4`, both skills and every app wrote `icon('trash', 'Delete this fill')` | The string form; no options table, no `size` — an icon is `1em` | `docs/icons.md`, `lua-api.md §4.1` (found in M7) |
+| 32 | `§3.4`'s `pv.node()` named `name`, `peers` and `restore_tier` and defined none of them before pairing and sync exist | `name` falls back to the Node ID as `§9.2` does, `peers` is `0` until pairing, `restore_tier` is the tier of `§5.3` or `nil` | `lua-api.md §3.4` (found in M7) |
+| 33 | `§3.4`'s `pv.setting('key', default)` said nothing about an unset key or the value's type | `default` when no row has the key (`nil` without one); the value JSON-decoded | `lua-api.md §3.4` (found in M7) |
+| 34 | `§3.4` said `pv.log` must "never write to stdout directly" and named no destination, and `print` was unaddressed | The node's diagnostic log — standard error, prefixed by the slug — never the event log or `sys_audit`; `print` goes there as `info` | `lua-api.md §3.4` (found in M7) |
+| 35 | `§3.1`'s `req.device` was "the paired device's ID" in a phase with no pairing | The device the request was authenticated as: this node's own ID in Phase 1 (`§2.2`) | `lua-api.md §3.1` (found in M7) |
+| 36 | `§3.4` said `pv.on('append')` fires for synced events "too" without saying it fires for the node's own appends, when, or in which VM | Every event this node appends — a handler's writes and the owner's seed — synchronously after the write, in the VM that wrote, once per event; re-entrant appends fire it again | `lua-api.md §3.4` (found in M7) |
+| 37 | `§3.2`'s `get_row` for a tombstoned id was unspecified against `protocol.md §4.6` and `Store::is_tombstoned` | `nil`, as for an absent id — `§4.5` materializes no row for a tombstone, and the data API answers 404 for both | `lua-api.md §3.2` (found in M7) |
+| 38 | `data-dictionary.md §3.10`'s normative `kind` list omitted `lua.limit_exceeded`, which `lua-api.md §5` requires | Added, `warn`, subject the app, detail naming route, limit and measure | `data-dictionary.md §3.10` (found in M7) |
+| 39 | `§5`'s closed list left `os.setlocale`, which is process-wide state | Removed as well | `lua-api.md §5` (found in M7) |
+| 40 | `§5` said exceeding a limit "aborts the request", but the hook's error is an ordinary Lua error a `pcall` can catch, and a long SQL statement runs where the hook cannot fire | The verdict is the host's: 500 and the audit row whether or not the error was caught, the hook re-armed to every instruction so a `pcall` loop cannot continue, the VM discarded and rebuilt; SQL under the connection's progress handler with the same deadline; a memory error the app recovers from is not an exceedance | `lua-api.md §5` (found in M7) |
+| 41 | `§4.1` required `csrf()` in every non-GET form and said nothing about who verifies the token, or how a request without a form (`hx-delete` on a button, `§4`'s own example) carries it | The host verifies a mount-scoped token on every non-GET request beneath the mount, from the `_csrf` field or an `X-CSRF-Token` header; enforcement lands with the templates that emit it | `lua-api.md §4.1` (found in M7) |
+| 42 | `§4.1`'s `t('key')` was "if `locales/` exists" with no `locales/` format anywhere, and `fmt.*` named no rule | `t` returns the key unchanged in `pv/1`; `fmt.date`/`fmt.money`/`fmt.rel` defined against `ui.date_format` and `ui.locale`, unparsable values returned unchanged | `lua-api.md §4.1` (found in M7) |
+| 43 | `§3.3` said nothing about how a Lua table becomes `d` — sequences, objects, empty tables, floats — or about `pv.append` inside `pv.batch` | The encoding rule; `pv.append`/`pv.delete` inside a batch and a nested batch are errors; one `ts` per batch | `lua-api.md §3.3` (found in M7) |
 
 Defect 11 was found during M1 rather than while writing this plan, which is the rule in
 the last paragraph of this section working as intended. It could not be coded around: the
@@ -311,7 +326,7 @@ rules.
 | HTTP | `axum`, `tower`, `tower-http` | `auth_layer` is a `tower::Layer` |
 | Async | `tokio` | multi-thread runtime |
 | Lua | `mlua` | features `lua54`, `vendored`, `send` |
-| SQL | `rusqlite` | features `bundled`, `functions`, `window`, `collation`, `hooks`; was `duckdb` until ADR 0006 |
+| SQL | `rusqlite` | features `bundled`, `functions`, `window`, `collation`, `hooks`, and from M7 `column_metadata` (a result column reports the table and column it originates in, which is how `pv.query` finds a declared type); was `duckdb` until ADR 0006 |
 | Crypto | `ed25519-dalek`, `sha2`, `hmac` | no session crypto in Phase 1 |
 | IDs | `ulid` | Crockford Base32, 26 chars |
 | Serde | `serde`, `serde_json` | `preserve_order` **off** — see below |
@@ -634,6 +649,11 @@ The riskiest milestone. Budget accordingly.
   confirmed rather than assumed.** A limit abort must fail the request and leave the node
   and the next request untouched; `panic = "abort"` may foreclose whatever mechanism does
   that. Decide it here, with the limit tests in front of you — not in a profile table.
+  *Decided in M7, against the running release binary: it forecloses it entirely. mlua
+  raises a Lua error out of a Rust callback by unwinding through the callback frame, and
+  with `panic = "abort"` the first limit trip aborted the whole node ("panic in a function
+  that cannot unwind"). With the default the same request is a 500 and every later request
+  answers. The default stays; `Cargo.toml` and `AGENTS.md` say why.*
 
 **Tests:** `test_spec_lua_5_banned_globals_absent` (one assertion per banned name, all
 thirteen), `test_spec_lua_5_require_confined_to_lib`,

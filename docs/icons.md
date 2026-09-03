@@ -63,9 +63,13 @@ kilobytes in the binary — cheaper than the complexity of a runtime sprite buil
 
 ```lsp
 <?= icon('diagram-3') ?>
-<?= icon('trash', { label = 'Delete this fill' }) ?>
-<?= icon('check-circle', { size = '1.5rem' }) ?>
+<?= icon('trash', 'Delete this fill') ?>
 ```
+
+The label is the second positional argument, a string. There is no options table and no
+size option: an icon is `1em` and takes its size from the surrounding `font-size`, which
+is the one lever that keeps it aligned with its text. The same helper is a global in
+handler code (`spec/lua-api.md §4.0`).
 
 Emits:
 
@@ -82,8 +86,8 @@ Rules the helper enforces:
   inheritance.
 - `aria-hidden="true"` and `focusable="false"` **by default**. An icon next to a text label
   is decorative and must not be announced twice.
-- Passing `label=` flips it to `role="img"` with an `<title>` child. **Required** for any
-  icon that is the only content of a control. An icon-only button with no `label=` is an
+- Passing a label flips it to `role="img"` with an `<title>` child. **Required** for any
+  icon that is the only content of a control. An icon-only button with no label is an
   accessibility bug and should fail review.
 - An unknown icon name renders `question-circle` and logs a warning. It never renders
   nothing and never breaks the page.

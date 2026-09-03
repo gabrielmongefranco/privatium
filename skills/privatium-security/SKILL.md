@@ -31,22 +31,25 @@ Applies to every tier. Load alongside the tier skill.
 
 ## Tier 1 (Lua)
 
-`io`, `os.execute`, `os.getenv`, `os.remove`, `debug`, `load`, `loadstring`, `dofile`, and
-`package.loadlib` are removed from the sandbox. Do not attempt to reach them; do not
-suggest a workaround. `require` is confined to the app's own `lib/`.
+`io`, `os.execute`, `os.exit`, `os.getenv`, `os.remove`, `os.rename`, `os.tmpname`,
+`os.setlocale`, `debug`, `load`, `loadstring`, `dofile`, `loadfile`, `package.loadlib` and
+`package.cpath` are removed from the sandbox. Do not attempt to reach them; do not suggest
+a workaround. `require` is confined to the app's own `lib/` and `'privatium'` — no `../`,
+no absolute path, no symlink out. `print` and `pv.log` write to the node's diagnostic
+log, never to its standard output.
 
 The SQLite connection your SQL runs on is read-only, `query_only`, and behind an
 authorizer that refuses every write, every `PRAGMA`, `ATTACH` and extension loading. This
 is not adjustable hardening — a connection that could `ATTACH` could read
-`identity/node.key`.
+`identity/node.key`. It is a connection of its own, opened for your request and closed
+with it; the framework writes through a separate handle while yours reads. Nothing you
+can write in SQL reaches the filesystem: no `ATTACH`, no `VACUUM INTO`, no
+`load_extension()`. Read your data from your tables and views; a write is a Lua error
+you may catch, and it changed nothing.
 
-Those settings belong to the whole database instance, not to one connection, so the
-framework applies them **after** it has materialized your tables from the log and never
-lifts them again. Nothing you can write in SQL reaches the filesystem: no `read_csv` of a
-path you chose, no `COPY ... TO`, no `ATTACH`, no `INSTALL`. Read your data from your
-tables and views.
-
-Watch instruction and memory limits. An unbounded loop over synced data aborts the request.
+Watch the instruction, memory and wall-clock limits. An unbounded loop aborts the request
+whether or not you `pcall` it — the host decides, not the handler — and a long statement
+is interrupted on the same clock.
 
 ## Tier 2 (Web)
 

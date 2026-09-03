@@ -40,8 +40,9 @@ pub fn parse_form(body: &[u8]) -> BTreeMap<String, String> {
     out
 }
 
-/// `+` is a space, `%XX` is a byte, and what is not UTF-8 afterwards is replaced.
-fn percent_decode(text: &[u8]) -> String {
+/// `+` is a space, `%XX` is a byte, and what is not UTF-8 afterwards is replaced. The Lua
+/// host decodes route parameters with it too.
+pub(crate) fn percent_decode(text: &[u8]) -> String {
     let mut bytes = Vec::with_capacity(text.len());
     let mut i = 0;
     while i < text.len() {
