@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/backup-and-restore.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-28
+Modified: 2026-09-03
 Summary:  The backup and restore procedure, written to be usable by a non-technical owner.
 -->
 
@@ -72,7 +72,7 @@ The system reads in three tiers, and tells you which one it used:
 |---|---|
 | Everything | Normal. Fast. |
 | Logs but no snapshots | Full rebuild. Slower once, then normal. Nothing lost. |
-| Snapshots but damaged Parquet | Falls back to the CSV copies automatically. |
+| Snapshots but damaged SQLite files | Falls back to the CSV copies automatically. |
 | Only some log files | Those devices' history is restored; the others are missing. Partial, honest, no crash. |
 | One log file, opened in a text editor | You can still read your data with your eyes. |
 
@@ -94,7 +94,8 @@ Ten minutes, once. Put a reminder in whatever you use for reminders.
 
 Snapshots are written weekly by default into `data/<app>/snap/`. Each contains:
 
-- `*.parquet` — compressed, fast, readable by DuckDB, Python, R, and Excel via Power Query
+- `*.sqlite` — one database per table, opens in DB Browser for SQLite, the `sqlite3` shell,
+  Python, R, and anything else that reads SQLite, which is everything
 - `*.csv` — one file per table, opens in Excel or Numbers
 - `schema.sql` — the exact column types, so the CSVs restore correctly
 - `MANIFEST.json` — row counts and checksums
@@ -111,13 +112,10 @@ You are not locked in, and here is the proof:
 
 ```bash
 # Read your entire history with no Privatium installed
-duckdb -c "SELECT * FROM read_json_auto('data/hello/log/*.jsonl')"
-
-# Or the snapshots
-duckdb -c "SELECT * FROM 'data/hello/snap/*/profile.parquet'"
-
-# Or with no DuckDB either
 cat data/hello/log/*.jsonl | jq .
+
+# Or a snapshot, with the sqlite3 shell that ships with most operating systems
+sqlite3 data/hello/snap/<snapshot-id>/profile.sqlite 'SELECT * FROM profile'
 
 # Or with nothing at all
 less data/hello/log/*.jsonl

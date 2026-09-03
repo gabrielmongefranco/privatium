@@ -18,8 +18,8 @@ the spec in the same change — do not implement around it.
 
 Violating any of these is a bug, regardless of how well the code works:
 
-1. **Append-only single-writer logs are the source of truth.** DuckDB files, Parquet
-   snapshots, and CSV exports are all caches. Deleting every one of them must lose zero data.
+1. **Append-only single-writer logs are the source of truth.** SQLite files, snapshots,
+   and CSV exports are all caches. Deleting every one of them must lose zero data.
    **Plain-text JSONL is a strong default, not a law** — sealed historical segments may be
    compressed or stored as Parquet. **The live tail is always plain JSONL**, uncompressed,
    appendable by `echo`. That property is what the Phase 1 acceptance test protects; do not
@@ -33,9 +33,9 @@ Violating any of these is a bug, regardless of how well the code works:
    compatibility works.
 5. **No secret ever enters a log file.** Keys, pairing codes, and tokens live in the OS
    keyring or `identity/`, never in `data/`.
-6. **App SQL runs sandboxed.** The app-facing DuckDB connection has
-   `enable_external_access=false` and `lock_configuration=true`. Only the framework's
-   privileged connection touches the filesystem.
+6. **App SQL runs sandboxed.** The app-facing SQLite connection is read-only at the file,
+   `query_only`, and behind an authorizer that refuses every write, every `PRAGMA`,
+   `ATTACH` and extension loading. Only the framework's own connection writes.
 7. **XDG paths only.** Never write beside the binary, never assume a writable install
    directory, never require `--filesystem=host`. Flatpak compatibility is a hard
    requirement from day one, not a later port.
@@ -56,7 +56,9 @@ Violating any of these is a bug, regardless of how well the code works:
 - **Tier 1 apps:** Lua 5.4 via `mlua`. Not LuaJIT (iOS forbids JIT), not Luau (a dialect
   fragments both documentation and LLM assistance). Templates are LSP (`<? ?>`), compiled
   to cached Lua chunks and invalidated on mtime.
-- **Query engine:** DuckDB (bundled, extensions statically linked, autoload disabled).
+- **Query engine:** SQLite via `rusqlite` (bundled amalgamation, no extension loading), with
+  the framework's exact-decimal functions and collation registered on every connection.
+  See `docs/decisions/0006`.
 - **Transport:** `iroh` for node-to-node, `axum` (or equivalent `hyper` stack) for HTTP.
 - **Onion:** `arti-client` with the `onion-service-service` and `rustls` features. Do not
   enable the `static` feature; it pulls in native-tls.
@@ -89,7 +91,7 @@ spread-out form used throughout `spec/` and `docs/`, and the compact form used i
 ```rust
 // Project:  Privatium™  |  File: crates/privatium-core/src/lib.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-08-31  |  Modified: 2026-08-31
+// Created:  2026-08-31  |  Modified: 2026-09-03
 // Summary:  What this file is for, in a sentence or three.
 ```
 
@@ -126,7 +128,7 @@ either be wrong or fight every commit that touches the file.
 - **Do not vendor Barracuda/BAS** without reading `docs/decisions/0001` and `0004`. It is
   GPLv2-only (incompatible with this project's GPLv3), its GPL clarification extends to web
   content hosted by the server, and — independently of licensing — it owns the event loop,
-  so there is no configuration where it coexists with iroh, tokio, and DuckDB cheaply.
+  so there is no configuration where it coexists with iroh, tokio, and the store cheaply.
 - **Do not add `'unsafe-eval'` or `'unsafe-inline'` to the default CSP**, and do not set
   `eval`/`inline_script` in a reference app's `app.toml` to make a library's shorter syntax
   work. Apps share the framework's origin and session, so CSP is *not* an inter-app boundary

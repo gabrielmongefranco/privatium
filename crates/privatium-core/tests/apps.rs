@@ -1,9 +1,9 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/apps.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-02  |  Modified: 2026-09-02
+// Created:  2026-09-02  |  Modified: 2026-09-03
 // Summary:  The app loader against spec/app-contract.md §3, §3.1, §5.4, §8 and §9,
 //           spec/protocol.md §1.1 and §12, and spec/data-dictionary.md §3.4 — refusal per
-//           app and loud, the index as events, the sealed cache, the privileged window the
+//           app and loud, the index as events, the sandboxed cache, the store the
 //           node-level snapshot and restore reopen, and the seed that never loads itself.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
@@ -290,9 +290,8 @@ fn test_broken_app_does_not_stop_node() {
     // The good app is fully a node's app.
     let good = node.app("good").unwrap();
     assert_eq!(good.mount(), Some("/a/good/"));
-    assert!(good.store().is_sealed());
     node.snapshot("good").unwrap();
-    assert_eq!(node.restore("good").unwrap().tier, Tier::Parquet);
+    assert_eq!(node.restore("good").unwrap().tier, Tier::Sqlite);
 
     // A second start finds the same four broken and says nothing new about them.
     let again = node.load_apps(&[local(&node)]).unwrap();
@@ -601,7 +600,7 @@ fn test_seed_not_loaded_over_existing_events() {
         "no other device's log was written"
     );
 
-    // Materialized incrementally, visible through the sealed store.
+    // Materialized incrementally, visible through the sandboxed connection.
     let conn = node.app("fresh").unwrap().store().app_conn().unwrap();
     let rows: i64 = conn
         .query_row("SELECT count(*) FROM profile", [], |row| row.get(0))
@@ -633,7 +632,7 @@ fn test_seed_not_loaded_over_existing_events() {
 
     // The incremental result is the replay's, across a restart with the cache gone.
     drop(node);
-    fs::remove_file(root.path().join("cache").join("fresh.duckdb")).unwrap();
+    fs::remove_file(root.path().join("cache").join("fresh.sqlite")).unwrap();
     let mut node = open(&root);
     node.load_apps(&[local(&node)]).unwrap();
     let conn = node.app("fresh").unwrap().store().app_conn().unwrap();
@@ -677,7 +676,6 @@ fn test_reference_apps_load_and_index_rows_match() {
             .unwrap_or_else(|| panic!("{slug} not loaded"));
         assert_eq!(app.source(), Source::Bundled);
         assert_eq!(app.mount(), Some(format!("/a/{slug}/").as_str()));
-        assert!(app.store().is_sealed(), "{slug}");
         assert_eq!(app.store().schema().tables.len(), tables, "{slug}");
         assert_eq!(app.manifest().app.tier.as_str(), tier);
 
@@ -716,7 +714,7 @@ fn test_reference_apps_load_and_index_rows_match() {
         let mut statement = node
             .store()
             .conn()
-            .prepare("SELECT id FROM sys.v_app_nav")
+            .prepare("SELECT id FROM v_app_nav")
             .unwrap();
         statement
             .query_map([], |row| row.get(0))
@@ -802,7 +800,7 @@ fn test_spec_3_app_layout() {
     assert_eq!(
         added,
         BTreeSet::from([
-            "cache/hello.duckdb".to_owned(),
+            "cache/hello.sqlite".to_owned(),
             "data/hello/".to_owned(),
             "data/hello/log/".to_owned(),
             format!("data/hello/log/{dev}.jsonl"),
@@ -936,13 +934,13 @@ fn test_disabled_app_keeps_row_and_is_not_mounted() {
 }
 
 // ---------------------------------------------------------------------------------------
-// §7 — the sealed cache and its privileged window
+// §7 — the sandboxed cache
 // ---------------------------------------------------------------------------------------
 
-/// `spec/app-contract.md §7` — after load an app's store is sealed: `app_conn` works and
-/// the filesystem is out of reach, `identity/node.key` first of all.
+/// `spec/app-contract.md §7` — after load an app's `app_conn` can read and do nothing
+/// else: no writes, no `ATTACH`, no `PRAGMA`, `identity/node.key` out of reach.
 #[test]
-fn test_app_store_is_sealed_after_load() {
+fn test_app_store_is_sandboxed_after_load() {
     let root = tempfile::tempdir().unwrap();
     let mut node = open(&root);
     node.load_apps(&[AppRoot::bundled(repo_apps_dir())])
@@ -956,13 +954,12 @@ fn test_app_store_is_sealed_after_load() {
 
     for slug in ["hello", "animals", "sketch"] {
         let store = node.app(slug).unwrap().store();
-        assert!(store.is_sealed(), "{slug}");
         let conn = store.app_conn().unwrap();
         for sql in [
-            format!("SELECT * FROM read_json('{key}')"),
-            format!("SELECT * FROM read_csv('{key}')"),
-            "COPY (SELECT 1) TO 'leak.csv'".to_owned(),
-            "SET enable_external_access = true".to_owned(),
+            format!("ATTACH '{key}' AS leak"),
+            format!("VACUUM INTO '{key}'"),
+            "CREATE TABLE leak (id TEXT)".to_owned(),
+            "PRAGMA query_only = 0".to_owned(),
         ] {
             assert!(conn.execute_batch(&sql).is_err(), "{slug}: {sql} ran");
         }
@@ -972,19 +969,16 @@ fn test_app_store_is_sealed_after_load() {
         .query_row("SELECT count(*) FROM profile", [], |row| row.get(0))
         .unwrap();
     assert_eq!(rows, 0);
-    // The sealed store itself refuses the privileged operations; the node does them.
+    // Through the app's handle the tombstone set is readable — a derived fact, not a
+    // secret — and not writable.
     assert!(
-        node.app("hello")
-            .unwrap()
-            .store()
-            .snapshot(node.id(), jiff::Timestamp::now())
-            .is_err()
+        conn.execute_batch("DELETE FROM pv_tombstone").is_err(),
+        "the tombstone set was writable"
     );
 }
 
-/// `spec/protocol.md §5.3` for an app — the tier reaches `sys.v_health`,
-/// `Node::restore_tier`, `local/state.jsonl`, and the bounded audits, through the sealed
-/// store's privileged window, which is closed again afterwards.
+/// `spec/protocol.md §5.3` for an app — the tier reaches `v_health`, `Node::restore_tier`,
+/// `local/state.jsonl`, and the bounded audits.
 #[test]
 fn test_app_restore_tier_reaches_health_and_node() {
     let root = tempfile::tempdir().unwrap();
@@ -999,16 +993,11 @@ fn test_app_restore_tier_reaches_health_and_node() {
     assert_eq!(audit_rows(&node, "restore.tier3").len(), 1);
 
     let snapshot = node.snapshot(APP).unwrap();
-    assert!(
-        node.app(APP).unwrap().store().is_sealed(),
-        "the window was left open"
-    );
     assert_eq!(snapshot.manifest.tables[0].rows, 1);
 
     let restored = node.restore(APP).unwrap();
-    assert_eq!(restored.tier, Tier::Parquet, "{restored:?}");
-    assert!(node.app(APP).unwrap().store().is_sealed());
-    assert_eq!(node.restore_tier(APP), Some(Tier::Parquet));
+    assert_eq!(restored.tier, Tier::Sqlite, "{restored:?}");
+    assert_eq!(node.restore_tier(APP), Some(Tier::Sqlite));
     let state = State::load(&node.paths().local_state()).unwrap();
     let record = state
         .get(APP)
@@ -1017,7 +1006,7 @@ fn test_app_restore_tier_reaches_health_and_node() {
         .restore
         .clone()
         .unwrap();
-    assert_eq!(record.tier, Tier::Parquet);
+    assert_eq!(record.tier, Tier::Sqlite);
     assert_eq!(
         record.snapshot.as_deref(),
         Some(snapshot.id.to_string().as_str())
@@ -1026,8 +1015,8 @@ fn test_app_restore_tier_reaches_health_and_node() {
         .store()
         .conn()
         .query_row(
-            "SELECT restore_tier, snapshot_id, log_bytes FROM sys.v_health WHERE app_id = ?",
-            duckdb::params![APP],
+            "SELECT restore_tier, snapshot_id, log_bytes FROM v_health WHERE app_id = ?",
+            rusqlite::params![APP],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .unwrap();
@@ -1039,7 +1028,7 @@ fn test_app_restore_tier_reaches_health_and_node() {
     assert!(log_bytes > 0);
 
     // Tier 2, audited once however often it recurs; the app is still served.
-    flip_byte(&snapshot.dir.join("profile.parquet"));
+    flip_byte(&snapshot.dir.join("profile.sqlite"));
     assert_eq!(node.restore(APP).unwrap().tier, Tier::Csv);
     assert_eq!(node.restore(APP).unwrap().tier, Tier::Csv);
     node.refresh().unwrap();
@@ -1084,12 +1073,12 @@ fn test_app_snapshot_restores_at_tier1_across_restart() {
     assert_eq!(report.loaded, vec![APP]);
     let app = node.app(APP).unwrap();
     let restored = app.store().restored().unwrap();
-    assert_eq!(restored.tier, Tier::Parquet, "{restored:?}");
+    assert_eq!(restored.tier, Tier::Sqlite, "{restored:?}");
     assert_eq!(
         restored.snapshot.as_deref(),
         Some(snapshot.id.to_string().as_str())
     );
-    assert_eq!(node.restore_tier(APP), Some(Tier::Parquet));
+    assert_eq!(node.restore_tier(APP), Some(Tier::Sqlite));
     assert_eq!(
         digest_via(&app.store().app_conn().unwrap(), "profile"),
         before
@@ -1098,15 +1087,15 @@ fn test_app_snapshot_restores_at_tier1_across_restart() {
         .store()
         .conn()
         .query_row(
-            "SELECT restore_tier FROM sys.v_health WHERE app_id = ?",
-            duckdb::params![APP],
+            "SELECT restore_tier FROM v_health WHERE app_id = ?",
+            rusqlite::params![APP],
             |row| row.get(0),
         )
         .unwrap();
     assert_eq!(tier, 1);
     assert_eq!(
         files_in(&root.path().join("cache")),
-        BTreeSet::from(["_sys.duckdb".to_owned(), "hello.duckdb".to_owned()])
+        BTreeSet::from(["_sys.sqlite".to_owned(), "hello.sqlite".to_owned()])
     );
     // `hello` was alerted once, at its first load over a restored log with no cache; the
     // restart found a snapshot that applied and added nothing. `_sys` has its own.
@@ -1126,7 +1115,7 @@ fn test_app_snapshot_restores_at_tier1_across_restart() {
 }
 
 /// `apps/hello/README.md` — a line appended by `echo` appears on the next reload, through
-/// the sealed store's window, and a reload with nothing new does nothing.
+/// the store, and a reload with nothing new does nothing.
 #[test]
 fn test_hand_appended_line_appears_through_refresh_app() {
     let root = tempfile::tempdir().unwrap();
@@ -1151,7 +1140,6 @@ fn test_hand_appended_line_appears_through_refresh_app() {
     );
     assert!(node.refresh_app(APP).unwrap(), "the log grew unnoticed");
     let app = node.app(APP).unwrap();
-    assert!(app.store().is_sealed());
     let name: String = app
         .store()
         .app_conn()

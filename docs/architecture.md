@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/architecture.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-02
+Modified: 2026-09-03
 Summary:  Explanatory architecture overview. Non-normative; see spec/ for the contract.
 -->
 
@@ -36,19 +36,24 @@ and rebuilt.
 
 This is the constraint that makes the restore drill possible: *copy the folder back*.
 
-### 2.2 The query engine is DuckDB, and it is disposable
+### 2.2 The query engine is SQLite, and it is disposable
 
-The framework replays JSONL into an in-process DuckDB instance, then runs the app's SQL
-views against it. DuckDB earns the slot over SQLite for two specific reasons:
+The framework replays JSONL into a SQLite database, then runs the app's SQL views against
+it. SQLite holds the slot (`docs/decisions/0006`) because it compiles in a minute, adds a
+few megabytes to the binary, is already on every phone and in every browser, and lets the
+framework write while an app reads on a separate, read-only connection — which is the
+whole sandbox.
 
-- **Real types.** `DECIMAL`, `DATE`, `INTERVAL`, `TIMESTAMPTZ` are native. An app tracking
-  money and dates does not have to encode cents as integers and dates as strings.
-- **It reads the truth directly.** `read_json()` — with an explicit `columns` list, never
-  type inference — and `read_parquet()` query the log and snapshot files in place, so the
-  "materializer" is a `CREATE TABLE AS SELECT`, not a subsystem.
+What SQLite lacks, the framework supplies: it is the only writer of the cache, so it types
+every value from the declared column on the way in. `DECIMAL` is exact text under a
+numeric collation with `decimal_sum()` and friends registered on every connection; dates
+and timestamps are ISO 8601 text, which SQLite's date functions understand and which
+compares as time. The materializer is a Rust reader over the log and a bound `INSERT`,
+not a subsystem.
 
 The database file lives in `cache/` and is rebuilt on demand. Its format compatibility
-across DuckDB versions is therefore irrelevant.
+across engine versions is therefore irrelevant — though SQLite's file format has not
+changed since 2004.
 
 ### 2.3 The framework is not an application model
 
@@ -167,7 +172,7 @@ software does. So:
 │                         privatium-core  (Rust crate)                       │
 │                                                                            │
 │  log        append-only JSONL writer/reader, Lamport clock, replay         │
-│  store      DuckDB materialization, snapshot write/read, three-tier restore│
+│  store      SQLite materialization, snapshot write/read, three-tier restore│
 │  app        app-folder loader, manifest validation, SQL sandbox            │
 │  lua        mlua host, sandbox, VM pool, LSP compiler + hot reload         │
 │  identity   Ed25519 node key, device registry, keyring access              │
@@ -244,7 +249,7 @@ form submit / action invoke
   → SELECT returns rows shaped (op, tbl, id, d)
   → framework stamps seq / lam / ts / dev / app
   → appended atomically to data/<app>/log/<this-device>.jsonl, fsync
-  → in-memory DuckDB updated
+  → the SQLite cache updated
   → HTMX fragment re-rendered
 ```
 
@@ -253,10 +258,10 @@ path in the system.
 
 ### Read
 ```
-1. cache/<app>.duckdb fresh?              → query it
-2. else: read_parquet(snap/**) + read_json(log/**, columns = {…}) WHERE lam > watermark
-3. Parquet unreadable?  → CSV + schema.sql + log tail
-4. Snapshots gone?      → full log replay from zero
+1. cache/<app>.sqlite fresh?              → query it
+2. else: the snapshot's <table>.sqlite files + the log tail WHERE lam > hi_lam
+3. SQLite file unreadable? → CSV + schema.sql + log tail
+4. Snapshots gone?         → full log replay from zero
 ```
 
 Each fallback tier is logged loudly. A node that restored from tier 3 says so.
@@ -285,7 +290,7 @@ Consequences of one node rather than one-node-per-app:
 - One origin → one service worker, one credential, one pairing.
 - One `data/` folder → one backup.
 - One discovery record → the phone finds everything at once.
-- Apps are isolated at the SQL level (separate DuckDB schemas) and at the log level
+- Apps are isolated at the SQL level (separate SQLite files) and at the log level
   (separate directories), but not at the process level. An app folder is trusted code in
   the sense that its SQL runs on your node — see `docs/security.md §6`.
 

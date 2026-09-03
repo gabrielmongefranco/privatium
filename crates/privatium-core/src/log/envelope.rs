@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/log/envelope.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-01
+// Created:  2026-09-01  |  Modified: 2026-09-03
 // Summary:  The two halves of spec/protocol.md §4.1 — the struct a writer serializes, and
 //           the much smaller struct a reader deserializes. They are separate types on
 //           purpose: §4.2 makes preservation a property of the bytes, so nothing here ever
@@ -62,7 +62,7 @@ pub(crate) struct Envelope<'a, D: Serialize> {
 /// whole mechanism forward compatibility rests on.
 ///
 /// `app`, `tbl`, `id`, and `d` are absent because nothing in M2 needs them. M3 materializes
-/// by pointing DuckDB's `read_json()` at the log files directly, so parsing them here would
+/// by reading the log files itself (`store::events`), so parsing them here would
 /// be the beginning of a second materializer that no one asked for.
 ///
 /// `Cow` rather than `&str`: serde_json can only borrow a string that contains no escapes,

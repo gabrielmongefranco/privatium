@@ -97,8 +97,9 @@ Questions, bug reports, enhancement ideas and requests are welcome as GitHub iss
 
 #### This work is based in part on the following projects and libraries:
 
-- [DuckDB](https://github.com/duckdb/duckdb) — in-process analytical SQL engine; queries
-  JSONL and Parquet directly and provides the exact DECIMAL/DATE types the framework needs.
+- [SQLite](https://sqlite.org/) — the in-process SQL engine the event log is materialized
+  into, via [rusqlite](https://github.com/rusqlite/rusqlite); public domain, on every
+  platform the framework targets.
 - [iroh](https://github.com/n0-computer/iroh) — QUIC-based peer-to-peer transport with
   hole punching, used for direct node-to-node sync.
 - [pkarr](https://github.com/pubky/pkarr) — signed DNS records on the BitTorrent mainline

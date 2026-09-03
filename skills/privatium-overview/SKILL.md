@@ -35,7 +35,7 @@ hardcode `/a/<slug>/`** — it breaks in solo mode, and the linter flags it.
 
 ## Invariants — true in every tier
 
-1. **JSONL is the only truth.** DuckDB, Parquet, and CSV are caches; deleting all of them
+1. **JSONL is the only truth.** The SQLite cache, snapshots, and CSV are caches; deleting all of them
    must lose zero data. Never write an `UPDATE` — the answer is always an append.
 2. **One writer per log file.** A device appends only to its own log.
 3. **Append-only.** Corrections are new events. Deletions are tombstones.

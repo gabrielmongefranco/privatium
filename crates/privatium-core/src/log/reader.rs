@@ -1,11 +1,11 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/log/reader.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-01
+// Created:  2026-09-01  |  Modified: 2026-09-03
 // Summary:  Reading an app's log: the segment list of spec/protocol.md §3.2, a line
 //           iterator per segment, and the one startup scan that recovers `seq` and the
 //           Lamport counter and applies §4.4's clock hygiene.
 //
-//           This is NOT the materialization path. M3 points DuckDB's read_json() at
+//           This is NOT the materialization path. M3's store reads the log files itself at
 //           data/<slug>/log/*.jsonl directly (docs/plans/phase-1.md, M3). What lives here
 //           exists for recovery now and for §10 sync in Phase 3, and it is deliberately
 //           incurious about anything those two do not need.

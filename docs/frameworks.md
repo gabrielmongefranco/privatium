@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/frameworks.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-31
+Modified: 2026-09-03
 Summary:  Which frameworks, libraries and engines work inside Privatium, which
           do not, and why. Selection criteria are explicit and testable.
 -->
@@ -161,13 +161,13 @@ cross-origin isolation — `COOP: same-origin` plus `COEP: require-corp`. Withou
 headers, only Chromium browsers load these builds, and Godot ships an export toggle plus a
 "disable Thread Support" option (4.3+) to avoid the requirement at the cost of audio.
 
-**This applies to `duckdb-wasm` too, and it matters more.** The multithreaded bundle needs
-`SharedArrayBuffer` and therefore cross-origin isolation. A Tier 1 offline query runtime
-that required cross-origin isolation would impose those headers on the framework's own
-origin and **break host mode for every other app on the node**. If `duckdb-wasm` is ever
-adopted for offline Tier 1 rendering, it is the **single-threaded bundle only** — no
-exceptions, regardless of benchmark results. Otherwise Tier 1 offline becomes solo-mode-only,
-which is not a trade worth making.
+**This applies to a browser SQLite build too, and it matters more.** A shared-memory build
+needs `SharedArrayBuffer` and therefore cross-origin isolation. A Tier 1 offline query
+runtime that required cross-origin isolation would impose those headers on the framework's
+own origin and **break host mode for every other app on the node**. If browser SQLite is
+ever adopted for offline Tier 1 rendering (`docs/roadmap.md`), it is the **single-threaded,
+asynchronous build only** — no exceptions, regardless of benchmark results. Otherwise Tier 1
+offline becomes solo-mode-only, which is not a trade worth making.
 
 **This conflicts directly with host mode.** COOP/COEP are document-level headers on a
 single origin. If `/a/mygame/` sets `COEP: require-corp`, every subresource lacking CORP

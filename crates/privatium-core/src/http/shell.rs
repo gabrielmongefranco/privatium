@@ -16,7 +16,7 @@ use crate::http::csrf::Csrf;
 use crate::icons::{escape, icon};
 use crate::store::Tier;
 use crate::wire::router::{SettingsPage, url};
-use crate::{Node, Result, StoreError, store, sys};
+use crate::{Node, Result, StoreError, sys};
 
 /// What a page needs to render.
 pub struct Context<'a> {
@@ -126,10 +126,7 @@ pub fn launcher(cx: &Context<'_>) -> Result<String> {
     let mut body = String::from("<h2>Apps</h2>\n");
     let rows = query(
         cx.node,
-        &format!(
-            "SELECT id, title, icon, last_error FROM {}.v_app_nav",
-            store::SYS_SCHEMA
-        ),
+        "SELECT id, title, icon, last_error FROM v_app_nav",
         |row| {
             Ok((
                 row.get::<_, String>(0)?,
@@ -217,9 +214,7 @@ fn node_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
     let row = query(
         node,
         &format!(
-            "SELECT display_name, pubkey, CAST(created_at AS VARCHAR), protocol, build \
-             FROM {}.{}",
-            store::SYS_SCHEMA,
+            "SELECT display_name, pubkey, created_at, protocol, build FROM {}",
             sys::NODE
         ),
         |row| {
@@ -287,11 +282,7 @@ fn node_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
     // §3.10: alerts MUST surface in the UI, not only in the log.
     let alerts = query(
         node,
-        &format!(
-            "SELECT CAST(\"at\" AS VARCHAR), kind, subject, detail FROM {}.v_audit_recent \
-             WHERE severity = 'alert'",
-            store::SYS_SCHEMA
-        ),
+        "SELECT \"at\", kind, subject, detail FROM v_audit_recent WHERE severity = 'alert'",
         |row| {
             Ok((
                 row.get::<_, Option<String>>(0)?,
@@ -340,10 +331,8 @@ fn apps_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
     let rows = query(
         node,
         &format!(
-            "SELECT id, title, version, tier, source, enabled, icon, \
-                    CAST(installed_at AS VARCHAR), last_error \
-             FROM {}.{} ORDER BY nav_order NULLS LAST, title, id",
-            store::SYS_SCHEMA,
+            "SELECT id, title, version, tier, source, enabled, icon, installed_at, last_error \
+             FROM {} ORDER BY nav_order NULLS LAST, title, id",
             sys::APP
         ),
         |row| {
@@ -534,7 +523,7 @@ fn status_badge(row: &AppIndexRow, loaded: bool) -> String {
 
 fn tier_text(tier: Tier) -> &'static str {
     match tier {
-        Tier::Parquet => "tier 1 — Parquet snapshot plus log tail",
+        Tier::Sqlite => "tier 1 — SQLite snapshot plus log tail",
         Tier::Csv => "tier 2 — CSV snapshot plus log tail",
         Tier::Replay => "tier 3 — full replay of the log",
     }
@@ -609,7 +598,7 @@ fn data_page(cx: &Context<'_>, body: &mut String) {
          <p>Point Syncthing, Dropbox, OneDrive, or a monthly USB stick at the folder above. No \
          Privatium configuration is needed for any of them: two devices never write the same \
          file, so a file syncer can never produce a conflict.</p>\n\
-         <p>Snapshots under <code>data/&lt;app&gt;/snap/</code> and the DuckDB files under \
+         <p>Snapshots under <code>data/&lt;app&gt;/snap/</code> and the SQLite files under \
          <code>cache/</code> are caches. Deleting every one of them loses no data.</p>\n\
          <p>Backups are plain text by design. Encrypt the destination if the destination needs \
          it; the filesystem is where at-rest encryption belongs.</p>\n\
@@ -621,11 +610,7 @@ fn devices_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
     let node = cx.node;
     let rows = query(
         node,
-        &format!(
-            "SELECT id, kind, replica, label, CAST(paired_at AS VARCHAR), CAST(last_seen_at AS VARCHAR) \
-             FROM {}.v_device_active ORDER BY id",
-            store::SYS_SCHEMA
-        ),
+        "SELECT id, kind, replica, label, paired_at, last_seen_at FROM v_device_active ORDER BY id",
         |row| {
             Ok((
                 row.get::<_, String>(0)?,
@@ -729,9 +714,9 @@ fn code(text: &str) -> String {
 fn query<T>(
     node: &Node,
     sql: &str,
-    map: impl FnMut(&duckdb::Row<'_>) -> duckdb::Result<T>,
+    map: impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
 ) -> Result<Vec<T>> {
-    let duck = |error| crate::Error::Store(Box::new(StoreError::Duck(error)));
+    let duck = |error| crate::Error::Store(Box::new(StoreError::Sql(error)));
     let conn = node.store().conn();
     let mut statement = conn.prepare(sql).map_err(duck)?;
     let rows = statement.query_map([], map).map_err(duck)?;

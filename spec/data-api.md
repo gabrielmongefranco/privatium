@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/data-api.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-31
+Modified: 2026-09-03
 Summary:  NORMATIVE. The HTTP data API that custom-UI (Tier 2) apps build against.
 -->
 
@@ -52,7 +52,7 @@ GET /a/medtracker/api/q/v_upcoming?days=30
 }
 ```
 
-- `columns` carries real DuckDB types so a client can format correctly.
+- `columns` carries the declared types from `schema.sql` so a client can format correctly.
 - `DECIMAL` and `BIGINT` are JSON **strings**. See `spec/data-dictionary.md §2.1` — JSON
   numbers are doubles in most parsers and would silently corrupt money.
 - `lam` is the Lamport high-water mark the result reflects. Pass it to `/stream` to resume

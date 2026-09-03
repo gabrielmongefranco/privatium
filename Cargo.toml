@@ -36,8 +36,10 @@ tokio      = "1.53.1"
 # Lua — M7. lua54 (not LuaJIT, not Luau: AGENTS.md), vendored so no system Lua is needed.
 mlua = "0.12.1"
 
-# SQL — M3. Bundled, so the C++ build is ours and extension autoload stays off.
-duckdb = "1.10505.0"
+# SQL — M3, engine swapped to SQLite after M6 (docs/decisions/0006). `bundled` compiles the
+# vendored amalgamation (one C file, about a minute) with JSON1 and FTS5 in; nothing is
+# downloaded and nothing can be loaded at runtime.
+rusqlite = { version = "0.40.2", default-features = false }
 
 # Crypto — M1 node identity, M6 CSRF. No session crypto in Phase 1.
 ed25519-dalek = "3.0.0"
@@ -98,12 +100,8 @@ lto           = "thin"
 codegen-units = 1
 strip         = "debuginfo"
 
-# libduckdb-sys compiles DuckDB's C++ with whatever profile cargo hands its build script:
-# `cc` takes OPT_LEVEL from the environment and the script reads DEBUG itself
-# (build_bundled_cc.rs), so the dev profile's -O0 plus debug info made every feature-set
-# variant a ~5 GB build directory that cargo never removes — target/ reached 90 GB during
-# M4 and filled the disk. This overrides only that package and only in dev.
-# [profile.release] above is untouched, so the shipped binary is unaffected.
-[profile.dev.package.libduckdb-sys]
+# The engine at -O0 is several times slower than at -O3, and the tests replay logs through
+# it thousands of times. This overrides only that package and only in dev; the C compile
+# is a minute either way. [profile.release] above is untouched.
+[profile.dev.package.libsqlite3-sys]
 opt-level = 3
-debug     = false

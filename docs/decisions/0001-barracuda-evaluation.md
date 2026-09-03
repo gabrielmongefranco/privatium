@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/decisions/0001-barracuda-evaluation.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-31
+Modified: 2026-09-03
 Summary:  Decision record. Barracuda App Server / Mako Server evaluated as a
           foundation and declined. Status: DECIDED — Rust.
 -->
@@ -129,6 +129,13 @@ hole punching exists for, and for a non-technical audience that step is the diff
 between working and not.
 
 ### 3. SQLite reintroduces the original problem
+
+> **Superseded by ADR 0006 (2026-09-03).** The core now uses SQLite, with the framework
+> supplying exact decimals and typing every value it writes. The finding below is kept as
+> written because the type argument is correct as far as it goes; what changed is that the
+> costs of the bundled DuckDB build outweighed it once they were measured, and the two
+> other reasons for DuckDB turned out not to be load-bearing. It never changed the
+> decision this record is about: BAS is still declined, and for the first two findings.
 
 BAS supplies SQLite. DuckDB was chosen for native `DECIMAL`, `DATE`, `INTERVAL`, and
 `TIMESTAMPTZ`, and for querying JSONL in place.

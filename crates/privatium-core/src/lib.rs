@@ -144,9 +144,9 @@ pub enum Error {
     #[error(transparent)]
     Engine(#[from] EngineError),
 
-    /// Maintaining an app's `cache/<slug>.duckdb` failed (`spec/protocol.md §4.5`).
+    /// Maintaining an app's `cache/<slug>.sqlite` failed (`spec/protocol.md §4.5`).
     ///
-    /// Boxed for the same reason `Config` is: `duckdb::Error` is wide, and every `Result`
+    /// Boxed for the same reason `Config` is: `rusqlite::Error` is wide, and every `Result`
     /// in the crate would otherwise pay for the rarest failure there is.
     #[error(transparent)]
     Store(#[from] Box<StoreError>),
@@ -224,7 +224,7 @@ pub struct Maintenance {
 /// same log an app would use, before a materialized `_sys` or an app loader exists to help.
 /// M2 completed steps 1 to 3 of that order — the tree and the keypair, the `_sys` log with
 /// its recovered `seq` and Lamport counter, and this node's two rows in it. M3 adds step 4,
-/// materializing `_sys` into the DuckDB schema `sys`; M4 makes that a three-tier restore.
+/// materializing `_sys` into `cache/_sys.sqlite`; M4 makes that a three-tier restore.
 /// Step 5, loading `apps/`, is [`load_apps`](Self::load_apps): explicit rather than part
 /// of `open`, because embedded mode (`spec/app-contract.md §2.3`) opens a node and has no
 /// folders to scan, and because only the caller knows where a development checkout's
@@ -237,8 +237,8 @@ pub struct Node {
     sys: AppLog,
     store: Store,
     state: local::State,
-    /// Every loaded app, by slug (`app::App`). Owned here so a sealed store can be
-    /// dropped and reopened for its privileged window.
+    /// Every loaded app, by slug (`app::App`). Owned here so the node-level snapshot,
+    /// restore and maintenance reach every store through one map.
     apps: BTreeMap<String, App>,
 }
 
@@ -296,11 +296,8 @@ impl Node {
         //    step 4 just wrote — and step 5, loading `apps/`, is `load_apps`, which the
         //    caller runs once this has returned.
         //
-        //    The store is left **unsealed**. `spec/app-contract.md §7`'s sandbox is
-        //    instance-wide rather than per-connection (see `store::Store`), so sealing
-        //    here would cost the snapshot writer the privileged window it needs, and
-        //    nothing serves app SQL out of `_sys` in the first place. App stores are
-        //    sealed by the loader, and reopened for their windows (`app::Node::reopen_privileged`).
+        //    Nothing serves app SQL out of `_sys`: its `app_conn()` is never handed out.
+        //    App stores hand out read-only sandboxed connections (`store::sandbox`).
         let previous = state
             .get(sys::SLUG)
             .and_then(|record| record.materialized.restore.clone());
@@ -368,22 +365,11 @@ impl Node {
 
     /// [`snapshot`](Self::snapshot) at a given instant, which is what names the snapshot.
     ///
-    /// An app's store is sealed and `COPY … TO` is file I/O, so for an app this is the
-    /// privileged window of `spec/app-contract.md §7`: the sealed store is dropped, a
-    /// fresh one opened, the snapshot written, and the store sealed again — whether or not
-    /// the write succeeded. `_sys` is never sealed and needs none of that.
+    /// The store writes it from the log while the app's read-only connections, if any,
+    /// go on reading — no window to open, nothing to reseal.
     pub fn snapshot_at(&mut self, app: &str, now: jiff::Timestamp) -> Result<Snapshot> {
         let dev = self.identity.id().clone();
-        let snapshot = if app == sys::SLUG {
-            self.store.snapshot(&dev, now).map_err(boxed)?
-        } else {
-            self.reopen_privileged(app)?;
-            let written = self.store_for(app)?.snapshot(&dev, now).map_err(boxed);
-            let resealed = self.reseal(app);
-            let snapshot = written?;
-            resealed?;
-            snapshot
-        };
+        let snapshot = self.store_for(app)?.snapshot(&dev, now).map_err(boxed)?;
         self.record_snapshot(&snapshot)?;
         Ok(snapshot)
     }
@@ -421,35 +407,17 @@ impl Node {
 
     /// Rebuild `app`'s cache by `spec/protocol.md §5.3`'s three tiers, reporting which one
     /// succeeded, and audit a fall-through (`spec/data-dictionary.md §3.10`).
-    ///
-    /// For an app this is the same privileged window [`snapshot_at`](Self::snapshot_at)
-    /// opens, closed again before this returns.
     pub fn restore(&mut self, app: &str) -> Result<Restored> {
         let previous = self.restore_record(app);
         let is_app = app != sys::SLUG;
-        if is_app {
-            self.reopen_privileged(app)?;
-        }
         let restored = self
             .store_for_mut(app)?
             .restore(&store::cutoff_now())
-            .map_err(boxed);
-        let restored = match restored {
-            Ok(restored) => restored,
-            Err(error) => {
-                if is_app {
-                    let _ = self.reseal(app);
-                }
-                return Err(error);
-            }
-        };
+            .map_err(boxed)?;
         if audit_restore(&mut self.sys, app, &restored, previous.as_ref(), false)? && !is_app {
             self.store.refresh(&store::cutoff_now()).map_err(boxed)?;
         }
         note_health(&self.store, self.store_for(app)?, app)?;
-        if is_app {
-            self.reseal(app)?;
-        }
         self.flush()?;
         Ok(restored)
     }
@@ -592,7 +560,7 @@ impl Node {
         &mut self.sys
     }
 
-    /// `_sys` materialized into the DuckDB schema `sys` (`spec/data-dictionary.md §3`).
+    /// `_sys` materialized into `cache/_sys.sqlite` (`spec/data-dictionary.md §3`).
     #[must_use]
     pub fn store(&self) -> &Store {
         &self.store
@@ -603,8 +571,7 @@ impl Node {
         &mut self.store
     }
 
-    /// The store for `app`: `_sys`'s, or a loaded app's (sealed, unless a privileged
-    /// window is open on it).
+    /// The store for `app`: `_sys`'s, or a loaded app's.
     fn store_for(&self, app: &str) -> Result<&Store> {
         if app == sys::SLUG {
             Ok(&self.store)
@@ -664,17 +631,13 @@ impl Node {
     /// `value` is a JSON-encoded scalar (`§3.6`), so `365` and `"365"` both read as 365.
     fn setting_u64(&self, key: &str) -> Result<Option<u64>> {
         let value: Option<String> = match self.store.conn().query_row(
-            &format!(
-                "SELECT value FROM {}.{} WHERE id = ?",
-                store::SYS_SCHEMA,
-                sys::SETTING
-            ),
-            duckdb::params![key],
+            &format!("SELECT value FROM {} WHERE id = ?", sys::SETTING),
+            rusqlite::params![key],
             |row| row.get(0),
         ) {
             Ok(value) => Some(value),
-            Err(duckdb::Error::QueryReturnedNoRows) => None,
-            Err(error) => return Err(boxed(StoreError::Duck(error))),
+            Err(rusqlite::Error::QueryReturnedNoRows) => None,
+            Err(error) => return Err(boxed(StoreError::Sql(error))),
         };
         let Some(value) = value else {
             return Ok(None);
@@ -803,7 +766,7 @@ fn audit_recovery(sys_log: &mut AppLog, app: &str, recovered: &log::Recovered) -
 /// Bounded on purpose, because `Store::refresh` may run per request once M6 exists and a
 /// row per refresh would append to `sys_audit` forever:
 ///
-/// - `restore.tier2` (warn) when CSV rescued a snapshot whose Parquet failed, once per
+/// - `restore.tier2` (warn) when CSV rescued a snapshot whose SQLite file failed, once per
 ///   `(tier, snapshot)` — `previous` is what `local/state.jsonl` last recorded.
 /// - `restore.tier3` (alert, `§3.10`) when a snapshot that applied could not be read at
 ///   all, once per `(tier, snapshot)` likewise — or when the replay rebuilt a cache that
@@ -823,7 +786,7 @@ fn audit_restore(
     let transition =
         previous.is_none_or(|p| p.tier != restored.tier || p.snapshot != restored.snapshot);
     let (kind, alert) = match restored.tier {
-        Tier::Parquet => return Ok(false),
+        Tier::Sqlite => return Ok(false),
         Tier::Csv if transition => (sys::KIND_RESTORE_TIER2, false),
         Tier::Replay
             if (restored.unexpected() && transition) || (restored.from_scratch && !first_run) =>
@@ -870,8 +833,8 @@ fn file_name(path: &Path) -> String {
 /// discarded them as unreferenced.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkedEngines {
-    /// DuckDB's own `version()`, e.g. `v1.5.5`.
-    pub duckdb: String,
+    /// SQLite's own `sqlite_version()`, e.g. `3.53.2`.
+    pub sqlite: String,
     /// Lua's `_VERSION`, which must be `Lua 5.4` — not LuaJIT, not Luau (`AGENTS.md`).
     pub lua: String,
 }
@@ -879,24 +842,24 @@ pub struct LinkedEngines {
 /// Failures of the linkage probe.
 #[derive(Debug, Error)]
 pub enum EngineError {
-    /// DuckDB linked but did not answer.
-    #[error("bundled DuckDB failed to answer version(): {0}")]
-    DuckDb(#[from] duckdb::Error),
+    /// SQLite linked but did not answer.
+    #[error("bundled SQLite failed to answer sqlite_version(): {0}")]
+    Sqlite(#[from] rusqlite::Error),
     /// Lua linked but did not answer.
     #[error("vendored Lua failed to answer _VERSION: {0}")]
     Lua(#[from] mlua::Error),
 }
 
-/// Open an in-memory DuckDB and a fresh Lua state, and ask each its version.
+/// Open an in-memory SQLite database and a fresh Lua state, and ask each its version.
 ///
-/// This exists to fail loudly on any platform where the bundled C++ or vendored C build is
-/// broken, rather than at M3 or M7 when there is real code to blame it on.
+/// This exists to fail loudly on any platform where the bundled C build of either engine
+/// is broken, rather than at M3 or M7 when there is real code to blame it on.
 pub fn linked_engines() -> std::result::Result<LinkedEngines, EngineError> {
-    let conn = duckdb::Connection::open_in_memory()?;
-    let duckdb: String = conn.query_row("SELECT version()", [], |row| row.get(0))?;
+    let conn = rusqlite::Connection::open_in_memory()?;
+    let sqlite: String = conn.query_row("SELECT sqlite_version()", [], |row| row.get(0))?;
 
     let lua = mlua::Lua::new();
     let lua: String = lua.load("return _VERSION").eval()?;
 
-    Ok(LinkedEngines { duckdb, lua })
+    Ok(LinkedEngines { sqlite, lua })
 }

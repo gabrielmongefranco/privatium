@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/data-dictionary.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-02
+Modified: 2026-09-03
 Summary:  NORMATIVE. System tables, app index, type mappings, and field definitions.
 -->
 
@@ -25,49 +25,65 @@ Anything an owner would expect to see on all their devices is replicated. Anythi
 would be actively wrong to copy to another machine is local. Getting this split wrong is
 how you leak a live pairing code into a backup.
 
-`_sys` is a reserved slug and is materialized into the DuckDB schema `sys`. It uses the
-identical event envelope as any app; the framework dogfoods its own storage layer.
+`_sys` is a reserved slug and is materialized into `cache/_sys.sqlite`. An app's connection
+sees that database attached read-only as the schema `sys`, which is why the views of §4 are
+spelled `sys.v_app_nav`; the framework's own connection is the file itself and names them
+bare. It uses the identical event envelope as any app; the framework dogfoods its own
+storage layer.
 
 ---
 
 ## 2. Type system
 
-App authors declare column types in `schema.sql` using DuckDB types directly. The scaffold
-generator maps them to HTML controls as follows; hand-written templates may do anything.
+App authors declare column types in `schema.sql` with the type names below. SQLite has
+storage classes and column *affinity* rather than types, so the framework — the only writer
+of the cache — types every value from the declared type on the way in and stores it as the
+**stored as** column says; a column declared `DECIMAL` is never a float. The scaffold
+generator maps the logical types to HTML controls as follows; hand-written templates may do
+anything.
 
-| Logical type | DuckDB type | HTML control | Notes |
-|---|---|---|---|
-| `text` | `VARCHAR` | `input[type=text]` | `max_length` enforced server-side |
-| `longtext` | `VARCHAR` | `textarea` | |
-| `integer` | `BIGINT` | `input[type=number]` | |
-| `decimal` | `DECIMAL(18,4)` | `input[type=number]` | precision overridable |
-| `money` | `DECIMAL(18,2)` | `input[type=number]` | never a float |
-| `percent` | `DECIMAL(9,4)` | `input[type=number]` | stored as `0.0725`, not `7.25` |
-| `date` | `DATE` | `input[type=date]` | |
-| `datetime` | `TIMESTAMPTZ` | `input[type=datetime-local]` | stored UTC |
-| `time` | `TIME` | `input[type=time]` | |
-| `duration` | `INTERVAL` | two numeric inputs | |
-| `bool` | `BOOLEAN` | `input[type=checkbox]` | |
-| `select` | `VARCHAR` | `select` | `options` list required |
-| `multiselect` | `VARCHAR[]` | checkbox group | |
-| `ref` | `VARCHAR` | `select` | ULID pointing at another row; `ref_view` required |
-| `note` | — | rendered text | display-only, no column |
+| Logical type | Declared type | Stored as | HTML control | Notes |
+|---|---|---|---|---|
+| `text` | `VARCHAR` | `TEXT` | `input[type=text]` | `max_length` enforced server-side |
+| `longtext` | `VARCHAR` | `TEXT` | `textarea` | |
+| `integer` | `BIGINT` | `INTEGER` | `input[type=number]` | 64-bit, exact |
+| `decimal` | `DECIMAL(18,4)` | `TEXT`, `decimal` collation | `input[type=number]` | precision overridable |
+| `money` | `DECIMAL(18,2)` | `TEXT`, `decimal` collation | `input[type=number]` | never a float |
+| `percent` | `DECIMAL(9,4)` | `TEXT`, `decimal` collation | `input[type=number]` | stored as `0.0725`, not `7.25` |
+| `date` | `DATE` | `TEXT`, `YYYY-MM-DD` | `input[type=date]` | SQLite's `date()` and modifiers apply |
+| `datetime` | `TIMESTAMPTZ` | `TEXT`, RFC 3339 UTC | `input[type=datetime-local]` | stored UTC; compares as time |
+| `time` | `TIME` | `TEXT`, `HH:MM:SS` | `input[type=time]` | |
+| `duration` | `INTERVAL` | `TEXT` | two numeric inputs | a modifier string, e.g. `+30 days` |
+| `bool` | `BOOLEAN` | `INTEGER`, `1` or `0` | `input[type=checkbox]` | |
+| `select` | `VARCHAR` | `TEXT` | `select` | `options` list required |
+| `multiselect` | `JSON` | `TEXT`, a JSON array | checkbox group | query with `json_each` |
+| `ref` | `VARCHAR` | `TEXT` | `select` | ULID pointing at another row; `ref_view` required |
+| `note` | — | — | rendered text | display-only, no column |
+
+`VARCHAR[]` is accepted as a spelling of `JSON` and stored the same way. Date arithmetic is
+`date(filled_on, '+30 days')`, never `filled_on + 30`, which SQLite evaluates as an
+integer; sums over a `DECIMAL` column are `decimal_sum(copay_amount)`, never `SUM()`, which
+is a float. `privatium lint` catches both.
 
 ### 2.1 JSON encoding rules
 
 Because `d` is JSON, values are encoded as follows on write and decoded on replay:
 
-| DuckDB type | JSON |
+| Declared type | JSON |
 |---|---|
 | `VARCHAR`, `DATE`, `TIME`, `TIMESTAMPTZ`, `INTERVAL` | string |
 | `DECIMAL`, `BIGINT` | **string**, not number |
 | `BOOLEAN` | `true` / `false` |
-| `VARCHAR[]` | array of strings |
+| `JSON` (`VARCHAR[]`) | the value itself — an array of strings for a multiselect |
 | NULL | `null`, or key omitted (equivalent) |
 
 `DECIMAL` and `BIGINT` are encoded as strings because JSON numbers are IEEE 754 doubles in
 most parsers and would silently lose precision on money and large integers. This is
-non-negotiable — it is the entire reason DuckDB was chosen over SQLite.
+non-negotiable. A replay reads each value's own digits and never routes a number through a
+double, so a value a client wrongly sent as a JSON number still lands exactly; a `DECIMAL`
+lands at its declared scale (`12.3` in a `DECIMAL(18,2)` column is `12.30`). A value that
+does not parse as its declared type materializes as NULL — the log line cannot be corrected
+and MUST NOT stop the app — and the data API refuses it before it is ever appended.
 
 Dates are `YYYY-MM-DD`. Timestamps are RFC 3339 UTC with a literal `Z`.
 
@@ -75,7 +91,7 @@ Dates are `YYYY-MM-DD`. Timestamps are RFC 3339 UTC with a literal `Z`.
 
 ## 3. System tables
 
-All are event-sourced into the `sys` schema. `id` is a ULID unless stated otherwise.
+All are event-sourced into `cache/_sys.sqlite`. `id` is a ULID unless stated otherwise.
 
 ### 3.1 `sys_node`
 
@@ -382,8 +398,9 @@ none occurred.
 
 ## 4. Framework views
 
-Views the framework exposes to apps and to the shell UI. Apps MAY read these; they MUST
-NOT write to `sys` tables.
+Views the framework exposes to apps and to the shell UI, spelled as an app sees them —
+`cache/_sys.sqlite` attached read-only as `sys` (§1). Apps MAY read these; they MUST NOT
+write to `sys` tables, and cannot: the attachment is read-only.
 
 | View | Returns |
 |---|---|

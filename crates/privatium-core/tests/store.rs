@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/store.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-02
+// Created:  2026-09-01  |  Modified: 2026-09-03
 // Summary:  Materialization against spec/protocol.md §4.5 and §4.6 — last-write-wins at row
 //           granularity, tombstones, the §4.4 horizon, the §2.1 encodings, a cache that can
 //           be deleted, a log anyone may append to by hand, and the §2.5 property that the
@@ -336,8 +336,8 @@ fn test_spec_3_1_delete_cache_loses_nothing() {
     let rows = fixture.count("profile");
     assert_eq!(rows, 1);
 
-    // Release DuckDB's lock on the cache without dropping the `TempDir`, which would take
-    // the whole data root — including the logs this test is about — with it.
+    // Drop the store without dropping the `TempDir`, which would take the whole data root
+    // — including the logs this test is about — with it.
     let root = fixture.release();
 
     fs::remove_dir_all(root.path().join("cache")).unwrap();
@@ -354,14 +354,7 @@ fn test_spec_3_1_delete_cache_loses_nothing() {
     let mut store = Store::open(node.paths(), APP, HELLO_DDL).unwrap();
     store.materialize(&store::cutoff_now()).unwrap();
 
-    let after: String = store
-        .conn()
-        .query_row(
-            "SELECT coalesce(md5(string_agg(t::VARCHAR, '|' ORDER BY t.id)), 'empty') FROM profile t",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
+    let after = common::digest_via(store.conn(), "profile");
     assert_eq!(
         after, before,
         "the rebuilt table differs from the one deleted"
@@ -425,13 +418,11 @@ fn test_spec_3_1_delete_cache_only_still_materializes() {
         let rows: i64 = node
             .store()
             .conn()
-            .query_row(&format!("SELECT count(*) FROM sys.{table}"), [], |row| {
+            .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
                 row.get(0)
             })
-            .unwrap_or_else(|error| {
-                panic!("sys.{table} is missing after cache/ was deleted: {error}")
-            });
-        assert_eq!(rows, 1, "sys.{table}");
+            .unwrap_or_else(|error| panic!("{table} is missing after cache/ was deleted: {error}"));
+        assert_eq!(rows, 1, "{table}");
     }
 
     // The app store, restored from the same `local/state.jsonl`.
@@ -444,21 +435,14 @@ fn test_spec_3_1_delete_cache_only_still_materializes() {
         "refresh trusted a watermark for tables that no longer exist"
     );
 
-    let after: String = store
-        .conn()
-        .query_row(
-            "SELECT coalesce(md5(string_agg(t::VARCHAR, '|' ORDER BY t.id)), 'empty') FROM profile t",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
+    let after = common::digest_via(store.conn(), "profile");
     assert_eq!(
         after, before,
         "the rebuilt table differs from the one deleted"
     );
     assert!(
         store.is_tombstoned("profile", "b").unwrap(),
-        "pv._tombstone must exist and hold the same set"
+        "pv_tombstone must exist and hold the same set"
     );
 }
 
@@ -468,10 +452,10 @@ fn test_spec_3_1_delete_cache_only_still_materializes() {
 
 /// `spec/data-dictionary.md §2.1` — `DECIMAL` crosses as a **string**, and arrives exact.
 ///
-/// This is the reason DuckDB was chosen over SQLite (`docs/decisions/0001 §3`). The second
-/// half is the one that would rot silently: a client that wrongly sent a JSON *number* must
-/// still land exactly, because `json_extract_string` hands back the number's own text and
-/// `VARCHAR → DECIMAL` parses it rather than routing it through a double.
+/// The materializer stores it as text at the declared scale (`docs/decisions/0006`), never
+/// as SQLite's REAL. The second half is the one that would rot silently: a client that
+/// wrongly sent a JSON *number* must still land exactly, because the reader keeps the
+/// number's own digits rather than routing them through a double.
 #[test]
 fn test_decimal_arrives_as_string() {
     let mut fixture = Fixture::open(TYPED_DDL);
@@ -518,30 +502,50 @@ fn test_decimal_arrives_as_string() {
         "99999999999.99"
     );
 
-    // Exact arithmetic, which a float would report as 0.30000000000000004.
+    // Exact arithmetic through the framework's aggregate, which a float would report as
+    // 24.680000000000003 on a longer sum; and a numeric sort under the decimal collation.
     let sum: String = fixture
         .store
         .conn()
         .query_row(
-            "SELECT CAST(sum(copay_amount) AS VARCHAR) FROM thing WHERE id IN ('s','n')",
+            "SELECT decimal_sum(copay_amount) FROM thing WHERE id IN ('s','n')",
             [],
             |row| row.get(0),
         )
         .unwrap();
     assert_eq!(sum, "24.68");
-
-    // And the declared type really is DECIMAL, not something inferred.
-    let ty: String = fixture
+    let first: String = fixture
         .store
         .conn()
         .query_row(
-            "SELECT data_type FROM duckdb_columns()
-             WHERE table_name = 'thing' AND column_name = 'copay_amount'",
+            "SELECT id FROM thing ORDER BY copay_amount DESC LIMIT 1",
             [],
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(ty, "DECIMAL(18,2)");
+    assert_eq!(
+        first, "big",
+        "'99999999999.99' sorts above '12.34' numerically"
+    );
+
+    // Stored as text, never as a float, and the declared type is what the author wrote.
+    let stored: String = fixture
+        .store
+        .conn()
+        .query_row(
+            "SELECT typeof(copay_amount) FROM thing WHERE id = 'n'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(stored, "text");
+    let column = fixture.store.schema().table("thing").unwrap();
+    let column = column
+        .columns
+        .iter()
+        .find(|c| c.name == "copay_amount")
+        .unwrap();
+    assert_eq!(column.ty, "DECIMAL(18,2)");
 }
 
 /// `spec/data-dictionary.md §2.1` — one assertion per row of the encoding table.
@@ -565,14 +569,18 @@ fn test_spec_2_1_json_encoding_round_trip() {
     assert_eq!(fixture.cell("thing", "x", "copay_amount"), "12.34");
     // 2^53 + 1: a parser that took JSON numbers as doubles would return ...992.
     assert_eq!(fixture.cell("thing", "x", "count"), "9007199254740993");
-    assert_eq!(fixture.cell("thing", "x", "ok"), "true");
+    assert_eq!(fixture.cell("thing", "x", "ok"), "1", "BOOLEAN is 1 or 0");
     assert_eq!(fixture.cell("thing", "x", "filled_on"), "2026-08-28");
-    assert!(
-        fixture
-            .cell("thing", "x", "seen_at")
-            .starts_with("2026-08-28")
+    assert_eq!(
+        fixture.cell("thing", "x", "seen_at"),
+        "2026-08-28T14:03:11.412Z",
+        "a timestamp is the RFC 3339 text the event carried"
     );
-    assert_eq!(fixture.cell("thing", "x", "tags"), "[a, b]");
+    assert_eq!(
+        fixture.cell("thing", "x", "tags"),
+        "[\"a\",\"b\"]",
+        "a list is its JSON"
+    );
 
     for column in [
         "name",
@@ -626,7 +634,7 @@ fn test_spec_4_2_unknown_fields_do_not_break_materialization() {
 /// `§4.4` — an event more than 24 hours ahead does not win its row.
 ///
 /// M2 excludes such an event from the Lamport fold, but the line is still in the file and
-/// `read_json()` sees it. If it materialized it would own the row permanently, and a
+/// the materializer reads it. If it materialized it would own the row permanently, and a
 /// rejection that only withholds a counter increment is not a rejection.
 ///
 /// The second half is the mercy M2's reader also grants: a `ts` this node cannot parse
@@ -727,7 +735,7 @@ fn test_a_future_event_is_not_audited_twice_by_materializing() {
     let audits: i64 = node
         .store()
         .conn()
-        .query_row("SELECT count(*) FROM sys.sys_audit", [], |row| row.get(0))
+        .query_row("SELECT count(*) FROM sys_audit", [], |row| row.get(0))
         .unwrap();
     assert_eq!(audits, 1, "the same rejection was audited twice");
 }
@@ -743,8 +751,8 @@ fn test_a_future_event_is_not_audited_twice_by_materializing() {
 ///
 /// Run twice, and the second time is the one that matters. PowerShell's `>>` terminates
 /// lines with `0d 0a`, so a Windows owner following the README writes a `\r` the writer
-/// never emits. M2's reader tolerates it because JSON treats it as whitespace; whether
-/// DuckDB's `read_json(format = 'newline_delimited')` does was unverified until here.
+/// never emits. M2's reader tolerates it because JSON treats it as whitespace; the
+/// materializer's own reader has to as well.
 #[test]
 fn test_hand_appended_line_appears() {
     for (label, terminator) in [("lf", "\n"), ("crlf", "\r\n")] {
@@ -831,9 +839,9 @@ fn test_hand_appended_line_appears() {
 ///
 /// Halfway through the stream a snapshot is taken from the log; the rest of the stream is
 /// the tail. Then, in order: the incremental tables, a full replay, a tier-1 restore, a
-/// tier-2 restore with the Parquet file corrupted on disk, and a tier-3 restore with the
+/// tier-2 restore with the SQLite file corrupted on disk, and a tier-3 restore with the
 /// CSV corrupted too — every one compared by digest against the replay, the table's
-/// contents and the whole of `pv._tombstone`. If any of them ever differ, that path is
+/// contents and the whole of `pv_tombstone`. If any of them ever differ, that path is
 /// wrong — the replay is the definition.
 ///
 /// Every run is handed the **same** cutoff. Reading the clock twice would let a test fail
@@ -939,9 +947,9 @@ fn incremental_matches_full_replay(seed: u64) {
         "seed {seed:#x}: the incremental path and the full replay disagree (table, tombstones); §4.5 says the replay is right"
     );
 
-    // Tier 1: Parquet plus the tail written after the snapshot.
+    // Tier 1: the snapshot's SQLite file plus the tail written after the snapshot.
     let restored = fixture.store.restore(&cutoff).unwrap();
-    assert_eq!(restored.tier, Tier::Parquet, "seed {seed:#x}: {restored:?}");
+    assert_eq!(restored.tier, Tier::Sqlite, "seed {seed:#x}: {restored:?}");
     assert_eq!(
         restored.snapshot.as_deref(),
         Some(snapshot.id.to_string().as_str())
@@ -952,8 +960,8 @@ fn incremental_matches_full_replay(seed: u64) {
         "seed {seed:#x}: tier 1 and the full replay disagree"
     );
 
-    // Tier 2: the Parquet file is corrupted on disk, so CSV plus schema.sql plus the tail.
-    flip_byte(&snapshot.dir.join("thing.parquet"));
+    // Tier 2: the SQLite file is corrupted on disk, so CSV plus schema.sql plus the tail.
+    flip_byte(&snapshot.dir.join("thing.sqlite"));
     let restored = fixture.store.restore(&cutoff).unwrap();
     assert_eq!(restored.tier, Tier::Csv, "seed {seed:#x}: {restored:?}");
     assert_eq!(
@@ -979,7 +987,7 @@ fn incremental_matches_full_replay(seed: u64) {
         .store
         .conn()
         .query_row(
-            "SELECT count(*) FROM duckdb_tables() WHERE table_name = 'ghost'",
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'ghost'",
             [],
             |row| row.get(0),
         )
@@ -1039,15 +1047,15 @@ fn test_spec_4_6_tombstone_reportable_without_schema() {
 // spec/app-contract.md §7 — the sandbox
 // ---------------------------------------------------------------------------------------
 
-/// `spec/app-contract.md §7` — after sealing, app SQL cannot reach the filesystem.
+/// `spec/app-contract.md §7` — app SQL runs on a connection that can only read.
 ///
-/// The privilege boundary is in **time**, not in the handle: DuckDB makes
-/// `enable_external_access` and `lock_configuration` `GLOBAL_ONLY`, so the seal covers
-/// every connection on the instance, the framework's included. That is stronger than §7
-/// asks and is the only shape the engine allows — which is why the last assertions here,
-/// that the privileged connection is caught too, are a feature rather than a defect.
+/// The boundary is the connection, not a window in time: the app's handle is read-only
+/// at the file, `query_only` at the connection, and behind an authorizer that refuses
+/// every write, every `PRAGMA`, `ATTACH` and extension loading. The framework's own
+/// connection keeps writing — rebuilding, restoring, snapshotting — while the app's is
+/// open, which is the whole simplification of `docs/decisions/0006`.
 #[test]
-fn test_spec_app_contract_7_sealed_connection_cannot_read_files() {
+fn test_spec_app_contract_7_app_connection_can_only_read() {
     let mut fixture = Fixture::open(HELLO_DDL);
     let key = fixture
         .node
@@ -1057,56 +1065,73 @@ fn test_spec_app_contract_7_sealed_connection_cannot_read_files() {
         .to_string()
         .replace('\\', "/");
 
-    assert!(
-        fixture.store.app_conn().is_err(),
-        "an unsealed store has no sandboxed handle"
-    );
-    fixture.store.seal().unwrap();
-    assert!(fixture.store.is_sealed());
-
     let app = fixture.store.app_conn().unwrap();
 
-    // Reading the table it was made for still works.
+    // Reading the table it was made for works, decimal functions included.
     let rows: i64 = app
         .query_row("SELECT count(*) FROM profile", [], |row| row.get(0))
         .unwrap();
     assert_eq!(rows, 0);
+    let sum: String = app
+        .query_row("SELECT decimal_add('0.1', '0.2')", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(sum, "0.3");
 
-    // Everything that reaches the filesystem does not. `identity/node.key` is the file
-    // §7 names as the reason this exists.
+    // Everything that writes, reaches the filesystem, or changes the engine does not.
+    // `identity/node.key` is the file §7 names as the reason this exists.
     for sql in [
-        format!("SELECT * FROM read_json('{key}')"),
-        format!("SELECT * FROM read_csv('{key}')"),
-        format!("SELECT * FROM read_parquet('{key}')"),
-        "COPY (SELECT 1) TO 'leak.csv'".to_owned(),
-        "COPY (SELECT 1) TO 'leak.parquet' (FORMAT PARQUET)".to_owned(),
-        "INSTALL httpfs".to_owned(),
-        "ATTACH 'other.duckdb'".to_owned(),
+        "INSERT INTO profile (id, display_name) VALUES ('x', 'y')".to_owned(),
+        "UPDATE profile SET display_name = 'y'".to_owned(),
+        "DELETE FROM profile".to_owned(),
+        "DROP TABLE profile".to_owned(),
+        "CREATE TABLE leak (id TEXT)".to_owned(),
+        "DELETE FROM pv_tombstone".to_owned(),
+        format!("ATTACH '{key}' AS leak"),
+        "ATTACH ':memory:' AS scratch".to_owned(),
+        format!("VACUUM INTO '{key}'"),
+        "PRAGMA query_only = 0".to_owned(),
+        "PRAGMA journal_mode = WAL".to_owned(),
+        format!("SELECT load_extension('{key}')"),
     ] {
         assert!(
             app.execute_batch(&sql).is_err(),
             "app SQL was allowed to run: {sql}"
         );
     }
-
-    // And the sandbox cannot be lifted, which is what `lock_configuration` last buys.
-    assert!(
-        app.execute_batch("SET enable_external_access = true")
-            .is_err()
+    assert_eq!(
+        fs::read(fixture.node.paths().node_key()).unwrap().len(),
+        32,
+        "the key file was touched"
     );
 
-    // The seal is instance-wide, so rematerializing, restoring and snapshotting now need
-    // a fresh store rather than this one. Reported rather than silently producing an
-    // empty table or an empty snapshot.
-    assert!(fixture.store.materialize(&store::cutoff_now()).is_err());
-    assert!(fixture.store.restore(&store::cutoff_now()).is_err());
-    assert!(fixture.store.restore_dry_run(&store::cutoff_now()).is_err());
-    assert!(
-        fixture
-            .store
-            .snapshot(fixture.node.id(), jiff::Timestamp::now())
-            .is_err()
-    );
+    // The framework's connection is unaffected: with the app's handle still open, the
+    // store rebuilds, snapshots and restores, and the app's handle sees the result.
+    let ts = ts_offset_secs(-60);
+    let dev = fixture.dev.clone();
+    fixture.append(&event(
+        1,
+        1,
+        &ts,
+        &dev,
+        "profile",
+        "a",
+        Some(r#"{"display_name":"Gabriel"}"#),
+    ));
+    fixture.store.materialize(&store::cutoff_now()).unwrap();
+    fixture
+        .store
+        .snapshot(fixture.node.id(), jiff::Timestamp::now())
+        .unwrap();
+    fixture.store.restore(&store::cutoff_now()).unwrap();
+    fixture.store.restore_dry_run(&store::cutoff_now()).unwrap();
+    let name: String = app
+        .query_row(
+            "SELECT display_name FROM profile WHERE id = 'a'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(name, "Gabriel");
 }
 
 // ---------------------------------------------------------------------------------------
@@ -1115,10 +1140,9 @@ fn test_spec_app_contract_7_sealed_connection_cannot_read_files() {
 
 /// An app whose log directory holds no segment yet still opens — schema-less or not.
 ///
-/// `read_json()` refuses a glob that matches no file, and the tombstone set is now built
-/// for every app rather than only those with declared tables, so this is the case that
-/// would fail first: a `sketch` that nobody has drawn on. The declared-table half is the
-/// same guard, checked because it is the same statement shape.
+/// The log directory does not exist yet, and the tombstone set is built for every app
+/// rather than only those with declared tables, so this is the case that would fail
+/// first: a `sketch` that nobody has drawn on. The declared-table half is the same guard.
 #[test]
 fn test_an_app_with_no_log_yet_still_opens() {
     let root = tempfile::tempdir().unwrap();
@@ -1165,7 +1189,8 @@ fn test_schemaless_app_materializes_no_tables() {
         .store
         .conn()
         .query_row(
-            "SELECT count(*) FROM duckdb_tables() WHERE schema_name = 'main'",
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' \
+             AND name NOT LIKE 'pv_%' AND name NOT LIKE 'sqlite_%'",
             [],
             |row| row.get(0),
         )
@@ -1214,8 +1239,8 @@ fn test_a_changed_schema_rematerializes_and_new_columns_are_null() {
 /// `spec/app-contract.md §5` and `spec/data-api.md §1` — a `CREATE VIEW` in `schema.sql`
 /// resolves, and survives being materialized more than once.
 ///
-/// Both halves are the point. Views are re-created from DuckDB's own rendering of them, so
-/// this pins that the rendering can be re-executed: if it could not, the second
+/// Both halves are the point. Views are re-created from the author's own statement, so
+/// this pins that the statement can be re-executed: if it could not, the second
 /// materialization would fail with "view already exists" rather than quietly doing nothing,
 /// and every rematerialize — a schema change, a restore, a hand-appended line — would break.
 #[test]
@@ -1272,7 +1297,7 @@ fn test_a_view_resolves_and_survives_rematerializing() {
     assert_eq!(animals, 1);
 }
 
-/// The `sys` schema of `spec/data-dictionary.md §1` and `§3`, materialized by `Node::open`.
+/// The system tables of `spec/data-dictionary.md §1` and `§3`, materialized by `Node::open`.
 ///
 /// Step 4 of `docs/plans/phase-1.md §2.6`, checked through the two rows the bootstrap
 /// wrote: they are events like any other, and they arrive in `sys` by the same §4.5 replay
@@ -1286,8 +1311,8 @@ fn test_sys_materializes_the_bootstrap_rows() {
         .store()
         .conn()
         .query_row(
-            "SELECT kind FROM sys.sys_device WHERE id = ?",
-            duckdb::params![node.id().as_str()],
+            "SELECT kind FROM sys_device WHERE id = ?",
+            rusqlite::params![node.id().as_str()],
             |row| row.get(0),
         )
         .unwrap();
@@ -1297,8 +1322,8 @@ fn test_sys_materializes_the_bootstrap_rows() {
         .store()
         .conn()
         .query_row(
-            "SELECT replica FROM sys.sys_device WHERE id = ?",
-            duckdb::params![node.id().as_str()],
+            "SELECT replica FROM sys_device WHERE id = ?",
+            rusqlite::params![node.id().as_str()],
             |row| row.get(0),
         )
         .unwrap();
@@ -1307,37 +1332,35 @@ fn test_sys_materializes_the_bootstrap_rows() {
     let protocol: String = node
         .store()
         .conn()
-        .query_row("SELECT protocol FROM sys.sys_node", [], |row| row.get(0))
+        .query_row("SELECT protocol FROM sys_node", [], |row| row.get(0))
         .unwrap();
     assert_eq!(protocol, "pv/1");
 
-    // §1 of the data dictionary: `_sys` materializes into the schema `sys`, so nothing of
-    // it lands in `main`.
-    let stray: i64 = node
+    // §1 of the data dictionary: every replicated table of §3, and nothing else of that
+    // shape, in `cache/_sys.sqlite`.
+    let tables: i64 = node
         .store()
         .conn()
         .query_row(
-            "SELECT count(*) FROM duckdb_tables() WHERE schema_name = 'main'",
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name LIKE 'sys_%'",
             [],
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(stray, 0);
+    assert_eq!(tables, 9);
 
     // §4's views resolve, `v_health` included: a first run is the replay, with no snapshot.
     let devices: i64 = node
         .store()
         .conn()
-        .query_row("SELECT count(*) FROM sys.v_device_active", [], |row| {
-            row.get(0)
-        })
+        .query_row("SELECT count(*) FROM v_device_active", [], |row| row.get(0))
         .unwrap();
     assert_eq!(devices, 1);
     let (tier, snapshot): (i32, Option<String>) = node
         .store()
         .conn()
         .query_row(
-            "SELECT restore_tier, snapshot_id FROM sys.v_health WHERE app_id = '_sys'",
+            "SELECT restore_tier, snapshot_id FROM v_health WHERE app_id = '_sys'",
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )

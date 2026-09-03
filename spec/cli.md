@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/cli.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-30
-Modified: 2026-08-30
+Modified: 2026-09-03
 Summary:  NORMATIVE. The command-line interface, including the linter that makes
           the skills system enforceable rather than advisory.
 -->
@@ -123,7 +123,7 @@ Rule IDs are stable. Removing or renumbering one is a breaking change to the ski
 | `PV104` | Slug directory name matches `app.slug` |
 | `PV105` | Tier-required files present — `app.lua` for `lua`, `web/index.html` for `web` |
 | `PV106` | Every table in `schema.sql` has `id VARCHAR PRIMARY KEY` |
-| `PV107` | `schema.sql` contains only `CREATE TABLE`, `CREATE VIEW`, `CREATE MACRO`, `COMMENT ON` |
+| `PV107` | `schema.sql` contains only `CREATE TABLE`, `CREATE VIEW`, `CREATE INDEX` and comments |
 
 **Security — `PV2xx`**
 
@@ -228,7 +228,7 @@ privatium snapshot [--app <slug>] [--verify]
 privatium restore --from <path> [--app <slug>] [--dry-run]
 ```
 
-`snapshot` writes a Parquet + CSV + `schema.sql` set (`spec/protocol.md §5`). `--verify`
+`snapshot` writes a SQLite + CSV + `schema.sql` set (`spec/protocol.md §5`). `--verify`
 recomputes checksums against `MANIFEST.json` and exits non-zero on mismatch.
 
 `restore` reports which of the three tiers it used and exits non-zero if it fell through to

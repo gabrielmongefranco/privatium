@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/snapshot.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-02  |  Modified: 2026-09-02
+// Created:  2026-09-02  |  Modified: 2026-09-03
 // Summary:  spec/protocol.md §5 — the snapshot id and manifest, the three-tier read with
 //           real bytes flipped on disk, when a snapshot does not apply, retention that
 //           never prunes the oldest, verification, the weekly policy, and where the tier
@@ -134,7 +134,7 @@ fn test_spec_5_1_snapshot_id_format() {
     let expected: BTreeSet<String> = [
         "MANIFEST.json",
         "schema.sql",
-        "profile.parquet",
+        "profile.sqlite",
         "profile.csv",
     ]
     .into_iter()
@@ -222,7 +222,7 @@ fn test_spec_5_2_manifest_shape() {
 
     let engine = json["engine"].as_str().unwrap();
     let version = engine
-        .strip_prefix("duckdb ")
+        .strip_prefix("sqlite ")
         .unwrap_or_else(|| panic!("{engine}"));
     assert!(
         version.starts_with(|c: char| c.is_ascii_digit()),
@@ -239,13 +239,13 @@ fn test_spec_5_2_manifest_shape() {
         .collect();
     assert_eq!(
         table_keys,
-        ["name", "rows", "parquet_sha256", "csv_sha256"]
+        ["name", "rows", "sqlite_sha256", "csv_sha256"]
             .into_iter()
             .collect()
     );
     assert_eq!(tables[0]["name"], "profile");
     assert_eq!(tables[0]["rows"], 1, "b was deleted; a remains");
-    for key in ["parquet_sha256", "csv_sha256"] {
+    for key in ["sqlite_sha256", "csv_sha256"] {
         let sha = tables[0][key].as_str().unwrap();
         assert_eq!(sha.len(), 64, "{key}");
         assert!(
@@ -255,16 +255,16 @@ fn test_spec_5_2_manifest_shape() {
         );
     }
 
-    // schema.sql: exact types, no constraints — the table a tier loads into.
+    // schema.sql: the storage types with the declared type beside each, the key and
+    // nothing else — the table a tier loads into.
     let ddl = fs::read_to_string(snapshot.dir.join("schema.sql")).unwrap();
     assert!(
-        ddl.contains("CREATE TABLE \"profile\" (id VARCHAR, \"display_name\" VARCHAR);"),
+        ddl.contains(
+            "CREATE TABLE \"profile\" (id TEXT PRIMARY KEY, \"display_name\" TEXT /* VARCHAR */);"
+        ),
         "{ddl}"
     );
-    assert!(
-        !ddl.contains("PRIMARY KEY") && !ddl.contains("NOT NULL"),
-        "{ddl}"
-    );
+    assert!(!ddl.contains("NOT NULL"), "{ddl}");
 }
 
 /// A snapshot of an app nobody has written to is legal and empty; so is one of a
@@ -294,24 +294,24 @@ fn test_an_empty_or_schemaless_app_snapshots_cleanly() {
 // §5.3 — the three tiers
 // ---------------------------------------------------------------------------------------
 
-/// `spec/protocol.md §5.3` tier 1 — Parquet plus the log tail equals the full replay,
-/// tombstones included, across a restart.
+/// `spec/protocol.md §5.3` tier 1 — the snapshot's SQLite file plus the log tail equals
+/// the full replay, tombstones included, across a restart.
 #[test]
-fn test_spec_5_3_tier1_parquet() {
+fn test_spec_5_3_tier1_sqlite() {
     let fixture = Fixture::open(HELLO_DDL);
     seed_hello(&fixture);
     let snapshot = fixture.snapshot(jiff::Timestamp::now());
     tail_hello(&fixture);
 
     let (mut fixture, restored) = fixture.reopen_restoring(HELLO_DDL);
-    assert_eq!(restored.tier, Tier::Parquet, "{restored:?}");
+    assert_eq!(restored.tier, Tier::Sqlite, "{restored:?}");
     assert_eq!(
         restored.snapshot.as_deref(),
         Some(snapshot.id.to_string().as_str())
     );
     assert!(restored.skipped.is_empty(), "{restored:?}");
     assert!(!restored.unexpected());
-    assert_eq!(fixture.store.restore_tier(), Some(Tier::Parquet));
+    assert_eq!(fixture.store.restore_tier(), Some(Tier::Sqlite));
 
     let restored_digests = fixture.digests("profile");
     assert_eq!(
@@ -342,15 +342,15 @@ fn test_spec_5_3_tier1_parquet() {
     );
 }
 
-/// `§5.3` tier 2 — Parquet with a real byte flipped fails its SHA-256 and CSV plus
-/// `schema.sql` plus the tail takes over, with the same result.
+/// `§5.3` tier 2 — the SQLite file with a real byte flipped fails its SHA-256 and CSV
+/// plus `schema.sql` plus the tail takes over, with the same result.
 #[test]
-fn test_spec_5_3_tier2_on_parquet_corruption() {
+fn test_spec_5_3_tier2_on_sqlite_corruption() {
     let fixture = Fixture::open(HELLO_DDL);
     seed_hello(&fixture);
     let snapshot = fixture.snapshot(jiff::Timestamp::now());
     tail_hello(&fixture);
-    flip_byte(&snapshot.dir.join("profile.parquet"));
+    flip_byte(&snapshot.dir.join("profile.sqlite"));
 
     // The dry run predicts it without touching a table.
     let plan = fixture.store.restore_dry_run(&store::cutoff_now()).unwrap();
@@ -359,11 +359,11 @@ fn test_spec_5_3_tier2_on_parquet_corruption() {
     let (mut fixture, restored) = fixture.reopen_restoring(HELLO_DDL);
     assert_eq!(restored.tier, Tier::Csv, "{restored:?}");
     assert_eq!(restored.skipped.len(), 1);
-    assert_eq!(restored.skipped[0].tier, Tier::Parquet);
+    assert_eq!(restored.skipped[0].tier, Tier::Sqlite);
     assert!(
         matches!(
             &restored.skipped[0].reason,
-            SkipReason::ChecksumMismatch { table, file } if table == "profile" && file == "profile.parquet"
+            SkipReason::ChecksumMismatch { table, file } if table == "profile" && file == "profile.sqlite"
         ),
         "{restored:?}"
     );
@@ -386,7 +386,7 @@ fn test_spec_5_3_tier3_on_csv_corruption() {
     seed_hello(&fixture);
     let snapshot = fixture.snapshot(jiff::Timestamp::now());
     tail_hello(&fixture);
-    flip_byte(&snapshot.dir.join("profile.parquet"));
+    flip_byte(&snapshot.dir.join("profile.sqlite"));
     flip_byte(&snapshot.dir.join("profile.csv"));
 
     let (fixture, restored) = fixture.reopen_restoring(HELLO_DDL);
@@ -543,7 +543,7 @@ fn test_spec_2_1_typed_columns_survive_csv() {
     ));
     fixture.append(&event(3, 3, &ts, &dev, "thing", "nulls", Some("{}")));
     let snapshot = fixture.snapshot(jiff::Timestamp::now());
-    flip_byte(&snapshot.dir.join("thing.parquet"));
+    flip_byte(&snapshot.dir.join("thing.sqlite"));
 
     let (mut fixture, restored) = fixture.reopen_restoring(TYPED_DDL);
     assert_eq!(restored.tier, Tier::Csv, "{restored:?}");
@@ -554,16 +554,15 @@ fn test_spec_2_1_typed_columns_survive_csv() {
     );
     assert_eq!(fixture.cell("thing", "full", "copay_amount"), "12.34");
     assert_eq!(fixture.cell("thing", "full", "count"), "9007199254740993");
-    assert_eq!(fixture.cell("thing", "full", "ok"), "true");
+    assert_eq!(fixture.cell("thing", "full", "ok"), "1");
     assert_eq!(fixture.cell("thing", "full", "filled_on"), "2026-08-28");
-    assert!(
-        fixture
-            .cell("thing", "full", "seen_at")
-            .starts_with("2026-08-28 14:03:11.412")
+    assert_eq!(
+        fixture.cell("thing", "full", "seen_at"),
+        "2026-08-28T14:03:11.412Z"
     );
     assert_eq!(
         fixture.cell("thing", "full", "tags"),
-        "['a,b', 'q\\'t', '[br]', '', 'NULL', sp ace]"
+        r#"["a,b","q't","[br]","","NULL","sp ace"]"#
     );
     assert_eq!(
         fixture.cell("thing", "empty", "name"),
@@ -670,7 +669,7 @@ fn test_spec_5_4_never_prunes_oldest() {
 // ---------------------------------------------------------------------------------------
 
 /// `§5.3` "MUST record which tier succeeded" — on the store, in `local/state.jsonl`, in
-/// `sys.v_health`, through `Node::restore_tier`, and as bounded `sys_audit` rows.
+/// `v_health`, through `Node::restore_tier`, and as bounded `sys_audit` rows.
 #[test]
 fn test_restore_reports_tier_used() {
     let root = tempfile::tempdir().unwrap();
@@ -679,8 +678,8 @@ fn test_restore_reports_tier_used() {
 
     // Tier 1: the store, the local record, the view, the accessor.
     let restored = node.restore("_sys").unwrap();
-    assert_eq!(restored.tier, Tier::Parquet, "{restored:?}");
-    assert_eq!(node.restore_tier("_sys"), Some(Tier::Parquet));
+    assert_eq!(restored.tier, Tier::Sqlite, "{restored:?}");
+    assert_eq!(node.restore_tier("_sys"), Some(Tier::Sqlite));
     let state = State::load(&node.paths().local_state()).unwrap();
     let record = state
         .get("_sys")
@@ -689,7 +688,7 @@ fn test_restore_reports_tier_used() {
         .restore
         .clone()
         .unwrap();
-    assert_eq!(record.tier, Tier::Parquet);
+    assert_eq!(record.tier, Tier::Sqlite);
     assert_eq!(
         record.snapshot.as_deref(),
         Some(snapshot.id.to_string().as_str())
@@ -698,7 +697,7 @@ fn test_restore_reports_tier_used() {
         .store()
         .conn()
         .query_row(
-            "SELECT restore_tier, snapshot_id, snapshot_age_days, log_bytes FROM sys.v_health WHERE app_id = '_sys'",
+            "SELECT restore_tier, snapshot_id, snapshot_age_days, log_bytes FROM v_health WHERE app_id = '_sys'",
             [],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
@@ -713,28 +712,28 @@ fn test_restore_reports_tier_used() {
     assert_eq!(
         count(
             &node,
-            "SELECT count(*) FROM sys.sys_audit WHERE kind LIKE 'restore.%'"
+            "SELECT count(*) FROM sys_audit WHERE kind LIKE 'restore.%'"
         ),
         0,
         "tier 1 is not audited"
     );
 
     // Tier 2: audited once, however many times it recurs.
-    flip_byte(&snapshot.dir.join("sys_device.parquet"));
+    flip_byte(&snapshot.dir.join("sys_device.sqlite"));
     assert_eq!(node.restore("_sys").unwrap().tier, Tier::Csv);
     assert_eq!(node.restore("_sys").unwrap().tier, Tier::Csv);
     assert_eq!(node.restore_tier("_sys"), Some(Tier::Csv));
     assert_eq!(
         count(
             &node,
-            "SELECT count(*) FROM sys.sys_audit WHERE kind = 'restore.tier2' AND severity = 'warn'"
+            "SELECT count(*) FROM sys_audit WHERE kind = 'restore.tier2' AND severity = 'warn'"
         ),
         1
     );
     assert_eq!(
         count(
             &node,
-            "SELECT restore_tier FROM sys.v_health WHERE app_id = '_sys'"
+            "SELECT restore_tier FROM v_health WHERE app_id = '_sys'"
         ),
         2
     );
@@ -749,7 +748,7 @@ fn test_restore_reports_tier_used() {
         .store()
         .conn()
         .query_row(
-            "SELECT count(*), min(subject) FROM sys.sys_audit WHERE kind = 'restore.tier3' AND severity = 'alert'",
+            "SELECT count(*), min(subject) FROM sys_audit WHERE kind = 'restore.tier3' AND severity = 'alert'",
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
@@ -763,7 +762,7 @@ fn test_restore_reports_tier_used() {
     assert_eq!(
         count(
             &node,
-            "SELECT restore_tier FROM sys.v_health WHERE app_id = '_sys'"
+            "SELECT restore_tier FROM v_health WHERE app_id = '_sys'"
         ),
         3
     );
@@ -775,7 +774,7 @@ fn test_restore_reports_tier_used() {
     assert_eq!(
         count(
             &node,
-            "SELECT count(*) FROM sys.sys_audit WHERE kind LIKE 'restore.%'"
+            "SELECT count(*) FROM sys_audit WHERE kind LIKE 'restore.%'"
         ),
         2,
         "a restart re-audited nothing"
@@ -804,24 +803,24 @@ fn test_reopen_restores_from_tier1_after_cache_deleted() {
     fs::remove_dir_all(root.path().join("cache")).unwrap();
     let node = Node::open(root.path()).unwrap();
     let restored = node.store().restored().unwrap();
-    assert_eq!(restored.tier, Tier::Parquet, "{restored:?}");
-    assert_eq!(count(&node, "SELECT count(*) FROM sys.sys_device"), 1);
+    assert_eq!(restored.tier, Tier::Sqlite, "{restored:?}");
+    assert_eq!(count(&node, "SELECT count(*) FROM sys_device"), 1);
     assert_eq!(
-        count(&node, "SELECT count(*) FROM sys.sys_snapshot"),
+        count(&node, "SELECT count(*) FROM sys_snapshot"),
         1,
         "the tail carried the snapshot's own row"
     );
     assert_eq!(
         count(
             &node,
-            "SELECT count(*) FROM sys.sys_audit WHERE kind = 'restore.tier3'"
+            "SELECT count(*) FROM sys_audit WHERE kind = 'restore.tier3'"
         ),
         0,
         "not rebuilt from scratch"
     );
     assert_eq!(
         files_in(&root.path().join("cache")),
-        BTreeSet::from(["_sys.duckdb".to_owned()])
+        BTreeSet::from(["_sys.sqlite".to_owned()])
     );
     drop(node);
 
@@ -846,7 +845,7 @@ fn test_reopen_restores_from_tier1_after_cache_deleted() {
         store.refresh(&store::cutoff_now()).unwrap(),
         "a fresh cache must rebuild"
     );
-    assert_eq!(store.restored().unwrap().tier, Tier::Parquet);
+    assert_eq!(store.restored().unwrap().tier, Tier::Sqlite);
     let fixture = Fixture {
         root,
         node,
@@ -856,7 +855,7 @@ fn test_reopen_restores_from_tier1_after_cache_deleted() {
     assert_eq!(fixture.digests("profile"), before);
     assert_eq!(
         files_in(&fixture.root.path().join("cache")),
-        BTreeSet::from(["_sys.duckdb".to_owned(), "hello.duckdb".to_owned()])
+        BTreeSet::from(["_sys.sqlite".to_owned(), "hello.sqlite".to_owned()])
     );
 }
 
@@ -868,7 +867,7 @@ fn test_rebuilt_from_scratch_is_alerted_once() {
     let root = tempfile::tempdir().unwrap();
     let node = Node::open(root.path()).unwrap();
     assert_eq!(
-        count(&node, "SELECT count(*) FROM sys.sys_audit"),
+        count(&node, "SELECT count(*) FROM sys_audit"),
         0,
         "a first run alerts nothing"
     );
@@ -882,7 +881,7 @@ fn test_rebuilt_from_scratch_is_alerted_once() {
     assert_eq!(
         count(
             &node,
-            "SELECT count(*) FROM sys.sys_audit WHERE kind = 'restore.tier3' AND severity = 'alert'"
+            "SELECT count(*) FROM sys_audit WHERE kind = 'restore.tier3' AND severity = 'alert'"
         ),
         1
     );
@@ -892,7 +891,7 @@ fn test_rebuilt_from_scratch_is_alerted_once() {
     assert_eq!(
         count(
             &node,
-            "SELECT count(*) FROM sys.sys_audit WHERE kind = 'restore.tier3'"
+            "SELECT count(*) FROM sys_audit WHERE kind = 'restore.tier3'"
         ),
         1,
         "alerted again on an ordinary restart"
@@ -904,7 +903,7 @@ fn test_rebuilt_from_scratch_is_alerted_once() {
 // ---------------------------------------------------------------------------------------
 
 /// `spec/data-dictionary.md §3.9` — a snapshot is indexed by an event like any other,
-/// with `§2.1`'s encodings, and materializes into `sys.sys_snapshot`.
+/// with `§2.1`'s encodings, and materializes into `sys_snapshot`.
 #[test]
 fn test_spec_3_9_snapshot_row_is_an_event() {
     let root = tempfile::tempdir().unwrap();
@@ -944,11 +943,9 @@ fn test_spec_3_9_snapshot_row_is_an_event() {
     let (hi_lam, created_by): (i64, String) = node
         .store()
         .conn()
-        .query_row(
-            "SELECT hi_lam, created_by FROM sys.sys_snapshot",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
+        .query_row("SELECT hi_lam, created_by FROM sys_snapshot", [], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
         .unwrap();
     assert_eq!(hi_lam, 2);
     assert_eq!(created_by, node.id().as_str());
@@ -969,7 +966,7 @@ fn test_spec_cli_7_verify_detects_a_flipped_byte() {
     assert_eq!(
         count(
             &node,
-            "SELECT count(*) FROM sys.sys_snapshot WHERE verified_at IS NOT NULL"
+            "SELECT count(*) FROM sys_snapshot WHERE verified_at IS NOT NULL"
         ),
         1
     );
@@ -980,15 +977,15 @@ fn test_spec_cli_7_verify_detects_a_flipped_byte() {
     let bad: Vec<&str> = dirty
         .tables
         .iter()
-        .filter(|t| !(t.parquet_ok && t.csv_ok))
+        .filter(|t| !(t.sqlite_ok && t.csv_ok))
         .map(|t| t.name.as_str())
         .collect();
     assert_eq!(bad, vec!["sys_app"]);
     let check = dirty.tables.iter().find(|t| t.name == "sys_app").unwrap();
-    assert!(check.parquet_ok && !check.csv_ok);
+    assert!(check.sqlite_ok && !check.csv_ok);
 
     // A missing file is a mismatch too, not a crash.
-    fs::remove_file(snapshot.dir.join("sys_app.parquet")).unwrap();
+    fs::remove_file(snapshot.dir.join("sys_app.sqlite")).unwrap();
     assert!(!node.verify_snapshot("_sys", &snapshot.id).unwrap().ok());
 }
 
@@ -1074,24 +1071,36 @@ fn test_weekly_snapshot_is_due_by_interval_or_events() {
     ));
 }
 
-/// `spec/app-contract.md §7` — a snapshot is file I/O and needs the privileged window;
-/// drop the sealed store and open a fresh one, exactly as the `Store` doc says.
+/// `spec/app-contract.md §7` — a snapshot is written while an app's read-only connection
+/// is open on the same cache, and the connection sees nothing of it: the file is written
+/// from the log, not from the tables, and the store needs no window to do it.
 #[test]
-fn test_spec_app_contract_7_snapshot_needs_privileged_window() {
+fn test_spec_app_contract_7_snapshot_needs_no_window() {
     let mut fixture = Fixture::open(HELLO_DDL);
     seed_hello(&fixture);
-    fixture.store.seal().unwrap();
-    let error = fixture
-        .store
-        .snapshot(fixture.node.id(), jiff::Timestamp::now())
-        .unwrap_err();
-    assert!(error.to_string().contains("sealed"), "{error}");
-    assert!(
-        !fixture.snap_dir().exists() || files_in(&fixture.snap_dir()).is_empty(),
-        "a refused snapshot writes nothing"
-    );
-
-    let fixture = fixture.reopen(HELLO_DDL);
+    fixture.rematerialize();
+    let app = fixture.store.app_conn().unwrap();
+    let before: i64 = app
+        .query_row("SELECT count(*) FROM profile", [], |row| row.get(0))
+        .unwrap();
     let snapshot = fixture.snapshot(jiff::Timestamp::now());
     assert_eq!(snapshot.manifest.tables[0].rows, 1);
+    let after: i64 = app
+        .query_row("SELECT count(*) FROM profile", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(before, after);
+    // The per-table file is a database of its own that any SQLite tool opens.
+    let file = rusqlite::Connection::open_with_flags(
+        snapshot.dir.join("profile.sqlite"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    let name: String = file
+        .query_row(
+            "SELECT display_name FROM profile WHERE id = 'a'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(name, "Gabriel");
 }

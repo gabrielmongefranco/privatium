@@ -1,9 +1,9 @@
 # Project:  Privatium™  |  File: .github/workflows/ci.yml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-08-31  |  Modified: 2026-09-01
+# Created:  2026-08-31  |  Modified: 2026-09-03
 # Summary:  The gate. Three platforms, because "runs on Linux, Windows and macOS from a
 #           single binary" is a Phase 1 acceptance bullet and finding out at M13 that the
-#           bundled DuckDB build never worked on one of them would be too late.
+#           bundled SQLite build never worked on one of them would be too late.
 
 name: CI
 
@@ -60,9 +60,8 @@ jobs:
       - name: Release build
         run: cargo build --workspace --release --locked
 
-      # Risk R1: the bundled DuckDB build is a multi-minute C++ compile and it inflates
-      # the binary. Running the artefact proves both engines really linked; printing its
-      # size is the number the decision to revisit static extensions would be made on.
+      # Risk R1: both engines are C compiled from source. Running the artefact proves they
+      # really linked; printing its size is the number later milestones diff against.
       - name: Linked engines and binary size
         shell: bash
         run: |

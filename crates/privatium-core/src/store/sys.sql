@@ -5,9 +5,10 @@
 --           and is materialized by exactly the machinery any app gets; this is the file it
 --           would have shipped if it had a folder.
 
--- Written in `main` and materialized into the DuckDB schema `sys`
--- (spec/data-dictionary.md §1, §3 preamble). Introspection reads `main`, so the schema
--- qualifier belongs to the materializer, not here.
+-- Materialized into cache/_sys.sqlite. An app's connection will see these tables and views
+-- attached read-only as the schema `sys` (spec/data-dictionary.md §1, §4), which is why the
+-- dictionary spells the views `sys.v_app_nav`; the framework's own connection is the file
+-- itself and names them bare.
 
 -- Every table below is REPLICATED — event-sourced into data/_sys/log/ and synced.
 --
@@ -19,6 +20,9 @@
 -- look like a sync bug.
 --
 -- §3.11 `sys_migration` is absent because it is reserved and not implemented in pv/1.
+--
+-- The types are the dictionary's (§2); the materializer maps each to the storage SQLite
+-- keeps it in, so a TIMESTAMPTZ is the RFC 3339 text the event carried and a BOOLEAN is 1 or 0.
 
 CREATE TABLE sys_node (
     id              VARCHAR PRIMARY KEY,   -- Node ID, not a ULID (§3.1)
@@ -112,10 +116,8 @@ CREATE TABLE sys_snapshot (
 -- contains JSON. Typing it JSON here would diverge from the dictionary on the one table
 -- whose whole job is to be trustworthy. §3.9's `row_counts` is the same shape.
 --
--- `at` is quoted because DuckDB reserves it for `AT TIME ZONE`. §3.10 names the column
--- `at`, and §5's list of column names to avoid — date, time, order, group, user — does not
--- include it, so the dictionary is right and the identifier simply needs quoting. Of every
--- name in this file it is the only one DuckDB objects to.
+-- `at` is quoted so the dictionary's name (§3.10) is used exactly as written; §5's list of
+-- column names to avoid — date, time, order, group, user — does not include it.
 CREATE TABLE sys_audit (
     id       VARCHAR PRIMARY KEY,          -- ULID (§3.10)
     "at"     TIMESTAMPTZ,
@@ -129,12 +131,12 @@ CREATE TABLE sys_audit (
 -- Framework views (spec/data-dictionary.md §4). Apps MAY read these; they MUST NOT write
 -- to sys tables.
 --
--- `sys.v_health` is the fourth and is NOT here. It reads `pv.health`, a table the
--- framework maintains in cache/_sys.duckdb with each app's restore tier (§5.3), and this
--- file is parsed in an in-memory instance that has no such table for a view to bind
--- against. `Store::ensure_health` creates both, after every rebuild, beside the views
--- below. The restore tier is node-local by nature — a fact about this node's cache — which
--- is why it is a cache table joined to the replicated `sys_snapshot` rather than an event.
+-- `v_health` is the fourth and is NOT here. It reads `pv_health`, a table the framework
+-- maintains in cache/_sys.sqlite with each app's restore tier (§5.3), and this file is
+-- parsed in an in-memory database that has no such table for a view to bind against.
+-- `Store::ensure_health` creates both, after every rebuild, beside the views below. The
+-- restore tier is node-local by nature — a fact about this node's cache — which is why it
+-- is a cache table joined to the replicated `sys_snapshot` rather than an event.
 
 -- `last_error` is carried so the launcher can show an enabled app whose folder is missing
 -- as unavailable rather than pretending it is gone (§3.4, rules). §4 does not enumerate the
@@ -143,7 +145,7 @@ CREATE VIEW v_app_nav AS
     SELECT id, title, icon, nav_order, last_error
     FROM sys_app
     WHERE enabled
-    ORDER BY nav_order, title;
+    ORDER BY nav_order NULLS LAST, title;
 
 CREATE VIEW v_device_active AS
     SELECT * FROM sys_device WHERE revoked_at IS NULL;

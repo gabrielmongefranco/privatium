@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/sys.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-02
+// Created:  2026-09-01  |  Modified: 2026-09-03
 // Summary:  The framework's own tables (spec/data-dictionary.md §3), written through the
 //           same event log apps use. M1 writes two rows: this node's sys_device entry and
 //           its sys_node singleton. M2 adds sys_audit; M4 adds sys_snapshot and the
@@ -8,8 +8,8 @@
 
 use serde::Serialize;
 
-/// `_sys` — a reserved slug (`spec/protocol.md §1.1`), materialized into the DuckDB
-/// schema `sys`.
+/// `_sys` — a reserved slug (`spec/protocol.md §1.1`), materialized into `cache/_sys.sqlite`
+/// (`spec/data-dictionary.md §1`).
 ///
 /// The app loader skips it exactly as it skips the lint fixture corpus: `_sys` is not
 /// discoverable, not mountable, and not lintable (`docs/plans/phase-1.md §2.6`).
@@ -453,7 +453,7 @@ mod tests {
                 created: "2026-08-30T03:00:00.000Z".into(),
                 hi_lam: 8830,
                 hi_seq: Default::default(),
-                engine: "duckdb 1.5.5".into(),
+                engine: "sqlite 3.53.2".into(),
                 tables: Vec::new(),
             },
             bytes: 4096,

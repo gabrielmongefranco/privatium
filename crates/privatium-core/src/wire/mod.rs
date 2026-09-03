@@ -43,7 +43,7 @@ pub use crate::http::auth::{Device, Peer};
 /// The node behind `handle`, and everything a request needs that the node itself does not
 /// hold: the load report, the CSRF issuer, the auth layer, the origin to fall back on.
 ///
-/// **How the node is shared.** `Node` is `Send` and not `Sync` — its DuckDB connections and
+/// **How the node is shared.** `Node` is `Send` and not `Sync` — its SQLite connections and
 /// its log writers are single-threaded things — so it lives behind one `Mutex`. A request
 /// takes the lock for its synchronous part: resolving the route, the stat-based
 /// `refresh_app`/`refresh`, the `_sys` reads and the HTML they render, and releases it

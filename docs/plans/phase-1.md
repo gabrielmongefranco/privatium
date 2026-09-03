@@ -42,7 +42,7 @@ of which contradict the checked-in spec.
 ### In
 
 `privatium-core` (log, store, app loader, Lua host, LSP compiler, the `Request`/`Response`
-interface), the axum adapter, the HTMX shell, DuckDB materialization, snapshots and
+interface), the axum adapter, the HTMX shell, SQLite materialization, snapshots and
 three-tier restore, the Tier 2 data API and `pv.js`, and the CLI: bare `privatium`, `dev`,
 `new`, `lint`, `snapshot`, `restore`, `skill`.
 
@@ -144,7 +144,7 @@ for a node that paired with nobody.
 ### 2.3 The cache may be mutated; the log may not — a clarification
 
 `AGENTS.md` invariant 3 governs **log files**. Lint rule `PV303` governs **app SQL**. Neither
-constrains the framework's privileged connection, which maintains `cache/<slug>.duckdb` and
+constrains the framework's own connection, which maintains `cache/<slug>.sqlite` and
 may apply a new event with `DELETE` + `INSERT` rather than re-replaying the whole log on
 every append.
 
@@ -180,6 +180,20 @@ scratch, and diffs. If they ever differ, the incremental path is wrong — the r
 definition.
 
 Full rematerialization is unconditional on `schema.sql` change, on restore, and on demand.
+
+### 2.7 The engine is SQLite — decided after M6
+
+`docs/decisions/0006`. Everything above and below that names DuckDB was written before
+that decision and is kept as the record of what M3 to M6 built; the code, the spec and the
+docs say SQLite. What it changes for the milestones still ahead:
+
+- **M7:** `pv.dec` is `store::Decimal`, already written; `pv.query` runs on
+  `Store::app_conn()`, a read-only sandboxed connection that needs no window.
+- **M9:** `columns` in a query result carry `Column::ty`, the declared type; `sys.v_*` is
+  `cache/_sys.sqlite` attached read-only as `sys` on the app's connection.
+- **M12:** `PV107` is now answerable — the authorizer sees every statement's action while
+  `schema.sql` runs — and two rules the engine made necessary join the list: `SUM()` over
+  a `DECIMAL` column, and `+` on a `DATE` (`spec/data-dictionary.md §2`).
 
 ### 2.6 `_sys` is an app, and it bootstraps before any other
 
@@ -222,10 +236,10 @@ why, not a to-do list.
 | 9 | Solo-mode shadowing was warn-at-load only, so CI never saw it | New lint rule `PV506` | `cli.md §5.1` |
 | 11 | `protocol.md §4.1` said the envelope `id` is a ULID, unqualified, while `data-dictionary.md §3.1`/`§3.2` key `sys_node` and `sys_device` by Node ID and `lua-api.md §3.3` lets a caller supply its own — `apps/animals` ships `id = 'cursor'` | `§4.1` now says row key, ULID by default, with the two exceptions named and the cross-device collision consequence stated | `protocol.md §4.1` (found in M1) |
 | 10 | `BwOffline`; "three prefixes" over a five-row table; `sys_device` table split by a paragraph; unclosed quotation mark | Corrected | `data-api.md`, `privatium-tier2-web/SKILL.md`, `protocol.md §9.1`, `data-dictionary.md §3.2`, `AGENTS.md` |
-| 12 | `app-contract.md §7` described a privileged connection and a sandboxed one coexisting over one app's cache. DuckDB makes all four of those settings `GLOBAL_ONLY` and locks the database file exclusively, so that arrangement cannot be built — and an implementation that appeared to have both would have sandboxed neither | §7 now specifies the boundary as open-privileged → materialize → seal → serve, with rematerializing and snapshotting needing a fresh instance | `app-contract.md §7` (found in M3) |
+| 12 | `app-contract.md §7` described a privileged connection and a sandboxed one coexisting over one app's cache. DuckDB makes all four of those settings `GLOBAL_ONLY` and locks the database file exclusively, so that arrangement cannot be built — and an implementation that appeared to have both would have sandboxed neither | §7 now specifies the boundary as open-privileged → materialize → seal → serve, with rematerializing and snapshotting needing a fresh instance. *Superseded by ADR 0006: with SQLite the two connections do coexist, and §7 describes the read-only one* | `app-contract.md §7` (found in M3) |
 | 13 | `§4.6`'s "an `id` that has been deleted MUST NOT be reused" forbade `apps/animals`, which deletes and recreates its `'cursor'` singleton every round on a key `§4.1` explicitly blesses | `§4.6` now names what it protects — a **minted** ULID must not become the key of a different row — and states that a caller-chosen key may be re-asserted, that enforcement is the data API's, and that materialization follows `§4.5` regardless | `protocol.md §4.6` (found in M3) |
 | 14 | `§4.6` justified "a replay follows `§4.5` over whatever the log contains" by citing `§4.1` as forbidding a reader to reject what it finds. `§4.1` forbids rejecting a `seq` gap, specifically — and `§4.4` affirmatively **requires** rejecting a future-dated event, which the materializer does | The paragraph now says a replay follows `§4.5` over whatever survives `§4.4`'s clock hygiene, the only filter a reader is required to apply, and that `§4.1`'s mercy for `seq` gaps is the same principle. Behaviour unchanged; the citation was wrong | `protocol.md §4.6` (found in the M3 audit) |
-| 15 | `§5.2`'s example manifest said `"engine": "duckdb 1.4.3"` while the bundled engine is 1.5.5, and nothing said what the field holds | `engine` is `duckdb ` plus the engine's own reported version with any leading `v` dropped; the example reads `duckdb 1.5.5` and is marked illustrative | `protocol.md §5.2` (found in M4) |
+| 15 | `§5.2`'s example manifest said `"engine": "duckdb 1.4.3"` while the bundled engine is 1.5.5, and nothing said what the field holds | `engine` is the engine's name plus its own reported version; the example is marked illustrative. *Now `sqlite <version>` (ADR 0006)* | `protocol.md §5.2` (found in M4) |
 | 16 | `§5.3` named a "log tail" without defining it. An event with `lam ≤ hi_lam` that a snapshot never saw — `§4.1`'s cross-device case, or a hand-appended line — had no correct merge against snapshot rows that carry no `(lam, ts, dev)`, and neither a changed `schema.sql` nor a log behind the snapshot was addressed | The tail is the sane events with `lam > hi_lam`; a snapshot applies only when that set is exactly what its `hi_seq` did not cover, the log holds everything `hi_seq` claims, and its `schema.sql` matches; an inapplicable snapshot is tier 3 without being a failure; the tier is node-local state, with `restore.tier2`/`restore.tier3` audits per `data-dictionary.md §3.10` | `protocol.md §5.3` (found in M4) |
 | 17 | `§5.1` left the width of `<week>` unspecified (`W5` or `W05`) | Two digits, zero-padded, as ISO 8601 spells it | `protocol.md §5.1` (found in M4) |
 | 18 | `cli.md` PV502, `docs/frameworks.md §5.4` and three skills name `permissions.cross_origin_isolated`; `app-contract.md §5.4`'s `[permissions]` block did not define it, and nothing said what shape a `remote` entry takes before it is written into a header | Defined there, solo mode only and refused at load in host mode; `remote` entries MUST be origins | `app-contract.md §5.4` (found in M5) |
@@ -268,7 +282,7 @@ crates/
 │   │   ├── config.rs         config.toml, XDG paths, --data-dir
 │   │   ├── identity.rs       Ed25519 node key, node ID, sys_device self-row
 │   │   ├── log/              append-only writer, reader, Lamport, rotation
-│   │   ├── store/            DuckDB materialize, snapshot, restore
+│   │   ├── store/            SQLite materialize, snapshot, restore (ADR 0006)
 │   │   ├── app/              app.toml, loader, lifecycle, permissions, CSP
 │   │   ├── lua/              mlua host, sandbox, pool, pv module, lsp/
 │   │   ├── wire/             Request/Response, core::handle, router (ADR 0003)
@@ -297,7 +311,7 @@ rules.
 | HTTP | `axum`, `tower`, `tower-http` | `auth_layer` is a `tower::Layer` |
 | Async | `tokio` | multi-thread runtime |
 | Lua | `mlua` | features `lua54`, `vendored`, `send` |
-| SQL | `duckdb` | feature `bundled`; see risk R1 |
+| SQL | `rusqlite` | features `bundled`, `functions`, `window`, `collation`, `hooks`; was `duckdb` until ADR 0006 |
 | Crypto | `ed25519-dalek`, `sha2`, `hmac` | no session crypto in Phase 1 |
 | IDs | `ulid` | Crockford Base32, 26 chars |
 | Serde | `serde`, `serde_json` | `preserve_order` **off** — see below |
@@ -307,7 +321,7 @@ rules.
 | CLI | `clap` (derive), `owo-colors` | **no `qrcode`** — QR is pairing, which is Phase 2 |
 | Errors | `thiserror` in core, `anyhow` in the binary | `AGENTS.md` |
 | Embed | `include_dir` | icons, shell assets, `pv.js` |
-| Time | `jiff` | `default-features = false`; `ts` is RFC 3339 UTC to the millisecond (`§4.1`), `§4.4` compares against it, M3 hands it to DuckDB. Added in M1 — this row was missing. |
+| Time | `jiff` | `default-features = false`; `ts` is RFC 3339 UTC to the millisecond (`§4.1`), `§4.4` compares against it, M3 stores it as text. Added in M1 — this row was missing. |
 | Paths | `directories` | `BaseDirs::data_local_dir()`, **not** `data_dir()`: on Windows the latter is `%APPDATA%`, which roams, and a roamed `node.key` means two machines with one Node ID. Added in M1. |
 
 **Do not** parse event lines through `serde_json::Value` and re-serialize on any path that
@@ -334,13 +348,13 @@ Scaffolding only. No behaviour.
   `privatium-core`, allowed in `tests/` and in `main()` startup only.
 - `deny.toml`: fail on GPL-2.0-only and non-commercial licences (ADR 0001 is a licence
   decision; make it mechanical). ADR 0004 §5 explains why this matters more than it looks.
-- R1 and R2 build gates: `privatium-core` really links bundled DuckDB and vendored Lua,
+- R1 and R2 build gates: `privatium-core` really links the bundled engine and vendored Lua,
   and CI runs the release binary and reports its size on all three platforms. The
   `ed25519-dalek`/`rand`/`sha2` trio is compiled here too, so M1 does not open with a
   `rand_core` version conflict.
 
 **Done when:** CI is green on all three platforms and `xtask header-check` fails when a
-header is deleted. Not "green on an empty workspace" — R1 requires the bundled DuckDB
+header is deleted. Not "green on an empty workspace" — R1 requires the bundled engine
 build to be proven here, and a workspace with no dependencies would prove nothing.
 
 ---
@@ -398,6 +412,9 @@ The heart. Get this wrong and nothing above it can be right.
 ---
 
 ### M3 — Materialization
+
+> *Written for DuckDB. ADR 0006 (after M6) moved the engine to SQLite; the section is
+> kept as the record of what was built, and §2.7 says what changed.*
 
 - Privileged DuckDB connection on `cache/<slug>.duckdb`; app-facing connection configured
   per `app-contract.md §7` with `lock_configuration = true` **last**.
@@ -491,6 +508,9 @@ encoding for `DECIMAL`/`BIGINT` (and rescues a client that wrongly sent a JSON n
 ---
 
 ### M4 — Snapshots and three-tier restore
+
+> *Written for DuckDB. ADR 0006 (after M6) moved the engine to SQLite; the section is
+> kept as the record of what was built, and §2.7 says what changed.*
 
 - `data/<slug>/snap/<ISO-year>-W<week>-<dev>-<hi_lam>/` with `MANIFEST.json`, `schema.sql`,
   `<table>.parquet`, `<table>.csv`. `MANIFEST.json` carries `parquet_sha256` and
@@ -736,6 +756,9 @@ against the flags named in `spec/cli.md`).
 
 ### M12 — The linter
 
+> *Written for DuckDB. ADR 0006 (after M6) moved the engine to SQLite; the section is
+> kept as the record of what was built, and §2.7 says what changed.*
+
 Ships in Phase 1 because it is what makes `skills/` enforceable rather than advisory.
 
 - Implement every rule in `spec/cli.md §5.1`: `PV101–107`, `PV201–208`, `PV301–307`,
@@ -826,7 +849,9 @@ they land.
 
 ## 8. Risks
 
-**R1 — DuckDB `bundled` build.** Compiling DuckDB from source is a multi-minute C++ build
+**R1 — the bundled engine build.** *(Written for DuckDB; ADR 0006 replaced it with SQLite,
+whose amalgamation compiles in about a minute and closes this risk. Kept as written.)*
+Compiling DuckDB from source is a multi-minute C++ build
 and inflates the binary substantially. It also makes "cross-compilation stays a one-liner"
 (ADR 0002) optimistic — cross-compiling a bundled C++ dependency is not a one-liner. Test
 this in M0 on all three CI platforms before M3 depends on it. If binary size is

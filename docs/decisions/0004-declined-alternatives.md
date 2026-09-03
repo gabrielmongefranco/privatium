@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/decisions/0004-declined-alternatives.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-31
-Modified: 2026-08-31
+Modified: 2026-09-03
 Summary:  Decision record. Sync and p2p stacks evaluated and declined —
           Gun, RxDB, libp2p, SharkTrustX, and BAS embedded in Rust — with
           the reasoning kept so the questions are not re-litigated.
@@ -132,7 +132,7 @@ socket dispatcher. That leaves exactly two configurations:
 
 - **(a) BAS owns the network.** Then iroh QUIC, mDNS, pkarr UDP, and the sync protocol must
   all be driven from inside `SoDisp`, from Rust, across FFI, under BAS's threading model —
-  and DuckDB, the OS keyring, and the shell's IPC become guests of a C event loop. The
+  and the store, the OS keyring, and the shell's IPC become guests of a C event loop. The
   failure mode is intermittent threading bugs rather than clean errors.
 - **(b) Rust owns the network** (tokio, axum, iroh) and BAS runs as a guest. Then BAS is
   contributing a Lua VM (mlua has one), a template engine (~300 lines, ADR 0001), and a VFS

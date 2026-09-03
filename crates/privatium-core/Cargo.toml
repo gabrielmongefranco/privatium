@@ -15,35 +15,18 @@ authors.workspace      = true
 repository.workspace   = true
 
 [dependencies]
-# M0 links these two and nothing else. They are here rather than under dev-dependencies
-# because risk R1 is about the shipped artefact: if DuckDB and Lua were test-only, the
-# binary size CI reports would not be the size of the binary we ship.
+# The two foreign engines. They are here rather than under dev-dependencies because risk
+# R1 is about the shipped artefact: if either were test-only, the binary size CI reports
+# would not be the size of the binary we ship.
 #
-# `bundled` compiles DuckDB from the amalgamation shipped inside libduckdb-sys and
-# unpacked with flate2. It does not fetch anything: the download path is in that crate's
-# `mod build_linked`, which is `#[cfg(not(feature = "bundled"))]` and gated again on
-# `DUCKDB_DOWNLOAD_LIB`, so with `bundled` on the networking code is not compiled at all.
-# Offline and reproducible builds are fine. What is real is that `ureq` and `webpki-roots`
-# are unconditional build-dependencies and so compile regardless — build time and
-# supply-chain surface, not a network call, and the reason deny.toml carries a scoped
-# licence exception. Checked against libduckdb-sys 1.10505.0; re-check on a major bump.
-#
-# M3 — `json` is not optional and is not a convenience. `libduckdb-sys`'s
-# `build_bundled_cc.rs` compiles an extension only when its cargo feature is on, so with
-# `bundled` alone the binary has no `read_json()`, no `JSON` type, and no
-# `json_extract_string()` — which is the whole of the §4.5 projection. Turning it on is
-# also what satisfies `AGENTS.md`'s "extensions statically linked": the feature defines
-# `DUCKDB_EXTENSION_JSON_LINKED` and `LoadAllExtensions` loads it at instance
-# construction, so nothing is ever autoloaded. That same build sets
-# `DUCKDB_EXTENSION_AUTOLOAD_DEFAULT=1`, so autoload-**off** is not free and every
-# connection turns it off explicitly; `test_r1_duckdb_json_is_statically_linked` is the
-# proof.
-#
-# M4 — `parquet` for the same reason: `COPY … (FORMAT PARQUET)` and `read_parquet()` exist
-# only when the extension is compiled in, and spec/protocol.md §5 makes Parquet tier 1 of the
-# restore path. Statically linked, never autoloaded, and `test_r1_duckdb_parquet_is_statically_linked`
-# is the proof. These three are the whole extension set; adding another is a plan §5 edit.
-duckdb    = { workspace = true, features = ["bundled", "json", "parquet"] }
+# SQLite, via rusqlite (docs/decisions/0006). `bundled` compiles the amalgamation vendored
+# inside libsqlite3-sys — one C file, about a minute — with JSON1 and FTS5 compiled in and
+# nothing downloaded. Extension loading is disabled at the API (rusqlite's `load_extension`
+# feature is off) and refused by name in the sandbox authorizer besides. `functions`,
+# `window` and `collation` are the framework's exact-decimal SQL surface
+# (spec/data-dictionary.md §2.1, `store::decimal`); `hooks` is the authorizer that makes
+# an app's connection read-only (spec/app-contract.md §7, `store::sandbox`).
+rusqlite  = { workspace = true, features = ["bundled", "functions", "window", "collation", "hooks"] }
 mlua      = { workspace = true, features = ["lua54", "vendored", "send"] }
 thiserror = { workspace = true }
 
@@ -65,10 +48,13 @@ zeroize       = { workspace = true }
 ulid = { workspace = true }
 
 # M1 — the §3 data root, the `ts` field, config.toml, and the two bootstrap events.
+# `raw_value` is for the materializer (`store::events`): it reads each event's `d` as raw
+# JSON text so a number keeps its own digits and never passes through a double
+# (spec/data-dictionary.md §2.1). Reading only; nothing re-serializes a line (§4.2).
 directories = { workspace = true }
 jiff        = { workspace = true }
 serde       = { workspace = true }
-serde_json  = { workspace = true }
+serde_json  = { workspace = true, features = ["raw_value"] }
 toml        = { workspace = true }
 
 # M6 — the wire (ADR 0003) and the shell. `axum` with default features off is taken for the
