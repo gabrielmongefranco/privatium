@@ -8,7 +8,7 @@
 
 use serde_json::{Value, json};
 
-use crate::{Node, Result, StoreError, store, sys};
+use crate::{Node, Result, StoreError, sys};
 
 /// `GET /api/v1/health` — `{"v":1,"id":"..."}` only, spelled in that order: `serde_json`
 /// would sort the keys (`preserve_order` is off, `docs/plans/phase-1.md §5`), and the
@@ -51,19 +51,15 @@ pub fn manifest(node: &Node) -> Result<Value> {
 
 /// `sys_node.display_name`, if set.
 pub fn display_name(node: &Node) -> Result<Option<String>> {
-    let sql = format!(
-        "SELECT display_name FROM {}.{} WHERE id = ?",
-        store::SYS_SCHEMA,
-        sys::NODE
-    );
+    let sql = format!("SELECT display_name FROM {} WHERE id = ?", sys::NODE);
     match node
         .store()
         .conn()
-        .query_row(&sql, duckdb::params![node.id().as_str()], |row| {
+        .query_row(&sql, rusqlite::params![node.id().as_str()], |row| {
             row.get::<_, Option<String>>(0)
         }) {
         Ok(name) => Ok(name.filter(|n| !n.trim().is_empty())),
-        Err(duckdb::Error::QueryReturnedNoRows) => Ok(None),
-        Err(error) => Err(crate::Error::Store(Box::new(StoreError::Duck(error)))),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(error) => Err(crate::Error::Store(Box::new(StoreError::Sql(error)))),
     }
 }

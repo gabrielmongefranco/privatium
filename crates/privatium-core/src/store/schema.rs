@@ -1,35 +1,104 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/schema.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-02
-// Summary:  What a schema.sql declares, learned from DuckDB's own catalog rather than
-//           from a parser we wrote. Tables, column types, NOT NULL and CHECK, and views —
-//           everything spec/protocol.md §4.5's projection is generated from.
+// Created:  2026-09-01  |  Modified: 2026-09-03
+// Summary:  What a schema.sql declares, learned from SQLite's own catalog rather than from a
+//           parser we wrote: tables, the declared type of every column, NOT NULL, and views.
+//           The declared type decides how the materializer stores a column
+//           (spec/data-dictionary.md §2), because SQLite would otherwise decide by affinity
+//           and turn a DECIMAL into a float.
 
 use std::fmt::Write as _;
 
-use duckdb::Connection;
+use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 
-use crate::store::StoreError;
+use crate::store::decimal;
+use crate::store::{StoreError, sandbox};
 
 /// The column every table must have (`spec/app-contract.md §4.5`).
 pub const ID_COLUMN: &str = "id";
 
-/// One column of one table, as DuckDB understands it.
+/// How the materializer stores a column, decided from its declared type
+/// (`spec/data-dictionary.md §2`).
+///
+/// SQLite has five storage classes and column *affinity*, not types: a column declared
+/// `DECIMAL(18,2)` gets NUMERIC affinity and stores `12.34` as an eight-byte float. So the
+/// cache table is declared with the storage the dictionary wants, and the value is typed
+/// here, on the way in, from the type the author wrote.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    /// `VARCHAR`, `TEXT`, `DATE`, `TIME`, `TIMESTAMPTZ`, `INTERVAL`, and anything unknown:
+    /// stored as text, exactly as the event spelled it.
+    Text,
+    /// `BIGINT`, `INTEGER` and their relatives: a 64-bit integer, parsed from the string
+    /// `§2.1` says it crosses as.
+    Integer,
+    /// `DECIMAL(p,s)` / `NUMERIC`: text at the declared scale, with the `decimal` collation,
+    /// never a float.
+    Decimal {
+        /// Places after the point.
+        scale: u8,
+    },
+    /// `BOOLEAN`: `1` or `0`.
+    Boolean,
+    /// `JSON`, `VARCHAR[]` and any other structured type: the value's own JSON text.
+    Json,
+}
+
+impl Kind {
+    /// From the declared type, as `PRAGMA table_info` reports it.
+    #[must_use]
+    pub fn of(declared: &str) -> Self {
+        let upper = declared.trim().to_ascii_uppercase();
+        if upper.ends_with(']')
+            || upper == "JSON"
+            || upper.starts_with("STRUCT")
+            || upper.starts_with("MAP")
+            || upper.starts_with("LIST")
+        {
+            return Self::Json;
+        }
+        if let Some(scale) = decimal::declared_scale(&upper) {
+            return Self::Decimal { scale };
+        }
+        if upper == "BOOLEAN" || upper == "BOOL" {
+            return Self::Boolean;
+        }
+        if upper.starts_with("INTERVAL") {
+            return Self::Text;
+        }
+        if upper.contains("INT") {
+            return Self::Integer;
+        }
+        Self::Text
+    }
+
+    /// The type name the cache table declares, so SQLite's affinity agrees with the kind.
+    #[must_use]
+    pub fn storage(self) -> &'static str {
+        match self {
+            Self::Text | Self::Json => "TEXT",
+            Self::Integer | Self::Boolean => "INTEGER",
+            Self::Decimal { .. } => "TEXT COLLATE decimal",
+        }
+    }
+}
+
+/// One column of one table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Column {
     /// The column name, as written.
     pub name: String,
-    /// The DuckDB type, spelled as the engine spells it — `DECIMAL(18,2)`, `VARCHAR[]`.
-    ///
-    /// Taken from the catalog rather than from the source text so that the `CAST` in the
-    /// projection and the type the engine will enforce cannot drift apart.
+    /// The declared type, as written — `DECIMAL(18,2)`, `VARCHAR[]`. What the data API
+    /// reports (`spec/data-api.md §1`) and what [`Kind::of`] reads.
     pub ty: String,
+    /// How it is stored and typed.
+    pub kind: Kind,
     /// Whether the column is `NOT NULL`.
     ///
-    /// Metadata only in M3. `spec/data-api.md §2` enforces this **before** an append, and
-    /// the materialized table deliberately carries no constraints at all — see
-    /// [`super::materialize`].
+    /// Metadata only. `spec/data-api.md §2` enforces this **before** an append, and the
+    /// materialized table carries no constraint — a log line that omits the key still
+    /// materializes, with NULL (`spec/app-contract.md §4.5`).
     pub not_null: bool,
 }
 
@@ -41,13 +110,9 @@ pub struct Table {
     /// Its columns, in declaration order, **excluding** `id`.
     ///
     /// `id` is not a projected column: it comes from the envelope (`spec/protocol.md
-    /// §4.1`), not from `d`. Keeping it out of this list means no generated expression can
-    /// accidentally read `d.id` and let an app overwrite its own row key.
+    /// §4.1`), not from `d`. Keeping it out of this list means nothing can read `d.id` and
+    /// let an app overwrite its own row key.
     pub columns: Vec<Column>,
-    /// `CHECK` expressions, as DuckDB re-renders them.
-    ///
-    /// Metadata only in M3, for the same reason as [`Column::not_null`].
-    pub checks: Vec<String>,
 }
 
 /// One view of an app's schema (`spec/data-api.md §1`, `spec/app-contract.md §5`).
@@ -55,7 +120,7 @@ pub struct Table {
 pub struct View {
     /// The view name.
     pub name: String,
-    /// The `CREATE VIEW` statement, as DuckDB re-renders it.
+    /// The `CREATE VIEW` statement, as the author wrote it.
     pub sql: String,
 }
 
@@ -87,36 +152,34 @@ impl Schema {
         }
     }
 
-    /// Learn what `sql` declares by running it and asking DuckDB.
+    /// Learn what `sql` declares by running it in a throwaway in-memory database and
+    /// asking the catalog.
     ///
-    /// **Why executing it is the parser.** The plan called for `json_serialize_sql()`, and
-    /// that function refuses anything but a `SELECT` — handed DDL it returns
-    /// `{"error":true,"error_message":"Only SELECT statements can be serialized to
-    /// json!"}`. DuckDB exposes no other parser to safe Rust. So the DDL is executed and
-    /// the answer read out of the catalog, which is still "types from the engine that will
-    /// execute them" and is neither a regex nor a second SQL implementation.
+    /// **Why executing it is the parser.** SQLite exposes no parser to safe Rust, and
+    /// text-matching `CREATE TABLE` is a second SQL implementation. So the DDL runs — under
+    /// the same authorizer an app's connection gets, plus permission to create — and the
+    /// answer is read out of `sqlite_master` and `PRAGMA table_info`, which is "types from
+    /// the engine that will execute them".
     ///
-    /// **Why running an app's DDL is safe.** The instance is in-memory and is sealed
-    /// *before* the file runs, so `COPY`, `ATTACH`, `INSTALL` and any `SET` fail, and an
-    /// `INSERT` touches memory that is dropped when this function returns. Nothing here
-    /// can reach the filesystem — which matters, because the real cache database has to
-    /// keep external access on to read the logs.
+    /// **Why running an app's DDL is safe.** The database is in memory and gone when this
+    /// returns; the authorizer refuses `ATTACH`, every `PRAGMA` and `load_extension()`, so
+    /// nothing in the file can reach the filesystem or the real cache.
     pub fn parse(sql: &str) -> Result<Self, StoreError> {
-        let conn = Connection::open_in_memory().map_err(StoreError::Duck)?;
-        // The order is `spec/app-contract.md §7`'s, and `lock_configuration` is last
-        // because it is what makes the other three unrepealable.
-        conn.execute_batch(
-            "SET enable_external_access = false;
-             SET autoinstall_known_extensions = false;
-             SET autoload_known_extensions = false;
-             SET lock_configuration = true;",
-        )
-        .map_err(StoreError::Duck)?;
+        let conn = Connection::open_in_memory().map_err(StoreError::Sql)?;
+        decimal::register(&conn).map_err(StoreError::Sql)?;
+        conn.authorizer(Some(sandbox::authorize_ddl))
+            .map_err(StoreError::Sql)?;
 
         conn.execute_batch(sql)
             .map_err(|source| StoreError::Schema {
                 problem: first_line(&source.to_string()),
             })?;
+        // The file has run; the introspection below uses `pragma_table_info`, which the
+        // authorizer would refuse as a PRAGMA, and needs no sandbox of its own.
+        conn.authorizer::<fn(rusqlite::hooks::AuthContext<'_>) -> rusqlite::hooks::Authorization>(
+            None,
+        )
+        .map_err(StoreError::Sql)?;
 
         let mut schema = Self {
             tables: read_tables(&conn)?,
@@ -135,72 +198,44 @@ impl Schema {
     }
 }
 
-/// Read the tables and their columns out of the catalog.
-///
-/// **`schema_name = 'main' AND NOT internal` is load-bearing.** `duckdb_columns()`
-/// describes the entire catalog: `pg_catalog`, `information_schema`, the `duckdb_*`
-/// functions themselves — some four hundred rows before an app's own table appears.
-/// Without the filter, the first "table" in an app's schema is `character_sets`.
+/// Read the tables and their columns out of the catalog. `sqlite_%` tables are SQLite's
+/// own and are not an app's.
 fn read_tables(conn: &Connection) -> Result<Vec<Table>, StoreError> {
-    let mut columns = conn
-        .prepare(
-            "SELECT table_name, column_name, data_type, is_nullable
-             FROM duckdb_columns()
-             WHERE schema_name = 'main' AND NOT internal
-             ORDER BY table_name, column_index",
-        )
-        .map_err(StoreError::Duck)?;
-    let rows = columns
-        .query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, bool>(3)?,
-            ))
-        })
-        .map_err(StoreError::Duck)?;
-
-    // A view's columns come back from `duckdb_columns()` too, so tables are established
-    // from `duckdb_tables()` first and anything else is ignored.
-    let table_names = read_table_names(conn)?;
-    let mut tables: Vec<Table> = Vec::new();
-    for row in rows {
-        let (table, column, ty, nullable) = row.map_err(StoreError::Duck)?;
-        if !table_names.contains(&table) {
-            continue;
-        }
-        let entry = match tables.iter_mut().find(|t| t.name == table) {
-            Some(entry) => entry,
-            None => {
-                tables.push(Table {
-                    name: table.clone(),
-                    columns: Vec::new(),
-                    checks: Vec::new(),
-                });
-                // The push cannot fail and the entry is the one just added.
-                match tables.last_mut() {
-                    Some(entry) => entry,
-                    None => continue,
-                }
+    let names = read_names(conn, "table")?;
+    let mut tables = Vec::with_capacity(names.len());
+    for name in names {
+        let mut statement = conn
+            .prepare("SELECT name, type, \"notnull\" FROM pragma_table_info(?) ORDER BY cid")
+            .map_err(StoreError::Sql)?;
+        let rows = statement
+            .query_map(rusqlite::params![name], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            })
+            .map_err(StoreError::Sql)?;
+        let mut columns = Vec::new();
+        let mut has_id = false;
+        for row in rows {
+            let (column, ty, not_null) = row.map_err(StoreError::Sql)?;
+            if column == ID_COLUMN {
+                // Present, deliberately unprojected. See `Table::columns`.
+                has_id = true;
+                continue;
             }
-        };
-        if column == ID_COLUMN {
-            // Present, deliberately unprojected. See `Table::columns`.
-            continue;
+            columns.push(Column {
+                kind: Kind::of(&ty),
+                name: column,
+                ty,
+                not_null: not_null != 0,
+            });
         }
-        entry.columns.push(Column {
-            name: column,
-            ty,
-            not_null: !nullable,
-        });
-    }
-
-    // `spec/app-contract.md §4.5`: every table needs `id VARCHAR PRIMARY KEY`. This is a
-    // load refusal rather than lint (`PV106`, M12) because `§4.5` groups events by `id`:
-    // a table without one cannot be materialized at all, so there is nothing to warn about.
-    for name in &table_names {
-        if !has_id_column(conn, name)? {
+        // `spec/app-contract.md §4.5`: every table needs `id VARCHAR PRIMARY KEY`. A load
+        // refusal rather than lint (`PV106`, M12), because `§4.5` groups events by `id`: a
+        // table without one cannot be materialized at all.
+        if !has_id {
             return Err(StoreError::Schema {
                 problem: format!(
                     "table `{name}` has no `id VARCHAR` column; \
@@ -208,86 +243,40 @@ fn read_tables(conn: &Connection) -> Result<Vec<Table>, StoreError> {
                 ),
             });
         }
-    }
-
-    for table in &mut tables {
-        table.checks = read_checks(conn, &table.name)?;
+        tables.push(Table { name, columns });
     }
     Ok(tables)
 }
 
-fn read_table_names(conn: &Connection) -> Result<Vec<String>, StoreError> {
+fn read_names(conn: &Connection, kind: &str) -> Result<Vec<String>, StoreError> {
     let mut statement = conn
         .prepare(
-            "SELECT table_name FROM duckdb_tables()
-             WHERE schema_name = 'main' AND NOT internal
-             ORDER BY table_name",
+            "SELECT name FROM sqlite_master WHERE type = ? AND name NOT LIKE 'sqlite_%' \
+             ORDER BY name",
         )
-        .map_err(StoreError::Duck)?;
+        .map_err(StoreError::Sql)?;
     let rows = statement
-        .query_map([], |row| row.get::<_, String>(0))
-        .map_err(StoreError::Duck)?;
+        .query_map(rusqlite::params![kind], |row| row.get::<_, String>(0))
+        .map_err(StoreError::Sql)?;
     let mut names = Vec::new();
     for row in rows {
-        names.push(row.map_err(StoreError::Duck)?);
+        names.push(row.map_err(StoreError::Sql)?);
     }
     Ok(names)
 }
 
-fn has_id_column(conn: &Connection, table: &str) -> Result<bool, StoreError> {
-    let found: i64 = conn
-        .query_row(
-            "SELECT count(*) FROM duckdb_columns()
-             WHERE schema_name = 'main' AND NOT internal
-               AND table_name = ? AND column_name = ?",
-            duckdb::params![table, ID_COLUMN],
-            |row| row.get(0),
-        )
-        .map_err(StoreError::Duck)?;
-    Ok(found > 0)
-}
-
-/// `CHECK` expressions for one table.
-///
-/// `duckdb_constraints()` reports `NOT NULL` and `PRIMARY KEY` here too; those are read
-/// from `duckdb_columns()` and from the `id` requirement respectively, so only `CHECK`
-/// rows are wanted. A `NOT NULL` row's `constraint_text` is the literal string
-/// `NOT NULL` with no column in it — the column is in `constraint_column_names` — which
-/// is exactly the trap this filter avoids.
-fn read_checks(conn: &Connection, table: &str) -> Result<Vec<String>, StoreError> {
-    let mut statement = conn
-        .prepare(
-            "SELECT constraint_text FROM duckdb_constraints()
-             WHERE schema_name = 'main' AND table_name = ? AND constraint_type = 'CHECK'
-             ORDER BY constraint_index",
-        )
-        .map_err(StoreError::Duck)?;
-    let rows = statement
-        .query_map(duckdb::params![table], |row| row.get::<_, String>(0))
-        .map_err(StoreError::Duck)?;
-    let mut checks = Vec::new();
-    for row in rows {
-        checks.push(row.map_err(StoreError::Duck)?);
-    }
-    Ok(checks)
-}
-
 fn read_views(conn: &Connection) -> Result<Vec<View>, StoreError> {
     let mut statement = conn
-        .prepare(
-            "SELECT view_name, sql FROM duckdb_views()
-             WHERE schema_name = 'main' AND NOT internal
-             ORDER BY view_name",
-        )
-        .map_err(StoreError::Duck)?;
+        .prepare("SELECT name, sql FROM sqlite_master WHERE type = 'view' ORDER BY name")
+        .map_err(StoreError::Sql)?;
     let rows = statement
         .query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
-        .map_err(StoreError::Duck)?;
+        .map_err(StoreError::Sql)?;
     let mut views = Vec::new();
     for row in rows {
-        let (name, sql) = row.map_err(StoreError::Duck)?;
+        let (name, sql) = row.map_err(StoreError::Sql)?;
         views.push(View { name, sql });
     }
     Ok(views)
@@ -305,8 +294,8 @@ pub(crate) fn hash_of(sql: &str) -> String {
     out
 }
 
-/// DuckDB errors carry a stack of context; the first line is the part a person reads.
-fn first_line(message: &str) -> String {
+/// The first line of an engine error is the part a person reads.
+pub(crate) fn first_line(message: &str) -> String {
     message.lines().next().unwrap_or(message).to_owned()
 }
 
@@ -318,8 +307,8 @@ mod tests {
     use super::*;
 
     /// The whole point of introspecting rather than matching text: a schema written the
-    /// way a person writes one, with the words `CREATE TABLE` appearing in a comment and
-    /// inside a string literal, still yields the right columns.
+    /// way a person writes one, with the words `CREATE TABLE` in a comment and inside a
+    /// string literal, still yields the right columns, with their declared types verbatim.
     #[test]
     fn a_schema_is_read_from_the_catalog_not_from_the_text() {
         let schema = Schema::parse(
@@ -330,10 +319,11 @@ mod tests {
                  \"text\" VARCHAR NOT NULL,
                  amount DECIMAL(18,2),
                  tags   VARCHAR[],
+                 ok     BOOLEAN,
+                 n      BIGINT,
                  CHECK (kind IN ('q', 'a'))
              );
-             COMMENT ON TABLE node IS 'the words CREATE TABLE inside a string literal';
-             CREATE VIEW v_leaves AS SELECT id FROM node WHERE kind = 'a';",
+             CREATE VIEW v_leaves AS SELECT id FROM node WHERE kind = 'CREATE TABLE';",
         )
         .unwrap();
 
@@ -341,34 +331,41 @@ mod tests {
         let names: Vec<&str> = node.columns.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(
             names,
-            vec!["kind", "text", "amount", "tags"],
+            vec!["kind", "text", "amount", "tags", "ok", "n"],
             "`id` is not projected"
         );
 
         let by = |name: &str| node.columns.iter().find(|c| c.name == name).unwrap();
-        assert_eq!(
-            by("amount").ty,
-            "DECIMAL(18,2)",
-            "the engine's own spelling"
-        );
+        assert_eq!(by("amount").ty, "DECIMAL(18,2)", "as the author spelled it");
+        assert_eq!(by("amount").kind, Kind::Decimal { scale: 2 });
         assert_eq!(by("tags").ty, "VARCHAR[]");
+        assert_eq!(by("tags").kind, Kind::Json);
+        assert_eq!(by("ok").kind, Kind::Boolean);
+        assert_eq!(by("n").kind, Kind::Integer);
+        assert_eq!(by("kind").kind, Kind::Text);
         assert!(by("kind").not_null);
         assert!(!by("amount").not_null);
 
-        assert_eq!(node.checks.len(), 1, "{:?}", node.checks);
-        assert!(node.checks[0].contains("kind"), "{:?}", node.checks);
-
         assert_eq!(schema.views.len(), 1);
         assert_eq!(schema.views[0].name, "v_leaves");
+        assert!(schema.views[0].sql.starts_with("CREATE VIEW v_leaves"));
     }
 
-    /// `duckdb_columns()` describes the whole catalog. If the filter were ever dropped,
-    /// this schema would come back with hundreds of tables starting at `character_sets`.
     #[test]
-    fn the_system_catalog_is_not_mistaken_for_the_app_schema() {
-        let schema = Schema::parse("CREATE TABLE profile (id VARCHAR PRIMARY KEY);").unwrap();
-        assert_eq!(schema.tables.len(), 1);
-        assert_eq!(schema.tables[0].name, "profile");
+    fn kinds_follow_the_dictionary() {
+        assert_eq!(Kind::of("VARCHAR"), Kind::Text);
+        assert_eq!(Kind::of("DATE"), Kind::Text);
+        assert_eq!(Kind::of("TIMESTAMPTZ"), Kind::Text);
+        assert_eq!(Kind::of("INTERVAL"), Kind::Text);
+        assert_eq!(Kind::of("TIME"), Kind::Text);
+        assert_eq!(Kind::of("BIGINT"), Kind::Integer);
+        assert_eq!(Kind::of("integer"), Kind::Integer);
+        assert_eq!(Kind::of("DECIMAL(9,4)"), Kind::Decimal { scale: 4 });
+        assert_eq!(Kind::of("BOOLEAN"), Kind::Boolean);
+        assert_eq!(Kind::of("JSON"), Kind::Json);
+        assert_eq!(Kind::of("VARCHAR[]"), Kind::Json);
+        assert_eq!(Kind::Decimal { scale: 2 }.storage(), "TEXT COLLATE decimal");
+        assert_eq!(Kind::Boolean.storage(), "INTEGER");
     }
 
     /// `spec/app-contract.md §4.5`. Refused at load, because `§4.5` has nothing to group by.
@@ -379,16 +376,21 @@ mod tests {
         assert!(error.to_string().contains("id"), "{error}");
     }
 
-    /// The introspection instance is sealed before the file runs, so a `schema.sql` that
-    /// tries to reach the filesystem fails there rather than against the real database.
+    /// The introspection database is sandboxed, so a `schema.sql` that tries to reach the
+    /// filesystem or the engine's settings fails there rather than against the real cache.
     #[test]
-    fn a_schema_that_touches_the_filesystem_is_refused() {
-        let error = Schema::parse("COPY (SELECT 1) TO 'leak.csv';").unwrap_err();
-        assert!(
-            error.to_string().to_lowercase().contains("file system")
-                || error.to_string().to_lowercase().contains("permission"),
-            "{error}"
-        );
+    fn a_schema_that_reaches_outside_is_refused() {
+        for sql in [
+            "ATTACH 'leak.sqlite' AS leak;",
+            "PRAGMA journal_mode = WAL;",
+            "SELECT load_extension('x');",
+        ] {
+            let error = Schema::parse(sql).unwrap_err();
+            assert!(
+                error.to_string().to_lowercase().contains("not authorized"),
+                "{sql}: {error}"
+            );
+        }
     }
 
     /// `spec/app-contract.md §4.5` — the file is optional, and its absence is ordinary.
@@ -404,8 +406,7 @@ mod tests {
     ///
     /// A unit test rather than something the bootstrap discovers: a bad `sys.sql` breaks
     /// `Node::open`, so without this every test in `tests/bootstrap.rs` fails at once with
-    /// a parser error and none of them says which line. That is how the reserved `at`
-    /// column was found.
+    /// a parser error and none of them says which line.
     #[test]
     fn the_framework_schema_parses_and_matches_the_dictionary() {
         let schema = Schema::parse(crate::store::SYS_DDL).unwrap();
@@ -438,12 +439,10 @@ mod tests {
             assert!(schema.table(absent).is_none(), "{absent} should not exist");
         }
 
-        // §3.10 names the column `at`, and DuckDB reserves the word. The quoting in
-        // sys.sql is what makes the dictionary's name survive.
         let audit = schema.table("sys_audit").unwrap();
         assert!(audit.columns.iter().any(|c| c.name == "at"), "{audit:?}");
 
-        // §4's views, less `v_health`, which the materializer creates over `pv.health`
+        // §4's views, less `v_health`, which the materializer creates over `pv_health`
         // rather than this file (see sys.sql).
         let views: Vec<&str> = schema.views.iter().map(|v| v.name.as_str()).collect();
         assert_eq!(

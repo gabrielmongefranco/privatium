@@ -1,37 +1,41 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-02
-// Summary:  One app's cache/<slug>.duckdb: the privileged connection that materializes it
-//           from the log or from a snapshot (spec/protocol.md §5.3), the seal that turns it
-//           into spec/app-contract.md §7's sandbox, the watermark that notices a log someone
-//           appended to by hand, and the record of which restore tier built the tables.
+// Created:  2026-09-01  |  Modified: 2026-09-03
+// Summary:  One app's cache/<slug>.sqlite: the framework's connection that materializes it
+//           from the log or from a snapshot (spec/protocol.md §5.3), the read-only sandboxed
+//           connection app SQL gets (spec/app-contract.md §7), the watermark that notices a
+//           log someone appended to by hand, and the record of which restore tier built the
+//           tables.
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
-use duckdb::Connection;
+use rusqlite::Connection;
 use serde::Serialize;
 use thiserror::Error;
 
 use crate::config::Paths;
 
+mod csv;
+pub mod decimal;
+mod events;
 pub mod materialize;
 pub mod restore;
+pub mod sandbox;
 pub mod schema;
 pub mod snapshot;
 
+pub use decimal::Decimal;
 pub use restore::{Restored, SkipReason, Skipped, Tier};
-pub use schema::{Column, Schema, Table, View};
+pub use schema::{Column, Kind, Schema, Table, View};
 pub use snapshot::{
     LogRetention, Manifest, ManifestTable, Pruned, Retention, Snapshot, SnapshotError, SnapshotId,
     SnapshotPolicy, TableCheck, Verification,
 };
 
-use materialize::Source;
-
-/// The `sys` schema `_sys` materializes into (`spec/data-dictionary.md §1`, `§3`).
-pub const SYS_SCHEMA: &str = "sys";
+use events::Event;
 
 /// The framework's own `schema.sql`, for `_sys`.
 ///
@@ -45,32 +49,26 @@ const MAX_FUTURE_HOURS: i64 = 24;
 /// The framework's per-app health facts, in the `_sys` cache (`spec/data-dictionary.md §4`).
 ///
 /// Node-local by nature — a restore tier is a fact about **this** node's cache — so it is a
-/// table the framework writes into `cache/_sys.duckdb` rather than an event in the
+/// table the framework writes into `cache/_sys.sqlite` rather than an event in the
 /// replicated `_sys` log. Disposable, like everything in `cache/`.
-const HEALTH_TABLE: &str = "pv.health";
+const HEALTH_TABLE: &str = "pv_health";
+
+/// How long the framework's connection waits for a reader before a write fails.
+const BUSY: Duration = Duration::from_secs(5);
 
 /// Anything that can go wrong maintaining a cache database.
 #[derive(Debug, Error)]
 pub enum StoreError {
-    /// DuckDB refused.
-    #[error("duckdb: {0}")]
-    Duck(#[source] duckdb::Error),
+    /// SQLite refused.
+    #[error("sqlite: {0}")]
+    Sql(#[source] rusqlite::Error),
 
-    /// A `schema.sql` is not something that can be materialized.
+    /// A `schema.sql` is not something that can be materialized, or a log directory could
+    /// not be read.
     #[error("schema.sql: {problem}")]
     Schema {
         /// What is wrong with it.
         problem: String,
-    },
-
-    /// An operation needing the filesystem ran after the store was sealed.
-    #[error(
-        "{slug}: the store is sealed; rematerializing and snapshotting need a privileged \
-         instance (spec/app-contract.md §7)"
-    )]
-    Sealed {
-        /// The app.
-        slug: String,
     },
 
     /// A snapshot directory could not be written, read, or pruned (`spec/protocol.md §5`).
@@ -128,7 +126,7 @@ impl Materialized {
         self.schema_hash == other.schema_hash && self.segments == other.segments
     }
 
-    /// Bytes across every segment — `sys.v_health`'s `log_bytes`.
+    /// Bytes across every segment — `v_health`'s `log_bytes`.
     #[must_use]
     pub fn log_bytes(&self) -> u64 {
         self.segments.values().sum()
@@ -137,15 +135,12 @@ impl Materialized {
 
 /// One app's materialized cache.
 ///
-/// **On the two connections of `spec/app-contract.md §7`.** They cannot be two handles.
-/// DuckDB makes `enable_external_access`, `autoload_known_extensions` and
-/// `lock_configuration` `GLOBAL_ONLY` — they belong to the database instance — and it
-/// takes an exclusive lock on the file, so a second instance cannot open the same cache
-/// alongside the first. The privilege boundary is therefore in **time**: the store opens
-/// privileged, materializes, and is then [`seal`](Self::seal)ed, after which nothing on it
-/// — including this connection — can reach the filesystem. Rematerializing
-/// ([`restore`](Self::restore), [`materialize`](Self::materialize)) and writing a snapshot
-/// ([`snapshot`](Self::snapshot)) drop the store and open a fresh one.
+/// **Two connections, two jobs, one file.** The framework's connection ([`conn`](Self::conn))
+/// reads the log and writes the tables. App SQL runs on a separate connection
+/// ([`app_conn`](Self::app_conn)) opened read-only under the authorizer of
+/// `spec/app-contract.md §7`; SQLite's locking lets it read while the framework writes,
+/// so there is no privileged window to open and close — a rebuild, a restore and a
+/// snapshot are ordinary calls on the store at any moment.
 #[derive(Debug)]
 pub struct Store {
     slug: String,
@@ -154,10 +149,10 @@ pub struct Store {
     snap_dir: PathBuf,
     conn: Connection,
     schema: Schema,
-    target_schema: Option<&'static str>,
-    sealed: bool,
+    /// Whether this is `_sys`, which carries the framework's health table and view.
+    is_sys: bool,
     watermark: Materialized,
-    /// Whether `cache/<slug>.duckdb` did not exist when this store opened it, and no
+    /// Whether `cache/<slug>.sqlite` did not exist when this store opened it, and no
     /// rebuild has happened since.
     ///
     /// `spec/protocol.md §3` calls `cache/` fully disposable and `§3.1` requires that
@@ -172,13 +167,7 @@ pub struct Store {
 }
 
 impl Store {
-    /// Open — or create — `cache/<slug>.duckdb`, privileged.
-    ///
-    /// External access stays **on**, because materialization reads the log files through
-    /// `read_json()`. Autoload and autoinstall are turned off immediately: the bundled
-    /// build compiles with `DUCKDB_EXTENSION_AUTOLOAD_DEFAULT=1`, so `AGENTS.md`'s
-    /// "extensions statically linked, autoload disabled" is a thing this has to do rather
-    /// than a thing it gets.
+    /// Open — or create — `cache/<slug>.sqlite` with the framework's connection.
     pub fn open(paths: &Paths, slug: &str, ddl: &str) -> Result<Self, StoreError> {
         let schema = if ddl.trim().is_empty() {
             Schema::empty()
@@ -192,8 +181,7 @@ impl Store {
     ///
     /// The app loader parses the schema once, early, so a broken `schema.sql` is refused
     /// before a log is opened; parsing it again here would spin up a second in-memory
-    /// instance for nothing. The same call is what reopens a sealed store for its
-    /// privileged window (`spec/app-contract.md §7`).
+    /// database for nothing.
     pub fn open_with(paths: &Paths, slug: &str, schema: Schema) -> Result<Self, StoreError> {
         let path = paths.app_cache_db(slug);
         if let Some(parent) = path.parent() {
@@ -205,23 +193,9 @@ impl Store {
         // Before `Connection::open`, which creates the file if it is absent: afterwards
         // there is no way to tell a cache the owner deleted from one that was always here.
         let fresh = !path.is_file();
-        let conn = Connection::open(&path).map_err(StoreError::Duck)?;
-        conn.execute_batch(
-            "SET autoinstall_known_extensions = false;
-             SET autoload_known_extensions = false;",
-        )
-        .map_err(StoreError::Duck)?;
-
-        let target_schema = (slug == crate::sys::SLUG).then_some(SYS_SCHEMA);
-        if let Some(name) = target_schema {
-            conn.execute_batch(&format!("CREATE SCHEMA IF NOT EXISTS {name};"))
-                .map_err(StoreError::Duck)?;
-        }
-        conn.execute_batch(&format!(
-            "CREATE SCHEMA IF NOT EXISTS {};",
-            materialize::PV_SCHEMA
-        ))
-        .map_err(StoreError::Duck)?;
+        let conn = Connection::open(&path).map_err(StoreError::Sql)?;
+        conn.busy_timeout(BUSY).map_err(StoreError::Sql)?;
+        decimal::register(&conn).map_err(StoreError::Sql)?;
 
         Ok(Self {
             slug: slug.to_owned(),
@@ -230,8 +204,7 @@ impl Store {
             snap_dir: paths.app_snap_dir(slug),
             conn,
             schema,
-            target_schema,
-            sealed: false,
+            is_sys: slug == crate::sys::SLUG,
             watermark: Materialized::default(),
             fresh,
             restored: None,
@@ -244,29 +217,25 @@ impl Store {
     /// snapshot tiers in [`restore`](Self::restore) are optimizations that must agree with
     /// it (`docs/plans/phase-1.md §2.5`), and when in doubt this is the one that is right.
     pub fn materialize(&mut self, cutoff: &str) -> Result<(), StoreError> {
-        if self.sealed {
-            return Err(StoreError::Sealed {
-                slug: self.slug.clone(),
-            });
+        let events = self.read_log(cutoff)?;
+        self.replay_events(&events)
+    }
+
+    /// The replay over an already-staged log, in one transaction.
+    pub(crate) fn replay_events(&mut self, events: &[Event]) -> Result<(), StoreError> {
+        self.conn
+            .execute_batch("BEGIN IMMEDIATE")
+            .map_err(StoreError::Sql)?;
+        let built = materialize::replay(&self.conn, &self.schema.tables, events)
+            .and_then(|()| materialize::rebuild_tombstones(&self.conn, events))
+            .and_then(|()| self.create_views());
+        match built {
+            Ok(()) => self.conn.execute_batch("COMMIT").map_err(StoreError::Sql)?,
+            Err(error) => {
+                let _ = self.conn.execute_batch("ROLLBACK");
+                return Err(error);
+            }
         }
-
-        let source = self.log_source()?;
-        for table in &self.schema.tables {
-            let sql = materialize::replay_sql(
-                &self.qualified(&table.name),
-                &self.slug,
-                table,
-                &source,
-                cutoff,
-            );
-            self.conn.execute_batch(&sql).map_err(StoreError::Duck)?;
-        }
-
-        let sql = materialize::tombstone_sql(&self.slug, &source, cutoff);
-        self.conn.execute_batch(&sql).map_err(StoreError::Duck)?;
-
-        self.create_views()?;
-        self.checkpoint()?;
         self.note_rebuilt(Tier::Replay, None);
         Ok(())
     }
@@ -291,10 +260,7 @@ impl Store {
     }
 
     /// Whether [`refresh`](Self::refresh) would rebuild: the log or `schema.sql` has moved
-    /// since the tables were built, or nothing has been built yet.
-    ///
-    /// A stat, no DuckDB — so it is answerable on a sealed store, which is what lets the
-    /// loader decide whether an app needs its privileged window reopened at all.
+    /// since the tables were built, or nothing has been built yet. A stat, no SQL.
     pub fn is_stale(&self) -> Result<bool, StoreError> {
         let current = self.take_inputs()?;
         Ok(!current.same_inputs(&self.watermark) || self.watermark.schema_hash.is_empty())
@@ -302,65 +268,25 @@ impl Store {
 
     /// Apply one event this node just appended, without replaying the log.
     ///
-    /// See [`materialize::apply_sql`] for why overwriting blindly is correct and for the
-    /// exact moment in Phase 3 when it stops being.
+    /// See [`materialize::apply`] for why overwriting blindly is correct and for the exact
+    /// moment in Phase 3 when it stops being.
     pub fn apply<D: Serialize>(
         &mut self,
         tbl: &str,
         id: &str,
         d: Option<&D>,
     ) -> Result<(), StoreError> {
-        // The tombstone set first, and for **every** table, declared or not. It mirrors
-        // `materialize::tombstone_sql`, whose scope is every `tbl` in the log because
-        // `spec/data-api.md §2` accepts writes to a schema-less app and `spec/protocol.md
-        // §4.6` still has to be enforceable there. Doing it before the schema lookup is
-        // what keeps an undeclared table's `del` reportable through `is_tombstoned`.
-        //
-        // Delete before insert, so a second `del` on the same id does not add a second
-        // row. The replay produces one row per *currently* tombstoned id, and
-        // `docs/plans/phase-1.md §2.5` requires this path to match it — an accumulating
-        // set would still answer `is_tombstoned` correctly and would still be wrong,
-        // which is exactly the sort of drift the property test exists to catch.
-        self.conn
-            .execute(
-                &format!(
-                    "DELETE FROM {} WHERE tbl = ? AND id = ?",
-                    materialize::TOMBSTONE_TABLE
-                ),
-                duckdb::params![tbl, id],
-            )
-            .map_err(StoreError::Duck)?;
-        if d.is_none() {
-            self.conn
-                .execute(
-                    &format!(
-                        "INSERT INTO {} (tbl, id) VALUES (?, ?)",
-                        materialize::TOMBSTONE_TABLE
-                    ),
-                    duckdb::params![tbl, id],
+        let text = match d {
+            Some(value) => {
+                Some(
+                    serde_json::to_string(value).map_err(|source| StoreError::Schema {
+                        problem: source.to_string(),
+                    })?,
                 )
-                .map_err(StoreError::Duck)?;
-        }
-
-        // The table itself, only if `schema.sql` declares one. An event for a table it
-        // does not is ordinary: a schema-less app has none at all
-        // (`spec/app-contract.md §5.3`), and a column added later does not retroactively
-        // make old events invalid.
-        if let Some(table) = self.schema.table(tbl).cloned() {
-            let target = self.qualified(&table.name);
-            let (delete, insert) = materialize::apply_sql(&target, &table);
-            self.conn
-                .execute(&delete, duckdb::params![id])
-                .map_err(StoreError::Duck)?;
-            if let Some(value) = d {
-                let json = serde_json::to_string(value).map_err(|source| StoreError::Schema {
-                    problem: source.to_string(),
-                })?;
-                self.conn
-                    .execute(&insert, duckdb::params![id, json])
-                    .map_err(StoreError::Duck)?;
             }
-        }
+            None => None,
+        };
+        materialize::apply(&self.conn, self.schema.table(tbl), tbl, id, text.as_deref())?;
 
         // The inputs move; how the tables were originally built does not.
         let inputs = self.take_inputs()?;
@@ -386,51 +312,22 @@ impl Store {
                     "SELECT count(*) FROM {} WHERE tbl = ? AND id = ?",
                     materialize::TOMBSTONE_TABLE
                 ),
-                duckdb::params![tbl, id],
+                rusqlite::params![tbl, id],
                 |row| row.get(0),
             )
-            .map_err(StoreError::Duck)?;
+            .map_err(StoreError::Sql)?;
         Ok(found > 0)
     }
 
-    /// Apply `spec/app-contract.md §7` to this instance, permanently.
-    ///
-    /// `lock_configuration` is last, because it is what makes the other three
-    /// unrepealable. Afterwards **no** connection on this instance can touch the
-    /// filesystem — not the app's, and not this one — which is stronger than §7 asks and
-    /// is the only shape DuckDB's `GLOBAL_ONLY` settings allow. Materializing again means
-    /// dropping this store and opening a new one.
-    pub fn seal(&mut self) -> Result<(), StoreError> {
-        if self.sealed {
-            return Ok(());
-        }
-        self.conn
-            .execute_batch(
-                "SET enable_external_access = false;
-                 SET autoinstall_known_extensions = false;
-                 SET autoload_known_extensions = false;
-                 SET lock_configuration = true;",
-            )
-            .map_err(StoreError::Duck)?;
-        self.sealed = true;
-        Ok(())
-    }
-
-    /// A connection for app SQL (`spec/app-contract.md §7`).
-    ///
-    /// Only after [`seal`](Self::seal), because before it the connection would be
-    /// privileged — the settings are instance-wide, so an unsealed store has no sandboxed
-    /// handle to give out.
+    /// A connection for app SQL (`spec/app-contract.md §7`): read-only at the file,
+    /// `query_only` at the connection, and an authorizer that refuses every write, every
+    /// `PRAGMA`, `ATTACH` and extension loading. Fresh each time; drop it when the request
+    /// is done.
     pub fn app_conn(&self) -> Result<Connection, StoreError> {
-        if !self.sealed {
-            return Err(StoreError::Sealed {
-                slug: self.slug.clone(),
-            });
-        }
-        self.conn.try_clone().map_err(StoreError::Duck)
+        sandbox::open_readonly(&self.path).map_err(StoreError::Sql)
     }
 
-    /// The privileged connection, for the framework's own reads.
+    /// The framework's connection, for its own reads and writes.
     #[must_use]
     pub fn conn(&self) -> &Connection {
         &self.conn
@@ -448,13 +345,7 @@ impl Store {
         &self.slug
     }
 
-    /// Whether `§7`'s sandbox has been applied.
-    #[must_use]
-    pub fn is_sealed(&self) -> bool {
-        self.sealed
-    }
-
-    /// `cache/<slug>.duckdb`.
+    /// `cache/<slug>.sqlite`.
     #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
@@ -499,6 +390,11 @@ impl Store {
         self.restored = Some(restored);
     }
 
+    /// Every sane event of this app, read from the log once (`events::read_log`).
+    pub(crate) fn read_log(&self, cutoff: &str) -> Result<Vec<Event>, StoreError> {
+        events::read_log(&self.log_dir, &self.slug, cutoff)
+    }
+
     /// The tables were just rebuilt, by `tier`: take the watermark and stamp the record.
     pub(crate) fn note_rebuilt(&mut self, tier: Tier, snapshot: Option<String>) {
         let inputs = self.take_inputs().unwrap_or_default();
@@ -514,56 +410,28 @@ impl Store {
         self.fresh = false;
     }
 
-    /// A table name qualified by the schema it materializes into.
-    pub(crate) fn qualified(&self, table: &str) -> String {
-        match self.target_schema {
-            Some(name) => format!("{name}.{}", materialize::quote_ident(table)),
-            None => materialize::quote_ident(table),
-        }
-    }
-
-    /// `_sys`'s views live in `sys` too, and DuckDB's rendering names them bare.
-    fn qualify_view(&self, sql: &str) -> String {
-        match self.target_schema {
-            Some(name) => sql.replacen(
-                "CREATE OR REPLACE VIEW ",
-                &format!("CREATE OR REPLACE VIEW {name}."),
-                1,
-            ),
-            None => sql.to_owned(),
-        }
-    }
-
-    /// Every view `schema.sql` declared, plus the framework's own for `_sys`.
+    /// Every view `schema.sql` declared, recreated from the author's own statement, plus
+    /// the framework's health view for `_sys`.
     pub(crate) fn create_views(&self) -> Result<(), StoreError> {
         for view in &self.schema.views {
-            let sql = view
-                .sql
-                .replacen("CREATE VIEW", "CREATE OR REPLACE VIEW", 1);
             self.conn
-                .execute_batch(&self.qualify_view(&sql))
-                .map_err(StoreError::Duck)?;
+                .execute_batch(&format!(
+                    "DROP VIEW IF EXISTS {};\n{};",
+                    materialize::quote_ident(&view.name),
+                    view.sql.trim_end_matches(';')
+                ))
+                .map_err(StoreError::Sql)?;
         }
-        if self.target_schema.is_some() {
+        if self.is_sys {
             self.ensure_health()?;
         }
         Ok(())
     }
 
-    /// CHECKPOINT, and not only for tidiness: an uncheckpointed write leaves
-    /// `cache/<slug>.duckdb.wal` beside the database, and `test_spec_3_layout_created`
-    /// asserts the §3 tree exhaustively. A stray `.wal` is exactly the unannounced file in
-    /// `cache/` that test exists to catch.
-    pub(crate) fn checkpoint(&self) -> Result<(), StoreError> {
-        self.conn
-            .execute_batch("CHECKPOINT")
-            .map_err(StoreError::Duck)
-    }
-
-    /// `sys.v_health` (`spec/data-dictionary.md §4`) and the table behind it.
+    /// `v_health` (`spec/data-dictionary.md §4`) and the table behind it.
     ///
     /// Created here rather than in `sys.sql`, because `Schema::parse` runs that file in an
-    /// in-memory instance that has no `pv.health` for a view to bind against. The table
+    /// in-memory database that has no `pv_health` for a view to bind against. The table
     /// survives rebuilds (`IF NOT EXISTS`); the view is recreated with the rest.
     ///
     /// Four columns the dictionary asks for, as far as Phase 1 can answer: the restore
@@ -573,35 +441,36 @@ impl Store {
         self.conn
             .execute_batch(&format!(
                 "CREATE TABLE IF NOT EXISTS {HEALTH_TABLE} (
-                     app_id       VARCHAR,
+                     app_id       TEXT PRIMARY KEY,
                      restore_tier INTEGER,
-                     snapshot_id  VARCHAR,
-                     restored_at  TIMESTAMPTZ,
-                     log_bytes    BIGINT
+                     snapshot_id  TEXT,
+                     restored_at  TEXT,
+                     log_bytes    INTEGER
                  );
-                 CREATE OR REPLACE VIEW {SYS_SCHEMA}.v_health AS
+                 DROP VIEW IF EXISTS v_health;
+                 CREATE VIEW v_health AS
                  SELECT h.app_id,
                         h.restore_tier,
                         h.snapshot_id,
                         h.restored_at,
                         s.last_snapshot_at,
-                        CAST(floor((epoch(CAST(now() AS TIMESTAMP)) - epoch(CAST(s.last_snapshot_at AS TIMESTAMP))) / 86400) AS BIGINT)
+                        CAST(julianday('now') - julianday(s.last_snapshot_at) AS INTEGER)
                             AS snapshot_age_days,
                         h.log_bytes,
-                        CAST(NULL AS INTEGER) AS unsynced_peers
+                        NULL AS unsynced_peers
                  FROM {HEALTH_TABLE} h
                  LEFT JOIN (SELECT app_id, max(created_at) AS last_snapshot_at
-                            FROM {SYS_SCHEMA}.sys_snapshot GROUP BY app_id) s
+                            FROM sys_snapshot GROUP BY app_id) s
                    ON h.app_id = s.app_id;"
             ))
-            .map_err(StoreError::Duck)
+            .map_err(StoreError::Sql)
     }
 
-    /// Record one app's restore facts in `sys.v_health`. Only the `_sys` store has the
-    /// table; on any other this is a no-op.
+    /// Record one app's restore facts in `v_health`. Only the `_sys` store has the table;
+    /// on any other this is a no-op.
     ///
-    /// `DELETE` then `INSERT`, which is `docs/plans/phase-1.md §2.3`: this is a table in
-    /// `cache/`, not a log, and `AGENTS.md` invariant 3 does not reach it.
+    /// A replace, which is `docs/plans/phase-1.md §2.3`: this is a table in `cache/`, not a
+    /// log, and `AGENTS.md` invariant 3 does not reach it.
     pub fn note_health(
         &self,
         app: &str,
@@ -610,20 +479,14 @@ impl Store {
         restored_at: &str,
         log_bytes: u64,
     ) -> Result<(), StoreError> {
-        if self.target_schema.is_none() {
+        if !self.is_sys {
             return Ok(());
         }
         self.ensure_health()?;
         self.conn
             .execute(
-                &format!("DELETE FROM {HEALTH_TABLE} WHERE app_id = ?"),
-                duckdb::params![app],
-            )
-            .map_err(StoreError::Duck)?;
-        self.conn
-            .execute(
-                &format!("INSERT INTO {HEALTH_TABLE} VALUES (?, ?, ?, CAST(? AS TIMESTAMPTZ), ?)"),
-                duckdb::params![
+                &format!("INSERT OR REPLACE INTO {HEALTH_TABLE} VALUES (?, ?, ?, ?, ?)"),
+                rusqlite::params![
                     app,
                     i32::from(tier.as_u8()),
                     snapshot,
@@ -631,24 +494,8 @@ impl Store {
                     i64::try_from(log_bytes).unwrap_or(i64::MAX)
                 ],
             )
-            .map_err(StoreError::Duck)?;
-        // A checkpoint, for the same reason `materialize` ends with one: this runs after
-        // the rebuild's own, and an uncheckpointed insert leaves a `.wal` in `cache/`.
-        self.checkpoint()
-    }
-
-    fn log_glob(&self) -> String {
-        // DuckDB takes forward slashes on every platform, including Windows.
-        format!("{}/*.jsonl", self.log_dir.display()).replace('\\', "/")
-    }
-
-    /// The log as a source of envelope rows — or the empty stand-in when there is no
-    /// segment yet, since `read_json()` refuses a glob that matches no file.
-    ///
-    /// The stat is taken once, here, so every statement of one rebuild agrees about it.
-    pub(crate) fn log_source(&self) -> Result<Source, StoreError> {
-        let has_segments = !self.take_inputs()?.segments.is_empty();
-        Ok(Source::log(&self.log_glob(), has_segments))
+            .map_err(StoreError::Sql)?;
+        Ok(())
     }
 
     /// Stat every segment, so a later run can tell whether the log moved underneath it.
@@ -691,16 +538,15 @@ impl Store {
     /// describes is gone.
     ///
     /// The watermark says "the tables were built from these segments at these lengths".
-    /// That is only a fact about a database that still exists. If `cache/<slug>.duckdb`
+    /// That is only a fact about a database that still exists. If `cache/<slug>.sqlite`
     /// was absent when this store opened, `Connection::open` has just created an empty
     /// one, and the recorded segments match the untouched logs exactly — so
     /// [`refresh`](Self::refresh) would find nothing changed and leave the owner with a
-    /// database that has schemas and no tables. Ignoring the record here, rather than
-    /// teaching `refresh` a second reason to rebuild, keeps `refresh`'s contract simple:
-    /// watermark equals disk means the tables are current, and a fresh file has no
-    /// watermark. A no-op costs one restore, which is what deleting `cache/` is
-    /// documented to cost (`docs/backup-and-restore.md`) — and which a snapshot makes
-    /// cheap.
+    /// database that has no tables. Ignoring the record here, rather than teaching
+    /// `refresh` a second reason to rebuild, keeps `refresh`'s contract simple: watermark
+    /// equals disk means the tables are current, and a fresh file has no watermark. A
+    /// no-op costs one restore, which is what deleting `cache/` is documented to cost
+    /// (`docs/backup-and-restore.md`) — and which a snapshot makes cheap.
     pub fn restore_watermark(&mut self, recorded: Materialized) {
         if self.fresh {
             return;
@@ -709,7 +555,7 @@ impl Store {
     }
 }
 
-/// `§4.4`'s horizon, as a `ts` the projection can compare against.
+/// `§4.4`'s horizon, as a `ts` the reader can compare against.
 ///
 /// Passed into [`Store::materialize`] rather than read inside it, so that a full replay
 /// and an incremental apply compared against each other cannot disagree merely because

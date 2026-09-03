@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/lua-api.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-28
+Modified: 2026-09-03
 Summary:  NORMATIVE. Tier 1 — the Lua application API and LSP template engine.
 -->
 
@@ -100,8 +100,10 @@ local one  = pv.query1('SELECT count(*) AS n FROM fill')
 local row  = pv.get_row('fill', id)
 ```
 
-Runs on the sandboxed DuckDB connection (`spec/app-contract.md §7`). Parameters are bound,
-never interpolated; string concatenation into SQL MUST be rejected by the linter.
+Runs on the sandboxed SQLite connection (`spec/app-contract.md §7`). Parameters are bound,
+never interpolated; string concatenation into SQL MUST be rejected by the linter. Sums
+over `DECIMAL` columns use `decimal_sum()`; date arithmetic uses `date(x, '+30 days')`
+(`spec/data-dictionary.md §2`).
 
 `DECIMAL` and `BIGINT` columns arrive as **strings**, for the reason in
 `spec/data-dictionary.md §2.1`. `pv.dec(s)` returns a decimal userdata supporting

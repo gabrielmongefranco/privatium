@@ -1,6 +1,6 @@
 -- Project:  Privatium™  |  File: apps/hello/schema.sql
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
--- Created:  2026-08-28  |  Modified: 2026-08-28
+-- Created:  2026-08-28  |  Modified: 2026-09-03
 -- Summary:  One table, one column. Derived from the event log on every start.
 
 CREATE TABLE profile (
@@ -8,5 +8,4 @@ CREATE TABLE profile (
     display_name VARCHAR NOT NULL
 );
 
-COMMENT ON TABLE  profile              IS 'The one person using this node.';
-COMMENT ON COLUMN profile.display_name IS 'What the app should call you.';
+-- profile: the one person using this node. display_name is what the app should call you.

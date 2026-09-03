@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/roadmap.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-31
+Modified: 2026-09-03
 Summary:  Build phases with explicit acceptance criteria. Non-normative.
 -->
 
@@ -19,7 +19,7 @@ machine, and stores its data as JSONL.
 
 Scope: `privatium-core` (log, store, app loader), **the `Request`/`Response` interface and
 the axum adapter (ADR 0003)**, the Lua host (mlua, sandbox, VM pool),
-the LSP compiler with hot reload, HTTP server, HTMX shell, DuckDB materialization,
+the LSP compiler with hot reload, HTTP server, HTMX shell, SQLite materialization,
 snapshots, three-tier restore, the Tier 2 data API and `pv.js`, and the CLI including
 `privatium dev`, `new`, and `lint` (`spec/cli.md`).
 
@@ -220,26 +220,28 @@ in increasing ambition:
 2. **Ship Lua to the browser.** `wasmoon` runs Lua 5.4 in WASM. Run the *same* `app.lua` and
    the *same* compiled LSP templates client-side — no second implementation and therefore no
    drift, which is the objection that rules out client frameworks in the first place. The
-   open problem is the query layer: Tier 1 handlers run SQL against DuckDB.
+   open problem is the query layer: Tier 1 handlers run SQL against SQLite.
 3. **Tier 2.** Already works. The author owns their client code.
 
-### `duckdb-wasm` for offline Tier 1 queries
+### SQLite in the browser for offline Tier 1 queries
 
-Fast in practice, and OPFS-backed persistence is real. Two things to settle before it is
+The node's engine is SQLite (`docs/decisions/0006`), and SQLite runs in a browser as WASM —
+`wa-sqlite` or `sql.js` — with the same dialect, so a view written once in `schema.sql`
+means the same thing on the node and in the page. Two things to settle before it is
 adopted:
 
-- **Payload over cellular.** Measure the gzipped size of the non-threaded (`eh`) bundle.
-  That number decides it.
-- **Single-threaded bundle only.** The multithreaded build requires cross-origin isolation,
-  which would break host mode for every other app on the node (`docs/frameworks.md §5.4`).
-  This constraint holds regardless of how the benchmarks come out.
+- **Payload over cellular.** Measure the gzipped size of the build. That number decides it.
+- **No shared-memory build.** A build that needs `SharedArrayBuffer` requires cross-origin
+  isolation, which would break host mode for every other app on the node
+  (`docs/frameworks.md §5.4`). The asynchronous, single-threaded build is the only
+  candidate, regardless of how the benchmarks come out.
 
-If `duckdb-wasm` does not work out, option 2 above still stands with a narrower offline
-query surface. It is not load-bearing for it.
+If it does not work out, option 2 above still stands with a narrower offline query
+surface. It is not load-bearing for it.
 
 ### Passing data between node Lua and browser Lua
 
-Useful if browser Lua happens, and worth keeping even if `duckdb-wasm` does not. **The
+Useful if browser Lua happens, and worth keeping even if browser SQLite does not. **The
 mechanism already exists: it is the event log.** Events are JSON, JSON maps to Lua tables,
 and both sides already agree on the shape. Do not build a second serialisation path, a
 shared-state abstraction, or transparent RPC — those work in a demo and leak at every

@@ -1,6 +1,6 @@
 -- Project:  Privatium™  |  File: apps/animals/schema.sql
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
--- Created:  2026-08-28  |  Modified: 2026-08-28
+-- Created:  2026-08-28  |  Modified: 2026-09-03
 -- Summary:  A binary decision tree in one table. Leaves are animals, branches
 --           are yes/no questions.
 
@@ -23,5 +23,5 @@ CREATE TABLE cursor (
     started TIMESTAMPTZ NOT NULL
 );
 
-COMMENT ON TABLE node   IS 'The decision tree. Grows by one branch per wrong guess.';
-COMMENT ON TABLE cursor IS 'Single row, id = "cursor". Survives reloads and device switches.';
+-- node:   the decision tree; grows by one branch per wrong guess.
+-- cursor: single row, id = "cursor"; survives reloads and device switches.

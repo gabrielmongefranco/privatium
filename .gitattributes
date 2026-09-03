@@ -1,6 +1,6 @@
 # Project:  Privatium™  |  File: .gitattributes
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-09-01  |  Modified: 2026-09-01
+# Created:  2026-09-01  |  Modified: 2026-09-03
 # Summary:  Line endings. The event log is 0x0A-terminated by spec
 #           (spec/protocol.md §4.1). Nothing in this repository wants CRLF.
 #
@@ -12,5 +12,4 @@
 *.jsonl   -text
 *.key     -text
 *.pub     -text
-*.parquet binary
 *.svg     text eol=lf

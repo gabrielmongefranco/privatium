@@ -67,7 +67,7 @@ fn main() -> anyhow::Result<()> {
 
 ## MUST NOT
 
-- Open the DuckDB file directly. It is a cache in `cache/`, rebuilt at will, and the
+- Open the SQLite file directly. It is a cache in `cache/`, rebuilt at will, and the
   materializer owns it.
 - Write to another device's log file
 - Mutate or truncate any log file

@@ -102,10 +102,7 @@ That is only clean when identity is a ULID you control and writes are appends.
 ## Reading your own game history
 
 ```bash
-duckdb -c "
-  SELECT ts, op, d->>'text' AS text
-  FROM read_json_auto('data/animals/log/*.jsonl')
-  ORDER BY lam"
+jq -r '[.ts, .op, .d.text] | @tsv' data/animals/log/*.jsonl
 ```
 
 Every animal you ever taught it, in order, including the ones you reset away.

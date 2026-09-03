@@ -3,7 +3,7 @@
 // Created:  2026-08-31  |  Modified: 2026-09-03
 // Summary:  Entry point. Still M0's placeholder: no CLI is parsed — spec/cli.md is M11's and
 //           nothing here anticipates it. What it does do is reference the linked engines and
-//           the adapter, so the release binary CI measures really contains DuckDB, Lua and
+//           the adapter, so the release binary CI measures really contains SQLite, Lua and
 //           the HTTP stack (docs/plans/phase-1.md §8, R1). A development start exists behind
 //           an environment variable and is deliberately not part of any documented surface.
 
@@ -23,7 +23,7 @@ const DEV_SERVE: &str = "PRIVATIUM_DEV_SERVE";
 fn main() -> Result<()> {
     let engines = privatium_core::linked_engines()?;
 
-    println!("duckdb {}", engines.duckdb);
+    println!("sqlite {}", engines.sqlite);
     println!("{}", engines.lua);
 
     if let Some(dir) = std::env::var_os(DEV_SERVE) {

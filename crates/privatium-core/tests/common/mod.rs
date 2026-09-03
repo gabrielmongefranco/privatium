@@ -84,9 +84,8 @@ impl Fixture {
     /// Reopen the store the way a restart would, keeping the same data root, and build
     /// the tables by the full replay.
     ///
-    /// The store is dropped explicitly and first: DuckDB holds an exclusive lock on
-    /// `cache/<slug>.duckdb`, so opening the replacement before releasing it fails with
-    /// "being used by another process".
+    /// The store is dropped explicitly and first, so the replacement opens the same file
+    /// with no reader of ours still on it.
     pub fn reopen(self, ddl: &str) -> Self {
         Self::open_in(self.release(), ddl)
     }
@@ -138,11 +137,11 @@ impl Fixture {
     /// NULL; `<MISSING>` where there is no row at all.
     pub fn cell(&self, table: &str, id: &str, column: &str) -> String {
         let sql = format!(
-            "SELECT coalesce(CAST(\"{column}\" AS VARCHAR), '<NULL>') FROM \"{table}\" WHERE id = ?"
+            "SELECT coalesce(CAST(\"{column}\" AS TEXT), '<NULL>') FROM \"{table}\" WHERE id = ?"
         );
         self.store
             .conn()
-            .query_row(&sql, duckdb::params![id], |row| row.get::<_, String>(0))
+            .query_row(&sql, rusqlite::params![id], |row| row.get::<_, String>(0))
             .unwrap_or_else(|_| "<MISSING>".to_owned())
     }
 
@@ -157,30 +156,15 @@ impl Fixture {
 
     /// A deterministic fingerprint of the whole tombstone set, `(tbl, id)` pairs in order.
     pub fn tombstone_digest(&self) -> String {
-        self.store
-            .conn()
-            .query_row(
-                "SELECT coalesce(md5(string_agg(tbl || ':' || id, '|' ORDER BY tbl, id)), 'empty')
-                 FROM pv._tombstone",
-                [],
-                |row| row.get::<_, String>(0),
-            )
-            .unwrap()
+        digest_rows(
+            self.store.conn(),
+            "SELECT tbl, id FROM pv_tombstone ORDER BY tbl, id",
+        )
     }
 
     /// A deterministic fingerprint of a table's whole contents.
     pub fn digest(&self, table: &str) -> String {
-        self.store
-            .conn()
-            .query_row(
-                &format!(
-                    "SELECT coalesce(md5(string_agg(t::VARCHAR, '|' ORDER BY t.id)), 'empty')
-                     FROM \"{table}\" t"
-                ),
-                [],
-                |row| row.get::<_, String>(0),
-            )
-            .unwrap()
+        digest_via(self.store.conn(), table)
     }
 
     /// The table's digest and the tombstone digest together — what every `§2.5`
@@ -299,15 +283,48 @@ pub fn sha256_hex(text: &str) -> String {
         .collect()
 }
 
-/// One `sys.<table>` row as JSON, keyed by `id`, after the caller has refreshed `_sys`.
+/// One `sys_*` row as JSON, keyed by `id`, after the caller has refreshed `_sys`. A
+/// `BOOLEAN` column of the dictionary comes back as a JSON boolean, as `§2.1` spells it.
 pub fn sys_row(node: &Node, table: &str, id: &str) -> Option<Value> {
-    let sql = format!("SELECT to_json(t) FROM sys.{table} t WHERE id = ?");
-    let text: Option<String> = node
-        .store()
-        .conn()
-        .query_row(&sql, duckdb::params![id], |row| row.get(0))
-        .ok();
-    text.map(|t| serde_json::from_str(&t).unwrap())
+    let sql = format!("SELECT * FROM {table} WHERE id = ?");
+    let mut statement = node.store().conn().prepare(&sql).unwrap();
+    let names: Vec<String> = statement
+        .column_names()
+        .iter()
+        .map(|n| (*n).to_owned())
+        .collect();
+    let mut rows = statement.query(rusqlite::params![id]).unwrap();
+    let mut json = rows.next().unwrap().map(|row| row_json(row, &names))?;
+    let schema = store::Schema::parse(store::SYS_DDL).unwrap();
+    if let Some(declared) = schema.table(table) {
+        for column in &declared.columns {
+            if column.kind == store::Kind::Boolean
+                && let Some(Value::Number(n)) = json.get(&column.name)
+            {
+                let flag = Value::Bool(n.as_i64() != Some(0));
+                json[column.name.as_str()] = flag;
+            }
+        }
+    }
+    Some(json)
+}
+
+/// One row as a JSON object, typed by its storage class: integers and floats as numbers,
+/// text as strings, NULL as null.
+pub fn row_json(row: &rusqlite::Row<'_>, names: &[String]) -> Value {
+    use rusqlite::types::ValueRef;
+    let mut object = serde_json::Map::new();
+    for (index, name) in names.iter().enumerate() {
+        let value = match row.get_ref(index).unwrap() {
+            ValueRef::Null => Value::Null,
+            ValueRef::Integer(i) => Value::from(i),
+            ValueRef::Real(r) => Value::from(r),
+            ValueRef::Text(t) => Value::String(String::from_utf8_lossy(t).into_owned()),
+            ValueRef::Blob(b) => Value::String(format!("<{} bytes>", b.len())),
+        };
+        object.insert(name.clone(), value);
+    }
+    Value::Object(object)
 }
 
 /// The `sys_app` row for `slug`.
@@ -320,12 +337,17 @@ pub fn audit_rows(node: &Node, kind: &str) -> Vec<Value> {
     let mut statement = node
         .store()
         .conn()
-        .prepare("SELECT to_json(t) FROM sys.sys_audit t WHERE kind = ? ORDER BY \"at\", id")
+        .prepare("SELECT * FROM sys_audit WHERE kind = ? ORDER BY \"at\", id")
         .unwrap();
+    let names: Vec<String> = statement
+        .column_names()
+        .iter()
+        .map(|n| (*n).to_owned())
+        .collect();
     statement
-        .query_map(duckdb::params![kind], |row| row.get::<_, String>(0))
+        .query_map(rusqlite::params![kind], |row| Ok(row_json(row, &names)))
         .unwrap()
-        .map(|r| serde_json::from_str(&r.unwrap()).unwrap())
+        .map(Result::unwrap)
         .collect()
 }
 
@@ -376,16 +398,50 @@ pub fn tree(root: &Path) -> BTreeSet<String> {
     found
 }
 
-/// A deterministic fingerprint of a table's contents through a sandboxed connection.
-pub fn digest_via(conn: &duckdb::Connection, table: &str) -> String {
-    conn.query_row(
-        &format!(
-            "SELECT coalesce(md5(string_agg(t::VARCHAR, '|' ORDER BY t.id)), 'empty') FROM \"{table}\" t"
-        ),
-        [],
-        |row| row.get::<_, String>(0),
-    )
-    .unwrap()
+/// A deterministic fingerprint of a table's contents through any connection — every
+/// column of every row, typed, in `id` order; `empty` for no rows.
+pub fn digest_via(conn: &rusqlite::Connection, table: &str) -> String {
+    digest_rows(conn, &format!("SELECT * FROM \"{table}\" ORDER BY id"))
+}
+
+/// SHA-256 over every value a query returns, with its storage class, so a REAL where a
+/// TEXT was expected changes the digest even when it prints the same.
+pub fn digest_rows(conn: &rusqlite::Connection, sql: &str) -> String {
+    use rusqlite::types::ValueRef;
+    let mut statement = conn.prepare(sql).unwrap();
+    let columns = statement.column_count();
+    let mut rows = statement.query([]).unwrap();
+    let mut hasher = Sha256::new();
+    let mut any = false;
+    while let Some(row) = rows.next().unwrap() {
+        any = true;
+        for index in 0..columns {
+            match row.get_ref(index).unwrap() {
+                ValueRef::Null => hasher.update(b"N|"),
+                ValueRef::Integer(i) => hasher.update(format!("I{i}|").as_bytes()),
+                ValueRef::Real(r) => hasher.update(format!("R{r}|").as_bytes()),
+                ValueRef::Text(t) => {
+                    hasher.update(b"T");
+                    hasher.update(t);
+                    hasher.update(b"|");
+                }
+                ValueRef::Blob(b) => {
+                    hasher.update(b"B");
+                    hasher.update(b);
+                    hasher.update(b"|");
+                }
+            }
+        }
+        hasher.update(b"\n");
+    }
+    if !any {
+        return "empty".to_owned();
+    }
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 // ---------------------------------------------------------------------------------------

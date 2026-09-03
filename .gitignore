@@ -66,12 +66,10 @@ dist/
 # the repository root only in development. Unanchored, this also ignored
 # `.cargo/config.toml` and would ignore any fixture or app manifest of that name.
 /config.toml
-*.duckdb
-*.duckdb.wal
-
-# Snapshots and exports
-*.parquet
-!apps/*/sample/*.parquet
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
 
 # OS
 .DS_Store

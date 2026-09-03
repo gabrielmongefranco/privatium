@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/decisions/0002-rust-core.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-29
-Modified: 2026-08-31
+Modified: 2026-09-03
 Summary:  Decision record. Rust as the core language, and the discovery and
           transport stack that follows from it. Status: DECIDED.
 -->
@@ -17,7 +17,7 @@ and why the pieces fit together.
 
 ## The core is Rust
 
-One workspace, one crate: `privatium-core`. It holds the event log, replay, DuckDB
+One workspace, one crate: `privatium-core`. It holds the event log, replay, SQLite
 materialization, discovery, pairing, session cryptography, and sync.
 
 It is consumed four ways, and that is the point:
@@ -38,7 +38,8 @@ Supporting choices:
 - **Lua 5.4 via `mlua`** for Tier 1 — not LuaJIT, which cannot ship on iOS because the
   platform forbids JIT; not Luau, because a dialect fragments documentation and degrades
   assistance from language models.
-- **DuckDB**, for native `DECIMAL` and `DATE` and for querying JSONL in place.
+- **SQLite**, via `rusqlite`, with the framework supplying exact decimals and typing every
+  value it writes (ADR 0006 — this bullet said DuckDB until then, and ADR 0006 records why).
 - **Pure-Rust dependencies where they exist** — `rustls` over native-tls, `arti` rather than
   a Tor daemon — so cross-compilation stays a one-liner and packaging stays sandbox-safe.
 

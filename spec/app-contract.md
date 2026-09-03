@@ -92,7 +92,7 @@ node.start_sync()?;               // iroh + LAN peers
 // your own writes
 node.append("myapp", Event::put("score", &id, json!({"points": 42})))?;
 
-// your own reads — the materialized DuckDB connection, sandboxed
+// your own reads — the materialized SQLite connection, sandboxed
 let rows = node.query("myapp", "SELECT * FROM score ORDER BY points DESC")?;
 
 // your own server
@@ -397,7 +397,7 @@ express: a serial port, a scheduled job, a filesystem watcher, a non-HTTP protoc
 |---|---|
 | `Node::open` / `close` | Data root, identity, materialization |
 | `append` / `append_batch` | Event writes with automatic `seq`/`lam`/`ts` |
-| `query` / `subscribe` | Sandboxed DuckDB reads; event stream |
+| `query` / `subscribe` | Sandboxed SQLite reads; event stream |
 | `serve_discovery` / `pair` | mDNS, UDP, PAKE pairing, device registry |
 | `start_sync` / `sync_now` | iroh + LAN peers |
 | `auth_layer` | Tower middleware enforcing session and grants. `core::handle` applies it itself, so every adapter gets it without doing anything (`docs/decisions/0003`); an embedder wraps their own router with it, as §2.3 shows |
@@ -407,37 +407,33 @@ express: a serial port, a scheduled job, a filesystem watcher, a non-HTTP protoc
 
 ## 7. The SQL sandbox (Tiers 1 and 2)
 
-The connection app SQL runs on MUST be configured with at minimum:
+App SQL runs on a connection of its own to `cache/<slug>.sqlite`, and that connection MUST
+be, at minimum:
 
-```sql
-SET enable_external_access = false;
-SET autoinstall_known_extensions = false;
-SET autoload_known_extensions = false;
-SET lock_configuration = true;        -- must be last
-```
+1. **Opened read-only** at the file (`SQLITE_OPEN_READONLY`).
+2. **`PRAGMA query_only = 1`**, so no statement that writes can run.
+3. **Behind an authorizer** that refuses every write, every `PRAGMA`, `ATTACH` and
+   `DETACH`, `VACUUM`, and `load_extension()`, and allows `SELECT`, reads, and the
+   framework's own functions. Extension loading is also disabled at the API, so the
+   refusal by name is a second fence, not the only one.
 
-This is not optional hardening — DuckDB with external access enabled can read
-`identity/node.key`.
+This is not optional hardening — a connection that can `ATTACH` can read
+`identity/node.key` into a table, and one that can `VACUUM INTO` can write it anywhere.
 
-**The boundary is in time, not in two connection handles.** These four settings are
-`GLOBAL_ONLY` in DuckDB: they belong to the database instance, not to a connection. A
-`.duckdb` file is also locked exclusively, so a second instance cannot open one app's cache
-alongside the first. There is therefore no arrangement in which a privileged connection and
-a sandboxed connection coexist over the same cache, and an implementation that appears to
-have both has really sandboxed neither.
+**The boundary is the connection.** The framework's own connection — the one that reads the
+log, materializes, restores and writes snapshots — is a separate handle on the same file and
+is never handed to app code. SQLite's locking lets the two coexist: the framework writes
+while an app reads, and a rebuild is an ordinary transaction that a reader sees whole or not
+at all. There is no privileged window to open and close, and an implementation MUST NOT
+give app code the framework's handle under any setting.
 
-What an implementation MUST do instead:
+Applying a newly appended event is `DELETE` plus `INSERT` over values the framework already
+holds, on the framework's connection.
 
-1. Open the cache **privileged** — external access on, autoload and autoinstall off, since
-   materializing reads the log files through `read_json()`.
-2. Materialize.
-3. Apply the four settings above, `lock_configuration` last. From this point **no**
-   connection on the instance can perform file I/O, the framework's own included.
-4. Serve app SQL from that instance.
-
-Rematerializing, and writing a snapshot (`spec/protocol.md §5`), need step 1 again and
-therefore a fresh instance. Applying a newly appended event does not: it is `DELETE` plus
-`INSERT` over values the framework already holds, and touches no file.
+`DECIMAL` columns are text under the `decimal` collation, and the exact arithmetic over
+them is the framework's `decimal_add`, `decimal_sub`, `decimal_mul`, `decimal_cmp` and
+`decimal_sum` (`spec/data-dictionary.md §2.1`); an app's `SUM()` over such a column is a
+float and is what `privatium lint` exists to catch.
 
 Tier 3 runs in your own process and is not sandboxed. That is the trade: full power, full
 responsibility.

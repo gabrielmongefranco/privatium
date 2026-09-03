@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/security.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-31
+Modified: 2026-09-03
 Summary:  Threat model, protections, and honest statements of what is not protected.
 -->
 
@@ -219,13 +219,15 @@ and get set to `0000`.
 ## 7. App folders are trusted-ish code
 
 Installing an app folder means running its SQL on your node. The sandbox
-(`spec/app-contract.md §7`) blocks the dangerous part — DuckDB with external access
-enabled can read `identity/node.key` — but within its own schema an app sees everything.
+(`spec/app-contract.md §7`) blocks the dangerous part — a connection that can `ATTACH`
+can read `identity/node.key` into a table — but within its own tables an app sees
+everything.
 
 Therefore:
 
-- `enable_external_access=false`, extension autoload disabled, `lock_configuration=true`.
-  These are hard requirements, not defaults to be overridden.
+- App SQL runs on a read-only, `query_only` connection behind an authorizer that refuses
+  every write, every `PRAGMA`, `ATTACH` and extension loading. These are hard requirements,
+  not defaults to be overridden, and the framework's own connection is never handed out.
 - Apps may read `sys.v_*` views but MUST NOT write to `sys` tables.
 - The install flow warns the owner in the same terms you would warn them about running a
   script from a stranger.

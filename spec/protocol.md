@@ -167,7 +167,7 @@ platform's file-chooser portal.
 ├── local/                       node-local state, NEVER synced, NOT required for restore
 │   └── state.jsonl
 └── cache/                       fully disposable
-    ├── <slug>.duckdb
+    ├── <slug>.sqlite
     └── ...
 ```
 
@@ -315,8 +315,8 @@ Snapshots are a read-path optimization. They carry no authority.
 ```
 data/<slug>/snap/<snapshot-id>/
 ├── MANIFEST.json
-├── schema.sql          CREATE TABLE statements with exact types
-├── <table>.parquet
+├── schema.sql          CREATE TABLE statements with the storage types
+├── <table>.sqlite      one SQLite database holding that table
 └── <table>.csv
 ```
 
@@ -335,17 +335,17 @@ never `W5`.
   "created": "2026-08-30T03:00:00.000Z",
   "hi_lam": 8830,
   "hi_seq": {"k7m2q9xf": 1041, "b3nn8t2q": 87},
-  "engine": "duckdb 1.5.5",
+  "engine": "sqlite 3.53.2",
   "tables": [
     {"name":"profile","rows":1,
-     "parquet_sha256":"...","csv_sha256":"..."}
+     "sqlite_sha256":"...","csv_sha256":"..."}
   ]
 }
 ```
 
-`engine` is the string `duckdb ` followed by the engine's own reported version with any
-leading `v` removed. The value above is illustrative: it names whichever engine wrote the
-Parquet files, and a reader MUST NOT expect a particular version.
+`engine` is the string `sqlite ` followed by the engine's own reported version. The value
+above is illustrative: it names whichever engine wrote the `.sqlite` files, and a reader
+MUST NOT expect a particular version.
 
 ### 5.3 Read precedence
 
@@ -353,12 +353,13 @@ An implementation MUST attempt, in order, and MUST record which tier succeeded:
 
 | Tier | Source | Condition to proceed to next tier |
 |---|---|---|
-| 1 | Parquet + log tail | Parquet unreadable or SHA mismatch |
+| 1 | `<table>.sqlite` + log tail | file unreadable or SHA mismatch |
 | 2 | CSV + `schema.sql` + log tail | CSV unreadable or SHA mismatch |
 | 3 | Full log replay from `lam` 0 | (terminal) |
 
 Tier 2 MUST create tables from `schema.sql` before loading CSV. Implementations MUST NOT
-use CSV type inference.
+use CSV type inference: every value is typed from the declared column
+(`spec/data-dictionary.md §2.1`).
 
 **The log tail.** For a snapshot with high-water marks `hi_lam` and `hi_seq`, the log tail is
 every event that survives §4.4 and has `lam > hi_lam`. A snapshot **applies** to a log only

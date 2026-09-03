@@ -42,7 +42,7 @@ snapshots, and a plain-text backup. Read your own drawing back with no Privatium
 
 ```bash
 jq -r '.d.color' data/sketch/log/*.jsonl | sort | uniq -c
-duckdb -c "SELECT count(*) FROM read_json_auto('data/sketch/log/*.jsonl') WHERE op='put'"
+grep -c '"op":"put"' data/sketch/log/*.jsonl
 ```
 
 ## Use a real framework if you want

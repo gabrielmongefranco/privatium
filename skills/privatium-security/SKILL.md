@@ -35,9 +35,10 @@ Applies to every tier. Load alongside the tier skill.
 `package.loadlib` are removed from the sandbox. Do not attempt to reach them; do not
 suggest a workaround. `require` is confined to the app's own `lib/`.
 
-The DuckDB connection your SQL runs on has `enable_external_access = false`, extension
-autoload off, and `lock_configuration = true`. This is not adjustable hardening —
-unsandboxed, DuckDB can read `identity/node.key`.
+The SQLite connection your SQL runs on is read-only, `query_only`, and behind an
+authorizer that refuses every write, every `PRAGMA`, `ATTACH` and extension loading. This
+is not adjustable hardening — a connection that could `ATTACH` could read
+`identity/node.key`.
 
 Those settings belong to the whole database instance, not to one connection, so the
 framework applies them **after** it has materialized your tables from the log and never

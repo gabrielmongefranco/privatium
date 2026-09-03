@@ -1,10 +1,10 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/snapshot.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-02  |  Modified: 2026-09-02
+// Created:  2026-09-02  |  Modified: 2026-09-03
 // Summary:  spec/protocol.md §5.1, §5.2 and §5.4 — the snapshot id, MANIFEST.json, the
-//           writer that produces one snapshot directory from the log, checksum
-//           verification (spec/cli.md §7), retention, and the weekly policy of
-//           spec/data-dictionary.md §3.6.
+//           writer that produces one snapshot directory from the log (a SQLite file and a
+//           CSV per table), checksum verification (spec/cli.md §7), retention, and the
+//           weekly policy of spec/data-dictionary.md §3.6.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -15,18 +15,20 @@ use std::str::FromStr;
 use jiff::Timestamp;
 use jiff::civil::{Date, ISOWeekDate, Weekday};
 use jiff::tz::TimeZone;
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::identity::NodeId;
-use crate::store::materialize::{self, SNAPSHOT_STAGE_TABLE, Source};
-use crate::store::{Schema, Store, StoreError};
+use crate::store::events::{self, Op, winners};
+use crate::store::schema::{ID_COLUMN, Kind};
+use crate::store::{Schema, Store, StoreError, csv, materialize};
 
 /// `MANIFEST.json` (`§5.2`).
 pub const MANIFEST_FILE: &str = "MANIFEST.json";
 
-/// `schema.sql` (`§5.1`) — `CREATE TABLE` statements with exact types.
+/// `schema.sql` (`§5.1`) — `CREATE TABLE` statements with the storage types.
 pub const SCHEMA_FILE: &str = "schema.sql";
 
 /// The one manifest version `pv/1` writes and reads.
@@ -37,7 +39,7 @@ pub const MANIFEST_VERSION: u32 = 1;
 /// than a snapshot whose checksums fail.
 const PART_SUFFIX: &str = ".part";
 
-/// Anything that can go wrong with a snapshot directory short of DuckDB refusing.
+/// Anything that can go wrong with a snapshot directory short of the engine refusing.
 #[derive(Debug, Error)]
 pub enum SnapshotError {
     /// A file or directory could not be read, written, or removed.
@@ -222,7 +224,7 @@ pub struct Manifest {
     pub hi_lam: u64,
     /// The highest `seq` materialized per device.
     pub hi_seq: BTreeMap<String, u64>,
-    /// `duckdb <version>` — the engine that wrote the Parquet files, as it reports itself.
+    /// `sqlite <version>` — the engine that wrote the SQLite files, as it reports itself.
     pub engine: String,
     /// One entry per declared table.
     pub tables: Vec<ManifestTable>,
@@ -235,8 +237,8 @@ pub struct ManifestTable {
     pub name: String,
     /// Row count.
     pub rows: u64,
-    /// SHA-256 of `<name>.parquet`, lowercase hex.
-    pub parquet_sha256: String,
+    /// SHA-256 of `<name>.sqlite`, lowercase hex.
+    pub sqlite_sha256: String,
     /// SHA-256 of `<name>.csv`, lowercase hex.
     pub csv_sha256: String,
 }
@@ -326,7 +328,8 @@ impl Snapshot {
 }
 
 /// `schema.sql` as a snapshot carries it (`§5.1`): one `CREATE TABLE` per declared table,
-/// `id` first, exact types from the catalog, no constraints.
+/// `id` first, the storage type of every column with its declared type beside it, and no
+/// constraint but the key.
 ///
 /// Deterministic — tables in name order, no date — because a restore compares this text
 /// against the file to decide whether the snapshot still describes the app's schema
@@ -334,15 +337,13 @@ impl Snapshot {
 #[must_use]
 pub fn render_ddl(schema: &Schema) -> String {
     let mut out = String::from(
-        "-- Privatium snapshot schema (spec/protocol.md §5.1). Exact column types from the\n\
-         -- engine's catalog; no constraints, so a table loaded from this equals a replay.\n",
+        "-- Privatium snapshot schema (spec/protocol.md §5.1). The storage type of each column\n\
+         -- with the declared type beside it; no constraint but the key, so a table loaded from\n\
+         -- this equals a replay. DECIMAL columns are text under the `decimal` collation.\n",
     );
     for table in &schema.tables {
         out.push('\n');
-        out.push_str(&materialize::declare_table_sql(
-            &materialize::quote_ident(&table.name),
-            table,
-        ));
+        out.push_str(&materialize::create_table_sql(table));
         out.push('\n');
     }
     out
@@ -364,9 +365,9 @@ fn hex(bytes: &[u8]) -> String {
     out
 }
 
-/// The name of one table's Parquet file.
-pub(crate) fn parquet_file(table: &str) -> String {
-    format!("{table}.parquet")
+/// The name of one table's SQLite file.
+pub(crate) fn sqlite_file(table: &str) -> String {
+    format!("{table}.sqlite")
 }
 
 /// The name of one table's CSV file.
@@ -388,8 +389,8 @@ pub struct Verification {
 pub struct TableCheck {
     /// The table.
     pub name: String,
-    /// Whether `<name>.parquet` hashes to `parquet_sha256`. A missing file is a mismatch.
-    pub parquet_ok: bool,
+    /// Whether `<name>.sqlite` hashes to `sqlite_sha256`. A missing file is a mismatch.
+    pub sqlite_ok: bool,
     /// Whether `<name>.csv` hashes to `csv_sha256`.
     pub csv_ok: bool,
 }
@@ -398,7 +399,7 @@ impl Verification {
     /// Whether every file matched.
     #[must_use]
     pub fn ok(&self) -> bool {
-        self.tables.iter().all(|t| t.parquet_ok && t.csv_ok)
+        self.tables.iter().all(|t| t.sqlite_ok && t.csv_ok)
     }
 }
 
@@ -413,7 +414,7 @@ pub fn verify(dir: &Path) -> Result<Verification, SnapshotError> {
         };
         tables.push(TableCheck {
             name: table.name.clone(),
-            parquet_ok: hashes_to(&parquet_file(&table.name), &table.parquet_sha256),
+            sqlite_ok: hashes_to(&sqlite_file(&table.name), &table.sqlite_sha256),
             csv_ok: hashes_to(&csv_file(&table.name), &table.csv_sha256),
         });
     }
@@ -562,103 +563,59 @@ pub fn due(
 impl Store {
     /// Write one snapshot of this app from its log, at `now`, by `dev`.
     ///
-    /// **From the log, not from the cache tables.** The log is staged once and `hi_lam`,
-    /// `hi_seq` and every table's `§4.5` winners are computed from that one copy, so the
-    /// manifest describes exactly the rows in the files. Copying the cache tables and
+    /// **From the log, not from the cache tables.** The log is read once and `hi_lam`,
+    /// `hi_seq` and every table's `§4.5` winners are computed from that one reading, so
+    /// the manifest describes exactly the rows in the files. Copying the cache tables and
     /// then reading the log for the marks would race a hand `echo` between the two.
-    ///
-    /// Needs the privileged window (`spec/app-contract.md §7`): `COPY … TO` is file I/O.
-    /// A sealed store refuses; drop it and open a fresh one.
     ///
     /// An existing directory with the same id is replaced. The id names a log state, and
     /// a second snapshot of the same state — after a `schema.sql` change, say — is the one
     /// that should survive.
     pub fn snapshot(&self, dev: &NodeId, now: Timestamp) -> Result<Snapshot, StoreError> {
-        if self.is_sealed() {
-            return Err(StoreError::Sealed {
-                slug: self.slug().to_owned(),
-            });
-        }
         let cutoff = crate::store::cutoff_from(now);
-        let source = self.log_source()?;
-        self.conn()
-            .execute_batch(&materialize::stage_sql(self.slug(), &source, &cutoff))
-            .map_err(StoreError::Duck)?;
-
-        let result = self.write_snapshot(dev, now, &cutoff);
-        // The stage is dropped whether or not the write succeeded; it is memory, not state.
-        let unstaged = self
-            .conn()
-            .execute_batch(&materialize::unstage_sql())
-            .map_err(StoreError::Duck);
-        let snapshot = result?;
-        unstaged?;
-        Ok(snapshot)
-    }
-
-    fn write_snapshot(
-        &self,
-        dev: &NodeId,
-        now: Timestamp,
-        cutoff: &str,
-    ) -> Result<Snapshot, StoreError> {
-        let stage = Source::stage();
-        let conn = self.conn();
-
-        let hi_lam: i64 = conn
-            .query_row(&materialize::hi_lam_sql(&stage), [], |row| row.get(0))
-            .map_err(StoreError::Duck)?;
-        let hi_lam = u64::try_from(hi_lam).unwrap_or_default();
-        let mut hi_seq = BTreeMap::new();
-        {
-            let mut statement = conn
-                .prepare(&materialize::hi_seq_sql(&stage))
-                .map_err(StoreError::Duck)?;
-            let rows = statement
-                .query_map([], |row| {
-                    Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-                })
-                .map_err(StoreError::Duck)?;
-            for row in rows {
-                let (device, seq) = row.map_err(StoreError::Duck)?;
-                hi_seq.insert(device, u64::try_from(seq).unwrap_or_default());
-            }
-        }
+        let events = self.read_log(&cutoff)?;
+        let hi_lam = events::hi_lam(&events);
+        let hi_seq = events::hi_seq(&events);
+        let winners = winners(&events);
 
         let id = SnapshotId::new(now, dev, hi_lam);
         let snap_dir = self.snap_dir().to_path_buf();
         let part = snap_dir.join(format!("{id}{PART_SUFFIX}"));
         remove_if_present(&part)?;
         fs::create_dir_all(&part).map_err(SnapshotError::io(&part))?;
-        let part_sql = sql_path(&part);
 
         let mut tables = Vec::with_capacity(self.schema().tables.len());
         for table in &self.schema().tables {
-            let select = materialize::replay_select(self.slug(), table, &stage, cutoff);
-            let parquet = parquet_file(&table.name);
-            let csv = csv_file(&table.name);
-            conn.execute_batch(&format!(
-                "CREATE OR REPLACE TEMP TABLE {SNAPSHOT_STAGE_TABLE} AS {select};
-                 COPY (SELECT * FROM {SNAPSHOT_STAGE_TABLE} ORDER BY id)
-                   TO '{part_sql}/{parquet}' (FORMAT PARQUET);
-                 COPY (SELECT * FROM {SNAPSHOT_STAGE_TABLE} ORDER BY id)
-                   TO '{part_sql}/{csv}' (FORMAT CSV, HEADER true);",
-                parquet = materialize::escape_literal(&parquet),
-                csv = materialize::escape_literal(&csv),
-            ))
-            .map_err(StoreError::Duck)?;
-            let rows: i64 = conn
-                .query_row(
-                    &format!("SELECT count(*) FROM {SNAPSHOT_STAGE_TABLE}"),
-                    [],
-                    |row| row.get(0),
-                )
-                .map_err(StoreError::Duck)?;
+            let rows: Vec<Vec<rusqlite::types::Value>> = winners
+                .iter()
+                .filter(|((tbl, _), event)| *tbl == table.name && event.op == Op::Put)
+                .map(|((_, id), event)| materialize::project(table, id, event.d.as_deref()))
+                .collect();
+
+            let sqlite = part.join(sqlite_file(&table.name));
+            write_sqlite(&sqlite, table, &rows)?;
+            let csv_path = part.join(csv_file(&table.name));
+            let mut header = vec![ID_COLUMN];
+            header.extend(table.columns.iter().map(|c| c.name.as_str()));
+            csv::write(
+                &csv_path,
+                &header,
+                rows.iter().map(|row| {
+                    row.iter()
+                        .zip(
+                            std::iter::once(Kind::Text).chain(table.columns.iter().map(|c| c.kind)),
+                        )
+                        .map(|(value, kind)| csv_text(value, kind))
+                        .collect()
+                }),
+            )
+            .map_err(SnapshotError::io(&csv_path))?;
+
             tables.push(ManifestTable {
                 name: table.name.clone(),
-                rows: u64::try_from(rows).unwrap_or_default(),
-                parquet_sha256: sha256_file(&part.join(&parquet))?,
-                csv_sha256: sha256_file(&part.join(&csv))?,
+                rows: u64::try_from(rows.len()).unwrap_or_default(),
+                sqlite_sha256: sha256_file(&sqlite)?,
+                csv_sha256: sha256_file(&csv_path)?,
             });
         }
 
@@ -673,7 +630,7 @@ impl Store {
             created: crate::log::format_ts(now),
             hi_lam,
             hi_seq,
-            engine: engine_string(conn)?,
+            engine: engine_string(self.conn())?,
             tables,
         };
         // Last, so a directory that has a manifest has everything the manifest names.
@@ -700,20 +657,54 @@ impl Store {
     }
 }
 
-/// `duckdb <version>` (`§5.2`), from the engine itself with its `v` prefix dropped.
-fn engine_string(conn: &duckdb::Connection) -> Result<String, StoreError> {
-    let version: String = conn
-        .query_row("SELECT version()", [], |row| row.get(0))
-        .map_err(StoreError::Duck)?;
-    Ok(format!(
-        "duckdb {}",
-        version.strip_prefix('v').unwrap_or(&version)
-    ))
+/// One table's SQLite file: the same `CREATE TABLE` the cache uses, its rows in `id`
+/// order, in a database of its own that any SQLite tool opens.
+fn write_sqlite(
+    path: &Path,
+    table: &crate::store::schema::Table,
+    rows: &[Vec<rusqlite::types::Value>],
+) -> Result<(), StoreError> {
+    let conn = Connection::open(path).map_err(StoreError::Sql)?;
+    crate::store::decimal::register(&conn).map_err(StoreError::Sql)?;
+    conn.execute_batch(&materialize::create_table_sql(table))
+        .map_err(StoreError::Sql)?;
+    let tx = conn.unchecked_transaction().map_err(StoreError::Sql)?;
+    {
+        let mut insert = tx
+            .prepare(&materialize::insert_sql(table))
+            .map_err(StoreError::Sql)?;
+        for row in rows {
+            insert
+                .execute(rusqlite::params_from_iter(row.iter()))
+                .map_err(StoreError::Sql)?;
+        }
+    }
+    tx.commit().map_err(StoreError::Sql)?;
+    // Written once and never again: compact it, so the file is the rows and nothing else.
+    conn.execute_batch("VACUUM").map_err(StoreError::Sql)?;
+    Ok(())
 }
 
-/// A path as a DuckDB string literal body: forward slashes on every platform, quotes doubled.
-pub(crate) fn sql_path(path: &Path) -> String {
-    materialize::escape_literal(&path.display().to_string().replace('\\', "/"))
+/// A typed value as its CSV text: booleans as `true`/`false` for a person's benefit,
+/// integers and decimals as their digits, NULL as none.
+fn csv_text(value: &rusqlite::types::Value, kind: Kind) -> Option<String> {
+    use rusqlite::types::Value;
+    match (value, kind) {
+        (Value::Null, _) => None,
+        (Value::Integer(i), Kind::Boolean) => Some((*i != 0).to_string()),
+        (Value::Integer(i), _) => Some(i.to_string()),
+        (Value::Text(t), _) => Some(t.clone()),
+        (Value::Real(r), _) => Some(r.to_string()),
+        (Value::Blob(_), _) => None,
+    }
+}
+
+/// `sqlite <version>` (`§5.2`), from the engine itself.
+fn engine_string(conn: &Connection) -> Result<String, StoreError> {
+    let version: String = conn
+        .query_row("SELECT sqlite_version()", [], |row| row.get(0))
+        .map_err(StoreError::Sql)?;
+    Ok(format!("sqlite {version}"))
 }
 
 fn remove_if_present(dir: &Path) -> Result<(), SnapshotError> {
@@ -823,18 +814,18 @@ mod tests {
             created: "2026-08-30T03:00:00.000Z".into(),
             hi_lam: 8830,
             hi_seq: BTreeMap::from([("k7m2q9xf".to_owned(), 1041)]),
-            engine: "duckdb 1.5.5".into(),
+            engine: "sqlite 3.53.2".into(),
             tables: vec![ManifestTable {
                 name: "profile".into(),
                 rows: 1,
-                parquet_sha256: "a".into(),
+                sqlite_sha256: "a".into(),
                 csv_sha256: "b".into(),
             }],
         };
         let json = serde_json::to_string(&manifest).unwrap();
         assert_eq!(
             json,
-            r#"{"v":1,"snapshot_id":"2026-W35-k7m2q9xf-8830","app":"hello","created":"2026-08-30T03:00:00.000Z","hi_lam":8830,"hi_seq":{"k7m2q9xf":1041},"engine":"duckdb 1.5.5","tables":[{"name":"profile","rows":1,"parquet_sha256":"a","csv_sha256":"b"}]}"#
+            r#"{"v":1,"snapshot_id":"2026-W35-k7m2q9xf-8830","app":"hello","created":"2026-08-30T03:00:00.000Z","hi_lam":8830,"hi_seq":{"k7m2q9xf":1041},"engine":"sqlite 3.53.2","tables":[{"name":"profile","rows":1,"sqlite_sha256":"a","csv_sha256":"b"}]}"#
         );
         assert_eq!(manifest.row_counts_json(), r#"{"profile":1}"#);
     }

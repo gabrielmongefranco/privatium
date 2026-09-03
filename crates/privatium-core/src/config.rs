@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/config.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-01
+// Created:  2026-09-01  |  Modified: 2026-09-03
 // Summary:  Where the node's data lives (spec/protocol.md §3) and what config.toml may
 //           say about it. Both halves are here because --data-dir picks the root and
 //           --config defaults to a file inside it, so neither resolves without the other.
@@ -138,10 +138,10 @@ impl Paths {
         self.root.join("cache")
     }
 
-    /// `cache/<slug>.duckdb`.
+    /// `cache/<slug>.sqlite`.
     #[must_use]
     pub fn app_cache_db(&self, slug: &str) -> PathBuf {
-        self.cache_dir().join(format!("{slug}.duckdb"))
+        self.cache_dir().join(format!("{slug}.sqlite"))
     }
 
     /// Create the directory tree of `spec/protocol.md §3`, and nothing else.
@@ -372,7 +372,7 @@ mod tests {
         assert!(paths.node_key().ends_with("identity/node.key"));
         assert!(paths.app_snap_dir("hello").ends_with("data/hello/snap"));
         assert!(paths.local_state().ends_with("local/state.jsonl"));
-        assert!(paths.app_cache_db("hello").ends_with("cache/hello.duckdb"));
+        assert!(paths.app_cache_db("hello").ends_with("cache/hello.sqlite"));
         assert!(
             paths
                 .app_log("hello", &id)

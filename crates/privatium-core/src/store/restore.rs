@@ -1,25 +1,26 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/restore.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-02  |  Modified: 2026-09-02
-// Summary:  spec/protocol.md §5.3 — the three-tier read. Parquet plus the log tail, then
-//           CSV plus schema.sql plus the tail, then the full replay; which tier succeeded,
-//           and why the ones before it did not.
+// Created:  2026-09-02  |  Modified: 2026-09-03
+// Summary:  spec/protocol.md §5.3 — the three-tier read. The snapshot's SQLite files plus
+//           the log tail, then CSV plus schema.sql plus the tail, then the full replay;
+//           which tier succeeded, and why the ones before it did not.
 
 use std::fmt;
 use std::path::PathBuf;
 
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
-use crate::store::materialize::{self, Source};
+use crate::store::events::{self, Event};
 use crate::store::snapshot::{self, Manifest, SnapshotId};
-use crate::store::{Store, StoreError};
+use crate::store::{Store, StoreError, csv, materialize};
 
 /// One of `§5.3`'s three tiers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(into = "u8", try_from = "u8")]
 pub enum Tier {
-    /// Parquet + log tail.
-    Parquet = 1,
+    /// The snapshot's SQLite files + log tail.
+    Sqlite = 1,
     /// CSV + `schema.sql` + log tail.
     Csv = 2,
     /// Full log replay from `lam` 0.
@@ -37,7 +38,7 @@ impl Tier {
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
-            Self::Parquet => "parquet",
+            Self::Sqlite => "sqlite",
             Self::Csv => "csv",
             Self::Replay => "replay",
         }
@@ -61,7 +62,7 @@ impl TryFrom<u8> for Tier {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            1 => Ok(Self::Parquet),
+            1 => Ok(Self::Sqlite),
             2 => Ok(Self::Csv),
             3 => Ok(Self::Replay),
             other => Err(format!(
@@ -116,7 +117,7 @@ pub enum SkipReason {
     Unreadable {
         /// The table.
         table: String,
-        /// What the engine said, first line.
+        /// What went wrong, first line.
         problem: String,
     },
 }
@@ -205,32 +206,24 @@ struct Attempt {
     loaded: Option<Tier>,
     snapshot: Option<String>,
     skipped: Vec<Skipped>,
-    staged: bool,
 }
 
 impl Store {
-    /// Rebuild every table by `spec/protocol.md §5.3`: Parquet + log tail, then CSV +
-    /// `schema.sql` + log tail, then the full replay.
+    /// Rebuild every table by `spec/protocol.md §5.3`: the snapshot's SQLite files + log
+    /// tail, then CSV + `schema.sql` + log tail, then the full replay.
     ///
     /// **Unconditional** (`docs/plans/phase-1.md §2.5`): nothing in the existing cache is
     /// trusted or kept. The tiers decide where the rows come from, not whether the rebuild
     /// is partial. The tombstone set is rebuilt from the whole log on every tier, because
-    /// a snapshot never carries it (`materialize::tombstone_sql`).
+    /// a snapshot never carries it (`materialize::rebuild_tombstones`).
     ///
-    /// Needs the privileged window, like [`materialize`](Self::materialize).
+    /// The log is read once, here, and every tier and check works from that reading.
     pub fn restore(&mut self, cutoff: &str) -> Result<Restored, StoreError> {
-        if self.is_sealed() {
-            return Err(StoreError::Sealed {
-                slug: self.slug().to_owned(),
-            });
-        }
-
-        let attempt = self.attempt(cutoff, true)?;
+        let events = self.read_log(cutoff)?;
+        let attempt = self.attempt(&events, true)?;
         let restored = match attempt.loaded {
             Some(tier) => {
-                let finished = self.finish_from_stage(cutoff);
-                self.unstage()?;
-                finished?;
+                self.finish(&events)?;
                 Restored {
                     tier,
                     snapshot: attempt.snapshot,
@@ -239,11 +232,8 @@ impl Store {
                 }
             }
             None => {
-                if attempt.staged {
-                    self.unstage()?;
-                }
                 let from_scratch = self.is_fresh() && self.log_bytes()? > 0;
-                self.materialize(cutoff)?;
+                self.replay_events(&events)?;
                 Restored {
                     tier: Tier::Replay,
                     snapshot: attempt.snapshot,
@@ -252,7 +242,6 @@ impl Store {
                 }
             }
         };
-
         self.record_restore(&restored);
         Ok(restored)
     }
@@ -263,15 +252,8 @@ impl Store {
     /// A prediction: the checksums are recomputed and the applicability checks run, but a
     /// file that hashes correctly and still fails to load is only discovered by loading.
     pub fn restore_dry_run(&self, cutoff: &str) -> Result<Restored, StoreError> {
-        if self.is_sealed() {
-            return Err(StoreError::Sealed {
-                slug: self.slug().to_owned(),
-            });
-        }
-        let attempt = self.attempt(cutoff, false)?;
-        if attempt.staged {
-            self.unstage()?;
-        }
+        let events = self.read_log(cutoff)?;
+        let attempt = self.attempt(&events, false)?;
         Ok(Restored {
             tier: attempt.loaded.unwrap_or(Tier::Replay),
             snapshot: attempt.snapshot,
@@ -282,11 +264,11 @@ impl Store {
 
     /// Tiers 1 and 2. With `load`, a tier that passes its checks is loaded into the tables;
     /// without, the checks are the whole of it.
-    fn attempt(&self, cutoff: &str, load: bool) -> Result<Attempt, StoreError> {
+    fn attempt(&self, events: &[Event], load: bool) -> Result<Attempt, StoreError> {
         let mut skipped = Vec::new();
         let mut skip_both = |reason: SkipReason| {
             skipped.push(Skipped {
-                tier: Tier::Parquet,
+                tier: Tier::Sqlite,
                 reason: reason.clone(),
             });
             skipped.push(Skipped {
@@ -301,7 +283,6 @@ impl Store {
                 loaded: None,
                 snapshot: None,
                 skipped,
-                staged: false,
             });
         };
         let snapshot_name = id.to_string();
@@ -315,7 +296,6 @@ impl Store {
                     loaded: None,
                     snapshot: Some(snapshot_name),
                     skipped,
-                    staged: false,
                 });
             }
         };
@@ -330,30 +310,22 @@ impl Store {
                 loaded: None,
                 snapshot: Some(snapshot_name),
                 skipped,
-                staged: false,
             });
         }
 
-        // One scan of the log. Everything from here reads the stage.
-        let source = self.log_source()?;
-        self.conn()
-            .execute_batch(&materialize::stage_sql(self.slug(), &source, cutoff))
-            .map_err(StoreError::Duck)?;
-        let stage = Source::stage();
-
-        // (a) and (b) of §5.3's applicability, in that order.
-        let non_causal: i64 = self
-            .conn()
-            .query_row(
-                &materialize::non_causal_sql(
-                    &stage,
-                    candidate.manifest.hi_lam,
-                    &candidate.manifest.hi_seq,
-                ),
-                [],
-                |row| row.get(0),
-            )
-            .map_err(StoreError::Duck)?;
+        // (a) `§5.3`'s first applicability condition: the events the snapshot did not see
+        // are exactly the events with `lam > hi_lam`. A device the manifest never saw has
+        // `hi_seq` 0, so all of its rows are "unseen" and every one of them had better be
+        // above `hi_lam`. Any row counted here is the `§4.1` cross-device case, and no tier
+        // but the replay can place it, because a snapshot row carries no `(lam, ts, dev)`.
+        let manifest = &candidate.manifest;
+        let non_causal = events
+            .iter()
+            .filter(|e| {
+                let unseen = e.seq > manifest.hi_seq.get(&e.dev).copied().unwrap_or(0);
+                unseen != (e.lam > manifest.hi_lam)
+            })
+            .count();
         if non_causal > 0 {
             skip_both(SkipReason::TailNotCausal {
                 events: u64::try_from(non_causal).unwrap_or_default(),
@@ -362,46 +334,35 @@ impl Store {
                 loaded: None,
                 snapshot: Some(snapshot_name),
                 skipped,
-                staged: true,
             });
         }
-        let behind = self.conn().query_row(
-            &materialize::behind_sql(&stage, &candidate.manifest.hi_seq),
-            [],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, i64>(1)?,
-                    row.get::<_, i64>(2)?,
-                ))
-            },
-        );
-        match behind {
-            Ok((dev, have, claimed)) => {
+
+        // (b) The log holds everything `hi_seq` claims. A snapshot carries no authority
+        // (`§5`), so it never resurrects an event the log has lost.
+        let heads = events::hi_seq(events);
+        for (dev, claimed) in &manifest.hi_seq {
+            let have = heads.get(dev).copied().unwrap_or(0);
+            if have < *claimed {
                 skip_both(SkipReason::LogBehindSnapshot {
-                    dev,
-                    have: u64::try_from(have).unwrap_or_default(),
-                    claimed: u64::try_from(claimed).unwrap_or_default(),
+                    dev: dev.clone(),
+                    have,
+                    claimed: *claimed,
                 });
                 return Ok(Attempt {
                     loaded: None,
                     snapshot: Some(snapshot_name),
                     skipped,
-                    staged: true,
                 });
             }
-            Err(duckdb::Error::QueryReturnedNoRows) => {}
-            Err(error) => return Err(StoreError::Duck(error)),
         }
 
-        for tier in [Tier::Parquet, Tier::Csv] {
-            match self.load_tier(&candidate, tier, cutoff, load) {
+        for tier in [Tier::Sqlite, Tier::Csv] {
+            match self.load_tier(&candidate, tier, events, load) {
                 Ok(()) => {
                     return Ok(Attempt {
                         loaded: Some(tier),
                         snapshot: Some(snapshot_name),
                         skipped,
-                        staged: true,
                     });
                 }
                 Err(reason) => skipped.push(Skipped { tier, reason }),
@@ -411,7 +372,6 @@ impl Store {
             loaded: None,
             snapshot: Some(snapshot_name),
             skipped,
-            staged: true,
         })
     }
 
@@ -441,15 +401,17 @@ impl Store {
         Ok(Candidate { dir, manifest })
     }
 
-    /// One tier over every declared table: checksum first, then — if asked — create the
-    /// table from the snapshot's types, load the file, and apply the tail.
+    /// One tier over every declared table: checksums first, then — if asked — the tables
+    /// created empty, each file loaded, and the tail applied, all in one transaction that
+    /// is rolled back if any file turns out unreadable.
     fn load_tier(
         &self,
         candidate: &Candidate,
         tier: Tier,
-        cutoff: &str,
+        events: &[Event],
         load: bool,
     ) -> Result<(), SkipReason> {
+        let mut files = Vec::with_capacity(self.schema().tables.len());
         for table in &self.schema().tables {
             let entry = candidate
                 .manifest
@@ -461,7 +423,7 @@ impl Store {
                     problem: "not listed in MANIFEST.json".to_owned(),
                 })?;
             let (file, expected) = match tier {
-                Tier::Parquet => (snapshot::parquet_file(&table.name), &entry.parquet_sha256),
+                Tier::Sqlite => (snapshot::sqlite_file(&table.name), &entry.sqlite_sha256),
                 Tier::Csv => (snapshot::csv_file(&table.name), &entry.csv_sha256),
                 Tier::Replay => return Ok(()),
             };
@@ -476,50 +438,77 @@ impl Store {
                     file,
                 });
             }
-            if !load {
-                continue;
-            }
-
-            let target = self.qualified(&table.name);
-            let path = snapshot::sql_path(&path);
-            let load_sql = match tier {
-                Tier::Parquet => materialize::load_parquet_sql(&target, table, &path),
-                Tier::Csv | Tier::Replay => materialize::load_csv_sql(&target, table, &path),
-            };
-            let (delete, insert) = materialize::tail_sql(
-                &target,
-                self.slug(),
-                table,
-                cutoff,
-                candidate.manifest.hi_lam,
-            );
-            let sql = format!(
-                "{create}\n{load_sql}\n{delete}\n{insert}",
-                create = materialize::create_table_sql(&target, table),
-            );
-            self.conn()
-                .execute_batch(&sql)
-                .map_err(|error| SkipReason::Unreadable {
-                    table: table.name.clone(),
-                    problem: first_line(&error.to_string()),
-                })?;
+            files.push((table, path));
         }
-        Ok(())
+        if !load {
+            return Ok(());
+        }
+
+        // Tier 1's files are attached before the transaction and detached after it: SQLite
+        // refuses a `DETACH` inside a transaction, and a file left attached stays open.
+        let conn = self.conn();
+        let mut attached = Vec::new();
+        if tier == Tier::Sqlite {
+            for (index, (table, path)) in files.iter().enumerate() {
+                let alias = format!("snap{index}");
+                if let Err(problem) = attach(conn, &alias, path) {
+                    detach_all(conn, &attached);
+                    return Err(SkipReason::Unreadable {
+                        table: table.name.clone(),
+                        problem,
+                    });
+                }
+                attached.push(alias);
+            }
+        }
+        let loaded = self.load_attached(conn, tier, &files, &attached, events, candidate);
+        detach_all(conn, &attached);
+        loaded
     }
 
-    /// After a tier loaded the tables: the tombstone set from the whole staged log, the
-    /// views, and the checkpoint — the same tail `materialize` has.
-    fn finish_from_stage(&self, cutoff: &str) -> Result<(), StoreError> {
-        let sql = materialize::tombstone_sql(self.slug(), &Source::stage(), cutoff);
-        self.conn().execute_batch(&sql).map_err(StoreError::Duck)?;
-        self.create_views()?;
-        self.checkpoint()
+    /// The transactional half of a tier: create every table empty, load each file, apply
+    /// the tail, commit — or roll the lot back.
+    fn load_attached(
+        &self,
+        conn: &Connection,
+        tier: Tier,
+        files: &[(&crate::store::schema::Table, std::path::PathBuf)],
+        attached: &[String],
+        events: &[Event],
+        candidate: &Candidate,
+    ) -> Result<(), SkipReason> {
+        let unreadable = |table: &str, problem: String| SkipReason::Unreadable {
+            table: table.to_owned(),
+            problem,
+        };
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|error| unreadable("", error.to_string()))?;
+        materialize::create_tables(&tx, &self.schema().tables)
+            .map_err(|error| unreadable("", error.to_string()))?;
+        for (index, (table, path)) in files.iter().enumerate() {
+            let loaded = match tier {
+                Tier::Sqlite => copy_attached(&tx, table, &attached[index]),
+                Tier::Csv | Tier::Replay => load_csv(&tx, table, path),
+            };
+            loaded.map_err(|problem| unreadable(&table.name, problem))?;
+        }
+        materialize::apply_tail(
+            &tx,
+            &self.schema().tables,
+            events,
+            candidate.manifest.hi_lam,
+        )
+        .map_err(|error| unreadable("", error.to_string()))?;
+        tx.commit()
+            .map_err(|error| unreadable("", error.to_string()))
     }
 
-    fn unstage(&self) -> Result<(), StoreError> {
-        self.conn()
-            .execute_batch(&materialize::unstage_sql())
-            .map_err(StoreError::Duck)
+    /// After a tier loaded the tables: the tombstone set from the whole log, and the views
+    /// — the same tail `materialize` has.
+    fn finish(&self, events: &[Event]) -> Result<(), StoreError> {
+        materialize::rebuild_tombstones(self.conn(), events)?;
+        self.create_views()
     }
 
     /// Restore-time bookkeeping shared by the tiers: the watermark, and what happened.
@@ -529,9 +518,83 @@ impl Store {
     }
 }
 
-/// DuckDB errors carry a stack of context; the first line is the part a person reads.
-fn first_line(message: &str) -> String {
-    message.lines().next().unwrap_or(message).to_owned()
+/// Tier 1: attach one table's SQLite file read-only under `alias`.
+fn attach(conn: &Connection, alias: &str, path: &std::path::Path) -> Result<(), String> {
+    let uri = format!(
+        "file:{}?mode=ro",
+        path.display()
+            .to_string()
+            .replace('\\', "/")
+            .replace('?', "%3F")
+    );
+    conn.execute(
+        &format!("ATTACH DATABASE ? AS {alias}"),
+        rusqlite::params![uri],
+    )
+    .map(|_| ())
+    .map_err(|e| crate::store::schema::first_line(&e.to_string()))
+}
+
+/// Detach what [`attach`] attached; nothing to report if one is already gone.
+fn detach_all(conn: &Connection, aliases: &[String]) {
+    for alias in aliases {
+        let _ = conn.execute_batch(&format!("DETACH DATABASE {alias}"));
+    }
+}
+
+/// Tier 1: copy one table out of its attached file, column by name. The target was just
+/// created with the current types, so a value comes across as the file stored it and is
+/// retyped by the column it lands in.
+fn copy_attached(
+    conn: &Connection,
+    table: &crate::store::schema::Table,
+    alias: &str,
+) -> Result<(), String> {
+    let mut columns = String::from(crate::store::schema::ID_COLUMN);
+    for column in &table.columns {
+        columns.push_str(", ");
+        columns.push_str(&materialize::quote_ident(&column.name));
+    }
+    let target = materialize::quote_ident(&table.name);
+    conn.execute_batch(&format!(
+        "INSERT INTO main.{target} ({columns}) SELECT {columns} FROM {alias}.{target} ORDER BY {id};",
+        id = crate::store::schema::ID_COLUMN
+    ))
+    .map_err(|e| crate::store::schema::first_line(&e.to_string()))
+}
+
+/// Tier 2: read one table's CSV, typed from `schema.sql` and never inferred.
+fn load_csv(
+    conn: &Connection,
+    table: &crate::store::schema::Table,
+    path: &std::path::Path,
+) -> Result<(), String> {
+    let file = csv::read(path)?;
+    let mut expected = vec![crate::store::schema::ID_COLUMN.to_owned()];
+    expected.extend(table.columns.iter().map(|c| c.name.clone()));
+    if file.header != expected {
+        return Err(format!(
+            "header {:?} does not match the declared columns {:?}",
+            file.header, expected
+        ));
+    }
+    let mut insert = conn
+        .prepare(&materialize::insert_sql(table))
+        .map_err(|e| e.to_string())?;
+    for row in &file.rows {
+        let mut values = Vec::with_capacity(row.len());
+        let Some(id) = row[0].as_deref() else {
+            return Err("a row with no id".to_owned());
+        };
+        values.push(rusqlite::types::Value::Text(id.to_owned()));
+        for (column, text) in table.columns.iter().zip(row[1..].iter()) {
+            values.push(materialize::typed_text(column, text.as_deref()));
+        }
+        insert
+            .execute(rusqlite::params_from_iter(values))
+            .map_err(|e| crate::store::schema::first_line(&e.to_string()))?;
+    }
+    Ok(())
 }
 
 // AGENTS.md, Style: unwrap() is permitted in tests. The crate-level deny reaches unit
@@ -543,7 +606,7 @@ mod tests {
 
     #[test]
     fn tiers_round_trip_through_their_number() {
-        for tier in [Tier::Parquet, Tier::Csv, Tier::Replay] {
+        for tier in [Tier::Sqlite, Tier::Csv, Tier::Replay] {
             assert_eq!(Tier::try_from(tier.as_u8()).unwrap(), tier);
             assert_eq!(
                 serde_json::to_string(&tier).unwrap(),
@@ -552,6 +615,7 @@ mod tests {
         }
         assert!(Tier::try_from(0).is_err());
         assert_eq!(Tier::Csv.to_string(), "tier 2 (csv)");
+        assert_eq!(Tier::Sqlite.to_string(), "tier 1 (sqlite)");
     }
 
     /// `spec/cli.md §7`: only a broken snapshot is an unexpected fall-through.
@@ -562,10 +626,10 @@ mod tests {
             snapshot: Some("2026-W35-k7m2q9xf-8830".into()),
             skipped: vec![
                 Skipped {
-                    tier: Tier::Parquet,
+                    tier: Tier::Sqlite,
                     reason: SkipReason::ChecksumMismatch {
                         table: "profile".into(),
-                        file: "profile.parquet".into(),
+                        file: "profile.sqlite".into(),
                     },
                 },
                 Skipped {
@@ -583,7 +647,7 @@ mod tests {
         let stale = Restored {
             skipped: vec![
                 Skipped {
-                    tier: Tier::Parquet,
+                    tier: Tier::Sqlite,
                     reason: SkipReason::SchemaChanged,
                 },
                 Skipped {
@@ -598,7 +662,7 @@ mod tests {
         let none = Restored {
             snapshot: None,
             skipped: vec![Skipped {
-                tier: Tier::Parquet,
+                tier: Tier::Sqlite,
                 reason: SkipReason::NoSnapshot,
             }],
             ..broken.clone()
@@ -616,7 +680,7 @@ mod tests {
     #[test]
     fn skip_reasons_serialize_with_a_tag() {
         let skipped = Skipped {
-            tier: Tier::Parquet,
+            tier: Tier::Sqlite,
             reason: SkipReason::TailNotCausal { events: 3 },
         };
         assert_eq!(

@@ -3,9 +3,8 @@
 // Created:  2026-09-02  |  Modified: 2026-09-03
 // Summary:  The app loader — step 5 of docs/plans/phase-1.md §2.6 and the lifecycle of
 //           spec/app-contract.md §8 up to and including mount. Discovers app folders,
-//           refuses per app and loudly (§3.1), keeps sys_app as events (§3.4), owns each
-//           app's log and sealed store, and reopens a store's privileged window for the
-//           node-level snapshot and restore of lib.rs.
+//           refuses per app and loudly (§3.1), keeps sys_app as events (§3.4), and owns
+//           each app's log and store.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -267,11 +266,7 @@ pub struct Seeded {
     pub events: usize,
 }
 
-/// A loaded app: its manifest, its folder, its log, and its sealed cache.
-///
-/// The loader owns these so that it can drop a store and open a fresh one — the only way
-/// a sealed store gets the privileged window rematerializing and snapshotting need
-/// (`spec/app-contract.md §7`, [`Node::snapshot`], [`Node::restore`]).
+/// A loaded app: its manifest, its folder, its log, and its cache.
 #[derive(Debug)]
 pub struct App {
     manifest: Manifest,
@@ -342,13 +337,14 @@ impl App {
         &self.log
     }
 
-    /// The app's cache, sealed: [`Store::app_conn`] works, file I/O does not.
+    /// The app's cache. [`Store::app_conn`] is the sandboxed read-only connection app SQL
+    /// runs on; the framework's own is [`Store::conn`].
     #[must_use]
     pub fn store(&self) -> &Store {
         &self.store
     }
 
-    /// The store, for the node-level maintenance that reopens its privileged window.
+    /// The store, for the node-level maintenance.
     pub(crate) fn store_mut(&mut self) -> &mut Store {
         &mut self.store
     }
@@ -473,7 +469,7 @@ impl Node {
                     continue;
                 }
                 claimed.insert(candidate.folder.clone(), candidate.dir.clone());
-                // A reload. The old store goes first: DuckDB holds the cache exclusively.
+                // A reload: the old store is dropped and a fresh one opened.
                 self.apps.remove(&candidate.folder);
 
                 match self.load_one(&candidate, &cutoff)? {
@@ -542,7 +538,7 @@ impl Node {
     /// Never called by [`load_apps`](Self::load_apps). Refused when the app's log already
     /// holds an event from any device, so a seed can only ever populate an empty app.
     /// Every line is appended through the app's own log as one batch of **this node's**
-    /// events — fresh `seq`, `lam`, `ts` and `dev` — and applied to the sealed cache
+    /// events — fresh `seq`, `lam`, `ts` and `dev` — and applied to the cache
     /// incrementally; the seed's own envelope fields are discarded (`seed`).
     pub fn load_seed(&mut self, slug: &str) -> Result<Seeded> {
         let app = self.apps.get_mut(slug).ok_or_else(|| Error::AppNotLoaded {
@@ -585,7 +581,6 @@ impl Node {
                 .apply(&event.tbl, &event.id, event.d.as_ref())
                 .map_err(boxed)?;
         }
-        app.store.checkpoint().map_err(boxed)?;
         app.log.save_to(&mut self.state);
         app.store.save_to(&mut self.state);
         self.state.flush()?;
@@ -597,33 +592,22 @@ impl Node {
     }
 
     /// Rebuild a loaded app's cache if its log or `schema.sql` moved underneath it — the
-    /// `echo >>` reload of `apps/hello/README.md`, per request once M6 exists.
+    /// `echo >>` reload of `apps/hello/README.md`, per request.
     ///
-    /// A stat decides; only a stale store pays for the privileged window. Returns whether
-    /// it rebuilt.
+    /// A stat decides; only a stale store pays for the rebuild. Returns whether it rebuilt.
     pub fn refresh_app(&mut self, slug: &str) -> Result<bool> {
-        let app = self.apps.get(slug).ok_or_else(|| Error::AppNotLoaded {
+        let app = self.apps.get_mut(slug).ok_or_else(|| Error::AppNotLoaded {
             slug: slug.to_owned(),
         })?;
         if !app.store.is_stale().map_err(boxed)? {
             return Ok(false);
         }
         let previous = app.store.restore_record().cloned();
-
-        self.reopen_privileged(slug)?;
-        let cutoff = store::cutoff_now();
-        let refreshed = self.store_for_mut(slug)?.refresh(&cutoff).map_err(boxed);
-        if let Err(error) = refreshed {
-            let _ = self.reseal(slug);
-            return Err(error);
-        }
-        if let Some(app) = self.apps.get(slug)
-            && let Some(restored) = app.store.restored().cloned()
-        {
+        app.store.refresh(&store::cutoff_now()).map_err(boxed)?;
+        if let Some(restored) = app.store.restored().cloned() {
             audit_restore(&mut self.sys, slug, &restored, previous.as_ref(), false)?;
             note_health(&self.store, &app.store, slug)?;
         }
-        self.reseal(slug)?;
         self.flush()?;
         Ok(true)
     }
@@ -838,7 +822,7 @@ impl Node {
     }
 
     /// `§8`'s "materialize from data/<slug>/": the log, the three-tier restore, the
-    /// health row, the seal — exactly what `Node::open` does for `_sys`, per app.
+    /// health row — exactly what `Node::open` does for `_sys`, per app.
     fn materialize_app(&mut self, prepared: &Prepared, cutoff: &str) -> Result<(AppLog, Store)> {
         let slug = prepared.manifest.app.slug.as_str();
         for dir in [self.paths.app_log_dir(slug), self.paths.app_snap_dir(slug)] {
@@ -868,68 +852,10 @@ impl Node {
             audit_restore(&mut self.sys, slug, &restored, previous.as_ref(), false)?;
         }
         note_health(&self.store, &store, slug)?;
-        store.seal().map_err(boxed)?;
 
         log.save_to(&mut self.state);
         store.save_to(&mut self.state);
         Ok((log, store))
-    }
-
-    /// Give a loaded app's store its privileged window (`spec/app-contract.md §7`): the
-    /// sealed instance is dropped and a fresh, unsealed one opened over the same cache,
-    /// carrying the watermark so nothing is rebuilt that need not be. [`reseal`] closes it.
-    ///
-    /// If the fresh store cannot be opened the app is no longer loaded — there is no
-    /// instance to serve it from — and the error says so.
-    pub(crate) fn reopen_privileged(&mut self, slug: &str) -> Result<()> {
-        let app = self.apps.remove(slug).ok_or_else(|| Error::AppNotLoaded {
-            slug: slug.to_owned(),
-        })?;
-        let App {
-            manifest,
-            manifest_hash,
-            dir,
-            source,
-            mount,
-            csp,
-            warnings,
-            log,
-            store,
-        } = app;
-        // The live watermark may be ahead of the last flush.
-        store.save_to(&mut self.state);
-        let schema = store.schema().clone();
-        drop(store);
-
-        let mut fresh = Store::open_with(&self.paths, slug, schema).map_err(boxed)?;
-        if let Some(record) = self.state.get(slug) {
-            fresh.restore_watermark(record.materialized.clone());
-        }
-        self.apps.insert(
-            slug.to_owned(),
-            App {
-                manifest,
-                manifest_hash,
-                dir,
-                source,
-                mount,
-                csp,
-                warnings,
-                log,
-                store: fresh,
-            },
-        );
-        Ok(())
-    }
-
-    /// Close the privileged window opened by [`reopen_privileged`].
-    pub(crate) fn reseal(&mut self, slug: &str) -> Result<()> {
-        let app = self.apps.get_mut(slug).ok_or_else(|| Error::AppNotLoaded {
-            slug: slug.to_owned(),
-        })?;
-        app.store.seal().map_err(boxed)?;
-        app.store.save_to(&mut self.state);
-        Ok(())
     }
 
     /// Append the `sys_app` row if it says anything the current row does not, plus
@@ -1025,18 +951,15 @@ impl Node {
     fn read_app_row(&self, slug: &str) -> Result<Option<sys::AppRow>> {
         let sql = format!(
             "SELECT title, version, api, tier, icon, source, enabled, nav_order,
-                    strftime(CAST(installed_at AS TIMESTAMP), '{TS}'),
-                    strftime(CAST(updated_at AS TIMESTAMP), '{TS}'),
+                    installed_at, updated_at,
                     schema_hash, manifest_hash, advertise, permissions, last_error
-             FROM {}.{} WHERE id = ?",
-            store::SYS_SCHEMA,
+             FROM {} WHERE id = ?",
             sys::APP,
-            TS = TS_FORMAT,
         );
         let row = self
             .store
             .conn()
-            .query_row(&sql, duckdb::params![slug], |row| {
+            .query_row(&sql, rusqlite::params![slug], |row| {
                 Ok(sys::AppRow {
                     title: row.get(0)?,
                     version: row.get(1)?,
@@ -1057,29 +980,25 @@ impl Node {
             });
         match row {
             Ok(row) => Ok(Some(row)),
-            Err(duckdb::Error::QueryReturnedNoRows) => Ok(None),
-            Err(error) => Err(boxed(StoreError::Duck(error))),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(error) => Err(boxed(StoreError::Sql(error))),
         }
     }
 
     /// Every slug in `sys.sys_app`.
     fn indexed_slugs(&self) -> Result<Vec<String>> {
-        let sql = format!(
-            "SELECT id FROM {}.{} ORDER BY id",
-            store::SYS_SCHEMA,
-            sys::APP
-        );
+        let sql = format!("SELECT id FROM {} ORDER BY id", sys::APP);
         let mut statement = self
             .store
             .conn()
             .prepare(&sql)
-            .map_err(|error| boxed(StoreError::Duck(error)))?;
+            .map_err(|error| boxed(StoreError::Sql(error)))?;
         let rows = statement
             .query_map([], |row| row.get::<_, String>(0))
-            .map_err(|error| boxed(StoreError::Duck(error)))?;
+            .map_err(|error| boxed(StoreError::Sql(error)))?;
         let mut slugs = Vec::new();
         for row in rows {
-            slugs.push(row.map_err(|error| boxed(StoreError::Duck(error)))?);
+            slugs.push(row.map_err(|error| boxed(StoreError::Sql(error)))?);
         }
         Ok(slugs)
     }
@@ -1087,29 +1006,24 @@ impl Node {
     /// The reason in the newest `app.load_failed` audit row about `folder`, if any.
     fn last_load_failure_reason(&self, folder: &str) -> Result<Option<String>> {
         let sql = format!(
-            "SELECT detail FROM {}.{} WHERE kind = ? AND subject = ?
+            "SELECT detail FROM {} WHERE kind = ? AND subject = ?
              ORDER BY \"at\" DESC, id DESC LIMIT 1",
-            store::SYS_SCHEMA,
             sys::AUDIT
         );
         let detail: Option<String> = match self.store.conn().query_row(
             &sql,
-            duckdb::params![sys::KIND_APP_LOAD_FAILED, folder],
+            rusqlite::params![sys::KIND_APP_LOAD_FAILED, folder],
             |row| row.get(0),
         ) {
             Ok(detail) => detail,
-            Err(duckdb::Error::QueryReturnedNoRows) => None,
-            Err(error) => return Err(boxed(StoreError::Duck(error))),
+            Err(rusqlite::Error::QueryReturnedNoRows) => None,
+            Err(error) => return Err(boxed(StoreError::Sql(error))),
         };
         Ok(detail
             .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
             .and_then(|value| value.get("reason")?.as_str().map(str::to_owned)))
     }
 }
-
-/// `spec/protocol.md §4.1`'s `ts`, as DuckDB's `strftime` spells it — so a timestamp read
-/// back from the cache is the string that was written, and a row compares equal to itself.
-const TS_FORMAT: &str = "%Y-%m-%dT%H:%M:%S.%gZ";
 
 /// The `sys_app` row for a folder, from whatever was learned about it.
 ///

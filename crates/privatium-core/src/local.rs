@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/local.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-02
+// Created:  2026-09-01  |  Modified: 2026-09-03
 // Summary:  local/state.jsonl — the node-local state of spec/protocol.md §3. Never synced,
 //           never backed up, and never required for restore. In M2 it holds one record per
 //           app: the Lamport counter and the highest `seq` seen per device.
@@ -34,7 +34,7 @@ pub struct Record {
     /// what a sync receiver compares a peer's heads against (`§10.1`).
     #[serde(default)]
     pub heads: BTreeMap<String, u64>,
-    /// What the app's `cache/<slug>.duckdb` was last built from (M3).
+    /// What the app's `cache/<slug>.sqlite` was last built from (M3).
     ///
     /// The `schema.sql` hash and a length per log segment. Two jobs, both of them
     /// "notice that the tables are stale": a changed hash is `spec/app-contract.md §4.5`'s
@@ -123,7 +123,7 @@ impl State {
         });
     }
 
-    /// Record what one app's `cache/<slug>.duckdb` was built from (M3).
+    /// Record what one app's `cache/<slug>.sqlite` was built from (M3).
     pub fn set_materialized(&mut self, app: &str, materialized: crate::store::Materialized) {
         self.update(app, |record| record.materialized = materialized);
     }

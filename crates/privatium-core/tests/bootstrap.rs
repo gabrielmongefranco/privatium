@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/bootstrap.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-01
+// Created:  2026-09-01  |  Modified: 2026-09-03
 // Summary:  First run: the §3 directory tree, and the two _sys rows a node writes about
 //           itself before any app exists (docs/plans/phase-1.md §2.6, steps 1 to 3).
 
@@ -59,12 +59,12 @@ fn sys_events(node: &Node) -> Vec<Value> {
 /// counter. It is one more line here and the assertion stays exhaustive; the point of this
 /// test is that a new path in `local/` cannot appear without someone typing it out.
 ///
-/// M3 adds `cache/_sys.duckdb`, the other file `§3` already names, because `Node::open`
+/// M3 adds `cache/_sys.sqlite`, the other file `§3` already names, because `Node::open`
 /// now performs step 4 of `docs/plans/phase-1.md §2.6`. **One** file, and that is
-/// load-bearing: an uncheckpointed DuckDB write leaves a `.wal` beside the database, so
-/// this set holds only because `Store::materialize` ends with `CHECKPOINT`. Remove that
-/// checkpoint and this test fails with a stray `cache/_sys.duckdb.wal` — which is exactly
-/// the unannounced file in `cache/` it exists to catch, working as intended.
+/// load-bearing: the store keeps SQLite's rollback journal, whose `-journal` file exists
+/// only inside a write and is gone at commit. Switch it to WAL and this test fails with a
+/// stray `cache/_sys.sqlite-wal` — which is exactly the unannounced file in `cache/` it
+/// exists to catch, working as intended.
 #[test]
 fn test_spec_3_layout_created() {
     let root = tempfile::tempdir().unwrap();
@@ -74,7 +74,7 @@ fn test_spec_3_layout_created() {
     let expected: BTreeSet<String> = [
         "apps/".to_owned(),
         "cache/".to_owned(),
-        "cache/_sys.duckdb".to_owned(),
+        "cache/_sys.sqlite".to_owned(),
         "data/".to_owned(),
         "data/_sys/".to_owned(),
         "data/_sys/log/".to_owned(),
