@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/plans/phase-1.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-31
-Modified: 2026-09-02
+Modified: 2026-09-03
 Summary:  Implementation plan for Phase 1 — a node that works on one machine.
           Non-normative. Where this plan and spec/ disagree, spec/ wins and this
           file is wrong.
@@ -233,6 +233,12 @@ why, not a to-do list.
 | 20 | `§3.4` listed `source ∈ bundled \| local \| url:<origin>` and defined none of them; `§3.1` refused a colliding app without saying which of the two | `bundled` and `local` defined, `url:` reserved; local is discovered before bundled and the second folder for a slug is the one refused | `data-dictionary.md §3.4`, `app-contract.md §3.1` (found in M5) |
 | 21 | `§9` named `sample/seed.jsonl` and said nothing about its shape, when it loads, or as whose events | One envelope per line; `op`, `tbl`, `id`, `d` taken and the envelope's `seq`/`lam`/`ts`/`dev`/`app` discarded; appended through the node's own log; never automatic; refused when the log already holds an event | `app-contract.md §9` (found in M5) |
 | 22 | `§12` refused an app whose `api` exceeds what the node "implements", while `cli.md §1` has a Phase 1 build call itself partial — leaving what it implements undefined | `api` is the app contract's version and a positive integer; a `pv/1` build implements `api = 1` whether or not it satisfies `§13`; the `--version` qualifier is about conformance | `protocol.md §12` (found in M5) |
+| 23 | `§9.2` listed the manifest's four fields and defined none of them: no JSON shape, no answer for a `display_name` that is NULL, and a `pair` flag for a pairing that does not exist yet | The object is spelled out; `name` falls back to the Node ID while unset; `pair` is whether a pairing is open now and is `false` in a build without pairing; `apps` is the mounted apps as slug, title and icon | `protocol.md §9.2` (found in M6) |
+| 24 | `cli.md §6` served `/skills/bundle.zip` without saying what is in it, and `skills/README.md`'s `curl … | bsdtar -xf-` assumed an answer | Every file under `skills/` at its repository-relative path, stored not compressed, so extracting in place reproduces the tree | `cli.md §6` (found in M6) |
+| 25 | `§9.3` listed one CSP with no scope, while `app-contract.md §5.4` gave each app its own; whether the shell's pages were bound by the listed one was unsaid | The listed policy is the framework's own, on every response it renders as written — the shell inlines nothing — and the floor each app's policy starts from, with `script-src` path-scoped per `§5.4` | `protocol.md §9.3` (found in M6) |
+| 26 | `§9.3`'s "every response containing app data" named no set, so `no-store` on a stylesheet and `no-store` on nothing were both readings | Everything except the embedded `/static/*` assets and the `/skills/*` documents; the four headers are on every response, refusals included | `protocol.md §9.3` (found in M6) |
+| 27 | `app-contract.md §6` called `auth_layer` a Tower middleware, and ADR 0003 forbids an adapter from adding anything, which left unsaid whether `core::handle` applies it or each adapter does | It is a `tower::Layer`; `core::handle` applies it itself, so adapters do nothing; an embedder wraps their own router with it (`§2.3`) | `app-contract.md §6` (found in M6) |
+| 28 | `§9.1` described solo-mode shadowing in terms of `pv.get(…)` routes, which a Tier 2 app has none of | A Tier 2 app's routes are its `web/` paths, so a top-level entry named after a prefix is what is shadowed, and the warning names it that way | `protocol.md §9.1` (found in M6) |
 
 Defect 11 was found during M1 rather than while writing this plan, which is the rule in
 the last paragraph of this section working as intended. It could not be coded around: the

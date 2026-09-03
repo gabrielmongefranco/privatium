@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/icons.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-31
+Modified: 2026-09-03
 Summary:  Icon system. Bootstrap Icons, bundled and inlined server-side.
 -->
 
@@ -28,9 +28,10 @@ npm before moving it.
 `<use>` reference to an external sprite.
 
 ```
-assets/icons/          vendored from twbs/icons, `icons/` directory only
+crates/privatium-core/assets/icons/   vendored from twbs/icons, `icons/` directory only
 ├── LICENSE
 ├── VERSION             the exact tag vendored
+├── VENDOR.md           provenance: tag, commit, date, what was taken
 ├── check-circle.svg
 ├── diagram-3.svg
 └── ... (~2,000 files, ~1KB each)
@@ -95,8 +96,10 @@ icon = "diagram-3"    # the Bootstrap Icons filename, without .svg
 ```
 
 Validation: the name must match `^[a-z0-9-]+$` and must exist in the vendored set. A
-missing icon is a warning recorded in `sys_app.last_error`, not a load failure — an app
-should not refuse to start over a picture.
+missing icon is a warning in the load report, shown on the settings page beside the app,
+not a load failure — an app should not refuse to start over a picture. It is not written
+to `sys_app.last_error`, which `spec/data-dictionary.md §3.4` reserves for the text of a
+load or validation failure; a loaded app with an error set would read as one that had not.
 
 ## Framework icon vocabulary
 
@@ -122,7 +125,10 @@ Use these consistently so every app looks like it belongs on the same node.
 | Unknown app icon fallback | `question-circle` |
 
 Verify each of these against the vendored version at build time; the framework should fail
-its own test suite if one is missing rather than silently falling back.
+its own test suite if one is missing rather than silently falling back. `cargo xtask
+icons-verify` is that check: every name this table, the shell, the reference apps and the
+skills refer to must exist in `assets/icons/`, and `VERSION` there must be the release
+pinned above.
 
 ## Attribution
 

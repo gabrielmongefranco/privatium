@@ -1,0 +1,204 @@
+/* Project:  Privatium™  |  File: crates/privatium-core/assets/shell/shell.css
+ * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+ * Created:  2026-09-03  |  Modified: 2026-09-03
+ * Summary:  The shell's only stylesheet — launcher, settings, error pages. Served at
+ *           /static/shell.css under the default CSP of spec/protocol.md §9.3, which is why
+ *           nothing in the shell carries a style= attribute. System fonts, no icon font
+ *           (docs/icons.md), visible focus, and status never carried by colour alone.
+ */
+
+:root {
+  --pv-bg: #ffffff;
+  --pv-fg: #1d2129;
+  --pv-muted: #5b6270;
+  --pv-line: #d9dde3;
+  --pv-panel: #f5f6f8;
+  --pv-accent: #00274c;
+  --pv-accent-fg: #ffffff;
+  --pv-focus: #ffcb05;
+  --pv-warn-bg: #fff6d6;
+  --pv-warn-fg: #6b4e00;
+  --pv-alert-bg: #fde8e8;
+  --pv-alert-fg: #7a1f1f;
+  --pv-ok-bg: #e6f4ea;
+  --pv-ok-fg: #1e5a2d;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --pv-bg: #14171c;
+    --pv-fg: #e8eaee;
+    --pv-muted: #a0a7b3;
+    --pv-line: #2c323b;
+    --pv-panel: #1c2027;
+    --pv-accent: #ffcb05;
+    --pv-accent-fg: #14171c;
+    --pv-focus: #ffcb05;
+    --pv-warn-bg: #3a2f08;
+    --pv-warn-fg: #ffe08a;
+    --pv-alert-bg: #4a1c1c;
+    --pv-alert-fg: #ffb3b3;
+    --pv-ok-bg: #173a22;
+    --pv-ok-fg: #a8e0b5;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { color-scheme: light dark; }
+
+body {
+  margin: 0;
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--pv-fg);
+  background: var(--pv-bg);
+}
+
+a { color: inherit; }
+
+:focus-visible {
+  outline: 3px solid var(--pv-focus);
+  outline-offset: 2px;
+}
+
+.pv-skip {
+  position: absolute;
+  left: -999px;
+  top: 0;
+  padding: .5rem 1rem;
+  background: var(--pv-accent);
+  color: var(--pv-accent-fg);
+}
+.pv-skip:focus { left: 0; z-index: 10; }
+
+.pv-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: .75rem 1.25rem;
+  border-bottom: 1px solid var(--pv-line);
+  background: var(--pv-panel);
+}
+.pv-header h1 { font-size: 1.125rem; margin: 0; }
+.pv-header h1 a { text-decoration: none; display: inline-flex; align-items: center; gap: .5rem; }
+.pv-header nav { margin-left: auto; display: flex; gap: .25rem; }
+.pv-header nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .4rem .7rem;
+  border-radius: 6px;
+  text-decoration: none;
+}
+.pv-header nav a[aria-current="page"] { background: var(--pv-bg); border: 1px solid var(--pv-line); }
+
+main { max-width: 56rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+main h2 { font-size: 1.5rem; margin: 0 0 1rem; }
+main h3 { font-size: 1.125rem; margin: 1.5rem 0 .5rem; }
+
+.pv-icon { vertical-align: -.125em; flex-shrink: 0; }
+
+.pv-launcher {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 1rem;
+}
+.pv-launcher li a, .pv-launcher li .pv-unavailable {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: 1rem;
+  border: 1px solid var(--pv-line);
+  border-radius: 8px;
+  text-decoration: none;
+  background: var(--pv-panel);
+}
+.pv-launcher .pv-icon { font-size: 1.75rem; }
+.pv-launcher .pv-unavailable { opacity: .75; }
+.pv-launcher small { display: block; color: var(--pv-muted); }
+
+.pv-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .25rem;
+  padding: 0;
+  margin: 0 0 1.5rem;
+  list-style: none;
+  border-bottom: 1px solid var(--pv-line);
+}
+.pv-subnav a {
+  display: inline-block;
+  padding: .5rem .8rem;
+  text-decoration: none;
+  border-bottom: 3px solid transparent;
+}
+.pv-subnav a[aria-current="page"] { border-bottom-color: var(--pv-accent); font-weight: 600; }
+
+table { border-collapse: collapse; width: 100%; margin: .5rem 0 1rem; }
+th, td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--pv-line); vertical-align: top; }
+th { color: var(--pv-muted); font-weight: 600; font-size: .875rem; }
+code, pre { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: .9em; }
+pre { background: var(--pv-panel); padding: .75rem 1rem; border-radius: 6px; overflow-x: auto; }
+
+.pv-card {
+  border: 1px solid var(--pv-line);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin: 0 0 1rem;
+  background: var(--pv-panel);
+}
+.pv-card h3 { margin-top: 0; display: flex; align-items: center; gap: .5rem; }
+.pv-card dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; margin: 0; }
+.pv-card dt { color: var(--pv-muted); }
+.pv-card dd { margin: 0; overflow-wrap: anywhere; }
+
+.pv-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .15rem .55rem;
+  border-radius: 999px;
+  font-size: .8125rem;
+  font-weight: 600;
+}
+.pv-badge-ok { background: var(--pv-ok-bg); color: var(--pv-ok-fg); }
+.pv-badge-warn { background: var(--pv-warn-bg); color: var(--pv-warn-fg); }
+.pv-badge-alert { background: var(--pv-alert-bg); color: var(--pv-alert-fg); }
+.pv-badge-muted { background: var(--pv-line); color: var(--pv-fg); }
+
+.pv-notice {
+  display: flex;
+  gap: .6rem;
+  align-items: flex-start;
+  padding: .75rem 1rem;
+  border-radius: 6px;
+  margin: 0 0 1rem;
+}
+.pv-notice-warn { background: var(--pv-warn-bg); color: var(--pv-warn-fg); }
+.pv-notice-alert { background: var(--pv-alert-bg); color: var(--pv-alert-fg); }
+.pv-notice-info { background: var(--pv-panel); border: 1px solid var(--pv-line); }
+.pv-notice ul { margin: .25rem 0 0; padding-left: 1.25rem; }
+
+.pv-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  padding: .45rem .9rem;
+  border: 1px solid var(--pv-accent);
+  border-radius: 6px;
+  background: var(--pv-accent);
+  color: var(--pv-accent-fg);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+.pv-btn:hover { filter: brightness(1.1); }
+form.pv-inline { display: inline; }
+
+.pv-muted { color: var(--pv-muted); }
+.pv-error { display: flex; gap: .5rem; align-items: center; }
+footer { text-align: center; color: var(--pv-muted); font-size: .875rem; padding: 1rem; border-top: 1px solid var(--pv-line); }
+footer a { color: inherit; }

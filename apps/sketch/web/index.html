@@ -1,10 +1,12 @@
 <!--
   Project:  Privatium™  |  File: apps/sketch/web/index.html
   Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-  Created:  2026-08-28  |  Modified: 2026-08-28
-  Summary:  Tier B entry point. The framework serves this file verbatim at
+  Created:  2026-08-28  |  Modified: 2026-09-03
+  Summary:  Tier 2 entry point. The framework serves this file verbatim at
             the app's mount point and injects nothing. No HTMX, no shell,
-            no opinions.
+            no opinions. The swatches are classes, not style= attributes:
+            the default CSP (spec/protocol.md §9.3) has no style-src, so
+            default-src 'self' governs styles and an inline one is dropped.
 -->
 <!doctype html>
 <meta charset="utf-8">
@@ -15,9 +17,9 @@
 <canvas id="pad"></canvas>
 
 <nav id="tools">
-  <button data-color="#00274C" class="swatch" style="--c:#00274C" aria-label="Navy"></button>
-  <button data-color="#FFCB05" class="swatch" style="--c:#FFCB05" aria-label="Maize"></button>
-  <button data-color="#333333" class="swatch" style="--c:#333333" aria-label="Charcoal"></button>
+  <button data-color="#00274C" class="swatch swatch-navy" aria-label="Navy"></button>
+  <button data-color="#FFCB05" class="swatch swatch-maize" aria-label="Maize"></button>
+  <button data-color="#333333" class="swatch swatch-charcoal" aria-label="Charcoal"></button>
   <button id="clear" aria-label="Clear the canvas">Clear</button>
   <span id="status" role="status"></span>
 </nav>

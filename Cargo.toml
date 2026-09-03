@@ -1,6 +1,6 @@
 # Project:  Privatium™  |  File: Cargo.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-08-31  |  Modified: 2026-09-02
+# Created:  2026-08-31  |  Modified: 2026-09-03
 # Summary:  Workspace root. Three crates per docs/plans/phase-1.md §4, one pinned
 #           dependency table, and the MSRV every member inherits.
 
@@ -28,7 +28,7 @@ homepage      = "https://github.com/gabrielmongefranco/privatium"
 privatium-core = { path = "crates/privatium-core", version = "0.1.0" }
 
 # HTTP — M6. `auth_layer` is a tower::Layer (spec/app-contract.md §6).
-axum       = "0.8.9"
+axum       = { version = "0.8.9", default-features = false }
 tower      = "0.5.3"
 tower-http = "0.7.1"
 tokio      = "1.53.1"

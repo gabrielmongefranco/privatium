@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/xtask/src/main.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-08-31  |  Modified: 2026-08-31
+// Created:  2026-08-31  |  Modified: 2026-09-03
 // Summary:  Command dispatch for the repository's own checks. Deliberately not clap:
 //           spec/cli.md governs the flags of `privatium`, and nothing here should ever
 //           be mistaken for part of that surface.
@@ -10,6 +10,7 @@ use std::process::{Command, ExitCode};
 use anyhow::{Context, Result, bail};
 
 mod header;
+mod icons;
 mod repo;
 mod spec_drift;
 
@@ -20,8 +21,8 @@ cargo xtask <command>
                         (AGENTS.md, Style)
   spec-drift [--update] warn when spec/ has changed since skills/ was last reconciled
                         (docs/skills.md §7); --update records the current contents
-
-`icons-verify` arrives in M6, with the vendored icon set it checks.
+  icons-verify          every icon name the shell, the apps, the skills and docs/icons.md
+                        refer to exists in the vendored Bootstrap Icons set (docs/icons.md)
 ";
 
 fn main() -> ExitCode {
@@ -44,6 +45,7 @@ fn run() -> Result<bool> {
 
     match command.as_deref() {
         Some("header-check") => header::check(&repo::root()?),
+        Some("icons-verify") => icons::check(&repo::root()?),
         Some("spec-drift") => {
             let update = rest.iter().any(|a| a == "--update");
             spec_drift::check(&repo::root()?, update)

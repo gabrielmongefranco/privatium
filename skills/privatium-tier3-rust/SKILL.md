@@ -53,7 +53,7 @@ fn main() -> anyhow::Result<()> {
 | Read | `query`, `query_one`, `get_row`, `events_since` |
 | React | `subscribe` — fires for events arriving via sync too |
 | Network | `serve_discovery`, `pair`, `start_sync`, `sync_now` |
-| Auth | `auth_layer` (Tower middleware enforcing session and grants) |
+| Auth | `auth_layer` (Tower middleware enforcing session and grants; `core::handle` applies it itself, so wrap your own router with it only in embedded mode) |
 | Data | `snapshot`, `restore`, `restore_tier` |
 
 ## MUST

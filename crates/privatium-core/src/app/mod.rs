@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/app/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-02  |  Modified: 2026-09-02
+// Created:  2026-09-02  |  Modified: 2026-09-03
 // Summary:  The app loader — step 5 of docs/plans/phase-1.md §2.6 and the lifecycle of
 //           spec/app-contract.md §8 up to and including mount. Discovers app folders,
 //           refuses per app and loudly (§3.1), keeps sys_app as events (§3.4), owns each
@@ -177,6 +177,40 @@ pub enum Warning {
         /// The app.
         slug: String,
     },
+    /// A route of the solo app matches a framework prefix and is shadowed by it
+    /// (`spec/protocol.md §9.1`: MUST warn at load, naming the route and the prefix). For a
+    /// Tier 2 app the routes are the paths under `web/`, so this is a top-level entry there;
+    /// a Tier 1 app's registered routes get the same warning from the Lua host (M7).
+    RouteShadowed {
+        /// The app.
+        slug: String,
+        /// The app's route.
+        route: String,
+        /// The framework prefix that wins.
+        prefix: &'static str,
+    },
+    /// `[app] icon` names an icon the vendored set lacks (`docs/icons.md`): the launcher
+    /// shows `question-circle` in its place, and the app loads.
+    UnknownIcon {
+        /// The app.
+        slug: String,
+        /// The name that was asked for.
+        icon: String,
+    },
+}
+
+impl Warning {
+    /// The app the warning is about.
+    #[must_use]
+    pub fn slug(&self) -> &str {
+        match self {
+            Self::Permission { slug, .. }
+            | Self::SlugTooLongToAdvertise { slug }
+            | Self::SoloAppNotLoaded { slug }
+            | Self::RouteShadowed { slug, .. }
+            | Self::UnknownIcon { slug, .. } => slug,
+        }
+    }
 }
 
 impl fmt::Display for Warning {
@@ -191,6 +225,18 @@ impl fmt::Display for Warning {
             Self::SoloAppNotLoaded { slug } => write!(
                 f,
                 "{slug}: named by [node] app in solo mode but not loaded; nothing is mounted at /"
+            ),
+            Self::RouteShadowed {
+                slug,
+                route,
+                prefix,
+            } => write!(
+                f,
+                "{slug}: route {route} is shadowed by the framework prefix {prefix} in solo mode \n                 (spec/protocol.md §9.1)"
+            ),
+            Self::UnknownIcon { slug, icon } => write!(
+                f,
+                "{slug}: icon {icon:?} is not in the vendored Bootstrap Icons set; question-circle \n                 is shown instead (docs/icons.md)"
             ),
         }
     }
@@ -760,6 +806,26 @@ impl Node {
         if manifest.nav.advertise && slug.len() > MAX_ADVERTISED_SLUG {
             warnings.push(Warning::SlugTooLongToAdvertise { slug: slug.clone() });
         }
+        if let Some(icon) = &manifest.app.icon
+            && !crate::icons::exists(icon)
+        {
+            warnings.push(Warning::UnknownIcon {
+                slug: slug.clone(),
+                icon: icon.clone(),
+            });
+        }
+        // `§9.1`: the solo app owns `/`, so a top-level entry of its `web/` named after a
+        // framework prefix is unreachable. Named here, once, rather than discovered by a 404.
+        if mount.as_deref() == Some("/") && manifest.app.tier == Tier::Web {
+            for route in shadowed_web_routes(&candidate.dir.join("web")) {
+                let prefix = crate::wire::router::shadowing_prefix(&route).unwrap_or_default();
+                warnings.push(Warning::RouteShadowed {
+                    slug: slug.clone(),
+                    route,
+                    prefix,
+                });
+            }
+        }
 
         Ok(Prepared {
             manifest,
@@ -1079,4 +1145,19 @@ fn app_row(
         permissions: manifest.map(|m| m.permissions.non_default_json()),
         last_error: last_error.map(str::to_owned),
     }
+}
+
+/// The top-level entries of a Tier 2 app's `web/` — files or directories — that a
+/// framework prefix would shadow in solo mode, as routes (`/settings`, `/static`, …).
+fn shadowed_web_routes(web: &Path) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(web) else {
+        return Vec::new();
+    };
+    let mut routes: Vec<String> = entries
+        .flatten()
+        .map(|entry| format!("/{}", entry.file_name().to_string_lossy()))
+        .filter(|route| crate::wire::router::shadowing_prefix(route).is_some())
+        .collect();
+    routes.sort();
+    routes
 }
