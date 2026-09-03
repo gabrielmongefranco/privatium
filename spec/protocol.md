@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/protocol.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-02
+Modified: 2026-09-03
 Summary:  NORMATIVE. Wire formats, event log, discovery, pairing, session crypto, sync.
 -->
 
@@ -776,7 +776,9 @@ data API (`spec/data-api.md`).
 apps live under `/a/<slug>/`. In solo mode the app owns `/`, so an app route matching a
 reserved prefix — `pv.get('/settings')`, say — is shadowed. Implementations MUST resolve in
 favour of the framework and MUST warn at load, naming the route and the prefix. It is a
-warning rather than a refusal because the same app is legal in host mode.
+warning rather than a refusal because the same app is legal in host mode. A Tier 2 app's
+routes are the paths under `web/`, so what is shadowed there is a top-level entry named
+after a prefix — `web/settings/`, `web/static/` — and the warning names it the same way.
 
 An earlier draft listed fixed `/v/<view>`, `/f/<form>`, and `/x/<action>` routes. Those
 belonged to a declarative tier that was removed (`spec/app-contract.md §1`), and
@@ -790,7 +792,7 @@ internal link MUST go through `url()` or `pv.url()` rather than a literal path.
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | GET | `/api/v1/health` | none | Liveness. Returns `{"v":1,"id":"..."}` only. |
-| GET | `/api/v1/manifest` | none | Node ID, display name, app index, `pair` flag. No data. |
+| GET | `/api/v1/manifest` | none | Node ID, display name, app index, `pair` flag (below). No data. |
 | GET | `/ws/pair` | code | Pairing handshake |
 | GET | `/ws` | session | Encrypted application channel |
 | GET | `/api/v1/sync/heads?app=` | session | `{dev: hi_lam}` per device |
@@ -801,13 +803,36 @@ Unauthenticated endpoints MUST expose no application data of any kind. `/api/v1/
 returns app slugs and titles because discovery requires them; it MUST NOT return row
 counts, timestamps of last activity, or any app content.
 
+The manifest is one JSON object:
+
+```json
+{"v":1,"id":"k7m2q9xf","name":"Study","apps":[{"slug":"hello","title":"Hello","icon":"chat-heart"}],"pair":false}
+```
+
+- `name` is `sys_node.display_name` (`spec/data-dictionary.md §3.1`); while the owner has
+  set none it is the Node ID, so a client always has something to show.
+- `apps` lists the apps a device could open — those with a mount in the node's current
+  mode — as `slug`, `title` and `icon` (the `app.toml` icon name, absent when none). In
+  solo mode that is the one app.
+- `pair` is whether the node is accepting a pairing at this moment (§7.1: pairing requires
+  explicit owner action). A build without pairing reports `false`.
+
 ### 9.3 Headers
 
-- `Cache-Control: no-store` on every response containing app data.
+- `Cache-Control: no-store` on every response containing app data — which is every
+  response except the framework's own embedded assets under `/static/*` and the skill
+  documents under `/skills/*`, neither of which carries any. App responses, the shell's
+  pages, and `/api/v1/*` all carry it.
 - `Content-Security-Policy: default-src 'self'; script-src 'self'; object-src 'none';
-  base-uri 'none'; form-action 'self'; frame-ancestors 'none'`
+  base-uri 'none'; form-action 'self'; frame-ancestors 'none'` — as written, on every
+  response the framework itself renders, which is why the shell keeps its scripts and
+  styles in files under `/static/` and inlines nothing. An app response carries the
+  app's own policy (`spec/app-contract.md §5.4`): this one with `script-src` scoped to the
+  app's path, widened only by its `[permissions]`, and never relaxed for anything else.
 - `X-Content-Type-Options: nosniff`
 - `Referrer-Policy: no-referrer`
+
+All four are on every response, including refusals and errors.
 
 ---
 

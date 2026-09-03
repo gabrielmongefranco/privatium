@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/app-contract.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-02
+Modified: 2026-09-03
 Summary:  NORMATIVE. What an app is, the three tiers of app, and the three
           deployment modes. The declarative tier is one option, not the model.
 -->
@@ -400,7 +400,7 @@ express: a serial port, a scheduled job, a filesystem watcher, a non-HTTP protoc
 | `query` / `subscribe` | Sandboxed DuckDB reads; event stream |
 | `serve_discovery` / `pair` | mDNS, UDP, PAKE pairing, device registry |
 | `start_sync` / `sync_now` | iroh + LAN peers |
-| `auth_layer` | Tower middleware enforcing session and grants |
+| `auth_layer` | Tower middleware enforcing session and grants. `core::handle` applies it itself, so every adapter gets it without doing anything (`docs/decisions/0003`); an embedder wraps their own router with it, as §2.3 shows |
 | `snapshot` / `restore` | Manual snapshot and three-tier restore |
 
 ---

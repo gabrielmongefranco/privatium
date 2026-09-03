@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/xtask/src/spec_drift.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-08-31  |  Modified: 2026-09-02
+// Created:  2026-08-31  |  Modified: 2026-09-03
 // Summary:  `cargo xtask spec-drift`. docs/skills.md §7 makes a change to spec/ that is
 //           not reflected in skills/ an incomplete change. Until the generator exists in
 //           M13 there is nothing to diff, so this records what spec/ looked like when
@@ -25,7 +25,7 @@ const FAIL_ON_DRIFT: bool = false;
 const HEADER: &str = "\
 # Project:  Privatium™  |  File: crates/xtask/spec-hashes.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-08-31  |  Modified: 2026-09-02
+# Created:  2026-08-31  |  Modified: 2026-09-03
 # Summary:  SHA-256 of every normative document as of the last time skills/ was brought
 #           into line with it (docs/skills.md §7). Regenerate with
 #           `cargo xtask spec-drift --update`, and only once skills/ actually agrees —

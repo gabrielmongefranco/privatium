@@ -1,11 +1,12 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lib.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-08-31  |  Modified: 2026-09-02
+// Created:  2026-08-31  |  Modified: 2026-09-03
 // Summary:  Crate root. The error type, the M0 linkage probe, `Node::open` — steps 1 to 4
 //           of the bootstrap order in docs/plans/phase-1.md §2.6 — the sink that turns
 //           what a log scan found into sys_audit rows (spec/protocol.md §4.4), and the
 //           node-level snapshot, restore, verify, prune and maintenance API of
-//           spec/app-contract.md §6 (M4), routed to every loaded app's store (M5).
+//           spec/app-contract.md §6 (M4), routed to every loaded app's store (M5), and
+//           auth_layer (M6). core::handle itself is wire::Handler.
 
 //! Privatium core.
 //!
@@ -20,20 +21,25 @@ use thiserror::Error;
 
 pub mod app;
 pub mod config;
+pub mod http;
+pub mod icons;
 pub mod identity;
 pub mod local;
 pub mod log;
 pub mod store;
 pub mod sys;
+pub mod wire;
 
 pub use app::{
     App, AppRoot, Csp, LoadFailure, LoadReport, Manifest, Permissions, Seeded, Source, Stage,
     Warning,
 };
 pub use config::{Config, LuaConfig, Mode, NodeConfig, Paths};
+pub use http::{AuthLayer, Device, Peer};
 pub use identity::{Identity, NodeId};
 pub use log::{AppLog, Durability, Op};
 pub use store::{Restored, Schema, Snapshot, SnapshotId, Store, StoreError, Tier};
+pub use wire::{Body, Handler, Request, Response, url};
 
 use store::{Pruned, RestoreRecord, SnapshotError, SnapshotPolicy, Verification, snapshot};
 
@@ -536,6 +542,15 @@ impl Node {
         };
         let pruned = self.prune_snapshots(app, now)?;
         Ok(Maintenance { snapshot, pruned })
+    }
+
+    /// `auth_layer` (`spec/app-contract.md §6`): the tower middleware that decides who a
+    /// request is from. Phase 1: a loopback caller is this node's own device row, anything
+    /// else is 403 (`docs/plans/phase-1.md §2.2`). [`Handler::handle`] applies it itself, so
+    /// every adapter gets it; an embedder wraps their own router with it (`§2.3`).
+    #[must_use]
+    pub fn auth_layer(&self) -> AuthLayer {
+        AuthLayer::new(self.identity.id().clone())
     }
 
     /// Where this node's files are.

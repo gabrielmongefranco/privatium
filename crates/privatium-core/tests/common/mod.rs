@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/common/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-02  |  Modified: 2026-09-02
+// Created:  2026-09-02  |  Modified: 2026-09-03
 // Summary:  What tests/store.rs, tests/snapshot.rs and tests/apps.rs share: a node plus
 //           one app store, the event line of spec/protocol.md §4.1 spelled by hand,
 //           `echo >>`, the digests the §2.5 comparisons are made with, app folders written
@@ -386,4 +386,23 @@ pub fn digest_via(conn: &duckdb::Connection, table: &str) -> String {
         |row| row.get::<_, String>(0),
     )
     .unwrap()
+}
+
+// ---------------------------------------------------------------------------------------
+// Tier 2 app folders and the wire (tests/wire.rs, crates/privatium/tests/adapter.rs)
+// ---------------------------------------------------------------------------------------
+
+/// The smallest valid Tier 2 manifest for `slug`.
+pub fn web_manifest(slug: &str) -> String {
+    format!(
+        "[app]\nslug = \"{slug}\"\ntitle = \"{slug}\"\nversion = \"1.0.0\"\napi = 1\ntier = \"web\"\n"
+    )
+}
+
+/// A loadable Tier 2 app: the manifest and a one-line `web/index.html`, plus `files`.
+pub fn write_web_app(apps_dir: &Path, slug: &str, files: &[(&str, &str)]) -> PathBuf {
+    let index = format!("<!doctype html><title>{slug}</title><p>{slug} index</p>\n");
+    let mut all: Vec<(&str, &str)> = vec![("web/index.html", &index)];
+    all.extend_from_slice(files);
+    write_app(apps_dir, slug, Some(&web_manifest(slug)), &all)
 }

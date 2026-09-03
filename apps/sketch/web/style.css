@@ -1,7 +1,9 @@
 /* Project: Privatium™ | File: apps/sketch/web/style.css
    Authors: Gabriel Mongefranco (@gabrielmongefranco)
-   Created: 2026-08-28 | Modified: 2026-08-28
-   Summary: The app's own styling. The framework injects no CSS into Tier B. */
+   Created: 2026-08-28 | Modified: 2026-09-03
+   Summary: The app's own styling. The framework injects no CSS into Tier 2. The
+            swatch colours live here rather than in style= attributes, which the
+            default CSP of spec/protocol.md §9.3 blocks. */
 :root { --navy:#00274C; --maize:#FFCB05; }
 * { box-sizing:border-box; margin:0; }
 body { font:16px/1.4 system-ui,sans-serif; overflow:hidden; background:#fff; }
@@ -9,7 +11,10 @@ body { font:16px/1.4 system-ui,sans-serif; overflow:hidden; background:#fff; }
 #tools { display:flex; gap:.75rem; align-items:center; height:56px; padding:0 1rem;
          border-top:1px solid #ddd; background:#fafafa; }
 .swatch { width:32px; height:32px; border:2px solid #0002; border-radius:50%;
-          background:var(--c); cursor:pointer; }
+          cursor:pointer; }
+.swatch-navy { background:var(--navy); }
+.swatch-maize { background:var(--maize); }
+.swatch-charcoal { background:#333333; }
 .swatch:focus-visible { outline:3px solid var(--maize); outline-offset:2px; }
 button#clear { padding:.4rem .9rem; border:1px solid var(--navy); border-radius:6px;
                background:#fff; color:var(--navy); cursor:pointer; }

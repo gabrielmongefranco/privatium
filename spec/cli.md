@@ -212,7 +212,12 @@ Writes the skill folders matching **the running version** to disk, so an owner o
 their assistant v1.2's contract rather than whatever a search engine returned
 (`docs/skills.md §6`).
 
-A running node also serves them at `/skills/<name>.md` and `/skills/bundle.zip`.
+A running node also serves them at `/skills/<name>.md` — `skills/<name>/SKILL.md` — and
+`/skills/bundle.zip`, which holds every file under `skills/` at its repository-relative
+path: `README.md`, each `<name>/SKILL.md`, and each skill's `reference/`. Extracting it in
+place reproduces the `skills/` tree the running version shipped, which is what the `curl`
+line in `skills/README.md` relies on. The entries are stored, not compressed: the bundle is
+a few hundred kilobytes of Markdown and every extractor reads a stored zip.
 
 ---
 

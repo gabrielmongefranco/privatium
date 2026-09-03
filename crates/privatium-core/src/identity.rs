@@ -1,9 +1,9 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/identity.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-01
-// Summary:  The node's Ed25519 keypair and the Node ID derived from it
-//           (spec/protocol.md §2.1). First run generates the pair; every run after
-//           loads it, and the derivation is pure, so the ID is stable forever.
+// Created:  2026-09-01  |  Modified: 2026-09-03
+// Summary:  The node's Ed25519 keypair, the Node ID derived from it, and the CSRF key derived
+//           from it (spec/protocol.md §2.1, docs/plans/phase-1.md §2.2). First run generates
+//           the pair; every run after loads it, and both derivations are pure.
 
 use std::fmt;
 use std::fs;
@@ -138,9 +138,50 @@ impl Identity {
     }
 }
 
-// The private key is deliberately not exposed. M6 derives the CSRF key from it with
-// HKDF-SHA256 and writes no secret anywhere (docs/plans/phase-1.md §2.2); that derivation
-// belongs on this type as a method, so the key itself never leaves.
+/// A key derived from the node key for one purpose, wiped on drop.
+///
+/// Only ever produced by [`Identity::csrf_key`]; the bytes are readable so the HMAC in
+/// `http::csrf` can be keyed with them, and nothing else has a reason to look.
+pub struct DerivedKey(zeroize::Zeroizing<[u8; KEY_LEN]>);
+
+impl DerivedKey {
+    /// The key bytes.
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl fmt::Debug for DerivedKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("DerivedKey(..)")
+    }
+}
+
+/// `docs/plans/phase-1.md §2.2`: the HKDF `info` that names the CSRF purpose. A second
+/// purpose gets a second string, never a reuse of this one.
+const CSRF_INFO: &[u8] = b"privatium/csrf/v1";
+
+impl Identity {
+    /// The CSRF key of `docs/plans/phase-1.md §2.2`:
+    /// `HKDF-SHA256(ikm = node private key, info = "privatium/csrf/v1")`, no salt.
+    ///
+    /// Derived, never stored: `AGENTS.md` 5 keeps secrets out of `data/`, and
+    /// `spec/protocol.md §3` gives `local/` exactly one file. This is a method here so the
+    /// private key itself never leaves this module — callers get a purpose-bound key and
+    /// nothing they could sign with.
+    #[must_use]
+    pub fn csrf_key(&self) -> DerivedKey {
+        let hk = hkdf::Hkdf::<Sha256>::new(None, self.signing.as_bytes());
+        let mut okm = zeroize::Zeroizing::new([0u8; KEY_LEN]);
+        // `expand` fails only when the output is longer than 255 hash lengths; 32 bytes is
+        // not, so the empty branch is unreachable rather than an error to report.
+        if hk.expand(CSRF_INFO, okm.as_mut()).is_err() {
+            okm.as_mut().fill(0);
+        }
+        DerivedKey(okm)
+    }
+}
 
 impl fmt::Debug for Identity {
     /// Hand-written so that a `{:?}` of anything holding an `Identity` cannot print key

@@ -1,6 +1,6 @@
 -- Project:  Privatium™  |  File: crates/privatium-core/src/store/sys.sql
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
--- Created:  2026-09-01  |  Modified: 2026-09-02
+-- Created:  2026-09-01  |  Modified: 2026-09-03
 -- Summary:  The framework's own schema.sql (spec/data-dictionary.md §3). `_sys` is an app
 --           and is materialized by exactly the machinery any app gets; this is the file it
 --           would have shipped if it had a folder.
@@ -136,8 +136,11 @@ CREATE TABLE sys_audit (
 -- below. The restore tier is node-local by nature — a fact about this node's cache — which
 -- is why it is a cache table joined to the replicated `sys_snapshot` rather than an event.
 
+-- `last_error` is carried so the launcher can show an enabled app whose folder is missing
+-- as unavailable rather than pretending it is gone (§3.4, rules). §4 does not enumerate the
+-- view's columns, so this is the framework's call and not a dictionary change.
 CREATE VIEW v_app_nav AS
-    SELECT id, title, icon, nav_order
+    SELECT id, title, icon, nav_order, last_error
     FROM sys_app
     WHERE enabled
     ORDER BY nav_order, title;

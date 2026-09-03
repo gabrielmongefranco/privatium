@@ -1,8 +1,10 @@
 # Project:  Privatium™  |  File: crates/privatium/Cargo.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-08-31  |  Modified: 2026-08-31
-# Summary:  The binary. Gains clap, the axum adapter, and terminal output in M6 and M11;
-#           at M0 it exists so that CI has a release artefact whose size means something.
+# Created:  2026-08-31  |  Modified: 2026-09-03
+# Summary:  The binary, and beside it the axum adapter as a library target so its tests can
+#           reach it (ADR 0003: socket and peer address in, `core::handle` out — no routes
+#           of its own). Gains clap and terminal output in M11; at M0 it existed so that CI
+#           had a release artefact whose size means something.
 
 [package]
 name        = "privatium"
@@ -14,6 +16,10 @@ license.workspace      = true
 authors.workspace      = true
 repository.workspace   = true
 
+[lib]
+name = "privatium"
+path = "src/lib.rs"
+
 [[bin]]
 name = "privatium"
 path = "src/main.rs"
@@ -21,6 +27,17 @@ path = "src/main.rs"
 [dependencies]
 privatium-core = { workspace = true }
 anyhow         = { workspace = true }
+
+# M6 — the axum adapter. `http1` and `tokio` are what `axum::serve` needs; the adapter has
+# no router, so none of axum's routing or extractor features are on. `tokio`'s `net` is the
+# loopback listener of docs/plans/phase-1.md §2.1, `rt-multi-thread` the runtime `main`
+# will start in M11 (and the env-gated development start does now).
+axum  = { workspace = true, features = ["http1", "tokio"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "net", "macros", "io-util"] }
+tower = { workspace = true, features = ["util"] }
+
+[dev-dependencies]
+tempfile = { workspace = true }
 
 [lints.rust]
 unsafe_code = "deny"

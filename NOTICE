@@ -12,5 +12,22 @@ Documentation License Notice
 Permission is granted to copy, distribute and/or modify this document under the terms of the GNU Free Documentation License, Version 1.3 or any later version published by the Free Software Foundation; with no Invariant Sections, no Front-Cover Texts, and no Back-Cover Texts. You should have received a copy of the license included in the section entitled "GNU Free Documentation License". If not, see https://www.gnu.org/licenses/fdl-1.3-standalone.html
 
 
+Third-Party Notices
+Bootstrap Icons (https://github.com/twbs/icons), v1.13.1, vendored in full at
+crates/privatium-core/assets/icons/ and embedded in the binary. Copyright (c) 2019-2024
+The Bootstrap Authors. Licensed under the MIT License; the full text is in
+crates/privatium-core/assets/icons/LICENSE.
+
+htmx (https://github.com/bigskysoftware/htmx), v2.0.9, vendored at
+crates/privatium-core/assets/shell/htmx.min.js and embedded in the binary. Copyright (c)
+2020 Big Sky Software. Licensed under the Zero-Clause BSD License: Permission to use, copy,
+modify, and/or distribute this software for any purpose with or without fee is hereby
+granted. THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS.
+IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR
+CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR
+PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
+OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
 Change Log
 See the full change log under this repository's releases page.

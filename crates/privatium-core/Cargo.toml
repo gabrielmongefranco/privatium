@@ -1,6 +1,6 @@
 # Project:  Privatium™  |  File: crates/privatium-core/Cargo.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-08-31  |  Modified: 2026-09-02
+# Created:  2026-08-31  |  Modified: 2026-09-03
 # Summary:  The library. One core crate per ADR 0002 — the server, the shells, and
 #           (later) uniffi all consume this and nothing else.
 
@@ -71,8 +71,27 @@ serde       = { workspace = true }
 serde_json  = { workspace = true }
 toml        = { workspace = true }
 
+# M6 — the wire (ADR 0003) and the shell. `axum` with default features off is taken for the
+# `http` types and the boxed streaming `Body` that `Request` and `Response` carry — no
+# router, no `serve`; nothing in this crate listens on a socket. `tower` is the
+# `Layer`/`Service` shape `auth_layer` has (spec/app-contract.md §6). `tower-http`'s
+# `ServeDir` streams a Tier 2 app's `web/` in 64 KiB frames and refuses `..`; `tokio` is
+# what it reads files through — the runtime itself belongs to the adapter. `hmac` and
+# `hkdf` derive the CSRF key of docs/plans/phase-1.md §2.2 from the node key, so no
+# secret is written anywhere. `include_dir` embeds the icons, the shell's assets and
+# `skills/` (docs/icons.md, spec/cli.md §6).
+axum        = { workspace = true }
+tower       = { workspace = true, features = ["util"] }
+tower-http  = { workspace = true, features = ["fs"] }
+tokio       = { workspace = true, features = ["fs"] }
+hmac        = { workspace = true }
+hkdf        = { workspace = true }
+include_dir = { workspace = true }
+
 [dev-dependencies]
 tempfile = { workspace = true }
+# M6 — the route tests drive `Handler::handle` on a runtime; there is no listener in them.
+tokio    = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [lints.rust]
 # AGENTS.md, Style: no `unsafe` without a comment naming the invariant it upholds. Deny
