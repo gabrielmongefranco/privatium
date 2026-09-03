@@ -114,26 +114,31 @@ never interpolated; string concatenation into SQL MUST be rejected by the linter
 over `DECIMAL` columns use `decimal_sum()`; date arithmetic uses `date(x, '+30 days')`
 (`spec/data-dictionary.md §2`).
 
-**How a result column is typed.** A column that originates in a declared column — read
-from its table directly or through a view — arrives as its declaration says: `DECIMAL`
-and `BIGINT` as **strings** (the reason is in `spec/data-dictionary.md §2.1`), `BOOLEAN`
-as a Lua boolean, `JSON` (`VARCHAR[]`) decoded into a table, everything else as a string.
-A computed column — `count(*) AS n`, `decimal_sum(x)`, an expression — has no
-declaration and arrives by its storage class: an integer as a Lua integer, a real as a Lua
-number, text as a string. So `n` above is a number, and `decimal_sum()` is a string. A
-NULL is an absent key in the row's table, never a value. `pv.query1` returns `nil` when
-there is no row; `pv.get_row` returns `nil` for an id that is absent **or whose winning
-event is a tombstone** — `spec/protocol.md §4.5` materializes no row for one, exactly as
-the data API answers 404 for both.
+**How a result column is typed.** What SQLite holds, as Lua holds it — the rule every
+SQLite binding follows: an `INTEGER` is a Lua integer, a `REAL` a Lua number, `TEXT` a
+string, and a `NULL` an absent key in the row's table, never a value. So a `BIGINT` column
+is a Lua integer — 64-bit and exact, since the reason JSON needs a string
+(`spec/data-dictionary.md §2.1`) does not apply to Lua — `count(*) AS n` is a number, and
+a `DECIMAL` column, which is text in the cache, is a **string**: Lua has no exact decimal,
+and a float would lose what the text keeps. Two conveniences apply to a column that
+originates in a declared column, read directly or through a view: `BOOLEAN` arrives as a
+Lua boolean (an `INTEGER` `0` would be truthy in Lua), and `JSON` (`VARCHAR[]`) arrives
+decoded into a table. A computed column has no declaration and follows the storage rule
+alone, so `decimal_sum()` is a string. `pv.query1` returns `nil` when there is no row;
+`pv.get_row` returns `nil` for an id that is absent **or whose winning event is a
+tombstone** — `spec/protocol.md §4.5` materializes no row for one, exactly as the data API
+answers 404 for both.
 
 `pv.dec(s)` returns a decimal userdata from a string, an integer or another decimal —
 never from a Lua float, which is refused because it is already inexact. It supports `+`,
-`-`, `*`, unary minus, `==`, `<`, `<=`, `tostring`, `d:with_scale(n)`, `d:scale()` and
-`d:compare(other)`, exact at the larger scale of the operands, and an operation whose
-result does not fit 36 digits is an error rather than a saturated value. There is **no
-`/`**: a quotient is not exact, and the scale and rounding of one are a business rule the
-author states. Division is `a:div(b, scale)`, which rounds half away from zero at exactly
-`scale` places; a zero divisor is an error. Never convert money to a Lua number.
+`-`, `*`, `/`, unary minus, `==`, `<`, `<=`, `tostring`, `d:with_scale(n)`, `d:scale()`
+and `d:compare(other)`, exact at the larger scale of the operands, and an operation whose
+result does not fit 36 digits is an error rather than a saturated value. A quotient is not
+exact, so `/` rounds half away from zero at the larger scale of the two operands —
+`pv.dec('10.00') / 3` is `3.33` — and `a:div(b, scale)` does the same at a scale the
+author names; a zero divisor is an error either way. Display and storage never need any
+of this: a template prints the string, `fmt.money` formats it, and totals belong in SQL
+(`decimal_sum`). Never convert money to a Lua number.
 
 ### 3.3 Writing
 
@@ -169,9 +174,28 @@ assigns contiguous `seq` values to the batch, under one `ts`.
 `d`: a string as a string, an integer as an integer, a boolean as a boolean, a `pv.dec` as
 its digits in a string, and a nested table as an array when its keys are exactly `1..n`
 (an empty table is an empty array) or an object when they are all strings. A key whose
-value is `nil` is absent (`spec/data-dictionary.md §2.1`). `DECIMAL` and `BIGINT` values
-are passed as strings, as the dictionary requires; a Lua float is written as a JSON number
-and is the author's mistake.
+value is `nil` is absent (`spec/data-dictionary.md §2.1`).
+
+**Typed writes.** When `schema.sql` declares the table, every value that names a declared
+column is checked and normalized before the append, and a value that is not its type
+refuses the whole append — the batch too — with an error naming the table and column.
+Nothing reaches the log, so the log stays clean and nothing has to materialize as NULL
+later (`spec/data-dictionary.md §2.1`). Keys naming no declared column pass through
+untouched.
+
+| Declared | Accepted | Written |
+|---|---|---|
+| `BIGINT` | a Lua integer, or a string of digits | the digits, as a string |
+| `DECIMAL(p,s)` | a string, an integer, a Lua number, a `pv.dec` | the digits at scale `s`, as a string; more fractional digits than `s` holds is refused, not rounded |
+| `BOOLEAN` | `true`/`false`, `'true'`/`'false'`, `'yes'`/`'no'`, `1`/`0` | `true`/`false` |
+| `DATE` | `2026-09-03`, `2026/09/03`, `20260903`, `3/9/2026`, `3-9-26`, `03.09.2026`, `March 9, 2026`, `9 March 2026`, `9-Mar-2026`, `09-SEP-26`, an epoch in seconds or milliseconds, a timestamp | `YYYY-MM-DD` |
+| `TIME` | `14:03`, `14:03:11`, `2:03 pm`, `9am` | `HH:MM:SS` |
+| `TIMESTAMPTZ` | RFC 3339 with `Z` or an offset, `2026-09-03 14:03[:11]` or with `T` (read as UTC), a date (midnight UTC), `3/9/2026 2:30 pm`, an epoch | RFC 3339 UTC to the millisecond |
+
+Where a numeric date's day and month are both twelve or less, `ui.date_format = "eu"`
+reads the day first and anything else the month first; a two-digit year `00`–`69` is this
+century and `70`–`99` the last. The same normalization applies to `sample/seed.jsonl` and
+to the data API.
 
 Inside `pv.batch`, `pv.append` and `pv.delete` are errors — `tx.append` and `tx.delete`
 are the batch — and `pv.batch` does not nest; a `tx` used after its function returned is
@@ -358,9 +382,16 @@ that runs entirely inside the interpreter's C code — a pathological `string.fi
 that catches that and lets go of what it held has not exceeded the limit; one that does
 not is refused again. `app.lua` loads under the same limits.
 
-Lua states are not thread-safe. The host maintains a pool; one request holds one VM. Global
-state in an app is therefore **per-VM and not shared** — apps needing shared state MUST use
-the event log. This is documented as a footgun and checked by the linter.
+Lua states are not thread-safe. The host maintains a pool; one request holds one VM.
+**Global state.** A global assigned while `app.lua` loads — a helper function, a constant,
+a table — is the VM's baseline and is visible to every request on that VM. A global
+assigned inside a handler, or in a `lib/` module a handler calls, **lives until that
+request ends and is never seen by another request**, on that VM or any other: the host runs
+app code in an environment whose assignments are request-scoped, so one request's data
+cannot leak into the next and nothing can be cached across requests by assignment. What a
+handler can still do is mutate a table the baseline holds (`cache[k] = v` where `cache =
+{}` was defined at load); that persists per VM and is not shared, which is the footgun the
+linter checks. Apps needing shared state MUST use the event log.
 
 ---
 

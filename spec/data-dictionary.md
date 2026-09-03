@@ -85,11 +85,19 @@ lands at its declared scale (`12.3` in a `DECIMAL(18,2)` column is `12.30`). A v
 does not parse as its declared type materializes as NULL — the log line cannot be corrected
 and MUST NOT stop the app — and the data API refuses it before it is ever appended.
 
-In Lua, `pv.dec` is the same exact type: `+`, `-` and `*` at the larger scale of the
-operands, comparison across scales, **no `/`** — division is `a:div(b, scale)` at an
-explicit scale, rounded half away from zero — and an error rather than a saturated value
-when a result does not fit (`spec/lua-api.md §3.2`). The SQL functions above saturate;
-an app's arithmetic errors.
+In Lua, `pv.dec` is the same exact type: `+`, `-`, `*` and `/` at the larger scale of the
+operands (`/` rounding half away from zero; `a:div(b, scale)` at a named scale),
+comparison across scales, and an error rather than a saturated value when a result does
+not fit (`spec/lua-api.md §3.2`). The SQL functions above saturate; an app's arithmetic
+errors.
+
+**On write** — `pv.append`, `sample/seed.jsonl`, and the data API — the framework
+normalizes every value that names a declared column to the encoding above and refuses one
+it cannot, before anything is appended: a `BIGINT` given as a number becomes its digits, a
+`DECIMAL` lands at its declared scale, and a `DATE`, `TIME` or `TIMESTAMPTZ` typed in any
+of the spellings `spec/lua-api.md §3.3` lists lands in the ISO spelling. The NULL rule
+above is what happens to a line that reached the log some other way — `echo`, a restore
+from another node — and could not be refused.
 
 Dates are `YYYY-MM-DD`. Timestamps are RFC 3339 UTC with a literal `Z`.
 

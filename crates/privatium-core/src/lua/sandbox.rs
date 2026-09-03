@@ -4,8 +4,9 @@
 // Summary:  The state an app runs in (spec/lua-api.md §5): the retained standard libraries
 //           and nothing else, the closed list of removed names, `require` replaced by a
 //           loader confined to the app's lib/ plus 'privatium', `print` routed to the
-//           diagnostic log, and the sandbox globals of §4.0 — url, icon, fmt.*, t — that
-//           handler code and (from M8) templates share.
+//           diagnostic log, the request-scoped environment that keeps one request's global
+//           assignments from the next, and the sandbox globals of §4.0 — url, icon, fmt.*,
+//           t — that handler code and (from M8) templates share.
 
 use std::fs;
 use std::path::PathBuf;
@@ -15,7 +16,7 @@ use mlua::{Lua, LuaOptions, StdLib, Table, Value};
 
 use crate::config::LuaConfig;
 use crate::icons;
-use crate::lua::{UiSettings, VmData};
+use crate::lua::{Phase, UiSettings, VmData};
 use crate::store::Decimal;
 
 /// The registry key of the table `require` caches modules in — `package.loaded`.
@@ -23,6 +24,67 @@ pub(crate) const LOADED_KEY: &str = "pv.loaded";
 
 /// The registry key of the `pv` module table.
 pub(crate) const PV_KEY: &str = "pv.module";
+
+/// The registry key of the environment app code runs in.
+const ENV_KEY: &str = "pv.env";
+
+/// The registry key of the table that holds a request's global assignments.
+const SCRATCH_KEY: &str = "pv.scratch";
+
+/// The environment every app chunk — `app.lua`, and each `lib/` module — runs in
+/// (`spec/lua-api.md §5`, "global state").
+///
+/// A proxy that never holds a key of its own. Reads fall through to the request's scratch
+/// table and then to the real globals; writes go to the real globals while `app.lua`
+/// loads — that is the VM's baseline — and to the scratch table during a request, which
+/// [`clear_scratch`] empties when the request ends. So a global assigned in a handler
+/// lives exactly one request and is never seen by another, on this VM or any other. A
+/// table the baseline holds can still be mutated in place; that persists per VM, and is
+/// the footgun the linter checks.
+pub(crate) fn install_env(lua: &Lua) -> mlua::Result<Table> {
+    let globals = lua.globals();
+    let scratch = lua.create_table()?;
+    let fallback = lua.create_table()?;
+    fallback.raw_set("__index", globals.clone())?;
+    scratch.set_metatable(Some(fallback))?;
+
+    let env = lua.create_table()?;
+    let meta = lua.create_table()?;
+    meta.raw_set("__index", scratch.clone())?;
+    meta.raw_set("__newindex", lua.create_function(assign_global)?)?;
+    // `setmetatable(_G, …)` and `getmetatable(_G)` see this string, not the table.
+    meta.raw_set("__metatable", "the app's environment")?;
+    env.set_metatable(Some(meta))?;
+
+    globals.raw_set("_G", env.clone())?;
+    lua.set_named_registry_value(ENV_KEY, env.clone())?;
+    lua.set_named_registry_value(SCRATCH_KEY, scratch)?;
+    Ok(env)
+}
+
+/// `__newindex` of the environment: baseline while loading, scratch during a request.
+fn assign_global(lua: &Lua, (_env, key, value): (Table, Value, Value)) -> mlua::Result<()> {
+    let loading = lua
+        .app_data_ref::<VmData>()
+        .is_some_and(|data| data.phase == Phase::Loading);
+    if loading {
+        lua.globals().raw_set(key, value)
+    } else {
+        let scratch: Table = lua.named_registry_value(SCRATCH_KEY)?;
+        scratch.raw_set(key, value)
+    }
+}
+
+/// The environment app chunks run in.
+pub(crate) fn env(lua: &Lua) -> mlua::Result<Table> {
+    lua.named_registry_value(ENV_KEY)
+}
+
+/// Forget a request's global assignments.
+pub(crate) fn clear_scratch(lua: &Lua) -> mlua::Result<()> {
+    let scratch: Table = lua.named_registry_value(SCRATCH_KEY)?;
+    scratch.clear()
+}
 
 /// The framework modules `require` serves. `'privatium'` and nothing else in Phase 1.
 const FRAMEWORK_MODULES: [&str; 1] = ["privatium"];
@@ -129,6 +191,7 @@ fn require(lua: &Lua, name: String) -> mlua::Result<Value> {
         .load(source)
         .set_name(chunk_name)
         .set_mode(ChunkMode::Text)
+        .set_environment(env(lua)?)
         .call(name.as_str())?;
     let value = if value == Value::Nil {
         Value::Boolean(true)

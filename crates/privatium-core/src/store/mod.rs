@@ -22,6 +22,7 @@ mod csv;
 pub mod decimal;
 mod events;
 pub mod materialize;
+pub mod normalize;
 pub mod restore;
 pub mod sandbox;
 pub mod schema;

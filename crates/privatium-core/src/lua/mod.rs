@@ -440,6 +440,7 @@ impl Host {
         });
         pv::install(&lua).map_err(|error| error.to_string())?;
         sandbox::install_globals(&lua).map_err(|error| error.to_string())?;
+        let env = sandbox::install_env(&lua).map_err(|error| error.to_string())?;
 
         let path = self.dir.join("app.lua");
         let source = fs::read(&path).map_err(|error| format!("app.lua: {error}"))?;
@@ -447,6 +448,7 @@ impl Host {
             .load(source)
             .set_name("@app.lua")
             .set_mode(ChunkMode::Text)
+            .set_environment(env)
             .exec();
         if let Some(kind) = limits.tripped() {
             return Err(format!(
@@ -551,13 +553,15 @@ impl Vm {
         }
         let result = body(&self.lua);
         // Take the context back whatever happened: the connection closes here, and a
-        // handler that errored must not leave a half-built batch behind.
+        // handler that errored must not leave a half-built batch behind. The request's
+        // global assignments go with it (`spec/lua-api.md §5`).
         let taken = self.lua.app_data_mut::<VmData>().map(|mut data| {
             data.phase = Phase::Idle;
             data.batch = None;
             data.ctx.take()
         });
         drop(taken);
+        let _ = sandbox::clear_scratch(&self.lua);
 
         let detail = match &result {
             Ok(_) => "the handler returned after the limit tripped".to_owned(),

@@ -3,9 +3,9 @@
 // Created:  2026-09-03  |  Modified: 2026-09-03
 // Summary:  pv.dec (spec/lua-api.md §3.2): store::Decimal as a Lua userdata. Construction
 //           from a string or an integer, never a float; + - * and unary minus exact and
-//           erroring on overflow rather than saturating; comparison across scales; division
-//           only with an explicit scale, because a quotient is not exact and the rounding
-//           is a business rule the author states.
+//           erroring on overflow rather than saturating; comparison across scales; `/` at
+//           the larger scale of the operands, rounded half away from zero, and `:div` for
+//           an author who wants to name the scale.
 
 use std::cmp::Ordering;
 
@@ -89,12 +89,16 @@ impl UserData for Dec {
         methods.add_meta_function(MetaMethod::Mul, |_, (a, b): (Value, Value)| {
             binary(&a, &b, Decimal::checked_mul)
         });
-        methods.add_meta_function(MetaMethod::Div, |_, (_, _): (Value, Value)| {
-            Err::<Dec, _>(mlua::Error::runtime(
-                "pv.dec: `/` is not defined because a quotient is not exact; use \
-                 a:div(b, scale), which rounds half away from zero at the scale you name \
-                 (spec/lua-api.md §3.2)",
-            ))
+        // `a / b`: at the larger scale of the two, rounded half away from zero — the rule
+        // `a:div(b, scale)` lets the author override.
+        methods.add_meta_function(MetaMethod::Div, |_, (a, b): (Value, Value)| {
+            let (a, b) = (Dec::coerce(&a)?, Dec::coerce(&b)?);
+            if b.is_zero() {
+                return Err(mlua::Error::runtime("pv.dec: division by zero"));
+            }
+            a.div_scaled(b, a.scale().max(b.scale()))
+                .map(Dec)
+                .ok_or_else(overflow)
         });
         methods.add_meta_method(MetaMethod::Unm, |_, this, ()| {
             this.0.checked_neg().map(Dec).ok_or_else(overflow)

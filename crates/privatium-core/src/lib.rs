@@ -194,6 +194,20 @@ pub enum Error {
         /// What is wrong with it.
         problem: String,
     },
+
+    /// A value written to a typed column is not its type (`spec/data-dictionary.md §2.1`,
+    /// `spec/lua-api.md §3.3`). Refused before the append, so the log stays clean.
+    #[error("{app}: {tbl}.{column}: {problem}")]
+    Value {
+        /// The app.
+        app: String,
+        /// The table.
+        tbl: String,
+        /// The column whose value was refused.
+        column: String,
+        /// What was wrong with it.
+        problem: String,
+    },
 }
 
 /// The crate's result type.

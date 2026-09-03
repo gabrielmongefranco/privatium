@@ -537,8 +537,11 @@ async fn test_spec_lua_5_limit_does_not_kill_node() {
     assert_eq!(limit_audits(&handler).len(), 3);
 }
 
-/// `spec/lua-api.md §5` — globals are per VM: two VMs, four requests round-robin, and the
-/// counter each carries is its own.
+/// `spec/lua-api.md §5` — a global set while `app.lua` loads is the VM's baseline; a global
+/// assigned in a handler (or in a `lib/` module a handler calls) lasts one request and is
+/// never seen by another, on this VM or the other; a table the baseline holds and a handler
+/// mutates in place persists per VM and is not shared — the footgun the linter checks; and
+/// the environment's metatable is out of reach.
 #[tokio::test]
 async fn test_spec_lua_5_globals_are_per_vm() {
     let root = tempfile::tempdir().unwrap();
@@ -546,19 +549,70 @@ async fn test_spec_lua_5_globals_are_per_vm() {
     app(
         &root,
         "glob",
-        "local pv = require 'privatium'\ncounter = 0\npv.get('/count', function() counter = counter + 1; return pv.text(tostring(counter)) end)\n",
-        &[],
+        r#"
+local pv = require 'privatium'
+counter = 0
+greeting = 'hi'
+cache = {}
+pv.get('/count', function() counter = counter + 1; return pv.text(tostring(counter)) end)
+pv.get('/greet', function(req)
+  local before = greeting
+  if req.query.set then greeting = req.query.set end
+  return pv.text(before .. '/' .. greeting)
+end)
+pv.get('/cache', function() cache[#cache + 1] = true; return pv.text(tostring(#cache)) end)
+pv.get('/lib', function() return pv.text(tostring(require('m').bump())) end)
+pv.get('/meta', function()
+  local ok = pcall(setmetatable, _G, {})
+  return pv.text(type(getmetatable(_G)) .. '/' .. tostring(ok) .. '/' .. tostring(_G.counter))
+end)
+"#,
+        &[(
+            "lib/m.lua",
+            "local M = {}\nfunction M.bump() hits = (hits or 0) + 1; return hits end\nreturn M\n",
+        )],
     );
     let handler = handler_for(&root);
-    let mut seen = Vec::new();
+    let hit = |path: &str| {
+        let path = format!("/a/glob{path}");
+        let handler = &handler;
+        async move { body_of(handler.handle(get(&path)).await).await }
+    };
+    let mut counts = Vec::new();
     for _ in 0..4 {
-        seen.push(body_of(handler.handle(get("/a/glob/count")).await).await);
+        counts.push(hit("/count").await);
     }
     assert_eq!(
-        seen,
-        ["1", "1", "2", "2"],
-        "a VM's globals do not reach another's"
+        counts,
+        ["1", "1", "1", "1"],
+        "a handler's global lasts one request"
     );
+    assert_eq!(hit("/greet?set=bye").await, "hi/bye");
+    assert_eq!(
+        hit("/greet").await,
+        "hi/hi",
+        "the baseline is back next request"
+    );
+    assert_eq!(hit("/greet").await, "hi/hi");
+    let mut lib = Vec::new();
+    for _ in 0..3 {
+        lib.push(hit("/lib").await);
+    }
+    assert_eq!(
+        lib,
+        ["1", "1", "1"],
+        "a lib module's globals are request-scoped too"
+    );
+    let mut cached = Vec::new();
+    for _ in 0..4 {
+        cached.push(hit("/cache").await);
+    }
+    assert_eq!(
+        cached,
+        ["1", "1", "2", "2"],
+        "a baseline table mutated in place persists per VM and is not shared"
+    );
+    assert_eq!(hit("/meta").await, "string/false/0");
 }
 
 // ---------------------------------------------------------------------------------------
@@ -765,9 +819,10 @@ pv.get('/view', function() return pv.render('missing') end)
 // §3.2 — reading
 // ---------------------------------------------------------------------------------------
 
-/// `spec/lua-api.md §3.2`, `spec/data-dictionary.md §2.1` — a declared DECIMAL and BIGINT
-/// arrive as strings, a BOOLEAN as a boolean, a JSON column decoded, a NULL as nothing,
-/// and an expression such as `count(*)` by its storage class, through a view too.
+/// `spec/lua-api.md §3.2`, `spec/data-dictionary.md §2.1` — what SQLite holds, as Lua holds
+/// it: a BIGINT is a Lua integer, exact past 2⁵³; a DECIMAL is a string; `count(*)` an
+/// integer and `1.5` a float; a BOOLEAN a boolean and a JSON column decoded, through a view
+/// too; a NULL an absent key.
 #[tokio::test]
 async fn test_spec_lua_3_2_result_typing() {
     let root = tempfile::tempdir().unwrap();
@@ -789,7 +844,7 @@ pv.get('/read', function()
   local rows = pv.query('SELECT name, big FROM thing WHERE big > ? ORDER BY name', {'1'})
   return pv.json({
     amount = r.amount, amount_t = type(r.amount),
-    big = r.big, big_t = type(r.big),
+    big = r.big, big_t = math.type(r.big),
     ok = r.ok, ok_t = type(r.ok),
     tags = r.tags, tags_t = type(r.tags), tag2 = r.tags[2],
     filled_on = r.filled_on,
@@ -797,8 +852,8 @@ pv.get('/read', function()
     n = r.n, n_t = math.type(r.n),
     total = r.total, total_t = type(r.total),
     f = r.f, f_t = math.type(r.f),
-    view_b = v.b, view_b_t = type(v.b), view_a = v.a, view_n = math.type(v.n),
-    rows = rows, first_big_t = type(rows[1].big),
+    view_b = v.b, view_b_t = math.type(v.b), view_a = v.a, view_n = math.type(v.n),
+    rows = rows, first_big_t = math.type(rows[1].big),
     ok_b = pv.query1("SELECT ok FROM thing WHERE name = 'b'").ok,
   })
 end)
@@ -811,8 +866,8 @@ end)
     let read = json_of(handler.handle(get("/a/typed/read")).await).await;
     assert_eq!(read["amount"], "12.30", "at the declared scale");
     assert_eq!(read["amount_t"], "string");
-    assert_eq!(read["big"], "9007199254740993");
-    assert_eq!(read["big_t"], "string");
+    assert_eq!(read["big"], 9_007_199_254_740_993_i64, "exact past 2^53");
+    assert_eq!(read["big_t"], "integer");
     assert_eq!(read["ok"], true);
     assert_eq!(read["ok_t"], "boolean");
     assert_eq!(read["ok_b"], false);
@@ -830,13 +885,16 @@ end)
     assert_eq!(read["total_t"], "string");
     assert_eq!(read["f"], 1.5);
     assert_eq!(read["f_t"], "float");
-    assert_eq!(read["view_b"], "9007199254740993", "typed through a view");
-    assert_eq!(read["view_b_t"], "string");
-    assert_eq!(read["view_a"], "12.30");
+    assert_eq!(read["view_b"], 9_007_199_254_740_993_i64, "through a view");
+    assert_eq!(read["view_b_t"], "integer");
+    assert_eq!(
+        read["view_a"], "12.30",
+        "a DECIMAL stays a string through a view"
+    );
     assert_eq!(read["view_n"], "integer");
-    assert_eq!(read["first_big_t"], "string");
+    assert_eq!(read["first_big_t"], "integer");
     assert_eq!(read["rows"][0]["name"], "a");
-    assert_eq!(read["rows"][1]["big"], "2");
+    assert_eq!(read["rows"][1]["big"], 2);
 }
 
 /// `spec/app-contract.md §7` — a `pv.query` that writes is a Lua error the handler can
@@ -886,9 +944,9 @@ pv.get('/count', function() return pv.json({ count = pv.query1('SELECT count(*) 
     assert_eq!(count["count"], 0);
 }
 
-/// `spec/lua-api.md §3.2` — `pv.dec` is exact: 0.1 + 0.2 is 0.3; `a:div(b, scale)` is
-/// the one division and rounds half away from zero; a float, an overflow and a zero
-/// divisor are errors rather than wrong numbers.
+/// `spec/lua-api.md §3.2` — `pv.dec` is exact: 0.1 + 0.2 is 0.3; `/` divides at the larger
+/// scale of the operands and `a:div(b, scale)` at a named one, both rounding half away from
+/// zero; a float, an overflow and a zero divisor are errors rather than wrong numbers.
 #[tokio::test]
 async fn test_spec_lua_3_2_pv_dec_is_exact() {
     let root = tempfile::tempdir().unwrap();
@@ -920,7 +978,10 @@ pv.get('/', function()
     scale_up = tostring(pv.dec('1'):with_scale(3)),
     money = fmt.money('1234567.5'),
     money_dec = fmt.money(pv.dec('-0.5')),
-    slash = err(function() return a / b end),
+    slash = tostring(a / b),
+    slash_scale = tostring(pv.dec('10.00') / 3),
+    slash_round = tostring(pv.dec('2') / pv.dec('3')),
+    slash_zero = err(function() return a / pv.dec('0') end),
     float = err(pv.dec, 0.1),
     text = err(pv.dec, 'abc'),
     zero = err(function() return a:div(pv.dec('0'), 2) end),
@@ -950,8 +1011,14 @@ end)
     assert_eq!(dec["scale_up"], "1.000");
     assert_eq!(dec["money"], "1,234,567.50");
     assert_eq!(dec["money_dec"], "-0.50");
+    assert_eq!(dec["slash"], "0.5", "0.1 / 0.2 at the larger scale");
+    assert_eq!(dec["slash_scale"], "3.33", "10.00 / 3 keeps two places");
+    assert_eq!(
+        dec["slash_round"], "1",
+        "2 / 3 at scale 0 rounds half away from zero"
+    );
     for (key, expected) in [
-        ("slash", "a:div(b, scale)"),
+        ("slash_zero", "division by zero"),
         ("float", "not exact"),
         ("text", "not a decimal"),
         ("zero", "division by zero"),
@@ -1169,6 +1236,142 @@ pv.get('/empty', function() pv.batch(function() end) return pv.text('nothing') e
         "nothing"
     );
     assert_eq!(log_lines(&log).len(), 3);
+}
+
+/// `spec/lua-api.md §3.3`, `spec/data-dictionary.md §2.1` — typed writes: a Lua integer for
+/// a BIGINT and a number for a DECIMAL land as digits, `'yes'` lands as a boolean, and a
+/// date, time or timestamp in any accepted spelling lands in the ISO spelling, with
+/// `ui.date_format` deciding whether `3/9` is March or September; a value that is not its
+/// type refuses the append naming the column, and nothing reaches the log.
+#[tokio::test]
+async fn test_spec_lua_3_3_typed_writes_normalize() {
+    let root = tempfile::tempdir().unwrap();
+    configure(&root, LUA_CONFIG);
+    app(
+        &root,
+        "typedw",
+        r#"
+local pv = require 'privatium'
+pv.get('/write', function(req)
+  local id = pv.append('thing', {
+    name = 'a', amount = 12.5, big = 42, ok = 'yes',
+    filled_on = req.query.date, seen_at = '2026-09-03 14:03', at_time = '2:30 pm',
+  })
+  return pv.json({ id = id, row = pv.get_row('thing', id) })
+end)
+pv.get('/bad', function(req)
+  local ok, err = pcall(pv.append, 'thing', { [req.query.col] = req.query.val })
+  return pv.json({ ok = ok, err = tostring(err) })
+end)
+"#,
+        &[(
+            "schema.sql",
+            "CREATE TABLE thing (id VARCHAR PRIMARY KEY, name VARCHAR, amount DECIMAL(18,2), \
+             big BIGINT, ok BOOLEAN, filled_on DATE, seen_at TIMESTAMPTZ, at_time TIME);",
+        )],
+    );
+    let handler = handler_for(&root);
+    let log = log_path(&handler, "typedw");
+    let encode = |text: &str| text.replace(' ', "+").replace('/', "%2F");
+
+    let written = json_of(
+        handler
+            .handle(get(&format!("/a/typedw/write?date={}", encode("3/9/2026"))))
+            .await,
+    )
+    .await;
+    let line = log_lines(&log).pop().unwrap();
+    assert_eq!(
+        line["d"]["amount"], "12.50",
+        "a Lua number lands as digits at scale"
+    );
+    assert_eq!(
+        line["d"]["big"], "42",
+        "a Lua integer lands as a string (§2.1)"
+    );
+    assert_eq!(line["d"]["ok"], true);
+    assert_eq!(
+        line["d"]["filled_on"], "2026-03-09",
+        "month first by default"
+    );
+    assert_eq!(line["d"]["seen_at"], "2026-09-03T14:03:00.000Z");
+    assert_eq!(line["d"]["at_time"], "14:30:00");
+    assert_eq!(written["row"]["amount"], "12.50");
+    assert_eq!(written["row"]["big"], 42);
+    assert_eq!(written["row"]["ok"], true);
+    assert_eq!(written["row"]["filled_on"], "2026-03-09");
+
+    for (typed, expected) in [
+        ("2026-09-03", "2026-09-03"),
+        ("September 3, 2026", "2026-09-03"),
+        ("3 Sep 2026", "2026-09-03"),
+        ("03-SEP-26", "2026-09-03"),
+        ("20260903", "2026-09-03"),
+        ("31/12/2026", "2026-12-31"),
+        ("2026-09-03T10:00:00Z", "2026-09-03"),
+    ] {
+        let written = json_of(
+            handler
+                .handle(get(&format!("/a/typedw/write?date={}", encode(typed))))
+                .await,
+        )
+        .await;
+        assert_eq!(written["row"]["filled_on"], expected, "{typed}");
+    }
+    let before = log_lines(&log).len();
+
+    for (column, value, expected) in [
+        ("amount", "abc", "not a decimal"),
+        ("amount", "12.345", "more than 2 decimal"),
+        ("big", "1.5", "not an integer"),
+        ("ok", "maybe", "not a boolean"),
+        ("filled_on", "yesterday", "not a date"),
+        ("seen_at", "soon", "not a timestamp"),
+        ("at_time", "noon", "not a time"),
+    ] {
+        let bad = json_of(
+            handler
+                .handle(get(&format!(
+                    "/a/typedw/bad?col={column}&val={}",
+                    encode(value)
+                )))
+                .await,
+        )
+        .await;
+        assert_eq!(bad["ok"], false, "{column}={value}: {bad}");
+        let err = bad["err"].as_str().unwrap();
+        assert!(err.contains(&format!("thing.{column}")), "{err}");
+        assert!(err.contains(expected), "{err}");
+    }
+    assert_eq!(
+        log_lines(&log).len(),
+        before,
+        "nothing refused reached the log"
+    );
+
+    // `ui.date_format = "eu"` reads the day first where the ranges do not decide.
+    {
+        let mut node = handler.node().lock().unwrap();
+        let at = privatium_core::log::now();
+        node.sys_log_mut()
+            .put(
+                "sys_setting",
+                "ui.date_format",
+                &serde_json::json!({ "value": "\"eu\"", "updated_at": at }),
+            )
+            .unwrap();
+        node.refresh().unwrap();
+    }
+    let written = json_of(
+        handler
+            .handle(get(&format!("/a/typedw/write?date={}", encode("3/9/2026"))))
+            .await,
+    )
+    .await;
+    assert_eq!(
+        written["row"]["filled_on"], "2026-09-03",
+        "day first under eu"
+    );
 }
 
 /// `spec/lua-api.md §3.4` — `pv.on('append')` fires for this node's own appends: a

@@ -51,6 +51,12 @@ Watch the instruction, memory and wall-clock limits. An unbounded loop aborts th
 whether or not you `pcall` it — the host decides, not the handler — and a long statement
 is interrupted on the same clock.
 
+A global you assign in a handler lasts one request and is never seen by another; what
+`app.lua` defines at load is the baseline every request starts from. Do not put a
+request's data in a global expecting to find it later, and do not build a cache by
+mutating a load-time table — that one does persist, per VM, and is what the linter warns
+about.
+
 ## Tier 2 (Web)
 
 Default CSP is `script-src 'self'` scoped to the app's path. Inline `<script>` does not run.

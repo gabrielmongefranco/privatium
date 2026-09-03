@@ -3,9 +3,10 @@
 // Created:  2026-09-03  |  Modified: 2026-09-03
 // Summary:  Values crossing the Lua boundary. Lua tables to the JSON `d` of an event and
 //           back (spec/data-dictionary.md §2.1), bound parameters for pv.query, and the
-//           typing of a result column (spec/lua-api.md §3.2): a column that originates in a
-//           declared table is typed by its declaration — DECIMAL and BIGINT as strings,
-//           BOOLEAN as a boolean, JSON decoded — and a computed column by its storage class.
+//           typing of a result column (spec/lua-api.md §3.2): what SQLite holds, as Lua
+//           holds it — INTEGER an integer, REAL a float, TEXT a string — with two
+//           conveniences for a column that originates in a declared one: BOOLEAN as a
+//           boolean and JSON decoded. A DECIMAL is TEXT in the cache and stays a string.
 
 use mlua::{Lua, Table, Value};
 use rusqlite::types::ValueRef;
@@ -233,11 +234,14 @@ pub fn row_to_lua(
 fn cell_to_lua(lua: &Lua, raw: ValueRef<'_>, kind: Option<Kind>) -> mlua::Result<Value> {
     Ok(match (kind, raw) {
         (_, ValueRef::Null) => Value::Nil,
-        // Declared DECIMAL and BIGINT: a string, always (`spec/data-dictionary.md §2.1`).
-        (Some(Kind::Decimal { .. } | Kind::Integer), ValueRef::Integer(i)) => {
+        // Declared DECIMAL: a string, always — Lua has no exact decimal, and its float
+        // would lose what the text keeps. Declared BIGINT falls through to the storage
+        // rule below: a Lua integer is 64-bit, so nothing is lost, and the reason JSON
+        // needs a string (`spec/data-dictionary.md §2.1`) does not apply here.
+        (Some(Kind::Decimal { .. }), ValueRef::Integer(i)) => {
             Value::String(lua.create_string(i.to_string())?)
         }
-        (Some(Kind::Decimal { .. } | Kind::Integer), ValueRef::Real(r)) => {
+        (Some(Kind::Decimal { .. }), ValueRef::Real(r)) => {
             Value::String(lua.create_string(r.to_string())?)
         }
         // Declared BOOLEAN: a Lua boolean.

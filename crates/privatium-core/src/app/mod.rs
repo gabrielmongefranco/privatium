@@ -639,10 +639,37 @@ impl Node {
     /// through here (`spec/lua-api.md §3.3`), and so does [`load_seed`](Self::load_seed).
     /// All or nothing — the log writer stages the batch and writes it once — with one `ts`
     /// and contiguous `seq`, as `§3.3` promises. An empty `changes` writes nothing.
-    pub fn append(&mut self, slug: &str, changes: Vec<Change>) -> Result<Appended> {
+    ///
+    /// **Typed writes.** Every value that names a column `schema.sql` declares is checked
+    /// and normalized first (`store::normalize`): digits for `BIGINT` and `DECIMAL`, a
+    /// boolean for `BOOLEAN`, and the ISO spelling for `DATE`, `TIME` and `TIMESTAMPTZ`
+    /// from whatever form was typed, with `ui.date_format` deciding whether `3/9` is
+    /// March or September. A value that is not its type refuses the whole batch with
+    /// [`Error::Value`] naming the column, before anything is written.
+    pub fn append(&mut self, slug: &str, mut changes: Vec<Change>) -> Result<Appended> {
+        let order = store::normalize::DateOrder::from_setting(
+            self.setting_value("ui.date_format")?
+                .and_then(|text| serde_json::from_str::<String>(&text).ok())
+                .as_deref()
+                .unwrap_or("iso"),
+        );
         let app = self.apps.get_mut(slug).ok_or_else(|| Error::AppNotLoaded {
             slug: slug.to_owned(),
         })?;
+        for change in &mut changes {
+            if let (Some(serde_json::Value::Object(d)), Some(table)) =
+                (change.d.as_mut(), app.store.schema().table(&change.tbl))
+            {
+                store::normalize::normalize_row(table, d, order).map_err(|refused| {
+                    Error::Value {
+                        app: slug.to_owned(),
+                        tbl: change.tbl.clone(),
+                        column: refused.column,
+                        problem: refused.problem,
+                    }
+                })?;
+            }
+        }
         let dev = self.identity.id().as_str().to_owned();
         if changes.is_empty() {
             return Ok(Appended {
