@@ -83,6 +83,11 @@ Helpers in every template: `render`, `layout`, `icon`, `url`, `fmt.date`, `fmt.m
   the token with 403; an `hx-delete` button gets it from the page frame's `hx-headers`
 - Give every icon-only control a label: `icon('trash', 'Delete this fill')`
 - Use `pv.batch()` when more than one event must land together
+- Expect `NOT NULL` and `CHECK` from `schema.sql` to refuse a `pv.append` that breaks
+  them — the whole batch, naming the event — and handle the error where the form is
+- Read the framework's views as `sys.v_app_nav`, `sys.v_device_active`, `sys.v_health`,
+  `sys.v_audit_recent` — attached read-only on your connection; a `$name` placeholder in
+  one of your own views is NULL here (it is bound by the data API's query string)
 
 ## MUST NOT
 

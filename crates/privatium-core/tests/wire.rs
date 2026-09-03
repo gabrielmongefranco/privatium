@@ -119,7 +119,10 @@ const HOST_ROUTES: &[(&str, u16)] = &[
     ("/nope", 404),
     ("/api/nope", 404),
     ("/skills/nope.md", 404),
-    ("/static/pv.js", 404),
+    ("/static/pv.js", 200),
+    ("/a/sketch/api/node", 200),
+    ("/a/hello/api/schema", 200),
+    ("/a/sketch/api/nope", 404),
     ("/settings/nope", 404),
 ];
 

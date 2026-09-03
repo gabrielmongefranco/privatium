@@ -281,6 +281,16 @@ why, not a to-do list.
 | 54 | `§4.1`'s header path for the token — `X-CSRF-Token` for `hx-delete` on a button — had no source a template could put the token into | The page frame sets `hx-headers` on `<body>`, so every htmx request beneath the mount carries it; a view owning its document uses `hx-headers` or `hx-include="[name=_csrf]"`; `_csrf` stays in `req.form` | `lua-api.md §4.1` (found in M8) |
 | 55 | `§4` said nothing about `<?= nil ?>`, a number, a boolean, a table | `nil` → nothing; number, boolean, a value with `tostring` → its text, escaped; table or function → an error naming the line | `lua-api.md §4` (found in M8) |
 | 56 | `§4.1` made ctx keys bare names and said nothing about a name absent from the ctx; `apps/hello` and `apps/animals` keyed their message `error`, which is Lua's `error` function, so `<? if error then ?>` was always true and `<?= error ?>` emitted a function | A name absent from the ctx is the sandbox global or `nil`; a key MUST NOT be a Lua builtin's name; the reference apps say `err` | `lua-api.md §4.1`, `apps/hello`, `apps/animals` (found in M8) |
+| 57 | `data-api.md §1` bound query-string parameters to `$name` placeholders in a `CREATE VIEW`; SQLite refuses a parameter inside a view ("parameters are not allowed in views"), so no schema that used the feature could have loaded | The framework rewrites `$name` to `pv_param('name')` at load — a scalar function on every connection that the API fills from the query string and that is NULL anywhere else; a view's placeholders are listed by `/api/schema`, and a query-string key naming none is refused | `data-api.md §1, §4`, `lua-api.md §3.2`, `app-contract.md §7` (found in M9) |
+| 58 | Every endpoint "requires a live session; cookies carry it; no token handling is required in app code", and nothing kept a page on another origin from riding the owner's cookie into an API that takes no token | A POST is read only as `application/json`, which no cross-origin page can send without a preflight the node never answers; a request a browser marks `Sec-Fetch-Site: cross-site` is refused on every route; no token, because `pv.js` has no page frame to read one from and a native client has no page | `data-api.md §2.1`, `AGENTS.md` (found in M9) |
+| 59 | `§5` listed the helper's functions and none read the log, while `apps/sketch` booted through a `pv.events()` that existed nowhere; `pv.get` was destructured as `{ d }` while `/api/row` answers 404 | `pv.events(filter)` is an async iterator over `/api/events`; `pv.get` returns `null` for a 404; `pv.lam`, `pv.mount`, `pv.on('resync' \| 'rejected')` and what `pv.append` returns when queued are spelled out | `data-api.md §5, §6`, `app-contract.md §5.3`, `apps/sketch`, `privatium-games` (found in M9) |
+| 60 | `/api/row` said "single row by ULID" and nothing about its shape — a materialized row, which a schema-less app has none of, or an event | The winning event's log line, `d` holding the row, for a declared and an undeclared table alike | `data-api.md §1` (found in M9) |
+| 61 | `§3` showed `append` with a subset of the envelope, gave `resync` one reason and `ping` no body, and said nothing about what `after=` sends first or what a slow reader gets | `append` is the log line; `resync` is `rematerialized` or `lagged`, with the high-water mark; `ping` carries it too, and its stat of the app is what notices a log that grew on an idle node; `after=` sends the events past it from the log, then live ones, subscribed and read under one hold of the lock; `HEAD` is headers alone; 429 past `api.max_streams` | `data-api.md §3` (found in M9) |
+| 62 | `§7` named five `api.*` settings that `data-dictionary.md §3.6`'s reserved list lacked, and no deadline bounded a statement on `/api/q` or `/api/sql` | The keys are in `§3.6`; a statement runs under `[lua] max_seconds`, the deadline Tier 1's SQL already had | `data-api.md §7`, `data-dictionary.md §3.6` (found in M9) |
+| 63 | `§2` had `NOT NULL` and `CHECK` validated for the API alone; `lua-api.md §3.3`'s typed writes ran for every writer and `Node::append` is the one write path, so `pv.append` would have written a row the API refused | Constraints hold on every write path — `pv.append`, `pv.batch`, the seed, the API — by the author's own DDL run in a throwaway database, naming the event's index | `lua-api.md §3.3`, `data-api.md §2` (found in M9) |
+| 64 | Nothing said what a refusal looks like | `{"error", "index"?, "column"?}` with the status, on every route | `data-api.md` preamble (found in M9) |
+| 65 | `data-dictionary.md §4` had apps reading `sys.v_*` and `app-contract.md §7` had the authorizer refusing `ATTACH`, with nothing between them | The framework attaches `cache/_sys.sqlite` read-only as `sys` before the authorizer goes on; it cannot be detached; `pv.query` and `/api/sql` read it | `app-contract.md §7`, `data-dictionary.md §4`, `lua-api.md §3.2` (found in M9) |
+| 66 | `protocol.md §9.1` made `/api/*` the framework's outright in both modes, which in solo mode left the solo app's data API unreachable | `/api/v1/*` is the framework's; the rest of `/api/` beneath the solo mount is the app's data API, resolved before its routes or `web/` | `protocol.md §9.1`, `data-api.md` preamble (found in M9) |
 
 Defect 11 was found during M1 rather than while writing this plan, which is the rule in
 the last paragraph of this section working as intended. It could not be coded around: the
@@ -337,7 +347,8 @@ rules.
 | Need | Crate | Note |
 |---|---|---|
 | HTTP | `axum`, `tower`, `tower-http` | `auth_layer` is a `tower::Layer` |
-| Async | `tokio` | multi-thread runtime |
+| Async | `tokio` | multi-thread runtime; from M9 the core takes `sync` (the per-app broadcast, the stream's channel), `time` (the 30 s ping) and `macros` (`select!` in the stream's pump) |
+| Streams | `futures-core` | The `Stream` trait `Body::from_stream` takes, for M9's SSE body — a channel receiver polled as a stream. The trait crate alone, already in the graph beneath axum, so no new compile unit; not `tokio-stream` (a new crate for one wrapper) and not the `futures` facade. |
 | Lua | `mlua` | features `lua54`, `vendored`, `send` |
 | SQL | `rusqlite` | features `bundled`, `functions`, `window`, `collation`, `hooks`, and from M7 `column_metadata` (a result column reports the table and column it originates in, which is how `pv.query` finds a declared type); was `duckdb` until ADR 0006 |
 | Crypto | `ed25519-dalek`, `sha2`, `hmac` | no session crypto in Phase 1 |
@@ -733,6 +744,17 @@ thirteen), `test_spec_lua_5_require_confined_to_lib`,
   `PV305`). Offline reads throw `PvOffline`.
 - `DECIMAL` stays a string in `pv.js`. No convenience conversion. That is the bug this
   design exists to prevent.
+  *Decided in M9: `$name` in a `CREATE VIEW` is rewritten to `pv_param('name')` at load,
+  because SQLite forbids a parameter in a view (`§3` row 57); the API's CSRF story is a
+  JSON-only POST plus a refusal of `Sec-Fetch-Site: cross-site`, and no token (row 58);
+  `NOT NULL` and `CHECK` run in `Node::append` for every writer (row 63); `sys` is attached
+  on every app connection before the authorizer (row 65). The stream is a `tokio::sync::mpsc`
+  receiver polled as a `futures_core::Stream` and pumped by a task off the lock — subscribed
+  to the app's `broadcast` and reading its backlog under one hold of the lock, so nothing
+  lands between the two — with a ping tick that stats the app, so a hand-appended line
+  reaches an idle node's streams as a `resync`. `refresh_app` rescans the log when it moved
+  behind the tables, so the Lamport counter and this node's own `seq` follow an `echo >>`
+  (`spec/protocol.md §4.1`, `§4.3`); they had not since M3. No long-poll fallback.*
 
 **Tests:** `test_spec_data_2_client_cannot_set_seq`, `test_spec_data_2_batch_atomic`,
 `test_spec_data_2_batch_limits`, `test_spec_data_1_sql_requires_permission`,

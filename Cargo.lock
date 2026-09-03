@@ -844,6 +844,7 @@ dependencies = [
  "base64",
  "directories",
  "ed25519-dalek",
+ "futures-core",
  "hkdf",
  "hmac",
  "include_dir",

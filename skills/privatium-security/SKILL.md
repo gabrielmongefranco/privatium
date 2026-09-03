@@ -21,7 +21,10 @@ Applies to every tier. Load alongside the tier skill.
    `textContent`, never `innerHTML`, with user data.
 4. **Never omit `csrf()`** from a non-GET form. The host verifies the token on every
    non-GET request beneath the mount — the `_csrf` field or the `X-CSRF-Token` header —
-   and answers 403 without it; the page frame gives htmx the header for free.
+   and answers 403 without it; the page frame gives htmx the header for free. The data
+   API takes no token and needs none: a POST is read only as `application/json` and a
+   request another site made (`Sec-Fetch-Site: cross-site`) is refused on every route
+   (`spec/data-api.md §2.1`). Never add a CORS header to open it.
 5. **Never trust an event's origin.** Events arrive via sync from other devices. Validate
    on read as well as on write.
 6. **Never claim data is deleted.** `del` writes a tombstone; the original line stays in the

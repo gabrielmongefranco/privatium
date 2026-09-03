@@ -27,8 +27,10 @@ use crate::lua::{
 };
 use crate::{Error, Node};
 
+mod data;
 pub mod router;
 
+pub use data::{ApiSettings, ApiState, PING as STREAM_PING};
 pub use router::{FRAMEWORK_PREFIXES, Route, Router, SettingsPage, url};
 
 /// A request or response body: a boxed stream of byte frames, never a `Vec<u8>`
@@ -66,7 +68,9 @@ pub use crate::http::auth::{Device, Peer};
 /// `pv.append`, `pv.batch` and `pv.setting` take the lock, for the milliseconds a batch
 /// write and its incremental apply take. The connection is opened after the refresh and
 /// closed when the run ends; no VM keeps one across requests, which keeps M5's rule
-/// without machinery. When the data API arrives (M9) it takes the same shape.
+/// without machinery. The data API (M9, `api`) takes the same shape: a query runs on a
+/// blocking thread with a connection taken under the lock, an append takes the lock for
+/// the write, and a stream subscribes under the lock and is pumped by a task after it.
 pub struct Handler {
     node: Arc<Mutex<Node>>,
     report: LoadReport,
@@ -76,6 +80,8 @@ pub struct Handler {
     /// `http://127.0.0.1:<port>` — what `App::csp().header_for` is rendered against when a
     /// request carries no usable `Host`, which an in-process adapter's may not.
     default_origin: String,
+    /// The data API's per-device state: SQL rate buckets and open streams.
+    api: ApiState,
 }
 
 impl std::fmt::Debug for Handler {
@@ -102,6 +108,7 @@ impl Handler {
             auth,
             mode,
             default_origin,
+            api: ApiState::default(),
         }
     }
 
@@ -109,6 +116,12 @@ impl Handler {
     #[must_use]
     pub fn node(&self) -> &Arc<Mutex<Node>> {
         &self.node
+    }
+
+    /// The data API's state — to shorten the stream's keep-alive in a test, or for an
+    /// embedder whose link drops idle connections sooner than 30 seconds.
+    pub fn api_mut(&mut self) -> &mut ApiState {
+        &mut self.api
     }
 
     /// What `load_apps` reported when this handler was built.
@@ -294,9 +307,12 @@ impl Handler {
     /// A route beneath an app's mount. The read path refreshes the app first — the
     /// `echo >>` reload of `apps/hello/README.md`, and the edit loop of `spec/cli.md §3`
     /// — then serves it by tier. An edit that did not load is the error page, with the
-    /// traceback and the offending line, until the next edit does.
+    /// traceback and the offending line, until the next edit does. `api/` is the
+    /// framework's beneath every mount (`spec/protocol.md §9.1`) and is resolved before
+    /// a Tier 1 route table or a Tier 2 `web/` is consulted (`data`).
     async fn app(&self, slug: &str, mount: &str, rest: &str, request: Request) -> Response {
         let origin = self.origin_of(&request);
+        let is_api = rest == "/api" || rest.starts_with("/api/");
         let plan = {
             let mut node = self.lock();
             if let Err(error) = node.refresh_app(slug) {
@@ -322,41 +338,48 @@ impl Handler {
                 return self.not_found(request.uri().path());
             };
             let csp = app.csp().header_for(&origin);
-            match app.manifest().app.tier {
-                Tier::Web => Plan::Web {
-                    web_dir: app.dir().join("web"),
-                    csp,
-                },
-                // `static/` beneath a Tier 1 mount is the app's directory of that name
-                // (`spec/lua-api.md §2`), served as a Tier 2 app's `web/` is.
-                Tier::Lua if rest == "/static" || rest.starts_with("/static/") => Plan::Static {
-                    dir: app.dir().join("static"),
-                    csp,
-                },
-                Tier::Lua => match app.lua_host() {
-                    Some(host) => {
-                        let conn = match app.store().app_conn() {
-                            Ok(conn) => conn,
-                            Err(error) => return self.failure(&Error::Store(Box::new(error))),
-                        };
-                        Plan::Lua(LuaPlan {
-                            host: Arc::clone(host),
-                            title: app.title().to_owned(),
+            if is_api {
+                Plan::Api
+            } else {
+                match app.manifest().app.tier {
+                    Tier::Web => Plan::Web {
+                        web_dir: app.dir().join("web"),
+                        csp,
+                    },
+                    // `static/` beneath a Tier 1 mount is the app's directory of that name
+                    // (`spec/lua-api.md §2`), served as a Tier 2 app's `web/` is.
+                    Tier::Lua if rest == "/static" || rest.starts_with("/static/") => {
+                        Plan::Static {
+                            dir: app.dir().join("static"),
                             csp,
-                            conn,
-                            facts: node_facts(&node, slug),
-                            ui: ui_settings(&node),
-                            csrf_token: self.csrf.token(mount),
-                        })
+                        }
                     }
-                    None => Plan::Done(apps::no_handler(slug, &csp, self.solo())),
-                },
-                // A tier 3 entry is never mounted (`App::mount`), so the router never gets
-                // here; if it ever did, nothing is served.
-                Tier::Rust => return self.not_found(request.uri().path()),
+                    Tier::Lua => match app.lua_host() {
+                        Some(host) => {
+                            let conn = match app.store().app_conn() {
+                                Ok(conn) => conn,
+                                Err(error) => return self.failure(&Error::Store(Box::new(error))),
+                            };
+                            Plan::Lua(LuaPlan {
+                                host: Arc::clone(host),
+                                title: app.title().to_owned(),
+                                csp,
+                                conn,
+                                facts: node_facts(&node, slug),
+                                ui: ui_settings(&node),
+                                csrf_token: self.csrf.token(mount),
+                            })
+                        }
+                        None => Plan::Done(apps::no_handler(slug, &csp, self.solo())),
+                    },
+                    // A tier 3 entry is never mounted (`App::mount`), so the router never gets
+                    // here; if it ever did, nothing is served.
+                    Tier::Rust => return self.not_found(request.uri().path()),
+                }
             }
         };
         match plan {
+            Plan::Api => self.data_api(slug, rest, request).await,
             Plan::Web { web_dir, csp } => {
                 apps::serve_web(web_dir, mount, rest, request, &csp, self.solo()).await
             }
@@ -770,6 +793,8 @@ impl Handler {
 
 /// What `app` decided under the lock, to be served after it.
 enum Plan {
+    /// The data API beneath the mount, either tier (`api`).
+    Api,
     /// Tier 2: stream `web/`.
     Web { web_dir: PathBuf, csp: String },
     /// Tier 1: stream the app's `static/`.

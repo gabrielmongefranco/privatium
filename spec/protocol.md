@@ -771,7 +771,9 @@ The framework reserves five prefixes and hands everything else to apps.
 **The framework does not define an app's routes.** A Tier 1 app registers its own with
 `pv.get`, `pv.post`, and so on (`spec/lua-api.md §3.1`); a Tier 2 app serves its `web/`
 directory and defines its own paths. Beneath `/a/<slug>/` only `api/` is reserved, for the
-data API (`spec/data-api.md`).
+data API (`spec/data-api.md`), and it is resolved before a Tier 1 route table or a Tier 2
+`web/` is consulted. In solo mode the mount is `/`, so `/api/…` is the solo app's data API
+too; `/api/v1/*` (§9.2) stays the framework's.
 
 **Framework prefixes take precedence in both modes.** In host mode this never arises, since
 apps live under `/a/<slug>/`. In solo mode the app owns `/`, so an app route matching a

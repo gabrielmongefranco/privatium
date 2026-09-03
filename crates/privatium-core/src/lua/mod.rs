@@ -36,6 +36,8 @@ pub use html::Html;
 pub use limits::{LimitKind, Limits};
 pub use lsp::{CompileError, Compiled, LineMap, Templates, ViewMap};
 
+pub(crate) use convert::{ColumnType, column_types};
+
 /// One registered route: `(method, pattern)` in registration order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RouteSpec {

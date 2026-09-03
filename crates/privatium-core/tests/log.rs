@@ -685,10 +685,16 @@ fn test_batch_is_contiguous_and_shares_one_ts() {
             batch.del("cursor", "cursor")
         })
         .unwrap();
-    assert_eq!(written, 3);
+    assert_eq!(written.len(), 3, "the lines as written come back");
 
     let events = session.events();
     assert_eq!(events.len(), 4);
+    // What `batch` handed back is exactly what is in the file (`spec/protocol.md §4.2`).
+    let disk = fs::read_to_string(session.log_path()).unwrap();
+    for line in &written {
+        assert!(disk.contains(std::str::from_utf8(line).unwrap()), "{disk}");
+        assert!(!line.ends_with(b"\n"));
+    }
     let batched = &events[1..];
     assert_eq!(
         batched

@@ -173,6 +173,12 @@ either be wrong or fight every commit that touches the file.
   markup the framework produced — `icon()`, `csrf()`, `render()`, a layout's `content` —
   is an `Html` value (`lua::html`) and passes because of its type, never its content. A
   string never becomes markup except through `<?raw ?>`.
+- **Do not add a token, a CORS header, or any credential handling to the data API.** It is
+  same-origin by construction: a POST is read only as `application/json`, which no
+  cross-origin page can send without a preflight the node never answers, and a request a
+  browser marks `Sec-Fetch-Site: cross-site` is refused on every route
+  (`spec/data-api.md §2.1`). A token would need a page frame `pv.js` does not have, and a
+  CORS header is the one thing that would open the API to another origin.
 - **Do not add a second icon set** to the *framework*, or hand-draw an SVG because Bootstrap
   Icons lacks the perfect glyph. Apps may ship their own graphics; the shell may not.
 - **Do not introduce a server-side mutable database as truth.** If you find yourself

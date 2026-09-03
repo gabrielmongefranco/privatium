@@ -15,7 +15,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use axum::body::Bytes;
 use serde::Serialize;
+use tokio::sync::broadcast;
 
 use crate::config::Mode;
 use crate::log::{self, AppLog, Durability};
@@ -303,7 +305,39 @@ pub struct Appended {
     pub app: String,
     /// The events, in order.
     pub changes: Vec<Change>,
+    /// The log lines as written, one per change and without the newline — the bytes on
+    /// disk, never a re-serialization (`spec/protocol.md §4.2`).
+    pub lines: Vec<Vec<u8>>,
 }
+
+/// What an app's live stream carries (`spec/data-api.md §3`): every event this node
+/// appends to the app, and a notice that its cache was rebuilt underneath a reader.
+///
+/// Sent from [`Node::append`] and [`Node::refresh_app`] on the app's broadcast channel
+/// ([`App::stream`]); the data API's `/api/stream` is one subscriber, and there may be
+/// none, which is not an error.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StreamEvent {
+    /// One event, as its log line.
+    Append {
+        /// The event's `lam`, so a subscriber resuming from `after=` can filter.
+        lam: u64,
+        /// The line, byte for byte, without the newline.
+        line: Bytes,
+    },
+    /// The cache was rematerialized: a changed `schema.sql`, a restore, a log that grew
+    /// behind the tables. A reader re-queries.
+    Resync {
+        /// Why — `rematerialized`.
+        reason: &'static str,
+        /// The app's Lamport high-water mark now.
+        lam: u64,
+    },
+}
+
+/// How many events a slow stream subscriber may fall behind before it is told to
+/// resync rather than handed the backlog.
+pub const STREAM_CAPACITY: usize = 1024;
 
 /// A loaded app: its manifest, its folder, its log, its cache, and for Tier 1 its VMs.
 #[derive(Debug)]
@@ -325,6 +359,9 @@ pub struct App {
     /// Why the last reload failed, while it stands: the app as last loaded is kept but
     /// not served until the next edit succeeds.
     reload_error: Option<ReloadError>,
+    /// The live stream (`spec/data-api.md §3`): every append and every resync, to
+    /// whoever is subscribed. Survives a reload; only the load creates one.
+    stream: broadcast::Sender<StreamEvent>,
 }
 
 /// `(mtime, len)` of every file whose change reloads the app in place: `app.toml`,
@@ -476,6 +513,14 @@ impl App {
     pub fn seed_path(&self) -> Option<PathBuf> {
         let path = self.dir.join(SEED_PATH);
         path.is_file().then_some(path)
+    }
+
+    /// The app's live stream, to subscribe to (`spec/data-api.md §3`). Subscribe under
+    /// the node lock and read the log under the same lock, and nothing appended in
+    /// between can be missed: appends take the lock too.
+    #[must_use]
+    pub fn stream(&self) -> &broadcast::Sender<StreamEvent> {
+        &self.stream
     }
 }
 
@@ -720,7 +765,12 @@ impl Node {
     /// boolean for `BOOLEAN`, and the ISO spelling for `DATE`, `TIME` and `TIMESTAMPTZ`
     /// from whatever form was typed, with `ui.date_format` deciding whether `3/9` is
     /// March or September. A value that is not its type refuses the whole batch with
-    /// [`Error::Value`] naming the column, before anything is written.
+    /// [`Error::Value`] naming the column, before anything is written. Then every put is
+    /// held against the schema's `NOT NULL` and `CHECK` constraints (`store::validate`),
+    /// and a violation refuses the batch with [`Error::Constraint`] naming the index
+    /// (`spec/data-api.md §2`, `spec/lua-api.md §3.3`).
+    ///
+    /// Once written, each line goes out on the app's stream ([`App::stream`]).
     pub fn append(&mut self, slug: &str, mut changes: Vec<Change>) -> Result<Appended> {
         let order = store::normalize::DateOrder::from_setting(
             self.setting_value("ui.date_format")?
@@ -731,7 +781,7 @@ impl Node {
         let app = self.apps.get_mut(slug).ok_or_else(|| Error::AppNotLoaded {
             slug: slug.to_owned(),
         })?;
-        for change in &mut changes {
+        for (index, change) in changes.iter_mut().enumerate() {
             if let (Some(serde_json::Value::Object(d)), Some(table)) =
                 (change.d.as_mut(), app.store.schema().table(&change.tbl))
             {
@@ -739,12 +789,25 @@ impl Node {
                     Error::Value {
                         app: slug.to_owned(),
                         tbl: change.tbl.clone(),
+                        index,
                         column: refused.column,
                         problem: refused.problem,
                     }
                 })?;
             }
         }
+        store::validate(
+            app.store.schema(),
+            changes
+                .iter()
+                .map(|change| (change.tbl.as_str(), change.id.as_str(), change.d.as_ref())),
+        )
+        .map_err(|violation| Error::Constraint {
+            app: slug.to_owned(),
+            tbl: violation.tbl,
+            index: violation.index,
+            problem: violation.problem,
+        })?;
         let dev = self.identity.id().as_str().to_owned();
         if changes.is_empty() {
             return Ok(Appended {
@@ -754,11 +817,12 @@ impl Node {
                 dev,
                 app: slug.to_owned(),
                 changes,
+                lines: Vec::new(),
             });
         }
 
         let mut ts = String::new();
-        app.log.batch(|batch| {
+        let lines = app.log.batch(|batch| {
             ts = batch.ts().to_owned();
             for change in &changes {
                 match &change.d {
@@ -778,13 +842,23 @@ impl Node {
         self.state.flush()?;
 
         let count = changes.len() as u64;
+        let seq = app.log.seq().saturating_add(1).saturating_sub(count);
+        let lam = app.log.lam().saturating_add(1).saturating_sub(count);
+        // Durable now, so the stream may say so. No subscriber is not an error.
+        for (offset, line) in lines.iter().enumerate() {
+            let _ = app.stream.send(StreamEvent::Append {
+                lam: lam.saturating_add(offset as u64),
+                line: Bytes::from(line.clone()),
+            });
+        }
         Ok(Appended {
             ts,
-            seq: app.log.seq().saturating_add(1).saturating_sub(count),
-            lam: app.log.lam().saturating_add(1).saturating_sub(count),
+            seq,
+            lam,
             dev,
             app: slug.to_owned(),
             changes,
+            lines,
         })
     }
 
@@ -884,17 +958,34 @@ impl Node {
                 reason: error.reason().to_owned(),
             });
         }
-        if !app.store.is_stale().map_err(boxed)? {
-            return Ok(rebuilt);
+        if app.store.is_stale().map_err(boxed)? {
+            // The log moved behind the tables — a line appended by hand, a copy restored
+            // — so the counters follow it first (`spec/protocol.md §4.1`, `§4.3`): the
+            // next event this node writes takes the next `seq` in its own file and a
+            // `lam` past everything the file now holds.
+            let recovered = app.log.rescan()?;
+            audit_recovery(&mut self.sys, slug, &recovered)?;
+            let previous = app.store.restore_record().cloned();
+            app.store.refresh(&store::cutoff_now()).map_err(boxed)?;
+            if let Some(restored) = app.store.restored().cloned() {
+                audit_restore(&mut self.sys, slug, &restored, previous.as_ref(), false)?;
+                note_health(&self.store, &app.store, slug)?;
+            }
+            self.flush()?;
+            rebuilt = true;
         }
-        let previous = app.store.restore_record().cloned();
-        app.store.refresh(&store::cutoff_now()).map_err(boxed)?;
-        if let Some(restored) = app.store.restored().cloned() {
-            audit_restore(&mut self.sys, slug, &restored, previous.as_ref(), false)?;
-            note_health(&self.store, &app.store, slug)?;
+        if rebuilt {
+            // The tables changed underneath every reader (`docs/plans/phase-1.md §8`, R5):
+            // a hand-appended line, a restore, a new `schema.sql`. The stream says so.
+            let app = self.apps.get(slug).ok_or_else(|| Error::AppNotLoaded {
+                slug: slug.to_owned(),
+            })?;
+            let _ = app.stream.send(StreamEvent::Resync {
+                reason: "rematerialized",
+                lam: app.log.lam(),
+            });
         }
-        self.flush()?;
-        Ok(true)
+        Ok(rebuilt)
     }
 
     /// A template edit that did not compile: `sys_app.last_error` says so, and the audit
@@ -1090,6 +1181,7 @@ impl Node {
                 lua: prepared.lua,
                 fingerprint,
                 reload_error: None,
+                stream: broadcast::channel(STREAM_CAPACITY).0,
             }))),
             Err(error) => {
                 let failure = LoadFailure {

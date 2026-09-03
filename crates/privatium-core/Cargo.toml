@@ -75,7 +75,12 @@ toml        = { workspace = true }
 axum        = { workspace = true }
 tower       = { workspace = true, features = ["util"] }
 tower-http  = { workspace = true, features = ["fs"] }
-tokio       = { workspace = true, features = ["fs", "rt"] }
+# M9 — `sync` is the per-app broadcast every append goes out on and the channel an SSE
+# body is read from; `time` is the stream's 30-second ping (spec/data-api.md §3);
+# `macros` is `select!` in the stream's pump, already in the release graph through the
+# binary crate. `futures-core` is the `Stream` trait `Body::from_stream` takes.
+tokio        = { workspace = true, features = ["fs", "rt", "sync", "time", "macros"] }
+futures-core = { workspace = true }
 hmac        = { workspace = true }
 hkdf        = { workspace = true }
 include_dir = { workspace = true }

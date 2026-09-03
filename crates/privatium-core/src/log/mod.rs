@@ -134,18 +134,19 @@ impl AppLog {
         Ok(seq)
     }
 
-    /// Append several events atomically under one `ts` and contiguous `seq`.
+    /// Append several events atomically under one `ts` and contiguous `seq`, returning
+    /// the lines as written, one per event and without the newline.
     ///
     /// See [`Writer::batch`] for what "atomically" can and cannot mean on a file that has to
     /// stay appendable by `echo`.
-    pub fn batch<F>(&mut self, build: F) -> Result<usize>
+    pub fn batch<F>(&mut self, build: F) -> Result<Vec<Vec<u8>>>
     where
         F: FnOnce(&mut Batch<'_>) -> Result<()>,
     {
-        let count = self.writer.batch(&mut self.lamport, build)?;
+        let lines = self.writer.batch(&mut self.lamport, build)?;
         let seq = self.writer.seq();
         self.note_own_head(seq);
-        Ok(count)
+        Ok(lines)
     }
 
     /// A fresh view of every segment on disk.
@@ -155,6 +156,27 @@ impl AppLog {
     /// starts quietly missing the tail.
     pub fn reader(&self) -> Result<Reader> {
         Reader::open(&self.log_dir)
+    }
+
+    /// Scan the log again, as [`open`](Self::open) did, because it moved behind this
+    /// writer — `apps/hello/README.md`'s `echo >>` while the node runs. The Lamport
+    /// counter folds in every line it had not seen (`§4.3`), the per-device heads follow,
+    /// and the writer continues past any `seq` that is now in its own file (`§4.1`:
+    /// gapless, and never a duplicate). What the scan found that the owner should hear
+    /// about comes back, as at open.
+    pub fn rescan(&mut self) -> Result<Recovered> {
+        let reader = Reader::open(&self.log_dir)?;
+        let recovered = reader::recover(
+            &reader,
+            &self.dev,
+            self.lamport.get(),
+            &self.heads,
+            jiff::Timestamp::now(),
+        )?;
+        self.lamport = recovered.lam;
+        self.heads = recovered.heads.clone();
+        self.writer.resume(recovered.own_seq);
+        Ok(recovered)
     }
 
     /// Record what this log now knows into `local/state.jsonl`.

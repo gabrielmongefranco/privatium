@@ -34,7 +34,8 @@ Omit `schema.sql`. The event log is a document store:
 
 ```js
 await pv.put('save', 'slot1', { level: 7, hp: 42, inventory: [...] });
-const { d } = await pv.get('save', 'slot1');
+const save = await pv.get('save', 'slot1');   // the event, or null when there is no save
+if (save) load(save.d);
 
 // High scores are a list, not a blob
 await pv.append([{ op:'put', tbl:'score', id: pv.ulid(),
@@ -47,7 +48,8 @@ Full replication, snapshots, and plain-text backup, with no schema to maintain.
 append is a durable line in a log file that syncs to every device.
 
 Use `pv.subscribe` to notice a save written on another device mid-session, and offer to
-reload rather than silently overwriting.
+reload rather than silently overwriting; handle `pv.on('resync', …)` the same way — the
+node rebuilt its cache underneath you, so re-read.
 
 ## Cross-origin isolation — read this before choosing Godot or Unity
 

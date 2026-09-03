@@ -1,7 +1,7 @@
 /*
  * Project:  Privatium™  |  File: apps/sketch/web/app.js
  * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
- * Created:  2026-08-28  |  Modified: 2026-08-28
+ * Created:  2026-08-28  |  Modified: 2026-09-03
  * Summary:  The whole app. Plain ES modules — no build step, no framework,
  *           no SQL. The event log is used directly as a document store.
  */
@@ -82,5 +82,15 @@ pv.on('offline', () => status.textContent = 'Offline — your strokes are queued
 pv.on('online',  () => status.textContent = '');
 
 // ---- boot ----------------------------------------------------------------
-for await (const ev of pv.events({ tbl: 'stroke' })) strokes.set(ev.id, ev.d);
+// The log in order: a put is a stroke, a del takes it back. The same read serves a
+// resync, which is the node saying its cache was rebuilt underneath us.
+async function load() {
+  strokes.clear();
+  for await (const ev of pv.events({ tbl: 'stroke' })) {
+    if (ev.op === 'del') strokes.delete(ev.id); else strokes.set(ev.id, ev.d);
+  }
+  redrawAll();
+}
+pv.on('resync', load);
+await load();
 fit();
