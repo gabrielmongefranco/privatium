@@ -781,6 +781,12 @@ warning rather than a refusal because the same app is legal in host mode. A Tier
 routes are the paths under `web/`, so what is shadowed there is a top-level entry named
 after a prefix — `web/settings/`, `web/static/` — and the warning names it the same way.
 
+`/static/*` is the one prefix with a fall-through. The framework answers from its own
+embedded assets, and in solo mode a name it does not have is served from the mounted Tier 1
+app's `static/` (`spec/lua-api.md §2`) — `url('/static/app.css')` has to reach the app's
+stylesheet when the mount is `/`. The framework's names still win, since they are tried
+first; a Tier 2 app's `web/static/` is shadowed as above.
+
 An earlier draft listed fixed `/v/<view>`, `/f/<form>`, and `/x/<action>` routes. Those
 belonged to a declarative tier that was removed (`spec/app-contract.md §1`), and
 implementations MUST NOT reintroduce them.

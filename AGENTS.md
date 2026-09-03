@@ -169,6 +169,10 @@ either be wrong or fight every commit that touches the file.
   `pv.setting` take the lock, briefly.
 - **Do not weaken LSP escaping.** `<?= ?>` escapes, always, with no configuration flag.
   `<?raw ?>` is the documented exception and every use is linted.
+- **Do not decide what to escape by inspecting a string.** `<?= ?>` escapes every string;
+  markup the framework produced — `icon()`, `csrf()`, `render()`, a layout's `content` —
+  is an `Html` value (`lua::html`) and passes because of its type, never its content. A
+  string never becomes markup except through `<?raw ?>`.
 - **Do not add a second icon set** to the *framework*, or hand-draw an SVG because Bootstrap
   Icons lacks the perfect glyph. Apps may ship their own graphics; the shell may not.
 - **Do not introduce a server-side mutable database as truth.** If you find yourself

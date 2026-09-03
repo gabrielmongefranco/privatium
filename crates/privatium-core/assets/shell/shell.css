@@ -79,8 +79,8 @@ a { color: inherit; }
   border-bottom: 1px solid var(--pv-line);
   background: var(--pv-panel);
 }
-.pv-header h1 { font-size: 1.125rem; margin: 0; }
-.pv-header h1 a { text-decoration: none; display: inline-flex; align-items: center; gap: .5rem; }
+.pv-header h1, .pv-header .pv-brand { font-size: 1.125rem; font-weight: 700; margin: 0; }
+.pv-header h1 a, .pv-header .pv-brand a { text-decoration: none; display: inline-flex; align-items: center; gap: .5rem; }
 .pv-header nav { margin-left: auto; display: flex; gap: .25rem; }
 .pv-header nav a {
   display: inline-flex;
@@ -182,6 +182,9 @@ pre { background: var(--pv-panel); padding: .75rem 1rem; border-radius: 6px; ove
 .pv-notice-info { background: var(--pv-panel); border: 1px solid var(--pv-line); }
 .pv-notice ul { margin: .25rem 0 0; padding-left: 1.25rem; }
 
+/* Buttons: the plain button is an outline; -primary is the one action a screen leads
+   with; -danger writes tombstones; -quiet is a disclosure toggle, not an action. The
+   colours are the tokens above, which already meet the contrast floor. */
 .pv-btn {
   display: inline-flex;
   align-items: center;
@@ -189,16 +192,38 @@ pre { background: var(--pv-panel); padding: .75rem 1rem; border-radius: 6px; ove
   padding: .45rem .9rem;
   border: 1px solid var(--pv-accent);
   border-radius: 6px;
-  background: var(--pv-accent);
-  color: var(--pv-accent-fg);
+  background: var(--pv-bg);
+  color: var(--pv-fg);
   font: inherit;
   cursor: pointer;
   text-decoration: none;
 }
-.pv-btn:hover { filter: brightness(1.1); }
+.pv-btn:hover { background: var(--pv-panel); }
+.pv-btn-primary { background: var(--pv-accent); color: var(--pv-accent-fg); }
+.pv-btn-primary:hover { background: var(--pv-accent); filter: brightness(1.1); }
+.pv-btn-danger { border-color: var(--pv-alert-fg); background: var(--pv-alert-bg); color: var(--pv-alert-fg); }
+.pv-btn-quiet { border-color: transparent; background: transparent; padding: .2rem .4rem; text-decoration: underline; }
 form.pv-inline { display: inline; }
+.pv-actions { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; margin: 1rem 0; }
+.pv-actions form { margin: 0; }
 
 .pv-muted { color: var(--pv-muted); }
 .pv-error { display: flex; gap: .5rem; align-items: center; }
-footer { text-align: center; color: var(--pv-muted); font-size: .875rem; padding: 1rem; border-top: 1px solid var(--pv-line); }
+.pv-empty, .pv-help, .pv-meta { color: var(--pv-muted); }
+.pv-help, .pv-meta { font-size: .875rem; }
+main footer.pv-meta { border-top: 1px solid var(--pv-line); margin-top: 2rem; padding: 1rem 0 0; text-align: left; }
+
+/* The error page: the traceback as it was written, the offending line marked by a
+   glyph and aria-current, never by colour alone. */
+.pv-trace, .pv-source { white-space: pre; }
+.pv-source mark { display: block; background: var(--pv-warn-bg); color: var(--pv-warn-fg); }
+
+/* Forms in apps: one field per line, labels above. */
+main form label { display: block; margin: .75rem 0 .25rem; font-weight: 600; }
+main form fieldset label { display: inline-flex; gap: .35rem; margin: .25rem 1rem .25rem 0; font-weight: 400; }
+main form input[type="text"] { font: inherit; padding: .45rem .6rem; border: 1px solid var(--pv-line); border-radius: 6px; width: min(100%, 28rem); background: var(--pv-bg); color: var(--pv-fg); }
+main form fieldset { border: 1px solid var(--pv-line); border-radius: 6px; padding: .5rem 1rem; margin: 1rem 0; }
+main form button, main form .pv-btn { margin: .75rem .5rem 0 0; }
+
+body > footer { text-align: center; color: var(--pv-muted); font-size: .875rem; padding: 1rem; border-top: 1px solid var(--pv-line); }
 footer a { color: inherit; }

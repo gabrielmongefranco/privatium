@@ -8,7 +8,7 @@
 <?= render('_assets') ?>
 
 <div id="board">
-  <?= render('_board', { node = node, stats = stats, error = error }) ?>
+  <?= render('_board', { node = node, stats = stats, err = err }) ?>
 </div>
 
 <footer class="pv-meta">

@@ -164,6 +164,18 @@ pub enum Error {
         slug: String,
     },
 
+    /// An app's files changed on disk and the reload failed (`spec/cli.md §3`): a
+    /// `app.lua` that does not load, a template that does not compile, an `app.toml` that
+    /// does not parse. The app as last loaded is kept, unserved, until the next edit; the
+    /// reason is what the error page and `sys_app.last_error` show.
+    #[error("{slug}: not reloaded — {reason}")]
+    AppReloadFailed {
+        /// The app.
+        slug: String,
+        /// The load failure's text, naming the file and line where it can.
+        reason: String,
+    },
+
     /// `sample/seed.jsonl` was not loaded because the app already has events
     /// (`spec/app-contract.md §9`).
     #[error(

@@ -13,6 +13,7 @@ use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use serde::Serialize;
 
@@ -319,6 +320,68 @@ pub struct App {
     /// The VM pool, for a Tier 1 app. Shared with a request in flight, which runs its
     /// handler outside the node lock.
     lua: Option<Arc<Host>>,
+    /// The code files as last loaded, so the read path notices an edit (`spec/cli.md §3`).
+    fingerprint: Fingerprint,
+    /// Why the last reload failed, while it stands: the app as last loaded is kept but
+    /// not served until the next edit succeeds.
+    reload_error: Option<ReloadError>,
+}
+
+/// `(mtime, len)` of every file whose change reloads the app in place: `app.toml`,
+/// `app.lua`, `schema.sql` and `lib/**/*.lua`. Templates are the Lua host's own stat.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct Fingerprint(BTreeMap<PathBuf, (Option<SystemTime>, u64)>);
+
+impl Fingerprint {
+    /// Stat the files now. A file that cannot be read is simply absent.
+    fn take(dir: &Path) -> Self {
+        let mut files = BTreeMap::new();
+        for name in [MANIFEST_FILE, "app.lua", SCHEMA_FILE] {
+            let path = dir.join(name);
+            if let Ok(meta) = fs::metadata(&path)
+                && meta.is_file()
+            {
+                files.insert(path, (meta.modified().ok(), meta.len()));
+            }
+        }
+        Self::walk_lua(&dir.join("lib"), &mut files);
+        Self(files)
+    }
+
+    fn walk_lua(dir: &Path, into: &mut BTreeMap<PathBuf, (Option<SystemTime>, u64)>) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            if meta.is_dir() {
+                Self::walk_lua(&path, into);
+            } else if path.extension().is_some_and(|ext| ext == "lua") {
+                into.insert(path, (meta.modified().ok(), meta.len()));
+            }
+        }
+    }
+}
+
+/// What a failed reload was about, so a fix to the right file clears it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ReloadError {
+    /// `app.toml`, `app.lua`, `lib/` or `schema.sql`: cleared by the next code edit
+    /// that loads.
+    Code(String),
+    /// A template: cleared by the next `views/` edit that compiles.
+    Views(String),
+}
+
+impl ReloadError {
+    fn reason(&self) -> &str {
+        match self {
+            Self::Code(reason) | Self::Views(reason) => reason,
+        }
+    }
 }
 
 impl App {
@@ -326,6 +389,18 @@ impl App {
     #[must_use]
     pub fn slug(&self) -> &str {
         &self.manifest.app.slug
+    }
+
+    /// `app.toml`'s title.
+    #[must_use]
+    pub fn title(&self) -> &str {
+        &self.manifest.app.title
+    }
+
+    /// Why the app is not being served since its last edit, if a reload failed.
+    #[must_use]
+    pub fn reload_error(&self) -> Option<&str> {
+        self.reload_error.as_ref().map(ReloadError::reason)
     }
 
     /// `app.toml`, parsed.
@@ -739,16 +814,78 @@ impl Node {
         Ok(())
     }
 
-    /// Rebuild a loaded app's cache if its log or `schema.sql` moved underneath it — the
-    /// `echo >>` reload of `apps/hello/README.md`, per request.
+    /// Bring a loaded app up to date with its folder and its log, per request — the
+    /// `echo >>` reload of `apps/hello/README.md`, and the edit loop of `spec/cli.md §3`
+    /// and `spec/lua-api.md §7`: an edited `app.lua`, `lib/`, `app.toml` or `schema.sql`
+    /// reloads the app in place through `§8`'s steps with its routes re-registered and,
+    /// for a new schema, the cache rematerialized; an edited template is recompiled; a
+    /// log that grew is applied. No restart, ever.
     ///
-    /// A stat decides; only a stale store pays for the rebuild. Returns whether it rebuilt.
+    /// A stat decides; only a change pays. A reload that fails — a syntax error just
+    /// saved — leaves the app as last loaded, records the reason in `sys_app.last_error`,
+    /// and is [`Error::AppReloadFailed`] on this and every later request until an edit
+    /// loads again: the error is what the author is shown, not the code from before it.
+    /// Returns whether the cache was rebuilt.
     pub fn refresh_app(&mut self, slug: &str) -> Result<bool> {
+        let code_changed = {
+            let app = self.apps.get_mut(slug).ok_or_else(|| Error::AppNotLoaded {
+                slug: slug.to_owned(),
+            })?;
+            let now = Fingerprint::take(&app.dir);
+            let changed = now != app.fingerprint;
+            app.fingerprint = now;
+            changed
+        };
+        let mut rebuilt = false;
+        if code_changed {
+            match self.reload_app(slug)? {
+                Ok(schema_changed) => rebuilt = schema_changed,
+                Err(reason) => {
+                    if let Some(app) = self.apps.get_mut(slug) {
+                        app.reload_error = Some(ReloadError::Code(reason));
+                    }
+                }
+            }
+        } else if let Some(outcome) = self
+            .apps
+            .get(slug)
+            .and_then(|app| app.lua.as_ref())
+            .filter(|host| host.views_changed())
+            .map(|host| host.reload_views())
+        {
+            match outcome {
+                Ok(()) => {
+                    let fixed = self.apps.get_mut(slug).is_some_and(|app| {
+                        let was_views = matches!(app.reload_error, Some(ReloadError::Views(_)));
+                        if was_views {
+                            app.reload_error = None;
+                        }
+                        was_views
+                    });
+                    if fixed {
+                        self.record_reload_ok(slug)?;
+                    }
+                }
+                Err(reason) => {
+                    if let Some(app) = self.apps.get_mut(slug) {
+                        app.reload_error = Some(ReloadError::Views(reason.clone()));
+                    }
+                    self.record_reload_failure(slug, reason)?;
+                }
+            }
+        }
+
         let app = self.apps.get_mut(slug).ok_or_else(|| Error::AppNotLoaded {
             slug: slug.to_owned(),
         })?;
+        if let Some(error) = &app.reload_error {
+            return Err(Error::AppReloadFailed {
+                slug: slug.to_owned(),
+                reason: error.reason().to_owned(),
+            });
+        }
         if !app.store.is_stale().map_err(boxed)? {
-            return Ok(false);
+            return Ok(rebuilt);
         }
         let previous = app.store.restore_record().cloned();
         app.store.refresh(&store::cutoff_now()).map_err(boxed)?;
@@ -760,8 +897,132 @@ impl Node {
         Ok(true)
     }
 
+    /// A template edit that did not compile: `sys_app.last_error` says so, and the audit
+    /// once (`spec/data-dictionary.md §3.4`), exactly as a load failure would.
+    fn record_reload_failure(&mut self, slug: &str, reason: String) -> Result<()> {
+        let existing = self.read_app_row(slug)?;
+        let source = self.apps.get(slug).map_or(Source::Local, |app| app.source);
+        if let Some(row) = &existing {
+            let updated = sys::AppRow {
+                last_error: Some(reason.clone()),
+                updated_at: Some(log::now()),
+                ..row.clone()
+            };
+            self.upsert_app_row(slug, &updated, Some(row))?;
+        }
+        let failure = LoadFailure {
+            folder: slug.to_owned(),
+            source,
+            stage: Stage::Tier,
+            reason,
+        };
+        self.audit_load_failed(&failure, existing.as_ref())?;
+        self.flush()
+    }
+
+    /// The template edit that compiled again: the row's `last_error` is cleared.
+    fn record_reload_ok(&mut self, slug: &str) -> Result<()> {
+        if let Some(row) = self.read_app_row(slug)?
+            && row.last_error.is_some()
+        {
+            let updated = sys::AppRow {
+                last_error: None,
+                updated_at: Some(log::now()),
+                ..row.clone()
+            };
+            self.upsert_app_row(slug, &updated, Some(&row))?;
+            self.flush()?;
+        }
+        Ok(())
+    }
+
+    /// Reload an app whose code files changed: `§8` again from "parse app.toml" through
+    /// "compute CSP" — `prepare`, which is also what compiles `views/` and loads
+    /// `app.lua` into a fresh pool with its routes — then the swap. The log is never
+    /// reopened; the cache is reopened and rematerialized only when `schema.sql`'s hash
+    /// moved (`spec/app-contract.md §4.5`). A request in flight holds the old host and
+    /// finishes on it (`docs/plans/phase-1.md §8`, R3).
+    ///
+    /// The outer `Err` is the node's own trouble. The inner `Err` is the app's: nothing
+    /// is swapped, the row carries `last_error`, the audit says so once.
+    fn reload_app(&mut self, slug: &str) -> Result<std::result::Result<bool, String>> {
+        let (dir, source, old_hash) = {
+            let app = self.apps.get(slug).ok_or_else(|| Error::AppNotLoaded {
+                slug: slug.to_owned(),
+            })?;
+            (app.dir.clone(), app.source, app.store.schema().hash.clone())
+        };
+        let candidate = Candidate {
+            folder: slug.to_owned(),
+            dir,
+            source,
+        };
+        let existing = self.read_app_row(slug)?;
+        let now = log::now();
+        let prepared = match self.prepare(&candidate) {
+            Ok(prepared) => prepared,
+            Err(refused) => {
+                let failure = LoadFailure {
+                    folder: slug.to_owned(),
+                    source,
+                    stage: refused.stage,
+                    reason: refused.reason,
+                };
+                let row = app_row(
+                    &candidate,
+                    refused.manifest.as_ref(),
+                    None,
+                    refused.manifest_hash,
+                    existing.as_ref(),
+                    Some(&failure.reason),
+                    &now,
+                );
+                self.upsert_app_row(slug, &row, existing.as_ref())?;
+                self.audit_load_failed(&failure, existing.as_ref())?;
+                self.flush()?;
+                return Ok(Err(failure.reason));
+            }
+        };
+
+        let schema_changed = prepared.schema.hash != old_hash;
+        let store = if schema_changed {
+            Some(self.open_store(slug, prepared.schema.clone(), &store::cutoff_now())?)
+        } else {
+            None
+        };
+        let row = app_row(
+            &candidate,
+            Some(&prepared.manifest),
+            Some(&prepared.schema.hash),
+            Some(prepared.manifest_hash.clone()),
+            existing.as_ref(),
+            None,
+            &now,
+        );
+        self.upsert_app_row(slug, &row, existing.as_ref())?;
+
+        let app = self.apps.get_mut(slug).ok_or_else(|| Error::AppNotLoaded {
+            slug: slug.to_owned(),
+        })?;
+        app.manifest = prepared.manifest;
+        app.manifest_hash = prepared.manifest_hash;
+        app.mount = prepared.mount;
+        app.csp = prepared.csp;
+        app.warnings = prepared.warnings;
+        app.lua = prepared.lua;
+        if let Some(store) = store {
+            app.store = store;
+        }
+        app.reload_error = None;
+        self.flush()?;
+        Ok(Ok(schema_changed))
+    }
+
     /// One folder through `§8`, writing its row and its audit as it goes.
     fn load_one(&mut self, candidate: &Candidate, cutoff: &str) -> Result<Outcome> {
+        // Taken before anything is read, so an edit that lands while the app loads is
+        // seen by the next request rather than missed.
+        let fingerprint = Fingerprint::take(&candidate.dir);
         // The row is keyed by the folder name (`spec/app-contract.md §3.1`: the slug
         // equals the folder). A folder that could never be a slug has no row to carry
         // `last_error`; it gets the audit alone.
@@ -827,6 +1088,8 @@ impl Node {
                 log,
                 store,
                 lua: prepared.lua,
+                fingerprint,
+                reload_error: None,
             }))),
             Err(error) => {
                 let failure = LoadFailure {
@@ -1015,13 +1278,20 @@ impl Node {
             &self.state,
         )?;
         audit_recovery(&mut self.sys, slug, &recovered)?;
+        log.save_to(&mut self.state);
+        let store = self.open_store(slug, prepared.schema.clone(), cutoff)?;
+        Ok((log, store))
+    }
 
+    /// Open `cache/<slug>.sqlite` for `schema` and bring it up to date through the
+    /// three-tier restore, with its audit and health row — at load, and again when
+    /// `schema.sql` changes under a running app.
+    fn open_store(&mut self, slug: &str, schema: Schema, cutoff: &str) -> Result<Store> {
         let previous = self
             .state
             .get(slug)
             .and_then(|record| record.materialized.restore.clone());
-        let mut store =
-            Store::open_with(&self.paths, slug, prepared.schema.clone()).map_err(boxed)?;
+        let mut store = Store::open_with(&self.paths, slug, schema).map_err(boxed)?;
         if let Some(record) = self.state.get(slug) {
             store.restore_watermark(record.materialized.clone());
         }
@@ -1030,10 +1300,8 @@ impl Node {
             audit_restore(&mut self.sys, slug, &restored, previous.as_ref(), false)?;
         }
         note_health(&self.store, &store, slug)?;
-
-        log.save_to(&mut self.state);
         store.save_to(&mut self.state);
-        Ok((log, store))
+        Ok(store)
     }
 
     /// Append the `sys_app` row if it says anything the current row does not, plus

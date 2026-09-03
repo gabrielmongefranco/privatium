@@ -6,7 +6,7 @@
 //           loader confined to the app's lib/ plus 'privatium', `print` routed to the
 //           diagnostic log, the request-scoped environment that keeps one request's global
 //           assignments from the next, and the sandbox globals of §4.0 — url, icon, fmt.*,
-//           t — that handler code and (from M8) templates share.
+//           t — that handler code and templates (lsp) share.
 
 use std::fs;
 use std::path::PathBuf;
@@ -16,6 +16,7 @@ use mlua::{Lua, LuaOptions, StdLib, Table, Value};
 
 use crate::config::LuaConfig;
 use crate::icons;
+use crate::lua::html::Html;
 use crate::lua::{Phase, UiSettings, VmData};
 use crate::store::Decimal;
 
@@ -62,8 +63,12 @@ pub(crate) fn install_env(lua: &Lua) -> mlua::Result<Table> {
     Ok(env)
 }
 
-/// `__newindex` of the environment: baseline while loading, scratch during a request.
-fn assign_global(lua: &Lua, (_env, key, value): (Table, Value, Value)) -> mlua::Result<()> {
+/// `__newindex` of the environment: baseline while loading, scratch during a request. A
+/// template's environment (`lsp`) routes its bare assignments here too.
+pub(crate) fn assign_global(
+    lua: &Lua,
+    (_env, key, value): (Table, Value, Value),
+) -> mlua::Result<()> {
     let loading = lua
         .app_data_ref::<VmData>()
         .is_some_and(|data| data.phase == Phase::Loading);
@@ -259,11 +264,12 @@ pub(crate) fn url(lua: &Lua, path: String) -> mlua::Result<String> {
     Ok(crate::wire::url(&mount, &path))
 }
 
-/// `icon(name[, label])` — `docs/icons.md`. A label makes it an image with a title.
-fn icon(_: &Lua, (name, label): (String, Option<Value>)) -> mlua::Result<String> {
+/// `icon(name[, label])` — `docs/icons.md`. A label makes it an image with a title. The
+/// result is markup, so `<?= icon(...) ?>` emits it as it is (`spec/lua-api.md §4`).
+fn icon(_: &Lua, (name, label): (String, Option<Value>)) -> mlua::Result<Html> {
     match label {
-        None | Some(Value::Nil) => Ok(icons::icon(&name)),
-        Some(Value::String(label)) => Ok(icons::icon_labeled(&name, &label.to_str()?)),
+        None | Some(Value::Nil) => Ok(Html(icons::icon(&name))),
+        Some(Value::String(label)) => Ok(Html(icons::icon_labeled(&name, &label.to_str()?))),
         Some(other) => Err(mlua::Error::runtime(format!(
             "icon(name, label): the label is a string, not a {} (docs/icons.md)",
             other.type_name()

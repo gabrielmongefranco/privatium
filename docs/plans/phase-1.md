@@ -272,6 +272,15 @@ why, not a to-do list.
 | 45 | Row 30 dropped `/` from `pv.dec`; a method-only division was judged too awkward for authors and models | `/` exists, at the larger scale of the operands, rounding half away from zero; `:div(b, scale)` stays for a named scale | `lua-api.md §3.2`, `data-dictionary.md §2.1` (M7 review) |
 | 46 | `§2.1` said a value that does not parse as its type "materializes as NULL" and left the write side to the data API, so `pv.append('fill', { filled_on = '3/9/2026' })` would have written a string SQLite's date functions cannot read | Typed writes: every value naming a declared column is normalized before the append — digits, booleans, and the accepted date, time and timestamp spellings to ISO, `ui.date_format` deciding `3/9` — and a value that is not its type refuses the append naming the column; the NULL rule is for lines that reached the log another way | `lua-api.md §3.3`, `data-dictionary.md §2.1` (M7 review) |
 | 47 | `§5` said global state is "per-VM and not shared" and left a global assigned in a handler visible to every later request on that VM — PHP's cross-request state, with its leaks | A global assigned in a handler lasts one request; `app.lua`'s definitions are the baseline; mutating a baseline table in place is the remaining per-VM footgun the linter checks | `lua-api.md §5` (M7 review) |
+| 48 | `§4.1` never said what a view that calls no `layout()` renders inside, or when a view's output is the whole response; neither reference app calls `layout()`, both depend on the shell's stylesheet, and `apps/animals/views/_assets.lsp` says the app does not own the document | A view with no `layout()` renders inside the framework's page frame — head, the app's title, shell.css, htmx, a header, `<main>`, the view's own `<h1>`; a request htmx makes (`HX-Request` without `HX-Boosted`) gets the output alone; `layout('base')` is how an app owns the document | `lua-api.md §4.1`, `app-contract.md §4.2` (found in M8) |
+| 49 | `§4` said `<?= ?>` "always escapes" while its own example, both apps and `docs/icons.md` wrote `<?= icon(...) ?>`, `<?= csrf() ?>` and `<?= render(...) ?>` — an unconditional escaper renders those as visible `&lt;svg` | Those helpers return an HTML value that `<?= ?>` emits as it is; every other value is escaped; concatenating the value into a string loses the marker and is escaped again; `nil` emits nothing, a table or function is an error naming the line; a comment is stripped whatever it contains | `lua-api.md §4`, `app-contract.md §4.2`, `docs/icons.md`, `AGENTS.md` (found in M8) |
+| 50 | `§4.1`'s `layout('base')` said "wrap" and nothing about what the layout sees or when it runs | It runs after the view with the same ctx plus `content`; the view `pv.render` named may call it, a partial may not | `lua-api.md §4.1` (found in M8) |
+| 51 | `§2` listed `static/` in the Tier 1 layout and both apps link `url('/static/…')`, but nothing served it beneath a mount — every such link was a 404 | `<mount>static/*` is the framework serving the app's `static/`, as it serves a Tier 2 app's `web/`; a route never sees those paths | `lua-api.md §2` (found in M8) |
+| 52 | `protocol.md §9.1` made `/static/*` the framework's outright in both modes, which in solo mode left a Tier 1 app's own stylesheet unreachable through `url()` | The framework's embedded names come first and, in solo mode, a name it lacks falls through to the mounted Tier 1 app's `static/`; a Tier 2 app's `web/static/` stays shadowed | `protocol.md §9.1` (found in M8) |
+| 53 | `cli.md §3` read as if reloading were a `dev`-only mode — "runs a node with file watching enabled" — while `lua-api.md §4`, `§7` and `architecture.md §2.4` make no-restart reloading the host's own behaviour | The table in `§3` is what the host does on every run, noticed by a stat on the next request; `dev` is the front door and adds only its flags. A save that does not load is the error page until the next save loads, never the code from before it | `cli.md §3`, `lua-api.md §7` (found in M8) |
+| 54 | `§4.1`'s header path for the token — `X-CSRF-Token` for `hx-delete` on a button — had no source a template could put the token into | The page frame sets `hx-headers` on `<body>`, so every htmx request beneath the mount carries it; a view owning its document uses `hx-headers` or `hx-include="[name=_csrf]"`; `_csrf` stays in `req.form` | `lua-api.md §4.1` (found in M8) |
+| 55 | `§4` said nothing about `<?= nil ?>`, a number, a boolean, a table | `nil` → nothing; number, boolean, a value with `tostring` → its text, escaped; table or function → an error naming the line | `lua-api.md §4` (found in M8) |
+| 56 | `§4.1` made ctx keys bare names and said nothing about a name absent from the ctx; `apps/hello` and `apps/animals` keyed their message `error`, which is Lua's `error` function, so `<? if error then ?>` was always true and `<?= error ?>` emitted a function | A name absent from the ctx is the sandbox global or `nil`; a key MUST NOT be a Lua builtin's name; the reference apps say `err` | `lua-api.md §4.1`, `apps/hello`, `apps/animals` (found in M8) |
 
 Defect 11 was found during M1 rather than while writing this plan, which is the rule in
 the last paragraph of this section working as intended. It could not be coded around: the
@@ -335,7 +344,7 @@ rules.
 | IDs | `ulid` | Crockford Base32, 26 chars |
 | Serde | `serde`, `serde_json` | `preserve_order` **off** — see below |
 | Config | `toml`, `figment` or hand-rolled | manifest + config.toml |
-| Watch | `notify` + debounce | `privatium dev` |
+| Watch | — | *Was `notify` + debounce for `privatium dev`. M8 decided a stat per request in the core instead — `refresh_app` already stats the log per request, and the code files and templates joined it — so nothing watches and nothing is taken; the workspace rows were removed.* |
 | Lua AST | `full_moon` | linter rules PV201/203/301/302/307 |
 | CLI | `clap` (derive), `owo-colors` | **no `qrcode`** — QR is pairing, which is Phase 2 |
 | Errors | `thiserror` in core, `anyhow` in the binary | `AGENTS.md` |
@@ -684,6 +693,13 @@ thirteen), `test_spec_lua_5_require_confined_to_lib`,
   chunk cache; `app.lua`/`lib/*.lua` → app reload in place with routes re-registered;
   `static/*` → nothing; `schema.sql` → rematerialize; `app.toml` → manifest and routes
   re-read, data untouched. **No restart, ever.**
+  *Decided in M8: the table is the host's behaviour on every run, not `dev`'s. A stat of
+  `app.toml`, `app.lua`, `schema.sql`, `lib/**` and `views/*` per request — beside the stat
+  of the log `refresh_app` already made — decides, under the node lock and before a VM is
+  checked out, so R3 holds by construction and there is no watcher thread; `notify` was
+  not taken. A save that does not load is the error page until the next save loads;
+  `dev` (M11) is the front door and adds its flags. `static/` beneath a Tier 1 mount is
+  served here too, host mode and solo (`§3` rows 51–52) — nothing else rendered animals.*
 
 **Tests:** `test_lsp_escapes_by_default` (the `<script>alert(1)</script>` name),
 `test_lsp_raw_emits_unescaped`, `test_lsp_error_maps_to_source_line`,

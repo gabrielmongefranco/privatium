@@ -1,6 +1,6 @@
 -- Project:  Privatium™  |  File: apps/hello/app.lua
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
--- Created:  2026-08-28  |  Modified: 2026-08-28
+-- Created:  2026-08-28  |  Modified: 2026-09-03
 -- Summary:  The entire application. Two routes, eleven lines of logic.
 
 local pv = require 'privatium'
@@ -20,7 +20,7 @@ end)
 pv.post('/name', function(req)
   local name = (req.form.display_name or ''):gsub('^%s+', ''):gsub('%s+$', '')
   if name == '' then
-    return pv.render('edit', { me = profile(), error = 'Please enter a name.' })
+    return pv.render('edit', { me = profile(), err = 'Please enter a name.' })
   end
 
   local me = profile()

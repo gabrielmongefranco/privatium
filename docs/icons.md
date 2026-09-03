@@ -69,7 +69,9 @@ kilobytes in the binary — cheaper than the complexity of a runtime sprite buil
 The label is the second positional argument, a string. There is no options table and no
 size option: an icon is `1em` and takes its size from the surrounding `font-size`, which
 is the one lever that keeps it aligned with its text. The same helper is a global in
-handler code (`spec/lua-api.md §4.0`).
+handler code (`spec/lua-api.md §4.0`). It returns an HTML value, so `<?= icon('gear') ?>`
+emits the SVG as it is while `<?= ?>` escapes everything else (`spec/lua-api.md §4`); in
+handler code it concatenates like a string.
 
 Emits:
 

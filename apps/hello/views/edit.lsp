@@ -4,8 +4,8 @@
 
 <h1>What should I call you?</h1>
 
-<? if error then ?>
-  <p class="pv-error" role="alert"><?= icon('exclamation-triangle') ?> <?= error ?></p>
+<? if err then ?>
+  <p class="pv-error" role="alert"><?= icon('exclamation-triangle') ?> <?= err ?></p>
 <? end ?>
 
 <form method="post" action="<?= url('/name') ?>">

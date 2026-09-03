@@ -9,8 +9,8 @@
      layered on `method`/`action`, not a replacement for them — HTMX intercepts
      the submit when it can and the browser handles it when it cannot. Keep both. --?>
 
-<? if error then ?>
-  <p class="pv-error" role="alert"><?= icon('exclamation-triangle') ?> <?= error ?></p>
+<? if err then ?>
+  <p class="pv-error" role="alert"><?= icon('exclamation-triangle') ?> <?= err ?></p>
 <? end ?>
 
 <? if not node then ?>

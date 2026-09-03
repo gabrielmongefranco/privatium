@@ -50,6 +50,24 @@ end)
 Helpers in every template: `render`, `layout`, `icon`, `url`, `fmt.date`, `fmt.money`,
 `fmt.rel`, `csrf`, `t`.
 
+- `<?= ?>` escapes every string. `icon()`, `csrf()` and `render()` return an HTML value
+  that passes as it is — write `<?= icon('gear') ?>`, never `<?raw icon('gear') ?>`.
+  `'x ' .. icon('gear')` is a plain string again and is escaped. `nil` emits nothing; a
+  table is an error naming the line.
+- The ctx keys are bare names: `pv.render('index', { fills = ... })` makes `fills` visible.
+  A name not in the ctx is the Lua global of that name, so never key a ctx by a builtin —
+  `error`, `type`, `select`, `table`. Use `err` for a message.
+- A view with no `layout()` renders inside the framework's page frame (title, stylesheet,
+  htmx, header, `<main>`): write the page's one `<h1>` and the content, nothing more. To
+  own the document, call `layout('base')` and put `<?= content ?>` in `views/base.lsp`.
+- A request htmx makes gets the view's output alone, so `pv.render('_board', ctx)` from a
+  `req.is_htmx` branch is a fragment swap; `render('_board', ctx)` includes it in a page.
+- `static/` is served at `url('/static/...')` beneath the mount; put CSS and vendored JS
+  there.
+- Save a file, refresh: `views/*.lsp`, `app.lua`, `lib/`, `schema.sql` and `app.toml` are
+  reloaded on the next request, no restart. A save that does not load is the error page,
+  with the line, until the next save loads.
+
 ## MUST
 
 - Bind SQL parameters: `pv.query('... WHERE drug = ?', {name})`
@@ -61,7 +79,8 @@ Helpers in every template: `render`, `layout`, `icon`, `url`, `fmt.date`, `fmt.m
   `2:30 pm`, `2026-09-03 14:03` — the framework normalizes them to ISO on write and
   refuses what it cannot read, naming the column
 - Wrap every internal link in `url()`
-- Put `<?= csrf() ?>` in every non-GET form
+- Put `<?= csrf() ?>` in every non-GET form — the host refuses a non-GET request without
+  the token with 403; an `hx-delete` button gets it from the page frame's `hx-headers`
 - Give every icon-only control a label: `icon('trash', 'Delete this fill')`
 - Use `pv.batch()` when more than one event must land together
 

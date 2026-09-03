@@ -186,7 +186,11 @@ file mtime. Save, refresh, done — no build, no restart.
 | `<?raw expr ?>` | Emit unescaped. Flagged by the linter every time. |
 | `<?-- ... --?>` | Comment |
 
-Escaping is the default and there is no flag to disable it.
+Escaping is the default and there is no flag to disable it. The framework's own markup —
+`icon()`, `csrf()`, a partial from `render()` — is an HTML value `<?= ?>` emits as it is;
+everything else is text (`spec/lua-api.md §4`). A view that calls no `layout()` renders
+inside the framework's page frame; `layout('base')` hands the document to the app
+(`§4.1` there).
 
 ### 4.3 Reads and writes
 

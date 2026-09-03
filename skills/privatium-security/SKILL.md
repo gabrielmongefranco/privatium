@@ -15,9 +15,13 @@ Applies to every tier. Load alongside the tier skill.
    credentials. Logs are plain text, sync everywhere, and live in backups forever. Secrets
    go in the OS keyring or `identity/`.
 3. **Never disable escaping.** `<?= ?>` in LSP escapes by default. `<?raw ?>` exists for the
-   rare genuine case and every occurrence is a review trigger. In JS, use `textContent`,
-   never `innerHTML`, with user data.
-4. **Never omit `csrf()`** from a non-GET form.
+   rare genuine case and every occurrence is a review trigger. The framework's own markup
+   — `icon()`, `csrf()`, `render()` — is an HTML value that passes through `<?= ?>`; do
+   not reach for `<?raw ?>` to emit it, and do not wrap data in it. In JS, use
+   `textContent`, never `innerHTML`, with user data.
+4. **Never omit `csrf()`** from a non-GET form. The host verifies the token on every
+   non-GET request beneath the mount — the `_csrf` field or the `X-CSRF-Token` header —
+   and answers 403 without it; the page frame gives htmx the header for free.
 5. **Never trust an event's origin.** Events arrive via sync from other devices. Validate
    on read as well as on write.
 6. **Never claim data is deleted.** `del` writes a tombstone; the original line stays in the

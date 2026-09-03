@@ -1,11 +1,13 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lua/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-03  |  Modified: 2026-09-03
-// Summary:  The Lua host (spec/lua-api.md, docs/plans/phase-1.md M7): one pool of sandboxed
-//           VMs per Tier 1 app, every VM loading app.lua identically so the router can hold
-//           (method, pattern, index) from VM 0 (§2.4); one request holds one VM on a
-//           blocking thread with a read-only connection of its own; the four limits armed
-//           per run; a VM that trips one is discarded and rebuilt on the next checkout.
+// Summary:  The Lua host (spec/lua-api.md, docs/plans/phase-1.md M7, M8): one pool of
+//           sandboxed VMs per Tier 1 app, every VM loading app.lua identically so the router
+//           can hold (method, pattern, index) from VM 0 (§2.4); one request holds one VM on
+//           a blocking thread with a read-only connection of its own; the four limits armed
+//           per run; a VM that trips one is discarded and rebuilt on the next checkout. The
+//           app's compiled templates live here too (lsp), and pv.render is fulfilled inside
+//           the same run so a template shares the request's limits and connection.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
@@ -24,11 +26,15 @@ use crate::store::Schema;
 
 mod convert;
 pub mod dec;
+pub mod html;
 pub mod limits;
+pub mod lsp;
 mod pv;
 mod sandbox;
 
+pub use html::Html;
 pub use limits::{LimitKind, Limits};
+pub use lsp::{CompileError, Compiled, LineMap, Templates, ViewMap};
 
 /// One registered route: `(method, pattern)` in registration order.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -147,11 +153,102 @@ pub enum LuaResponse {
     Json(String),
     /// `pv.redirect`: 303 to this location, exactly as given.
     Redirect(String),
-    /// `pv.render`: the view name. Templates are M8's; until then the wire layer answers
-    /// for this.
-    Render(String),
+    /// `pv.render`, fulfilled: the view rendered. `complete` says the app supplied the
+    /// whole document — the view called `layout()`, or the request was an htmx fragment
+    /// request — so the wire layer adds no page frame (`spec/lua-api.md §4.1`).
+    View {
+        /// The HTML.
+        html: Vec<u8>,
+        /// Whether to serve it as it is rather than inside the framework's frame.
+        complete: bool,
+    },
     /// `nil`: 204.
     NoContent,
+}
+
+/// Where in the app's source an error points: the first `file:line` of a traceback that
+/// names one of the app's own files, with the lines around it for the error page and the
+/// terminal (`spec/cli.md §3`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceContext {
+    /// Relative to the app folder: `views/index.lsp`, `app.lua`, `lib/tree.lua`.
+    pub file: String,
+    /// The offending line, 1-based.
+    pub line: u32,
+    /// `(line number, text)` for the offending line and a few around it.
+    pub lines: Vec<(u32, String)>,
+}
+
+impl SourceContext {
+    /// How many lines are shown on each side of the offending one.
+    const AROUND: u32 = 3;
+
+    /// The context as the terminal prints it: a `>` marks the offending line.
+    #[must_use]
+    pub fn render_text(&self) -> String {
+        let mut out = format!("{}:{}\n", self.file, self.line);
+        for (number, text) in &self.lines {
+            let marker = if *number == self.line { '>' } else { ' ' };
+            out.push_str(&format!("{marker} {number:>4}  {text}\n"));
+        }
+        out
+    }
+}
+
+/// The context for `message`, read from `dir` — the app folder. `None` when the message
+/// names no file of the app's, or the file cannot be read.
+#[must_use]
+pub fn context_in(dir: &Path, message: &str) -> Option<SourceContext> {
+    let (file, reported) = locate(message)?;
+    let text = fs::read_to_string(dir.join(&file)).ok()?;
+    let count = text.lines().count() as u32;
+    if count == 0 {
+        return None;
+    }
+    // Lua reports an unclosed block "near <eof>" at the line after the last one; the
+    // last line is what the author can look at.
+    let line = reported.clamp(1, count);
+    let first = line.saturating_sub(SourceContext::AROUND).max(1);
+    let last = line.saturating_add(SourceContext::AROUND);
+    let lines: Vec<(u32, String)> = text
+        .lines()
+        .enumerate()
+        .map(|(index, text)| (index as u32 + 1, text.to_owned()))
+        .filter(|(number, _)| (first..=last).contains(number))
+        .collect();
+    Some(SourceContext { file, line, lines })
+}
+
+/// The first `<relative path>.lsp:<n>` or `.lua:<n>` in `message`, with the path a plain
+/// relative one — a traceback frame, never something a request could have spelled.
+fn locate(message: &str) -> Option<(String, u32)> {
+    let mut best: Option<(usize, String, u32)> = None;
+    for ext in [".lsp:", ".lua:"] {
+        for (at, _) in message.match_indices(ext) {
+            let digits_start = at + ext.len();
+            let digits_end = message[digits_start..]
+                .find(|c: char| !c.is_ascii_digit())
+                .map_or(message.len(), |n| digits_start + n);
+            let Ok(line) = message[digits_start..digits_end].parse::<u32>() else {
+                continue;
+            };
+            let start = message[..at]
+                .rfind(|c: char| c.is_whitespace() || matches!(c, '[' | '<' | '(' | '"' | '\''))
+                .map_or(0, |i| i + 1);
+            let path = &message[start..at + ext.len() - 1];
+            let plain = !path.is_empty()
+                && !path.starts_with('/')
+                && !path.contains("..")
+                && !path.contains(':')
+                && path
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'/' | b'-'));
+            if plain && best.as_ref().is_none_or(|(seen, _, _)| at < *seen) {
+                best = Some((at, path.to_owned(), line));
+            }
+        }
+    }
+    best.map(|(_, path, line)| (path, line))
 }
 
 /// Why a run did not produce a response.
@@ -165,8 +262,14 @@ pub enum RunError {
         /// What the hook or the allocator said.
         detail: String,
     },
-    /// The handler raised, or returned something that is not a response.
-    Lua(String),
+    /// The handler or a template raised, or the handler returned something that is not a
+    /// response.
+    Lua {
+        /// The error and its traceback, template lines already mapped to the `.lsp`.
+        message: String,
+        /// The offending line with context, when the traceback names an app file.
+        at: Option<SourceContext>,
+    },
     /// The pool could not supply a VM.
     Pool(String),
 }
@@ -175,7 +278,7 @@ impl fmt::Display for RunError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Limit { kind, detail } => write!(f, "{kind} limit exceeded: {detail}"),
-            Self::Lua(message) | Self::Pool(message) => f.write_str(message),
+            Self::Lua { message, .. } | Self::Pool(message) => f.write_str(message),
         }
     }
 }
@@ -225,6 +328,9 @@ pub struct RequestCtx {
     pub device: String,
     /// `fmt.*`.
     pub ui: UiSettings,
+    /// What `csrf()` emits: the token bound to the app's mount (`spec/lua-api.md §4.1`).
+    /// The issuer stays outside the VM.
+    pub csrf_token: String,
 }
 
 impl fmt::Debug for RequestCtx {
@@ -260,6 +366,13 @@ pub(crate) struct VmData {
     pub ctx: Option<RequestCtx>,
     /// The events staged by the `pv.batch` in progress.
     pub batch: Option<Vec<crate::app::Change>>,
+    /// The templates this run resolves against — one snapshot for the whole run, so a
+    /// reload mid-request never mixes generations on one page (R3).
+    pub views: Option<Arc<ViewMap>>,
+    /// How many renders are in progress: the view is 1, a partial inside it 2.
+    pub render_depth: u32,
+    /// The layout the view asked for, applied when the view returns.
+    pub layout: Option<String>,
 }
 
 struct Vm {
@@ -281,6 +394,8 @@ pub struct Host {
     config: LuaConfig,
     schema: Arc<Schema>,
     routes: Vec<RouteSpec>,
+    /// `views/`, compiled once at load and recompiled on edit (`spec/lua-api.md §4`).
+    templates: Arc<Templates>,
     pool: Mutex<Pool>,
     returned: Condvar,
 }
@@ -290,14 +405,17 @@ impl fmt::Debug for Host {
         f.debug_struct("Host")
             .field("slug", &self.slug)
             .field("routes", &self.routes.len())
+            .field("views", &self.templates.snapshot().len())
             .field("pool_size", &self.config.pool_size)
             .finish_non_exhaustive()
     }
 }
 
 impl Host {
-    /// Load `app.lua` into `lua.pool_size` VMs and take the route table from VM 0. Any VM
-    /// whose table differs fails the load, naming the divergence (`§2.4`).
+    /// Compile `views/`, load `app.lua` into `lua.pool_size` VMs and take the route table
+    /// from VM 0. Any VM whose table differs fails the load, naming the divergence
+    /// (`§2.4`); a template that does not compile, or whose Lua does not parse, fails it
+    /// naming the file and line (`spec/app-contract.md §8`).
     ///
     /// `mount` is the app's mount for `url()`; an app that is loaded but not served (a
     /// solo node's other apps) gets its host-mode mount so `url()` still answers.
@@ -309,6 +427,7 @@ impl Host {
         config: &LuaConfig,
     ) -> Result<Self, String> {
         let mount = mount.map_or_else(|| format!("/a/{slug}/"), str::to_owned);
+        let templates = Arc::new(Templates::load(dir)?);
         let mut host = Self {
             slug: slug.to_owned(),
             dir: dir.to_path_buf(),
@@ -316,6 +435,7 @@ impl Host {
             config: config.clone(),
             schema: Arc::new(schema),
             routes: Vec::new(),
+            templates,
             pool: Mutex::new(Pool {
                 free: VecDeque::new(),
                 live: 0,
@@ -328,6 +448,9 @@ impl Host {
             let (vm, routes) = host.build_vm()?;
             if index == 0 {
                 host.routes = routes;
+                // Every chunk parses, or the load fails naming the .lsp line — the
+                // scanner sees tags, only Lua sees a missing `then`.
+                lsp::preload(&vm.lua, &host.templates.snapshot())?;
             } else {
                 same_routes(&host.routes, &routes, index)?;
             }
@@ -356,6 +479,45 @@ impl Host {
     #[must_use]
     pub fn routes(&self) -> &[RouteSpec] {
         &self.routes
+    }
+
+    /// The compiled templates.
+    #[must_use]
+    pub fn templates(&self) -> &Arc<Templates> {
+        &self.templates
+    }
+
+    /// Whether a `views/*.lsp` changed on disk since it was compiled — a stat per file.
+    #[must_use]
+    pub fn views_changed(&self) -> bool {
+        self.templates.changed()
+    }
+
+    /// Recompile the changed templates and publish them as the next generation. A
+    /// request already running keeps the snapshot it started with (R3); the next one
+    /// sees the edit. A template that fails to compile, or to parse in a VM, is the
+    /// error — nothing is published.
+    pub fn reload_views(&self) -> Result<(), String> {
+        self.templates.reload()?;
+        // Parse every chunk once, as the load did, so a syntax error is found here and
+        // named — not by whichever request first renders it.
+        let vm = self.checkout()?;
+        let checked = lsp::preload(&vm.lua, &self.templates.snapshot());
+        self.checkin(vm);
+        checked
+    }
+
+    /// The error with its template lines mapped back to the `.lsp` and the offending
+    /// source line attached, for the error page and the terminal.
+    fn annotate(&self, error: RunError) -> RunError {
+        match error {
+            RunError::Lua { message, .. } => {
+                let message = self.templates.rewrite(&message);
+                let at = context_in(&self.dir, &message);
+                RunError::Lua { message, at }
+            }
+            other => other,
+        }
     }
 
     /// Resolve a method and a path beneath the mount against the route table. `HEAD`
@@ -397,21 +559,28 @@ impl Host {
         ctx: RequestCtx,
     ) -> Result<LuaResponse, RunError> {
         let vm = self.checkout().map_err(RunError::Pool)?;
-        let outcome = vm.run(ctx, |lua| {
+        // An htmx swap wants the fragment alone; a boosted navigation wants a page.
+        let fragment =
+            request.is_htmx && !request.headers.iter().any(|(name, _)| name == "hx-boosted");
+        let views = self.templates.snapshot();
+        let outcome = vm.run(ctx, views, |lua| {
             let routes: Table = lua.named_registry_value(pv::ROUTES_KEY)?;
             let handler: Function = routes.raw_get(index + 1)?;
             let req = request_table(lua, &request)?;
             let value: Value = handler.call(req)?;
-            response_of(&value)
+            response_of(lua, &value, fragment)
         });
         self.finish(vm, outcome)
+            .map_err(|error| self.annotate(error))
     }
 
     /// Fire `pv.on('append')` for events appended outside a handler — the seed.
     pub fn fire(&self, appended: &Appended, ctx: RequestCtx) -> Result<(), RunError> {
         let vm = self.checkout().map_err(RunError::Pool)?;
-        let outcome = vm.run(ctx, |lua| pv::fire_append(lua, appended));
+        let views = self.templates.snapshot();
+        let outcome = vm.run(ctx, views, |lua| pv::fire_append(lua, appended));
         self.finish(vm, outcome)
+            .map_err(|error| self.annotate(error))
     }
 
     /// Return the VM to the pool, or discard it if it tripped a limit.
@@ -437,8 +606,12 @@ impl Host {
             routes: Vec::new(),
             ctx: None,
             batch: None,
+            views: None,
+            render_depth: 0,
+            layout: None,
         });
         pv::install(&lua).map_err(|error| error.to_string())?;
+        lsp::install(&lua).map_err(|error| error.to_string())?;
         sandbox::install_globals(&lua).map_err(|error| error.to_string())?;
         let env = sandbox::install_env(&lua).map_err(|error| error.to_string())?;
 
@@ -531,6 +704,7 @@ impl Vm {
     fn run<T>(
         &self,
         ctx: RequestCtx,
+        views: Arc<ViewMap>,
         body: impl FnOnce(&Lua) -> mlua::Result<T>,
     ) -> Result<T, RunError> {
         self.limits.arm();
@@ -539,25 +713,35 @@ impl Vm {
             .conn
             .progress_handler(1000, Some(move || progress.over_time()))
         {
-            return Err(RunError::Lua(format!(
-                "could not install the statement deadline: {error}"
-            )));
+            return Err(RunError::Lua {
+                message: format!("could not install the statement deadline: {error}"),
+                at: None,
+            });
         }
         {
             let Some(mut data) = self.lua.app_data_mut::<VmData>() else {
-                return Err(RunError::Lua("the VM lost its state".to_owned()));
+                return Err(RunError::Lua {
+                    message: "the VM lost its state".to_owned(),
+                    at: None,
+                });
             };
             data.ctx = Some(ctx);
             data.phase = Phase::Request;
             data.batch = None;
+            data.views = Some(views);
+            data.render_depth = 0;
+            data.layout = None;
         }
         let result = body(&self.lua);
         // Take the context back whatever happened: the connection closes here, and a
         // handler that errored must not leave a half-built batch behind. The request's
-        // global assignments go with it (`spec/lua-api.md §5`).
+        // global assignments go with it (`spec/lua-api.md §5`), and so does the template
+        // snapshot, so a superseded generation is freed once its last request ends.
         let taken = self.lua.app_data_mut::<VmData>().map(|mut data| {
             data.phase = Phase::Idle;
             data.batch = None;
+            data.views = None;
+            data.layout = None;
             data.ctx.take()
         });
         drop(taken);
@@ -579,7 +763,10 @@ impl Vm {
                     detail,
                 })
             }
-            Err(error) => Err(RunError::Lua(error.to_string())),
+            Err(error) => Err(RunError::Lua {
+                message: error.to_string(),
+                at: None,
+            }),
         }
     }
 }
@@ -643,11 +830,15 @@ fn request_table(lua: &Lua, request: &LuaRequest) -> mlua::Result<Table> {
     Ok(req)
 }
 
-/// A handler's return value as a response (`§3.1`'s table).
-fn response_of(value: &Value) -> mlua::Result<LuaResponse> {
+/// A handler's return value as a response (`§3.1`'s table). A `pv.render` is fulfilled
+/// here, inside the run, so the template shares the request's limits and connection.
+fn response_of(lua: &Lua, value: &Value, fragment: bool) -> mlua::Result<LuaResponse> {
     match value {
         Value::Nil => Ok(LuaResponse::NoContent),
         Value::String(html) => Ok(LuaResponse::Html(html.as_bytes().to_vec())),
+        Value::UserData(ud) if ud.is::<Html>() => Ok(LuaResponse::Html(
+            ud.borrow::<Html>()?.0.clone().into_bytes(),
+        )),
         Value::Table(table) => {
             let kind: Option<String> = table.raw_get(pv::RESPONSE_FIELD)?;
             match kind.as_deref() {
@@ -657,7 +848,15 @@ fn response_of(value: &Value) -> mlua::Result<LuaResponse> {
                 }
                 Some("json") => Ok(LuaResponse::Json(table.raw_get("body")?)),
                 Some("redirect") => Ok(LuaResponse::Redirect(table.raw_get("location")?)),
-                Some("render") => Ok(LuaResponse::Render(table.raw_get("view")?)),
+                Some("render") => {
+                    let view: String = table.raw_get("view")?;
+                    let ctx: Option<Table> = table.raw_get("ctx")?;
+                    let (html, layouted) = lsp::render_response(lua, &view, ctx)?;
+                    Ok(LuaResponse::View {
+                        html: html.into_bytes(),
+                        complete: layouted || fragment,
+                    })
+                }
                 _ => Err(mlua::Error::runtime(
                     "the handler returned a table that is not pv.render, pv.redirect, \
                      pv.json or pv.text (spec/lua-api.md §3.1)",
