@@ -621,7 +621,12 @@ end)
 
 /// `docs/plans/phase-1.md §2.4` — an `app.lua` whose route table differs between VMs
 /// fails to load, naming the divergence. `math.random` is seeded per state from the
-/// state's own address, so two VMs disagree with probability 1 − 10⁻⁹.
+/// state's own address and the clock, so two VMs draw the same number from a range of
+/// 10⁹ with probability 10⁻⁹; both fixtures below put that number into every pattern they
+/// register, so a divergence is found by count or by pattern either way. (An earlier
+/// version registered `n % 5 + 1` routes and nothing else, which agreed one time in five
+/// — the CI flake on the first two commits.) The count-versus-pattern wording of the
+/// message is pinned deterministically by the unit tests in `lua/mod.rs`.
 #[test]
 fn test_route_index_divergence_fails_load() {
     let root = tempfile::tempdir().unwrap();
@@ -635,7 +640,7 @@ fn test_route_index_divergence_fails_load() {
     app(
         &root,
         "count",
-        "local pv = require 'privatium'\nfor i = 1, math.random(1, 1000000000) % 5 + 1 do pv.get('/r' .. i, function() end) end\n",
+        "local pv = require 'privatium'\nlocal n = math.random(1, 1000000000)\nfor i = 1, n % 5 + 1 do pv.get('/c' .. n .. '/' .. i, function() end) end\n",
         &[],
     );
     app(

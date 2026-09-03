@@ -671,3 +671,84 @@ fn response_of(value: &Value) -> mlua::Result<LuaResponse> {
         ))),
     }
 }
+
+// AGENTS.md, Style: unwrap() is permitted in tests. The crate-level deny reaches unit
+// tests inside src/, so each one opts out where it is declared.
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn routes(specs: &[(&str, &str)]) -> Vec<RouteSpec> {
+        specs
+            .iter()
+            .map(|(method, pattern)| RouteSpec::parse(method, pattern).unwrap())
+            .collect()
+    }
+
+    /// `docs/plans/phase-1.md §2.4` — the three ways a VM's table can differ from VM 0's,
+    /// each named in the message, and agreement passing. Deterministic, where the
+    /// integration test relies on `math.random`.
+    #[test]
+    fn route_tables_are_compared_by_count_method_and_pattern() {
+        let first = routes(&[("GET", "/a"), ("POST", "/b")]);
+        assert!(same_routes(&first, &first.clone(), 1).is_ok());
+
+        let fewer = same_routes(&first, &routes(&[("GET", "/a")]), 1).unwrap_err();
+        assert!(
+            fewer.contains("VM 1 registered 1 route(s) where VM 0 registered 2"),
+            "{fewer}"
+        );
+        assert!(fewer.contains("§2.4"), "{fewer}");
+
+        let pattern =
+            same_routes(&first, &routes(&[("GET", "/a"), ("POST", "/c")]), 3).unwrap_err();
+        assert!(
+            pattern.contains("at index 1 VM 3 registered POST /c where VM 0 registered POST /b"),
+            "{pattern}"
+        );
+
+        let method = same_routes(&first, &routes(&[("GET", "/a"), ("PUT", "/b")]), 1).unwrap_err();
+        assert!(
+            method.contains("registered PUT /b where VM 0 registered POST /b"),
+            "{method}"
+        );
+
+        let rebuilt = same_routes(&first, &routes(&[("GET", "/a")]), usize::MAX).unwrap_err();
+        assert!(
+            rebuilt.contains("a rebuilt VM registered 1 route(s)"),
+            "{rebuilt}"
+        );
+    }
+
+    #[test]
+    fn patterns_parse_and_match_with_params() {
+        let route = RouteSpec::parse("GET", "/fill/:id/edit").unwrap();
+        let segments = |path: &str| -> Vec<String> {
+            path.trim_start_matches('/')
+                .split('/')
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned)
+                .collect()
+        };
+        assert_eq!(
+            route.matches(&segments("/fill/01J9/edit")),
+            Some(vec![("id".to_owned(), "01J9".to_owned())])
+        );
+        assert_eq!(route.matches(&segments("/fill/01J9")), None);
+        assert_eq!(route.matches(&segments("/fill/01J9/view")), None);
+        assert!(
+            RouteSpec::parse("GET", "/")
+                .unwrap()
+                .matches(&segments("/"))
+                .is_some()
+        );
+        for bad in ["fill", "/a//b", "/a/:", ""] {
+            assert!(RouteSpec::parse("GET", bad).is_err(), "{bad}");
+        }
+        assert!(
+            RouteSpec::parse("get", "/a").is_err(),
+            "methods are upper-case"
+        );
+    }
+}

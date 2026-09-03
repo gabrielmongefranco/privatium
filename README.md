@@ -123,6 +123,11 @@ Questions, bug reports, enhancement ideas and requests are welcome as GitHub iss
   password-authenticated key exchange protocols used for device pairing.
 - [Magic Wormhole](https://github.com/magic-wormhole/magic-wormhole) — inspiration for the
   short human-readable pairing code experience. No code from that project was used.
+- [DataLaVista](https://github.com/DepressionCenter/datalavista) — its normalization
+  pipeline informed the list of date, time and timestamp spellings the framework accepts
+  on write (`spec/lua-api.md §3.3`): ISO, Excel-style `M/D/YYYY`, Oracle-style
+  `DD-MMM-YY`, long month names, and epochs. No code from that project was used; the
+  parser is the framework's own.
 - [Animal](https://github.com/coding-horror/basic-computer-games/tree/main/03_Animal) —
   the `apps/animals` example follows the classic "Animal" guessing game from
   David H. Ahl's *BASIC Computer Games* (1973), preserved and ported to many
