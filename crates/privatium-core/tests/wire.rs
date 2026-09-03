@@ -110,7 +110,8 @@ const HOST_ROUTES: &[(&str, u16)] = &[
     ("/static/htmx.min.js", 200),
     ("/a/sketch/", 200),
     ("/a/sketch/style.css", 200),
-    ("/a/hello/", 503),
+    ("/a/hello/", 200),
+    ("/a/animals/static/animals.css", 200),
     ("/a/animals/play", 404),
     ("/a/sketch", 308),
     ("/a/nope/", 404),
@@ -127,7 +128,8 @@ const HOST_ROUTES: &[(&str, u16)] = &[
 // ---------------------------------------------------------------------------------------
 
 /// `spec/protocol.md §9.1`, ADR 0003 — every namespace answers through `handle`, an
-/// unknown slug is a 404 and not a panic, and a Tier 1 view is a clear 503 until M8.
+/// unknown slug is a 404 and not a panic, and a Tier 1 view renders inside the
+/// framework's page frame (`spec/lua-api.md §4.1`).
 #[tokio::test]
 async fn test_spec_9_1_every_prefix_reachable_through_handle() {
     let root = tempfile::tempdir().unwrap();
@@ -140,9 +142,10 @@ async fn test_spec_9_1_every_prefix_reachable_through_handle() {
     assert_eq!(header(&redirect, &LOCATION), "/a/sketch/");
     let tier1 = handler.handle(get("/a/hello/")).await;
     let text = body_of(tier1).await;
-    assert!(text.contains("no LSP compiler"), "{text}");
-    assert!(text.contains("hello"), "{text}");
-    assert!(text.contains("index"), "{text}");
+    assert!(text.starts_with("<!doctype html>"), "{text}");
+    assert!(text.contains("<title>Hello — Privatium</title>"), "{text}");
+    assert!(text.contains("We haven't met yet."), "{text}");
+    assert!(text.contains("href=\"/a/hello/edit\""), "{text}");
 
     // HEAD answers like GET without a body; the wrong method says which would work.
     let head = handler.handle(request(Method::HEAD, "/settings")).await;
@@ -342,7 +345,7 @@ async fn test_app_response_carries_header_for_origin() {
         expected_default
     );
 
-    // Every response beneath the mount, including a 404 and a Tier 1 503, and no-store.
+    // Every response beneath the mount, including a 404 and a Tier 1 page, and no-store.
     for path in ["/a/sketch/style.css", "/a/sketch/missing.js", "/a/hello/"] {
         let response = handler.handle(get(path)).await;
         let csp = header(&response, &CONTENT_SECURITY_POLICY).to_owned();

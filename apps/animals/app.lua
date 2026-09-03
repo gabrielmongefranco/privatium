@@ -1,6 +1,6 @@
 -- Project:  Privatium™  |  File: apps/animals/app.lua
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
--- Created:  2026-08-28  |  Modified: 2026-08-31
+-- Created:  2026-08-28  |  Modified: 2026-09-03
 -- Summary:  The guess-the-animal game. Demonstrates multi-event atomic writes,
 --           recursive SQL, stored session state, and the HTMX/Alpine boundary.
 
@@ -36,7 +36,7 @@ local function board(req, extra)
   for k, v in pairs(extra or {}) do ctx[k] = v end
 
   if req and req.is_htmx then return pv.render('_board', ctx) end
-  if extra and extra.error then return pv.render('play', ctx) end
+  if extra and extra.err then return pv.render('play', ctx) end
   return pv.redirect(url('/'))
 end
 
@@ -67,7 +67,7 @@ end)
 pv.post('/seed', function(req)
   local animal = tree.clean(req.form.animal)
   if not animal then
-    return board(req, { error = 'Name any animal.' })
+    return board(req, { err = 'Name any animal.' })
   end
   pv.append('node', { kind = 'a', text = animal })
   return board(req)
@@ -96,7 +96,7 @@ pv.post('/teach', function(req)
 
   if not (node and node.kind == 'a') then return pv.redirect(url('/')) end
   if not animal or not question then
-    return pv.render('teach', { node = node, error = 'Both fields are required.' })
+    return pv.render('teach', { node = node, err = 'Both fields are required.' })
   end
 
   pv.batch(function(tx)

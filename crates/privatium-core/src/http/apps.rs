@@ -4,10 +4,12 @@
 // Summary:  What answers beneath an app's mount (spec/protocol.md §9.1). Tier 2: web/ served
 //           as-is with index.html at the mount point, streamed in 64 KiB frames, under that
 //           app's own CSP (spec/app-contract.md §5, §5.4). Tier 1: what a Lua handler
-//           answered, as a response with the same headers — and, until M8, the page that
-//           stands in for a view.
+//           answered, as a response with the same headers — a rendered view inside the
+//           framework's page frame unless the app supplied the document — the app's
+//           static/ served the same way as web/, and the error page with the traceback
+//           and the offending line (spec/cli.md §3).
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use axum::body::Body;
 use axum::http::header::{ALLOW, CONTENT_SECURITY_POLICY, CONTENT_TYPE, HeaderValue};
@@ -16,19 +18,21 @@ use tower::ServiceExt as _;
 use tower_http::services::ServeDir;
 
 use crate::http::{headers, shell};
-use crate::lua::LuaResponse;
+use crate::lua::{LuaResponse, SourceContext};
 use crate::wire::{Request, Response};
 
-/// Serve `rest` — the path beneath the mount, `/` for the mount point — out of `web_dir`.
+/// Serve `rest` — the path beneath `base`, `/` for `base` itself — out of `dir`.
 ///
 /// `ServeDir` does the file work: it percent-decodes, refuses any `..` component, appends
 /// `index.html` to a directory, guesses the content type, honours `Range` and
 /// `If-Modified-Since`, and reads the file as a stream. The sub-request it sees carries the
-/// remainder path only; `redirect_path_prefix` puts the mount back on the one redirect it
+/// remainder path only; `redirect_path_prefix` puts `base` back on the one redirect it
 /// may issue (a directory without its trailing slash), so no adapter ever rewrites a path.
+/// `base` is the mount for a Tier 2 app's `web/`, and `<mount>static/` for a Tier 1
+/// app's `static/`.
 pub async fn serve_web(
-    web_dir: PathBuf,
-    mount: &str,
+    dir: PathBuf,
+    base: &str,
     rest: &str,
     request: Request,
     csp: &str,
@@ -55,9 +59,9 @@ pub async fn serve_web(
     };
     *sub.headers_mut() = parts.headers;
 
-    let service = ServeDir::new(web_dir)
+    let service = ServeDir::new(dir)
         .append_index_html_on_directories(true)
-        .redirect_path_prefix(mount.trim_end_matches('/'));
+        .redirect_path_prefix(base.trim_end_matches('/'));
     let mut response = match service.oneshot(sub).await {
         Ok(response) => response.map(Body::new),
         Err(never) => match never {},
@@ -66,7 +70,7 @@ pub async fn serve_web(
     if response.status() == StatusCode::NOT_FOUND {
         response = headers::html(
             StatusCode::NOT_FOUND,
-            shell::not_found(&url_path(mount, rest), solo),
+            shell::not_found(&url_path(base, rest), solo),
         );
     }
     app_headers(&mut response, csp);
@@ -84,14 +88,14 @@ pub fn no_handler(slug: &str, csp: &str, solo: bool) -> Response {
     response
 }
 
-/// What a Lua handler answered, as a response (`spec/lua-api.md §3.1`). A `pv.render` is
-/// answered here until M8's compiler exists: a 503 naming the view when it is on disk, a
-/// 500 when it is not.
+/// What a Lua handler answered, as a response (`spec/lua-api.md §3.1`). A rendered view
+/// that the app did not frame itself goes inside the framework's page frame, titled by
+/// the app and carrying the CSRF token for htmx (`§4.1`).
 #[must_use]
 pub fn lua_response(
     answer: LuaResponse,
-    slug: &str,
-    dir: &Path,
+    title: &str,
+    csrf_token: &str,
     csp: &str,
     solo: bool,
 ) -> Response {
@@ -105,21 +109,14 @@ pub fn lua_response(
             *response.status_mut() = StatusCode::NO_CONTENT;
             response
         }
-        LuaResponse::Render(view) => {
-            let template = dir.join("views").join(format!("{view}.lsp"));
-            if template.is_file() {
-                headers::html(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    shell::view_not_rendered(slug, &view, solo),
-                )
+        LuaResponse::View { html, complete } => {
+            if complete {
+                headers::with_body(StatusCode::OK, headers::HTML, html)
             } else {
+                let body = String::from_utf8_lossy(&html);
                 headers::html(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    shell::error(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        &format!("{slug}: pv.render('{view}') names no views/{view}.lsp"),
-                        solo,
-                    ),
+                    StatusCode::OK,
+                    shell::app_frame(title, solo, csrf_token, &body),
                 )
             }
         }
@@ -128,11 +125,19 @@ pub fn lua_response(
     response
 }
 
-/// A failure beneath a Tier 1 mount — a Lua error, a limit, a panic — as the shell's error
-/// page under the app's own headers. `detail` is the error's text; the owner reads it.
+/// A failure beneath a Tier 1 mount — a Lua error, a limit, a refused token, a reload
+/// that did not load — as the shell's error page under the app's own headers. `detail`
+/// is the error's text with its traceback; `at` the offending line with context, when
+/// the traceback named one of the app's files (`spec/cli.md §3`).
 #[must_use]
-pub fn lua_failure(status: StatusCode, detail: &str, csp: &str, solo: bool) -> Response {
-    let mut response = headers::html(status, shell::error(status, detail, solo));
+pub fn lua_failure(
+    status: StatusCode,
+    detail: &str,
+    at: Option<&SourceContext>,
+    csp: &str,
+    solo: bool,
+) -> Response {
+    let mut response = headers::html(status, shell::lua_error(status, detail, at, solo));
     app_headers(&mut response, csp);
     response
 }

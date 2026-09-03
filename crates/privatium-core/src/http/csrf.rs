@@ -16,6 +16,17 @@ type HmacSha256 = Hmac<Sha256>;
 /// The form field the token travels in.
 pub const FIELD: &str = "_csrf";
 
+/// The header it travels in when a request carries no form — `hx-delete` on a button
+/// (`spec/lua-api.md §4.1`). Lower-case, as `http` spells header names.
+pub const HEADER: &str = "x-csrf-token";
+
+/// The hidden input for a token already minted — what `csrf()` emits inside a VM that
+/// holds the token and not the issuer.
+#[must_use]
+pub fn field_for(token: &str) -> String {
+    format!(r#"<input type="hidden" name="{FIELD}" value="{token}">"#)
+}
+
 /// The token issuer and verifier for one process.
 pub struct Csrf {
     key: DerivedKey,
@@ -82,10 +93,7 @@ impl Csrf {
     /// The hidden input a form carries — the `csrf()` template helper's output.
     #[must_use]
     pub fn field(&self, path: &str) -> String {
-        format!(
-            r#"<input type="hidden" name="{FIELD}" value="{}">"#,
-            self.token(path)
-        )
+        field_for(&self.token(path))
     }
 }
 

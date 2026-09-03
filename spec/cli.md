@@ -62,7 +62,10 @@ prints the LAN URL. `--open` additionally prints a QR code for pairing.
 privatium dev [--app <slug>] [--open]
 ```
 
-Runs a node with file watching enabled. On change:
+Runs a node and opens it for editing. The reloading below is the host's own behaviour on
+every run — a change is noticed by a stat on the next request, with no daemon and no flag
+(`spec/lua-api.md §7`) — and `dev` is the front door to it, adding only its two flags. On
+change:
 
 | Changed | Effect |
 |---|---|
@@ -76,7 +79,8 @@ Runs a node with file watching enabled. On change:
 (`docs/architecture.md §2.4`).
 
 Errors render in the browser with the Lua traceback and the offending template line, and are
-also written to the terminal.
+also written to the terminal. A save that does not load is that error on every request
+beneath the mount until the next save loads — never the code from before it.
 
 ---
 

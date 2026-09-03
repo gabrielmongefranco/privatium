@@ -61,6 +61,11 @@ apps/<slug>/
 └── SKILL.md            RECOMMENDED  see docs/skills.md
 ```
 
+`static/` is served by the framework beneath the mount, at `<mount>static/*`, as a Tier 2
+app's `web/` is: `url('/static/app.css')` reaches `static/app.css`. A route never sees
+those paths. In solo mode the framework's own `/static/*` names come first and the app's
+answer for the rest (`spec/protocol.md §9.1`).
+
 ---
 
 ## 3. The `pv` module
@@ -281,6 +286,15 @@ on file mtime. In development that means **save, refresh, done** — no build, n
 configuration flag to change this. `<?raw ?>` exists because escaping cannot be universal,
 and its presence in a diff is a review trigger.
 
+**What `<?= ?>` emits.** A string, a number, a boolean, or a value with a `tostring` (a
+`pv.dec`) is emitted as text, escaped; `nil` emits nothing; a table or a function is an
+error naming the template line. The one thing not escaped is markup the framework itself
+produced: `icon()`, `csrf()`, `render()` and a layout's `content` return an **HTML value**
+that `<?= ?>` emits as it is. It is a value, not a flag — concatenating it into a string
+(`'x ' .. icon('gear')`) yields a plain string, which is then escaped like any other. Data
+never becomes markup except through `<?raw ?>`. A `<?-- --?>` comment is stripped whatever
+it contains, tags included.
+
 ### 4.0 Where helpers are available
 
 `url`, `icon`, `fmt.*`, and `t` are available **both in templates and in handler code**, as
@@ -326,8 +340,28 @@ unchanged while no `locales/` format exists, which is all of `pv/1`.
 of the process (`docs/plans/phase-1.md §2.2`). The host MUST verify it on every non-GET
 request beneath the mount — as the `_csrf` form field, or as an `X-CSRF-Token` header for
 a request that carries no form, such as `hx-delete` on a button — and refuse a request
-without it with 403. Verification lands with the templates that can emit the token (the
-LSP compiler); until then a non-GET request is answered without one.
+without it with 403 before any handler runs. The page frame (below) puts the token in
+`hx-headers` on `<body>`, so every request htmx makes beneath the mount carries the header
+with nothing for the author to do; a view that owns its document with `layout()` supplies
+it the same way, or with `hx-include="[name=_csrf]"`. `_csrf` stays visible in `req.form`.
+
+**The page around a view.** A view that calls no `layout()` is rendered inside the
+framework's page frame: the document head with the app's title, the shell's stylesheet
+and htmx, a header with the way back, and `<main>`; the view supplies the page's one
+`<h1>`. `layout('base')` replaces that with `views/base.lsp`, which runs after the view
+with the same ctx plus `content`, the rendered view, and then owns the whole document —
+`<?= content ?>` places it, and the framework adds nothing. `layout` is for the view
+`pv.render` named; a partial calling it is an error. A request htmx makes (`HX-Request`
+present, `HX-Boosted` absent) gets the view's output alone, since htmx swaps it into an
+element: that is how `pv.render('_board', ctx)` answers `req.is_htmx`.
+
+**Names in a template.** The ctx table's keys are bare names; a name absent from the ctx
+is the sandbox global of that name — `ipairs`, `os.date`, `icon` — or `nil` when there is
+none. So a key MUST NOT be named after a Lua builtin: `error`, `type`, `select` and `table`
+are functions and tables already, and `<? if error then ?>` is always true. `err` is the
+reference apps' spelling. A bare assignment in a template is request-scoped exactly as in
+a handler (§5). `render('partial', ctx)` gives the partial that ctx and nothing of its
+parent's.
 
 ### 4.2 Why LSP and not Jinja
 
@@ -422,6 +456,13 @@ privatium dev --app myapp
 - `schema.sql`: triggers rematerialization from the logs, which is safe at any time
 - Errors render in the browser with the Lua traceback and the offending template line
 - `--open` prints a QR code so a phone on the LAN follows along live
+
+The reloading is the host's, on every run, not a mode: a change is noticed by a stat on the
+next request, so `privatium dev` adds nothing to it beyond its flags (`spec/cli.md §3`). A
+save that does not load — a syntax error in `app.lua`, a template that does not compile —
+is the error page, with the traceback and the offending line, on every request beneath
+the mount until the next save loads; the code from before the error is not served in its
+place.
 
 The tight loop is the point. If a change requires a restart, that is a bug in the host.
 

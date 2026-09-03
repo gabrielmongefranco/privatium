@@ -1,11 +1,14 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/lua.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-03  |  Modified: 2026-09-03
-// Summary:  The Lua host against spec/lua-api.md and docs/plans/phase-1.md M7, every test
-//           through core::handle with no listener: the sandbox of §5 and its four limits,
-//           adversarially (R2); the stable route index of §2.4; the pv module of §3 —
-//           routing, typed reads, appends and batches, pv.dec; the sandbox globals of §4.0;
-//           solo-mode shadowing; and the two reference apps loading and answering.
+// Summary:  The Lua host against spec/lua-api.md and docs/plans/phase-1.md M7 and M8, every
+//           test through core::handle with no listener: the sandbox of §5 and its four
+//           limits, adversarially (R2); the stable route index of §2.4; the pv module of §3
+//           — routing, typed reads, appends and batches, pv.dec; the sandbox globals of
+//           §4.0; solo-mode shadowing; the LSP templates of §4 — escaping, raw, comments,
+//           layouts and partials, the line map, csrf verified — and hot reload of
+//           templates, app.lua, lib/ and schema.sql with a VM mid-request (R3); the two
+//           reference apps rendering end to end, and static/ beneath a Tier 1 mount.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.
@@ -19,7 +22,10 @@ use std::path::Path;
 use axum::body::{Body, to_bytes};
 use axum::http::header::{ALLOW, CACHE_CONTROL, CONTENT_SECURITY_POLICY, CONTENT_TYPE, LOCATION};
 use axum::http::{Method, StatusCode};
-use common::{audit_rows, log_lines, lua_manifest, repo_apps_dir, write_app, write_lua_app};
+use common::{
+    audit_rows, log_lines, lua_manifest, repo_apps_dir, sys_app_row, sys_lines, write_app,
+    write_lua_app,
+};
 use privatium_core::app::Warning;
 use privatium_core::{AppRoot, Handler, LoadReport, Node, Request, Response, Stage};
 use serde_json::Value;
@@ -76,6 +82,52 @@ fn post(path: &str, form: &str) -> Request {
         .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
         .body(Body::from(form.to_owned()))
         .unwrap()
+}
+
+/// The mount a host-mode path lies beneath: `/a/<slug>/`.
+fn mount_of(path: &str) -> String {
+    let slug = path.trim_start_matches("/a/").split('/').next().unwrap();
+    format!("/a/{slug}/")
+}
+
+/// The mount's token — what `csrf()` emits (`spec/lua-api.md §4.1`).
+fn token(handler: &Handler, mount: &str) -> String {
+    handler.csrf().token(mount)
+}
+
+/// A form POST carrying the mount's token, as a form with `<?= csrf() ?>` would.
+fn posted(handler: &Handler, path: &str, form: &str) -> Request {
+    let token = token(handler, &mount_of(path));
+    let body = if form.is_empty() {
+        format!("_csrf={token}")
+    } else {
+        format!("{form}&_csrf={token}")
+    };
+    post(path, &body)
+}
+
+/// A request with the token in the header instead, as the page frame gives htmx.
+fn with_token_header(handler: &Handler, mut request: Request) -> Request {
+    let token = token(handler, &mount_of(request.uri().path()));
+    request
+        .headers_mut()
+        .insert("x-csrf-token", token.parse().unwrap());
+    request
+}
+
+fn with_htmx(mut request: Request) -> Request {
+    request
+        .headers_mut()
+        .insert("hx-request", "true".parse().unwrap());
+    request
+}
+
+/// Write one file of an app under the root's `apps/` — an edit while the node runs, so
+/// no second `Node` is opened on the root.
+fn write_file(root: &tempfile::TempDir, slug: &str, name: &str, contents: &str) {
+    let path = root.path().join("apps").join(slug).join(name);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, contents).unwrap();
 }
 
 async fn body_of(response: Response) -> String {
@@ -748,20 +800,24 @@ pv.get('/view', function() return pv.render('missing') end)
 
     let form = json_of(
         handler
-            .handle(post("/a/route/form", "name=Ada+Lovelace&n=1"))
+            .handle(posted(&handler, "/a/route/form", "name=Ada+Lovelace&n=1"))
             .await,
     )
     .await;
     assert_eq!(form["form"]["name"], "Ada Lovelace");
     assert_eq!(form["form"]["n"], "1");
-    assert_eq!(form["body"], "name=Ada+Lovelace&n=1");
+    let expected_body = format!(
+        "name=Ada+Lovelace&n=1&_csrf={}",
+        token(&handler, "/a/route/")
+    );
+    assert_eq!(form["body"], expected_body);
 
     let put = axum::http::Request::builder()
         .method(Method::PUT)
         .uri("/a/route/put")
         .body(Body::from("raw"))
         .unwrap();
-    let put = handler.handle(put).await;
+    let put = handler.handle(with_token_header(&handler, put)).await;
     assert_eq!(put.status(), StatusCode::OK);
     assert_eq!(header(&put, &CONTENT_TYPE), "text/plain; charset=utf-8");
     assert_eq!(body_of(put).await, "put raw");
@@ -1660,8 +1716,10 @@ end)
 // The reference apps
 // ---------------------------------------------------------------------------------------
 
-/// `apps/hello` and `apps/animals` load, register their routes, and answer: their views
-/// are a clear 503 until M8, their redirects and appends are real.
+/// `apps/hello` and `apps/animals` load, register their routes, and answer end to end:
+/// views rendered inside the framework's frame with the name escaped, forms carrying the
+/// token, redirects and appends real, an htmx post answered with the fragment alone, and
+/// the app's `static/` served beneath its mount (`spec/lua-api.md §4.1`, §2).
 #[tokio::test]
 async fn test_reference_apps_load_and_route() {
     let root = tempfile::tempdir().unwrap();
@@ -1693,60 +1751,122 @@ async fn test_reference_apps_load_and_route() {
             "POST /reset",
         ]
     );
+    let hello_title = node.app("hello").unwrap().title().to_owned();
     let handler = Handler::new(node, report);
     let hello_log = log_path(&handler, "hello");
     let animals_log = log_path(&handler, "animals");
+    let hello_token = token(&handler, "/a/hello/");
 
-    for path in [
-        "/a/hello/",
-        "/a/hello/edit",
-        "/a/animals/",
-        "/a/animals/knowledge",
-    ] {
-        let response = handler.handle(get(path)).await;
-        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE, "{path}");
-        let text = body_of(response).await;
-        assert!(text.contains("no LSP compiler"), "{path}: {text}");
-    }
+    // hello: the greeting page inside the frame, titled by the app, with the token for
+    // htmx on the body; the view keeps the page's only h1 (there is none before a name).
+    let home = handler.handle(get("/a/hello/")).await;
+    assert_eq!(home.status(), StatusCode::OK);
+    assert_eq!(header(&home, &CONTENT_TYPE), "text/html; charset=utf-8");
+    assert!(header(&home, &CONTENT_SECURITY_POLICY).contains("/a/hello/"));
+    let text = body_of(home).await;
+    assert!(text.starts_with("<!doctype html>"), "{text}");
+    assert!(
+        text.contains(&format!("<title>{hello_title} — Privatium</title>")),
+        "{text}"
+    );
+    assert!(text.contains("We haven't met yet."), "{text}");
+    assert!(text.contains("href=\"/a/hello/edit\""), "{text}");
+    assert!(
+        text.contains(&format!(
+            "hx-headers='{{\"X-CSRF-Token\":\"{hello_token}\"}}'"
+        )),
+        "{text}"
+    );
+    assert!(text.contains("<p class=\"pv-brand\">"), "{text}");
+    assert_eq!(text.matches("<h1").count(), 0, "{text}");
+    let edit = body_of(handler.handle(get("/a/hello/edit")).await).await;
+    assert!(
+        edit.contains(&format!("name=\"_csrf\" value=\"{hello_token}\"")),
+        "csrf() emits the mount's token: {edit}"
+    );
+    assert!(edit.contains("action=\"/a/hello/name\""), "{edit}");
     assert_eq!(
         handler.handle(get("/a/animals/nope")).await.status(),
         StatusCode::NOT_FOUND
     );
 
-    // hello: the name is stored and the app redirects home through url().
+    // Without the token nothing is written (§4.1); with it the name is stored and the app
+    // redirects home through url(). A name that is markup is displayed, never executed.
+    let bare = handler
+        .handle(post("/a/hello/name", "display_name=Gabriel"))
+        .await;
+    assert_eq!(bare.status(), StatusCode::FORBIDDEN);
+    assert!(header(&bare, &CONTENT_SECURITY_POLICY).contains("/a/hello/"));
+    assert_eq!(log_lines(&hello_log).len(), 0);
     let named = handler
-        .handle(post("/a/hello/name", "display_name=+Gabriel+"))
+        .handle(posted(
+            &handler,
+            "/a/hello/name",
+            "display_name=+%3Cscript%3Ealert(1)%3C%2Fscript%3E+",
+        ))
         .await;
     assert_eq!(named.status(), StatusCode::SEE_OTHER);
     assert_eq!(header(&named, &LOCATION), "/a/hello/");
     let lines = log_lines(&hello_log);
     assert_eq!(lines.len(), 1);
     assert_eq!(lines[0]["tbl"], "profile");
-    assert_eq!(lines[0]["d"]["display_name"], "Gabriel");
+    assert_eq!(lines[0]["d"]["display_name"], "<script>alert(1)</script>");
+    let greeting = body_of(handler.handle(get("/a/hello/")).await).await;
+    assert!(
+        greeting.contains("&lt;script&gt;alert(1)&lt;/script&gt;."),
+        "{greeting}"
+    );
+    assert!(!greeting.contains("<script>alert"), "{greeting}");
+    assert!(greeting.contains("Good "), "{greeting}");
+    assert_eq!(greeting.matches("<h1").count(), 1, "{greeting}");
     // A second name amends the same row (the app reuses `me.id`).
     let renamed = handler
-        .handle(post("/a/hello/name", "display_name=Ada"))
+        .handle(posted(&handler, "/a/hello/name", "display_name=Ada"))
         .await;
     assert_eq!(renamed.status(), StatusCode::SEE_OTHER);
     let lines = log_lines(&hello_log);
     assert_eq!(lines.len(), 2);
     assert_eq!(lines[1]["id"], lines[0]["id"]);
-    // An empty name re-renders the form, which is the 503 view for now.
-    assert_eq!(
-        handler
-            .handle(post("/a/hello/name", "display_name=+"))
-            .await
-            .status(),
-        StatusCode::SERVICE_UNAVAILABLE
+    // An empty name re-renders the form with the error and its icon, inlined.
+    let again = handler
+        .handle(posted(&handler, "/a/hello/name", "display_name=+"))
+        .await;
+    assert_eq!(again.status(), StatusCode::OK);
+    let text = body_of(again).await;
+    assert!(text.contains("Please enter a name."), "{text}");
+    assert!(
+        text.contains("<svg class=\"pv-icon\" width=\"1em\""),
+        "{text}"
     );
+    assert!(text.contains("value=\"Ada\""), "{text}");
 
-    // animals: plant the first animal, start a round, walk one step, and forget.
+    // animals: the empty board inside the frame, with the app's own assets from static/.
+    let board = body_of(handler.handle(get("/a/animals/")).await).await;
+    assert!(board.starts_with("<!doctype html>"), "{board}");
+    assert!(board.contains("I don't know any animals yet."), "{board}");
+    assert!(
+        board.contains("<link rel=\"stylesheet\" href=\"/a/animals/static/animals.css\">"),
+        "{board}"
+    );
+    assert!(
+        board.contains("<script defer src=\"/a/animals/static/alpine-csp.min.js\">"),
+        "{board}"
+    );
+    let css = handler.handle(get("/a/animals/static/animals.css")).await;
+    assert_eq!(css.status(), StatusCode::OK);
+    assert!(header(&css, &CONTENT_TYPE).starts_with("text/css"));
+    assert!(header(&css, &CONTENT_SECURITY_POLICY).contains("/a/animals/"));
+    assert_eq!(header(&css, &CACHE_CONTROL), "no-store");
+
+    // Plant the first animal, start a round, walk one step, and forget.
     let planted = handler
-        .handle(post("/a/animals/seed", "animal=wombat"))
+        .handle(posted(&handler, "/a/animals/seed", "animal=wombat"))
         .await;
     assert_eq!(planted.status(), StatusCode::SEE_OTHER);
     assert_eq!(header(&planted, &LOCATION), "/a/animals/");
-    let started = handler.handle(post("/a/animals/start", "")).await;
+    let started = handler
+        .handle(posted(&handler, "/a/animals/start", ""))
+        .await;
     assert_eq!(started.status(), StatusCode::SEE_OTHER);
     let lines = log_lines(&animals_log);
     assert_eq!(lines.len(), 2);
@@ -1754,10 +1874,13 @@ async fn test_reference_apps_load_and_route() {
     assert_eq!(lines[0]["d"]["kind"], "a");
     assert_eq!(lines[1]["tbl"], "cursor");
     assert_eq!(lines[1]["id"], "cursor");
+    let guess = body_of(handler.handle(get("/a/animals/")).await).await;
+    assert!(guess.contains("<h1>Is it a wombat?</h1>"), "{guess}");
     // Teaching is three events in one batch plus the cursor's tombstone (lib/tree.lua via
     // require, and pv.batch).
     let taught = handler
-        .handle(post(
+        .handle(posted(
+            &handler,
             "/a/animals/teach",
             "animal=penguin&question=Does+it+fly&answer=no",
         ))
@@ -1771,15 +1894,752 @@ async fn test_reference_apps_load_and_route() {
         "the leaf became the question"
     );
     assert_eq!(lines[5]["op"], "del");
-    let reset = handler.handle(post("/a/animals/reset", "")).await;
-    assert_eq!(reset.status(), StatusCode::SEE_OTHER);
-    assert_eq!(log_lines(&animals_log).len(), 10);
-    // An htmx caller gets the fragment, which is a view, so a 503 for now.
-    let mut htmx = post("/a/animals/start", "");
-    htmx.headers_mut()
-        .insert("hx-request", "true".parse().unwrap());
-    assert_eq!(
-        handler.handle(htmx).await.status(),
-        StatusCode::SERVICE_UNAVAILABLE
+    // An htmx caller gets `_board.lsp` alone — no document, no frame — with the forms
+    // carrying the token.
+    let fragment = handler
+        .handle(with_htmx(posted(&handler, "/a/animals/start", "")))
+        .await;
+    assert_eq!(fragment.status(), StatusCode::OK);
+    let text = body_of(fragment).await;
+    assert!(!text.contains("<!doctype"), "{text}");
+    assert!(!text.contains("pv-header"), "{text}");
+    assert!(text.contains("<h1>Does it fly</h1>"), "{text}");
+    assert!(text.contains("name=\"_csrf\""), "{text}");
+    let knowledge = body_of(handler.handle(get("/a/animals/knowledge")).await).await;
+    assert!(
+        knowledge.contains("<th scope=\"col\">Animal</th>"),
+        "{knowledge}"
     );
+    assert!(
+        knowledge.contains("wombat") && knowledge.contains("penguin"),
+        "{knowledge}"
+    );
+    let reset = handler
+        .handle(posted(&handler, "/a/animals/reset", ""))
+        .await;
+    assert_eq!(reset.status(), StatusCode::SEE_OTHER);
+    assert_eq!(log_lines(&animals_log).len(), 11);
+}
+
+// ---------------------------------------------------------------------------------------
+// §4 — LSP templates (M8)
+// ---------------------------------------------------------------------------------------
+
+/// `spec/lua-api.md §4` — `<?= ?>` escapes, in text and in an attribute, with no flag to
+/// change it: a config key that would is refused. The framework's own markup — `icon`,
+/// `csrf`, a partial — passes as it is; concatenating it into a string loses that and is
+/// escaped again; nil emits nothing; a table is an error naming the line.
+#[tokio::test]
+async fn test_lsp_escapes_by_default() {
+    let root = tempfile::tempdir().unwrap();
+    configure(&root, &format!("{LUA_CONFIG}escape = false\n"));
+    assert!(
+        Node::open(root.path()).is_err(),
+        "there is no key that disables escaping"
+    );
+    configure(&root, LUA_CONFIG);
+    app(
+        &root,
+        "esc",
+        r#"
+local pv = require 'privatium'
+pv.get('/', function(req)
+  return pv.render('index', { name = req.query.name, n = 3, ok = true, dec = pv.dec('1.50') })
+end)
+pv.get('/tbl', function() return pv.render('tbl', { t = {} }) end)
+pv.get('/handler', function() return '<p>' .. icon('gear') .. '</p>' end)
+"#,
+        &[
+            (
+                "views/index.lsp",
+                "<p title=\"<?= name ?>\"><?= name ?></p>\n\
+                 <?= icon('trash', 'Delete <it>') ?>\n\
+                 <?= csrf() ?>\n\
+                 <?= render('_part', { name = name }) ?>\n\
+                 <?= 'x ' .. icon('gear') ?>\n\
+                 <?= n ?>|<?= ok ?>|<?= dec ?>|<?= missing ?>|\n",
+            ),
+            ("views/_part.lsp", "[<?= name ?>]"),
+            ("views/tbl.lsp", "<?= t ?>"),
+        ],
+    );
+    let handler = handler_for(&root);
+    let page = handler
+        .handle(get("/a/esc/?name=%3Cscript%3Ealert(1)%3C%2Fscript%3E"))
+        .await;
+    assert_eq!(page.status(), StatusCode::OK);
+    let text = body_of(page).await;
+    assert!(!text.contains("<script>alert"), "{text}");
+    assert!(
+        text.contains(
+            "<p title=\"&lt;script&gt;alert(1)&lt;/script&gt;\">&lt;script&gt;alert(1)&lt;/script&gt;</p>"
+        ),
+        "{text}"
+    );
+    assert!(
+        text.contains("[&lt;script&gt;alert(1)&lt;/script&gt;]"),
+        "a partial escapes too: {text}"
+    );
+    assert!(
+        text.contains("role=\"img\" focusable=\"false\"><title>Delete &lt;it&gt;</title>"),
+        "icon() passes, its label escaped: {text}"
+    );
+    assert!(
+        text.contains(&format!(
+            "<input type=\"hidden\" name=\"_csrf\" value=\"{}\">",
+            token(&handler, "/a/esc/")
+        )),
+        "{text}"
+    );
+    assert!(
+        text.contains("x &lt;svg class=&quot;pv-icon&quot;"),
+        "concatenation loses the marker: {text}"
+    );
+    assert!(text.contains("3|true|1.50||"), "{text}");
+    let tbl = handler.handle(get("/a/esc/tbl")).await;
+    assert_eq!(tbl.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let text = body_of(tbl).await;
+    assert!(text.contains("cannot emit a table"), "{text}");
+    assert!(text.contains("views/tbl.lsp:1:"), "{text}");
+    // In handler code the same helper concatenates like a string.
+    let html = body_of(handler.handle(get("/a/esc/handler")).await).await;
+    assert!(html.starts_with("<p><svg class=\"pv-icon\""), "{html}");
+}
+
+/// `spec/lua-api.md §4` — `<?raw ?>` emits unescaped, and nothing else does.
+#[tokio::test]
+async fn test_lsp_raw_emits_unescaped() {
+    let root = tempfile::tempdir().unwrap();
+    configure(&root, LUA_CONFIG);
+    app(
+        &root,
+        "raw",
+        "local pv = require 'privatium'\n\
+         pv.get('/', function() return pv.render('index', { markup = '<b>x</b>' }) end)\n",
+        &[(
+            "views/index.lsp",
+            "<?raw markup ?>|<?= markup ?>|<?raw icon('gear') ?>|<?raw nil ?>|<?raw 2 ?>",
+        )],
+    );
+    let handler = handler_for(&root);
+    let text = body_of(handler.handle(get("/a/raw/")).await).await;
+    assert!(
+        text.contains("<b>x</b>|&lt;b&gt;x&lt;/b&gt;|<svg class=\"pv-icon\""),
+        "{text}"
+    );
+    assert!(text.contains("</svg>||2"), "{text}");
+}
+
+/// `spec/lua-api.md §4`, `spec/cli.md §3` — a runtime error names the `.lsp` line the
+/// author wrote, in a partial too, and the page shows that line with its neighbours; a
+/// template that does not compile, or whose Lua does not parse, fails the load naming the
+/// file and line (`spec/app-contract.md §8`).
+#[tokio::test]
+async fn test_lsp_error_maps_to_source_line() {
+    let root = tempfile::tempdir().unwrap();
+    configure(&root, LUA_CONFIG);
+    app(
+        &root,
+        "trace",
+        "local pv = require 'privatium'\n\
+         pv.get('/', function() return pv.render('index', {}) end)\n",
+        &[
+            ("views/index.lsp", "line 1\n<?= render('_p', {}) ?>\n"),
+            (
+                "views/_p.lsp",
+                "a\nb\n<? local x = nil ?>x<?= x.y ?>\nd\ne\nf\ng\n",
+            ),
+        ],
+    );
+    write_lua_app(
+        &Node::open(root.path()).unwrap().paths().apps_dir(),
+        "brk1",
+        &[("views/x.lsp", "ok\n<? if y ?>\n")],
+    );
+    write_lua_app(
+        &Node::open(root.path()).unwrap().paths().apps_dir(),
+        "brk2",
+        &[("views/y.lsp", "\n\n<?= nope")],
+    );
+    let (node, report) = open(&root, false);
+    assert_eq!(report.loaded, ["trace"]);
+    let reasons: Vec<(String, Stage, String)> = report
+        .failed
+        .iter()
+        .map(|f| (f.folder.clone(), f.stage, f.reason.clone()))
+        .collect();
+    assert_eq!(reasons.len(), 2, "{reasons:?}");
+    assert_eq!(reasons[0].0, "brk1");
+    assert_eq!(reasons[0].1, Stage::Tier);
+    assert!(reasons[0].2.contains("views/x.lsp:2:"), "{}", reasons[0].2);
+    assert!(reasons[0].2.contains("'then' expected"), "{}", reasons[0].2);
+    assert_eq!(reasons[1].1, Stage::Tier);
+    assert!(
+        reasons[1].2.contains("views/y.lsp:3: unclosed <?= ?>"),
+        "{}",
+        reasons[1].2
+    );
+
+    let handler = Handler::new(node, report);
+    let page = handler.handle(get("/a/trace/")).await;
+    assert_eq!(page.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let text = body_of(page).await;
+    assert!(text.contains("views/_p.lsp:3:"), "{text}");
+    assert!(text.contains("attempt to index a nil value"), "{text}");
+    assert!(
+        text.contains("<h3><code>views/_p.lsp</code>, line 3</h3>"),
+        "{text}"
+    );
+    assert!(
+        text.contains("<mark aria-current=\"true\">&gt;    3  &lt;? local x = nil ?&gt;x&lt;?= x.y ?&gt;</mark>"),
+        "{text}"
+    );
+    assert!(text.contains("     6  f"), "three lines of context: {text}");
+    assert!(!text.contains("     7  g"), "and no more: {text}");
+    // A view a handler names that does not exist says so.
+    write_file(
+        &root,
+        "trace",
+        "app.lua",
+        "local pv = require 'privatium'\npv.get('/', function() return pv.render('nope', {}) end)\n",
+    );
+    let text = body_of(handler.handle(get("/a/trace/")).await).await;
+    assert!(text.contains("views/nope.lsp does not exist"), "{text}");
+}
+
+/// `spec/lua-api.md §4`, `§7`, `spec/cli.md §3` — an edited template is what the next
+/// request renders, with no restart and no row written; one that no longer compiles is
+/// the error page naming the line, with `sys_app.last_error` set, until it compiles again.
+#[tokio::test]
+async fn test_hot_reload_template_next_request() {
+    let root = tempfile::tempdir().unwrap();
+    configure(&root, LUA_CONFIG);
+    app(
+        &root,
+        "hot",
+        "local pv = require 'privatium'\n\
+         pv.get('/', function() return pv.render('index', { who = 'you' }) end)\n",
+        &[("views/index.lsp", "v1 <?= who ?>")],
+    );
+    let handler = handler_for(&root);
+    let text = body_of(handler.handle(get("/a/hot/")).await).await;
+    assert!(text.contains("v1 you"), "{text}");
+    let sys_before = sys_lines(&handler.node().lock().unwrap()).len();
+
+    write_file(&root, "hot", "views/index.lsp", "version two, <?= who ?>");
+    let text = body_of(handler.handle(get("/a/hot/")).await).await;
+    assert!(text.contains("version two, you"), "{text}");
+    assert!(!text.contains("v1"), "{text}");
+    assert_eq!(
+        sys_lines(&handler.node().lock().unwrap()).len(),
+        sys_before,
+        "a template edit writes no row"
+    );
+
+    write_file(&root, "hot", "views/index.lsp", "broken\n<? if who ?>\n");
+    let page = handler.handle(get("/a/hot/")).await;
+    assert_eq!(page.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let text = body_of(page).await;
+    assert!(text.contains("views/index.lsp:2:"), "{text}");
+    {
+        let mut node = handler.node().lock().unwrap();
+        node.refresh().unwrap();
+        let row = sys_app_row(&node, "hot").unwrap();
+        assert!(
+            row["last_error"]
+                .as_str()
+                .unwrap()
+                .contains("views/index.lsp:2:"),
+            "{row}"
+        );
+    }
+    // Still broken, still the error — and nothing new in `_sys` for asking again.
+    let again = sys_lines(&handler.node().lock().unwrap()).len();
+    assert_eq!(
+        handler.handle(get("/a/hot/")).await.status(),
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    assert_eq!(sys_lines(&handler.node().lock().unwrap()).len(), again);
+
+    write_file(&root, "hot", "views/index.lsp", "fixed <?= who ?>\n");
+    let text = body_of(handler.handle(get("/a/hot/")).await).await;
+    assert!(text.contains("fixed you"), "{text}");
+    let mut node = handler.node().lock().unwrap();
+    node.refresh().unwrap();
+    assert!(sys_app_row(&node, "hot").unwrap()["last_error"].is_null());
+}
+
+/// `spec/cli.md §3`, `spec/lua-api.md §7` — an edited `app.lua` or `lib/` module is
+/// reloaded in place with its routes re-registered, on the next request; a syntax error
+/// just saved is the error page with the offending line, in the browser and on the
+/// terminal, `sys_app.last_error` and one `app.load_failed`, until the next edit loads.
+#[tokio::test]
+async fn test_hot_reload_app_lua_reregisters_routes() {
+    let root = tempfile::tempdir().unwrap();
+    configure(&root, LUA_CONFIG);
+    app(
+        &root,
+        "live",
+        "local pv = require 'privatium'\n\
+         local m = require 'm'\n\
+         pv.get('/one', function() return pv.text('one ' .. m.word) end)\n",
+        &[("lib/m.lua", "return { word = 'alpha' }\n")],
+    );
+    let handler = handler_for(&root);
+    assert_eq!(
+        body_of(handler.handle(get("/a/live/one")).await).await,
+        "one alpha"
+    );
+
+    // lib/ edit: the module is loaded afresh by the reloaded VMs.
+    write_file(&root, "live", "lib/m.lua", "return { word = 'beta!' }\n");
+    assert_eq!(
+        body_of(handler.handle(get("/a/live/one")).await).await,
+        "one beta!"
+    );
+
+    // app.lua edit: the route table is the new one.
+    write_file(
+        &root,
+        "live",
+        "app.lua",
+        "local pv = require 'privatium'\n\
+         pv.get('/two', function() return pv.text('two') end)\n",
+    );
+    assert_eq!(
+        body_of(handler.handle(get("/a/live/two")).await).await,
+        "two"
+    );
+    assert_eq!(
+        handler.handle(get("/a/live/one")).await.status(),
+        StatusCode::NOT_FOUND
+    );
+    {
+        let node = handler.node().lock().unwrap();
+        let routes: Vec<String> = node
+            .app("live")
+            .unwrap()
+            .lua_host()
+            .unwrap()
+            .routes()
+            .iter()
+            .map(|r| r.pattern.clone())
+            .collect();
+        assert_eq!(routes, ["/two"]);
+    }
+
+    // A syntax error: the error, not the code from before it.
+    write_file(
+        &root,
+        "live",
+        "app.lua",
+        "local pv = require 'privatium'\n\n\npv.get('/two', function() return pv.text('two')\n",
+    );
+    let page = handler.handle(get("/a/live/two")).await;
+    assert_eq!(page.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let text = body_of(page).await;
+    assert!(text.contains("not reloaded"), "{text}");
+    assert!(text.contains("app.lua:"), "{text}");
+    assert!(
+        text.contains("<pre class=\"pv-source\">"),
+        "the offending line with context: {text}"
+    );
+    assert!(text.contains("pv.get(&#39;/two&#39;"), "{text}");
+    let audits = {
+        let mut node = handler.node().lock().unwrap();
+        node.refresh().unwrap();
+        let row = sys_app_row(&node, "live").unwrap();
+        assert!(
+            row["last_error"].as_str().unwrap().contains("app.lua"),
+            "{row}"
+        );
+        audit_rows(&node, "app.load_failed").len()
+    };
+    assert_eq!(audits, 1);
+    assert_eq!(
+        handler.handle(get("/a/live/two")).await.status(),
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
+    {
+        let mut node = handler.node().lock().unwrap();
+        node.refresh().unwrap();
+        assert_eq!(
+            audit_rows(&node, "app.load_failed").len(),
+            1,
+            "once, not per request"
+        );
+    }
+
+    // Fixed: served again, the row clean.
+    write_file(
+        &root,
+        "live",
+        "app.lua",
+        "local pv = require 'privatium'\n\
+         pv.get('/two', function() return pv.text('two again') end)\n",
+    );
+    assert_eq!(
+        body_of(handler.handle(get("/a/live/two")).await).await,
+        "two again"
+    );
+    let mut node = handler.node().lock().unwrap();
+    node.refresh().unwrap();
+    assert!(sys_app_row(&node, "live").unwrap()["last_error"].is_null());
+}
+
+/// `spec/app-contract.md §4.5`, `spec/cli.md §3` — an edited `schema.sql` rematerializes
+/// from the log on the next request: a column the log always held appears, NULL where an
+/// event lacked it, and `sys_app.schema_hash` moves.
+#[tokio::test]
+async fn test_hot_reload_schema_rematerializes() {
+    let root = tempfile::tempdir().unwrap();
+    configure(&root, LUA_CONFIG);
+    app(
+        &root,
+        "schema",
+        "local pv = require 'privatium'\n\
+         pv.get('/', function() return pv.json(pv.query('SELECT * FROM t ORDER BY id')) end)\n\
+         pv.post('/add', function(req) pv.append('t', { a = req.form.a, b = req.form.b }) return pv.text('ok') end)\n",
+        &[(
+            "schema.sql",
+            "CREATE TABLE t (id VARCHAR PRIMARY KEY, a VARCHAR);\n",
+        )],
+    );
+    let handler = handler_for(&root);
+    handler
+        .handle(posted(&handler, "/a/schema/add", "a=one&b=first"))
+        .await;
+    handler
+        .handle(posted(&handler, "/a/schema/add", "a=two"))
+        .await;
+    let rows = json_of(handler.handle(get("/a/schema/")).await).await;
+    assert_eq!(rows.as_array().unwrap().len(), 2);
+    assert!(rows[0].get("b").is_none(), "{rows}");
+    let hash_before = {
+        let mut node = handler.node().lock().unwrap();
+        node.refresh().unwrap();
+        sys_app_row(&node, "schema").unwrap()["schema_hash"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+
+    write_file(
+        &root,
+        "schema",
+        "schema.sql",
+        "CREATE TABLE t (id VARCHAR PRIMARY KEY, a VARCHAR, b VARCHAR);\n",
+    );
+    let rows = json_of(handler.handle(get("/a/schema/")).await).await;
+    let with_b: Vec<Option<&str>> = rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r.get("b").and_then(Value::as_str))
+        .collect();
+    assert!(with_b.contains(&Some("first")), "{rows}");
+    assert!(with_b.contains(&None), "{rows}");
+    let mut node = handler.node().lock().unwrap();
+    node.refresh().unwrap();
+    let row = sys_app_row(&node, "schema").unwrap();
+    assert_ne!(row["schema_hash"].as_str().unwrap(), hash_before);
+    assert!(row["last_error"].is_null());
+}
+
+/// `spec/lua-api.md §4.1` — the host verifies the mount's token on every non-GET request
+/// beneath a Tier 1 mount, as the `_csrf` field or the `X-CSRF-Token` header, and refuses
+/// a request without it with 403 under the app's CSP before any handler runs.
+#[tokio::test]
+async fn test_spec_lua_4_1_csrf_verified() {
+    let root = tempfile::tempdir().unwrap();
+    configure(&root, LUA_CONFIG);
+    app(
+        &root,
+        "guard",
+        r#"
+local pv = require 'privatium'
+pv.get('/', function() return pv.text('read') end)
+pv.post('/w', function() pv.append('t', { x = 1 }) return pv.text('wrote') end)
+pv.route('DELETE', '/d', function() return pv.text('deleted') end)
+"#,
+        &[],
+    );
+    app(&root, "other", "", &[]);
+    let handler = handler_for(&root);
+    let log = log_path(&handler, "guard");
+    assert_eq!(
+        handler.handle(get("/a/guard/")).await.status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        handler
+            .handle(request(Method::HEAD, "/a/guard/"))
+            .await
+            .status(),
+        StatusCode::OK
+    );
+
+    for (what, request) in [
+        ("no token", post("/a/guard/w", "x=1")),
+        ("a made-up token", post("/a/guard/w", "x=1&_csrf=nope")),
+        (
+            "another mount's token",
+            post(
+                "/a/guard/w",
+                &format!("x=1&_csrf={}", token(&handler, "/a/other/")),
+            ),
+        ),
+        (
+            "a stale token",
+            post(
+                "/a/guard/w",
+                &format!(
+                    "x=1&_csrf={}",
+                    Handler::new(open(&root, false).0, LoadReport::default())
+                        .csrf()
+                        .token("/a/guard/")
+                ),
+            ),
+        ),
+    ] {
+        let response = handler.handle(request).await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{what}");
+        assert!(
+            header(&response, &CONTENT_SECURITY_POLICY).contains("/a/guard/"),
+            "{what}"
+        );
+        let text = body_of(response).await;
+        assert!(text.contains("spec/lua-api.md §4.1"), "{what}: {text}");
+    }
+    assert_eq!(log_lines(&log).len(), 0, "nothing ran");
+
+    let field = handler.handle(posted(&handler, "/a/guard/w", "x=1")).await;
+    assert_eq!(field.status(), StatusCode::OK);
+    assert_eq!(body_of(field).await, "wrote");
+    assert_eq!(log_lines(&log).len(), 1);
+    let delete = with_token_header(&handler, request(Method::DELETE, "/a/guard/d"));
+    let delete = handler.handle(delete).await;
+    assert_eq!(delete.status(), StatusCode::OK);
+    assert_eq!(body_of(delete).await, "deleted");
+    assert_eq!(
+        handler
+            .handle(request(Method::DELETE, "/a/guard/d"))
+            .await
+            .status(),
+        StatusCode::FORBIDDEN
+    );
+}
+
+/// `spec/lua-api.md §4.1`, §5 — `layout('base')` wraps the view in `views/base.lsp`,
+/// which sees the same ctx and `content`, and the app then owns the document; a partial
+/// sees only the ctx it was given; a partial may not call `layout`; a missing partial is
+/// named; a bare assignment in a template lasts one request.
+#[tokio::test]
+async fn test_spec_lua_4_layout_and_partials() {
+    let root = tempfile::tempdir().unwrap();
+    configure(&root, LUA_CONFIG);
+    app(
+        &root,
+        "lay",
+        r#"
+local pv = require 'privatium'
+pv.get('/', function() return pv.render('index', { who = 'outer' }) end)
+pv.get('/bad', function() return pv.render('index2') end)
+pv.get('/miss', function() return pv.render('index3') end)
+pv.get('/set', function() return pv.render('set') end)
+pv.get('/get', function() return pv.render('get') end)
+"#,
+        &[
+            (
+                "views/index.lsp",
+                "<? layout('base') ?><p><?= who ?></p><?= render('_p', { who = 'inner' }) ?><?= who ?><?= render('_p') ?>",
+            ),
+            (
+                "views/base.lsp",
+                "<!doctype html><title><?= who ?></title><main><?= content ?></main>",
+            ),
+            ("views/_p.lsp", "[<?= who ?>]"),
+            ("views/index2.lsp", "<?= render('_bad') ?>"),
+            ("views/_bad.lsp", "<? layout('base') ?>"),
+            ("views/index3.lsp", "<?= render('nope') ?>"),
+            ("views/set.lsp", "<? leaked = 'yes' ?>set"),
+            ("views/get.lsp", "got:<?= leaked ?>"),
+        ],
+    );
+    let handler = handler_for(&root);
+    let page = handler.handle(get("/a/lay/")).await;
+    assert_eq!(page.status(), StatusCode::OK);
+    assert_eq!(
+        body_of(page).await,
+        "<!doctype html><title>outer</title><main><p>outer</p>[inner]outer[]</main>"
+    );
+    let bad = handler.handle(get("/a/lay/bad")).await;
+    assert_eq!(bad.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let text = body_of(bad).await;
+    assert!(text.contains("layout() belongs in the view"), "{text}");
+    assert!(text.contains("views/_bad.lsp:1:"), "{text}");
+    let miss = body_of(handler.handle(get("/a/lay/miss")).await).await;
+    assert!(
+        miss.contains("render: views/nope.lsp does not exist"),
+        "{miss}"
+    );
+    for _ in 0..3 {
+        assert!(
+            body_of(handler.handle(get("/a/lay/set")).await)
+                .await
+                .contains("set")
+        );
+        let got = body_of(handler.handle(get("/a/lay/get")).await).await;
+        assert!(
+            got.contains("got:\n") && !got.contains("yes"),
+            "a template's global lasts one request: {got}"
+        );
+    }
+}
+
+/// `spec/lua-api.md §4` — a `<?-- --?>` comment is stripped whatever it contains, so the
+/// header block every template carries never reaches the page.
+#[tokio::test]
+async fn test_lsp_comment_stripped() {
+    let root = tempfile::tempdir().unwrap();
+    configure(&root, LUA_CONFIG);
+    app(
+        &root,
+        "cmt",
+        "local pv = require 'privatium'\n\
+         pv.get('/', function() return pv.render('index') end)\n",
+        &[(
+            "views/index.lsp",
+            "<?-- Project: Privatium\u{2122} | apps/cmt/views/index.lsp\n     Summary: Note <?= ?> escapes by default -- and ?> too. --?>\nshown<?-- x --?>!",
+        )],
+    );
+    let handler = handler_for(&root);
+    let text = body_of(handler.handle(get("/a/cmt/")).await).await;
+    assert!(text.contains("\nshown!"), "{text}");
+    assert!(!text.contains("Project:"), "{text}");
+    assert!(!text.contains("<?="), "{text}");
+}
+
+/// `spec/lua-api.md §4.0`, §4.1 — `url`, `fmt.*`, `t` and `icon` in a template, with the
+/// icon's label as the string argument and `focusable="false"` on it.
+#[tokio::test]
+async fn test_spec_lua_4_0_helpers_in_templates() {
+    let root = tempfile::tempdir().unwrap();
+    configure(&root, LUA_CONFIG);
+    app(
+        &root,
+        "help",
+        "local pv = require 'privatium'\n\
+         pv.get('/', function() return pv.render('index') end)\n",
+        &[(
+            "views/index.lsp",
+            "<?= url('/x') ?>|<?= fmt.money('1234.5') ?>|<?= fmt.date('2026-09-03') ?>|<?= t('key') ?>|<?= icon('trash', 'Delete this') ?>",
+        )],
+    );
+    let handler = handler_for(&root);
+    let text = body_of(handler.handle(get("/a/help/")).await).await;
+    assert!(
+        text.contains("/a/help/x|1,234.50|2026-09-03|key|<svg class=\"pv-icon\""),
+        "{text}"
+    );
+    assert!(
+        text.contains("role=\"img\" focusable=\"false\"><title>Delete this</title>"),
+        "{text}"
+    );
+}
+
+/// `docs/plans/phase-1.md §8`, R3 — a VM checked out when the app is reloaded finishes
+/// its request on the old generation; the request that triggered the reload, and every
+/// later one, answers from the new.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn test_r3_vm_mid_request_survives_reload() {
+    let root = tempfile::tempdir().unwrap();
+    // A busy 0.6 s is far more than LUA_CONFIG's instruction budget.
+    configure(
+        &root,
+        "[lua]\npool_size = 2\nmax_instructions = 5000000000\nmax_memory_mb = 16\nmax_seconds = 20\n",
+    );
+    let source = |tag: &str| {
+        format!(
+            "local pv = require 'privatium'\n\
+             pv.get('/slow', function()\n\
+               local t = os.clock() + 0.6\n\
+               while os.clock() < t do end\n\
+               return pv.text('{tag}')\n\
+             end)\n\
+             pv.get('/fast', function() return pv.text('{tag}-fast') end)\n"
+        )
+    };
+    app(&root, "gen", &source("old"), &[]);
+    let handler = std::sync::Arc::new(handler_for(&root));
+    let slow = {
+        let handler = std::sync::Arc::clone(&handler);
+        tokio::spawn(async move { body_of(handler.handle(get("/a/gen/slow")).await).await })
+    };
+    // Let the slow request start (and check its VM out) before the edit lands. A
+    // blocking sleep on one of four workers, so the runtime needs no `time` feature.
+    tokio::task::yield_now().await;
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    write_file(&root, "gen", "app.lua", &source("new-generation"));
+    let fast = body_of(handler.handle(get("/a/gen/fast")).await).await;
+    assert_eq!(fast, "new-generation-fast");
+    assert_eq!(slow.await.unwrap(), "old");
+    assert_eq!(
+        body_of(handler.handle(get("/a/gen/slow")).await).await,
+        "new-generation"
+    );
+}
+
+/// `spec/lua-api.md §2`, `spec/protocol.md §9.1` — `static/` beneath a Tier 1 mount is
+/// served as the app's files; in solo mode `/static/*` is the framework's first and the
+/// solo app's for a name the framework lacks.
+#[tokio::test]
+async fn test_tier1_static_served_host_and_solo() {
+    let root = tempfile::tempdir().unwrap();
+    configure(&root, LUA_CONFIG);
+    let (node, report) = open(&root, true);
+    let handler = Handler::new(node, report);
+    let css = handler.handle(get("/a/animals/static/animals.css")).await;
+    assert_eq!(css.status(), StatusCode::OK);
+    assert!(header(&css, &CONTENT_TYPE).starts_with("text/css"));
+    assert_eq!(
+        body_of(css).await,
+        fs::read_to_string(repo_apps_dir().join("animals/static/animals.css")).unwrap()
+    );
+    for outside in [
+        "/a/animals/static/../app.toml",
+        "/a/animals/static/%2e%2e/app.lua",
+        "/a/animals/static/nope.css",
+        "/a/animals/static",
+    ] {
+        let response = handler.handle(get(outside)).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "{outside}");
+        assert!(!body_of(response).await.contains("[app]"), "{outside}");
+    }
+    // A route is never shadowed by static/: hello has no static/ and its routes answer.
+    assert_eq!(
+        handler.handle(get("/a/hello/")).await.status(),
+        StatusCode::OK
+    );
+    drop(handler);
+
+    let root = tempfile::tempdir().unwrap();
+    configure(
+        &root,
+        &format!("[node]\nmode = \"solo\"\napp = \"animals\"\n{LUA_CONFIG}"),
+    );
+    let (node, report) = open(&root, true);
+    let handler = Handler::new(node, report);
+    let shell = body_of(handler.handle(get("/static/shell.css")).await).await;
+    assert!(shell.contains("shell.css"), "the framework's own: {shell}");
+    let css = handler.handle(get("/static/animals.css")).await;
+    assert_eq!(css.status(), StatusCode::OK);
+    assert!(header(&css, &CONTENT_TYPE).starts_with("text/css"));
+    assert_eq!(
+        handler.handle(get("/static/nope.css")).await.status(),
+        StatusCode::NOT_FOUND
+    );
+    let page = body_of(handler.handle(get("/")).await).await;
+    assert!(page.contains("href=\"/static/animals.css\""), "{page}");
+    assert!(page.contains("I don't know any animals yet."), "{page}");
 }

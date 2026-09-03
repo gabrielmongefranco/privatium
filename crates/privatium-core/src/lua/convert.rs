@@ -12,6 +12,7 @@ use mlua::{Lua, Table, Value};
 use rusqlite::types::ValueRef;
 
 use crate::lua::dec::Dec;
+use crate::lua::html::Html;
 use crate::store::{Kind, Schema};
 
 /// How deep a value may nest before it is refused rather than followed forever.
@@ -85,6 +86,9 @@ fn to_json(value: &Value, depth: usize) -> mlua::Result<serde_json::Value> {
         Value::Table(table) => table_to_json(table, depth)?,
         Value::UserData(ud) if ud.is::<Dec>() => {
             serde_json::Value::String(ud.borrow::<Dec>()?.0.to_string())
+        }
+        Value::UserData(ud) if ud.is::<Html>() => {
+            serde_json::Value::String(ud.borrow::<Html>()?.0.clone())
         }
         other => {
             return Err(mlua::Error::runtime(format!(

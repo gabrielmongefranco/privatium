@@ -14,6 +14,7 @@ use crate::app::{LoadReport, Warning};
 use crate::config::Mode;
 use crate::http::csrf::Csrf;
 use crate::icons::{escape, icon};
+use crate::lua::SourceContext;
 use crate::store::Tier;
 use crate::wire::router::{SettingsPage, url};
 use crate::{Node, Result, StoreError, sys};
@@ -74,8 +75,36 @@ enum Active {
     None,
 }
 
-/// The page frame. `solo` drops the launcher link: there is no launcher to link to.
+/// The shell's own page frame. `solo` drops the launcher link: there is no launcher to
+/// link to.
 fn layout(title: &str, active: Active, solo: bool, body: &str) -> String {
+    page(title, active, solo, true, "", body)
+}
+
+/// The frame a Tier 1 view renders inside when it calls no `layout()`
+/// (`spec/lua-api.md §4.1`): the same head and header as the shell's, titled by the app,
+/// with the brand demoted to a paragraph so the view keeps the page's one `<h1>`, and
+/// `hx-headers` on the body so every htmx request beneath the mount carries the CSRF
+/// token — which is what lets an `hx-delete` button, with no form, pass the host's check.
+#[must_use]
+pub fn app_frame(title: &str, solo: bool, csrf_token: &str, body: &str) -> String {
+    let attrs = format!(
+        " hx-headers='{{\"X-CSRF-Token\":\"{}\"}}'",
+        escape(csrf_token)
+    );
+    page(title, Active::None, solo, false, &attrs, body)
+}
+
+/// The document around a body: head, header, main, footer. `brand_heading` makes the
+/// brand the page's `<h1>` (the shell's pages) rather than a paragraph (an app's).
+fn page(
+    title: &str,
+    active: Active,
+    solo: bool,
+    brand_heading: bool,
+    body_attrs: &str,
+    body: &str,
+) -> String {
     let mut out = String::with_capacity(body.len() + 2048);
     out.push_str("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
     out.push_str("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
@@ -88,10 +117,21 @@ fn layout(title: &str, active: Active, solo: bool, body: &str) -> String {
     let _ = writeln!(out, "<title>{} — Privatium</title>", escape(title));
     out.push_str("<link rel=\"stylesheet\" href=\"/static/shell.css\">\n");
     out.push_str("<script src=\"/static/htmx.min.js\" defer></script>\n");
-    out.push_str("</head>\n<body>\n<a class=\"pv-skip\" href=\"#main\">Skip to content</a>\n");
-    out.push_str("<header class=\"pv-header\">\n<h1><a href=\"/\">");
-    out.push_str(&icon("grid-3x3-gap"));
-    out.push_str(" Privatium</a></h1>\n<nav aria-label=\"Framework\">\n");
+    let _ = writeln!(
+        out,
+        "</head>\n<body{body_attrs}>\n<a class=\"pv-skip\" href=\"#main\">Skip to content</a>"
+    );
+    let (brand_open, brand_close) = if brand_heading {
+        ("<h1>", "</h1>")
+    } else {
+        ("<p class=\"pv-brand\">", "</p>")
+    };
+    let _ = write!(
+        out,
+        "<header class=\"pv-header\">\n{brand_open}<a href=\"/\">{} Privatium</a>{brand_close}\n\
+         <nav aria-label=\"Framework\">\n",
+        icon("grid-3x3-gap")
+    );
     if !solo {
         let _ = writeln!(
             out,
@@ -464,7 +504,7 @@ fn apps_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
             let _ = writeln!(
                 body,
                 "<form class=\"pv-inline\" method=\"post\" action=\"{action}\" hx-post=\"{action}\" \
-                 hx-target=\"body\" hx-push-url=\"true\">{}<button type=\"submit\" class=\"pv-btn\">\
+                 hx-target=\"body\" hx-push-url=\"true\">{}<button type=\"submit\" class=\"pv-btn pv-btn-primary\">\
                  {} Load sample data</button> <span class=\"pv-muted\">synthetic events from \
                  <code>sample/seed.jsonl</code>, appended as this node's; only offered while the \
                  app has no events</span></form>",
@@ -685,20 +725,47 @@ pub fn no_handler(slug: &str, solo: bool) -> String {
     layout("No handler in this build", Active::None, solo, &body)
 }
 
-/// A handler answered `pv.render` in a build without the template engine (M8): the app
-/// and its routes work, the view does not yet. A clear 503, not a routing bug.
+/// The error page beneath a Tier 1 mount (`spec/cli.md §3`): the first line of the error
+/// as the summary, the whole text with its traceback, and — when the traceback names one
+/// of the app's files — that file's lines around the offending one, which is marked by a
+/// glyph and `aria-current`, never by colour alone. The owner is the only reader.
 #[must_use]
-pub fn view_not_rendered(slug: &str, view: &str, solo: bool) -> String {
-    let body = format!(
-        "<h2>Templates are not in this build</h2>\n<p class=\"pv-error\">{} <code>{}</code> \
-         answered with <code>pv.render('{}')</code>. <code>views/{}.lsp</code> exists, but this \
-         build has no LSP compiler yet; the view renders once it does.</p>\n",
-        icon("info-circle"),
-        escape(slug),
-        escape(view),
-        escape(view)
+pub fn lua_error(
+    status: StatusCode,
+    detail: &str,
+    at: Option<&SourceContext>,
+    solo: bool,
+) -> String {
+    let reason = status.canonical_reason().unwrap_or("Error");
+    let summary = detail.lines().next().unwrap_or(detail);
+    let mut body = format!(
+        "<h2>{}</h2>\n<p class=\"pv-error\">{} {}</p>\n<pre class=\"pv-trace\">{}</pre>\n",
+        escape(reason),
+        icon("exclamation-triangle"),
+        escape(summary),
+        escape(detail)
     );
-    layout("Templates are not in this build", Active::None, solo, &body)
+    if let Some(at) = at {
+        let _ = writeln!(
+            body,
+            "<h3><code>{}</code>, line {}</h3>\n<pre class=\"pv-source\">",
+            escape(&at.file),
+            at.line
+        );
+        for (number, text) in &at.lines {
+            if *number == at.line {
+                let _ = writeln!(
+                    body,
+                    "<mark aria-current=\"true\">&gt; {number:>4}  {}</mark>",
+                    escape(text)
+                );
+            } else {
+                let _ = writeln!(body, "  {number:>4}  {}", escape(text));
+            }
+        }
+        body.push_str("</pre>\n");
+    }
+    layout(reason, Active::None, solo, &body)
 }
 
 /// A failure page. `detail` is the error's own text; the owner is the only reader.

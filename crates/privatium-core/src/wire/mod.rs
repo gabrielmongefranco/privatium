@@ -22,7 +22,9 @@ use crate::app::{Appended, LoadReport, Tier};
 use crate::config::Mode;
 use crate::http::shell::{Context, Notice, NoticeKind};
 use crate::http::{self, AuthLayer, Csrf, api, apps, assets, headers, shell, skills};
-use crate::lua::{Host, LuaRequest, NodeFacts, RequestCtx, Resolved, RunError, UiSettings};
+use crate::lua::{
+    Host, LuaRequest, NodeFacts, RequestCtx, Resolved, RunError, UiSettings, context_in,
+};
 use crate::{Error, Node};
 
 pub mod router;
@@ -248,7 +250,7 @@ impl Handler {
                         headers::revalidate(&mut response);
                         response
                     }
-                    None => self.not_found(&path),
+                    None => return self.solo_static(&rest, request).await,
                 }
             }
             Route::Redirect { to } => headers::redirect(StatusCode::PERMANENT_REDIRECT, &to),
@@ -265,13 +267,55 @@ impl Handler {
         }
     }
 
+    /// `/static/<rest>` the framework has no asset for. In solo mode the mounted Tier 1
+    /// app's `static/` answers — `url('/static/animals.css')` has to reach the app's own
+    /// stylesheet when the mount is `/` (`spec/protocol.md §9.1`); the framework's names
+    /// still win, since they were tried first. Anywhere else it is a 404.
+    async fn solo_static(&self, rest: &str, request: Request) -> Response {
+        let path = request.uri().path().to_owned();
+        if !self.solo() {
+            return self.not_found(&path);
+        }
+        let origin = self.origin_of(&request);
+        let plan = {
+            let node = self.lock();
+            node.mounts()
+                .find(|(mount, app)| *mount == "/" && app.manifest().app.tier == Tier::Lua)
+                .map(|(_, app)| (app.dir().join("static"), app.csp().header_for(&origin)))
+        };
+        match plan {
+            Some((dir, csp)) if dir.is_dir() => {
+                apps::serve_web(dir, "/static/", &format!("/{rest}"), request, &csp, true).await
+            }
+            _ => self.not_found(&path),
+        }
+    }
+
     /// A route beneath an app's mount. The read path refreshes the app first — the
-    /// `echo >>` reload of `apps/hello/README.md` — then serves it by tier.
+    /// `echo >>` reload of `apps/hello/README.md`, and the edit loop of `spec/cli.md §3`
+    /// — then serves it by tier. An edit that did not load is the error page, with the
+    /// traceback and the offending line, until the next edit does.
     async fn app(&self, slug: &str, mount: &str, rest: &str, request: Request) -> Response {
         let origin = self.origin_of(&request);
         let plan = {
             let mut node = self.lock();
             if let Err(error) = node.refresh_app(slug) {
+                if let Error::AppReloadFailed { reason, .. } = &error
+                    && let Some(app) = node.app(slug)
+                {
+                    let at = context_in(app.dir(), reason);
+                    eprintln!("privatium: {slug}: not reloaded — {reason}");
+                    if let Some(at) = &at {
+                        eprint!("{}", at.render_text());
+                    }
+                    return apps::lua_failure(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        &format!("{slug}: not reloaded — {reason}"),
+                        at.as_ref(),
+                        &app.csp().header_for(&origin),
+                        self.solo(),
+                    );
+                }
                 return self.failure(&error);
             }
             let Some(app) = node.app(slug) else {
@@ -283,6 +327,12 @@ impl Handler {
                     web_dir: app.dir().join("web"),
                     csp,
                 },
+                // `static/` beneath a Tier 1 mount is the app's directory of that name
+                // (`spec/lua-api.md §2`), served as a Tier 2 app's `web/` is.
+                Tier::Lua if rest == "/static" || rest.starts_with("/static/") => Plan::Static {
+                    dir: app.dir().join("static"),
+                    csp,
+                },
                 Tier::Lua => match app.lua_host() {
                     Some(host) => {
                         let conn = match app.store().app_conn() {
@@ -291,11 +341,12 @@ impl Handler {
                         };
                         Plan::Lua(LuaPlan {
                             host: Arc::clone(host),
-                            dir: app.dir().to_path_buf(),
+                            title: app.title().to_owned(),
                             csp,
                             conn,
                             facts: node_facts(&node, slug),
                             ui: ui_settings(&node),
+                            csrf_token: self.csrf.token(mount),
                         })
                     }
                     None => Plan::Done(apps::no_handler(slug, &csp, self.solo())),
@@ -308,6 +359,12 @@ impl Handler {
         match plan {
             Plan::Web { web_dir, csp } => {
                 apps::serve_web(web_dir, mount, rest, request, &csp, self.solo()).await
+            }
+            Plan::Static { dir, csp } => {
+                let base = format!("{mount}static/");
+                let file = rest.strip_prefix("/static").unwrap_or("/");
+                let file = if file.is_empty() { "/" } else { file };
+                apps::serve_web(dir, &base, file, request, &csp, self.solo()).await
             }
             Plan::Done(response) => response,
             Plan::Lua(plan) => self.lua(slug, mount, rest, request, plan).await,
@@ -343,7 +400,13 @@ impl Handler {
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.parse::<usize>().ok());
         if declared.is_some_and(|length| length > http::FORM_LIMIT) {
-            return apps::lua_failure(StatusCode::PAYLOAD_TOO_LARGE, TOO_LARGE, &plan.csp, solo);
+            return apps::lua_failure(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                TOO_LARGE,
+                None,
+                &plan.csp,
+                solo,
+            );
         }
         let (parts, body) = request.into_parts();
         let body = match to_bytes(body, http::FORM_LIMIT).await {
@@ -352,6 +415,7 @@ impl Handler {
                 return apps::lua_failure(
                     StatusCode::PAYLOAD_TOO_LARGE,
                     TOO_LARGE,
+                    None,
                     &plan.csp,
                     solo,
                 );
@@ -375,6 +439,31 @@ impl Handler {
         } else {
             BTreeMap::new()
         };
+        // `spec/lua-api.md §4.1`: every non-GET request beneath the mount carries the
+        // mount's token — as the `_csrf` field `csrf()` emitted, or as the header the
+        // page frame gives htmx — or it is refused before any handler runs.
+        if method != Method::GET && method != Method::HEAD {
+            let presented = form
+                .get(http::csrf::FIELD)
+                .cloned()
+                .or_else(|| {
+                    parts
+                        .headers
+                        .get(http::csrf::HEADER)
+                        .and_then(|value| value.to_str().ok())
+                        .map(str::to_owned)
+                })
+                .unwrap_or_default();
+            if !self.csrf.verify(mount, &presented) {
+                return apps::lua_failure(
+                    StatusCode::FORBIDDEN,
+                    CSRF_REFUSED,
+                    None,
+                    &plan.csp,
+                    solo,
+                );
+            }
+        }
         let headers = parts
             .headers
             .iter()
@@ -415,12 +504,15 @@ impl Handler {
             facts: plan.facts,
             device,
             ui: plan.ui,
+            csrf_token: plan.csrf_token.clone(),
         };
         let host = Arc::clone(&plan.host);
         let outcome = tokio::task::spawn_blocking(move || host.run(index, lua_request, ctx)).await;
 
         let response = match outcome {
-            Ok(Ok(answer)) => apps::lua_response(answer, slug, &plan.dir, &plan.csp, solo),
+            Ok(Ok(answer)) => {
+                apps::lua_response(answer, &plan.title, &plan.csrf_token, &plan.csp, solo)
+            }
             Ok(Err(RunError::Limit { kind, detail })) => {
                 let audit = serde_json::json!({
                     "app": slug,
@@ -440,6 +532,22 @@ impl Handler {
                          The request was abandoned; the node and the next request are \
                          unaffected."
                     ),
+                    None,
+                    &plan.csp,
+                    solo,
+                )
+            }
+            // The browser and the terminal see the same thing: the traceback, and the
+            // offending line with its neighbours (`spec/cli.md §3`).
+            Ok(Err(RunError::Lua { message, at })) => {
+                eprintln!("privatium: {slug}: {route}: {message}");
+                if let Some(at) = &at {
+                    eprint!("{}", at.render_text());
+                }
+                apps::lua_failure(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    &format!("{slug}: {route}: {message}"),
+                    at.as_ref(),
                     &plan.csp,
                     solo,
                 )
@@ -449,6 +557,7 @@ impl Handler {
                 apps::lua_failure(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     &format!("{slug}: {route}: {error}"),
+                    None,
                     &plan.csp,
                     solo,
                 )
@@ -458,6 +567,7 @@ impl Handler {
                 apps::lua_failure(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     &format!("{slug}: {route}: the handler's thread panicked: {join}"),
+                    None,
                     &plan.csp,
                     solo,
                 )
@@ -490,12 +600,16 @@ impl Handler {
                 }
             };
             let facts = node_facts(&node, slug);
+            let mount = app
+                .mount()
+                .map_or_else(|| format!("/a/{slug}/"), str::to_owned);
             let ctx = RequestCtx {
                 conn,
                 node: Arc::clone(&self.node),
                 device: device.unwrap_or_else(|| facts.id.clone()),
                 facts,
                 ui: ui_settings(&node),
+                csrf_token: self.csrf.token(&mount),
             };
             (Arc::clone(host), ctx)
         };
@@ -658,6 +772,8 @@ impl Handler {
 enum Plan {
     /// Tier 2: stream `web/`.
     Web { web_dir: PathBuf, csp: String },
+    /// Tier 1: stream the app's `static/`.
+    Static { dir: PathBuf, csp: String },
     /// Tier 1: run a handler.
     Lua(LuaPlan),
     /// Already answered.
@@ -667,16 +783,25 @@ enum Plan {
 /// Everything a Tier 1 request takes from under the lock.
 struct LuaPlan {
     host: Arc<Host>,
-    dir: PathBuf,
+    /// `app.toml`'s title, for the page frame.
+    title: String,
     csp: String,
     conn: rusqlite::Connection,
     facts: NodeFacts,
     ui: UiSettings,
+    /// The mount's token: what `csrf()` emits and the frame hands htmx.
+    csrf_token: String,
 }
 
 /// The 413 a Tier 1 request gets for a body past `http::FORM_LIMIT`.
 const TOO_LARGE: &str = "413 Payload Too Large: a Tier 1 request body is at most 64 KiB — \
                          Tier 1 does not stream (docs/plans/phase-1.md §8, R6)";
+
+/// The 403 a non-GET Tier 1 request gets without the mount's token.
+const CSRF_REFUSED: &str = "403 Forbidden: the request carries no valid token — a form needs \
+                            <?= csrf() ?>, a request without a form the X-CSRF-Token header; \
+                            a token from before the node restarted is stale, so reload the \
+                            page and try again (spec/lua-api.md §4.1)";
 
 /// What `pv.node()` reports, taken while the lock is held.
 fn node_facts(node: &Node, slug: &str) -> NodeFacts {

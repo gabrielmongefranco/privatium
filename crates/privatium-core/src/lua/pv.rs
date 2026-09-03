@@ -475,11 +475,7 @@ fn response(lua: &Lua, kind: &str) -> mlua::Result<Table> {
 }
 
 fn render(lua: &Lua, (view, ctx): (String, Option<Table>)) -> mlua::Result<Table> {
-    let valid = !view.is_empty()
-        && view
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-');
-    if !valid {
+    if !crate::lua::lsp::is_view_name(&view) {
         return Err(mlua::Error::runtime(format!(
             "pv.render: {view:?} is not a view name; views/<name>.lsp is named by letters, \
              digits, '_' and '-'"
