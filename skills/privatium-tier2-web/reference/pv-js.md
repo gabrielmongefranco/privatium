@@ -10,7 +10,7 @@ From `crates/privatium-core/assets/shell/pv.js`, served at `/static/pv.js`; a na
 
 ## 5. The `pv.js` helper
 
-Served at `/static/pv.js`. Under 8 KB, unminified and meant to be read — there is no
+Served at `/static/pv.js`. Under 10 KB, unminified and meant to be read — there is no
 minifier in the runtime path — with no dependencies, no framework, no build step.
 **Optional** — every endpoint is plain HTTP and `fetch` works fine.
 
@@ -53,7 +53,8 @@ this design exists to prevent. Use a decimal library or integer cents in your ow
   `rejected` (an outbox entry the node refused — §6); it returns an unsubscribe function.
 - `pv.append` returns the response of §2, or `{ queued: true, ids }` when it went to the
   outbox; a put with no `id` is minted one client-side before it is sent or queued, so a
-  replay carries the same id.
+  replay carries the same id. `pv.flush()` replays the outbox now and resolves when the
+  pass is over.
 - The mount is read from the page's path — `/a/<slug>/` or, in solo mode, `/` — and
   exposed as `pv.mount`. `pv.url()` is the only URL construction point (`§6`).
 
@@ -64,19 +65,30 @@ the same device, so it works with no network at all.
 
 When the node is remote and unreachable, `pv.append` queues to an outbox and replays on
 reconnect; `pv.query` throws `PvOffline` and the app decides what to show. The helper
-exposes `pv.online` and a `pv.on('online' | 'offline')` event. The outbox lives in the
-page's `localStorage`, keyed by the mount, as a list of entries each keyed by a ULID and
-holding the events exactly as they will be sent; a fetch that fails to reach the node
-marks the helper offline, and the browser's own `online` event, or any request that
-succeeds, marks it back and replays the queue in order.
+exposes `pv.online` and a `pv.on('online' | 'offline')` event. The outbox is one queue in
+the page's memory, mirrored to `localStorage` under the mount while storage is available
+— a page without it still queues for its own lifetime — as a list of entries, each keyed
+by a ULID and holding the events exactly as they will be sent, the mark `pv.lam` held
+when it was queued, and the app `/api/node` named (§4). A fetch that fails to reach the
+node marks the helper offline; the browser's own `online` event, or any request that
+succeeds, marks it back and replays the queue in order, one entry at a time.
 
 **Replay is idempotent and needs no bookkeeping.** A queued write carries its ULID, so
 resending one that may already have landed converges to the same row under
-`spec/protocol.md §4.5`. Apps MUST NOT implement their own deduplication, transaction
-identifiers, or acknowledgement protocol — all three indicate a misreading of the merge
-rule, and all three can introduce the divergence they were meant to prevent. An entry the
-node refuses — a 4xx, such as `§4.6`'s reused id — is dropped and reported through
-`pv.on('rejected')`; nothing else about a replay is remembered.
+`spec/protocol.md §4.5`. Whether it did land is read, not remembered
+(`spec/protocol.md §10.6`): before an entry is sent, the helper reads each of its rows'
+events past the entry's mark (`/api/events`, §1) and drops the entry when every event is
+already there, comparing `d` as it was sent — a typed app's normalized value can differ,
+and the entry then lands as the same row again, which `§4.5` makes harmless. A queued edit
+replayed after another device edited the row wins by arrival. Apps MUST NOT implement
+their own deduplication, transaction identifiers, or acknowledgement protocol — all three
+indicate a misreading of the merge rule, and all three can introduce the divergence they
+were meant to prevent. An entry the node refuses — a 4xx other than 429, such as `§4.6`'s
+reused id — is dropped and reported through `pv.on('rejected')`; a 429, a 5xx or a node
+that cannot be reached keeps the entry for the next replay and ends this one; an entry
+queued while the mount served another app — which a solo node's `/` can, across an
+`app.toml` change — is refused the same way rather than written into the wrong app.
+Nothing else about a replay is remembered.
 
 Endpoint selection and failover are handled by the client runtime
 (`spec/protocol.md §10.4`), not by the app. In a browser there is exactly one endpoint — the

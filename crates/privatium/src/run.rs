@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium/src/run.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-04
+// Created:  2026-09-04  |  Modified: 2026-09-05
 // Summary:  Bare `privatium` (spec/cli.md §2) and `privatium dev` (§3): open the node,
 //           apply the run's overrides, load every app, bind loopback, and serve
 //           `core::handle` until Ctrl-C. `dev` is the same node with the app named — the
@@ -14,6 +14,7 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result, bail};
 use privatium::adapter;
+use privatium_core::store::snapshot;
 use privatium_core::{Handler, Mode, Node};
 
 use crate::cli::Global;
@@ -148,8 +149,10 @@ fn flush(handler: &Arc<Handler>) {
 }
 
 /// The scheduled maintenance of `spec/protocol.md §5`: a snapshot when one is due under
-/// the policy, then retention — for `_sys` and every loaded app, now and once a day.
-/// Under the node lock, on a blocking thread, so a request never waits on a checksum.
+/// the policy, then retention — for `_sys` and every loaded app, now and once a day. On
+/// a blocking thread, and under the node lock only to decide and to record: the log is
+/// read while the lock is held, which keeps it still, and the files are written with it
+/// released, so a request never waits on a checksum.
 async fn maintain_daily(handler: Arc<Handler>, slugs: Vec<String>, verbose: bool) {
     let mut ticker = tokio::time::interval(MAINTENANCE_EVERY);
     loop {
@@ -164,31 +167,63 @@ async fn maintain_daily(handler: Arc<Handler>, slugs: Vec<String>, verbose: bool
 }
 
 fn maintain_once(handler: &Arc<Handler>, slugs: &[String], verbose: bool) {
-    let mut node = handler
-        .node()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let lock = || {
+        handler
+            .node()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    };
     let now = jiff::Timestamp::now();
     for slug in std::iter::once(privatium_core::sys::SLUG).chain(slugs.iter().map(String::as_str)) {
-        match node.maintain(slug, now) {
-            Ok(done) => {
-                if let Some(snapshot) = &done.snapshot {
-                    eprintln!(
+        // Decide and read under the lock; write with it released; record under it again.
+        let job = lock().snapshot_due(slug, now);
+        match job {
+            Ok(Some(job)) => match job.write() {
+                Ok(snapshot) => match lock().record_snapshot(&snapshot) {
+                    Ok(()) => eprintln!(
                         "privatium: {slug}: snapshot {} written ({} bytes)",
                         snapshot.id, snapshot.bytes
-                    );
-                }
-                for id in &done.pruned.removed {
-                    eprintln!("privatium: {slug}: snapshot {id} pruned (spec/protocol.md §5.4)");
-                }
-                if verbose && done.snapshot.is_none() {
+                    ),
+                    Err(error) => {
+                        eprintln!(
+                            "privatium: {slug}: snapshot {} not recorded: {error}",
+                            snapshot.id
+                        );
+                    }
+                },
+                Err(error) => eprintln!("privatium: {slug}: snapshot not written: {error}"),
+            },
+            Ok(None) => {
+                if verbose {
                     eprintln!("privatium: {slug}: no snapshot due");
                 }
             }
             Err(error) => eprintln!("privatium: {slug}: maintenance failed: {error}"),
         }
+
+        let retention = {
+            let node = lock();
+            node.snapshot_retention()
+                .map(|retention| (retention, node.paths().app_snap_dir(slug)))
+        };
+        match retention {
+            Ok((retention, dir)) => match snapshot::prune(&dir, now, &retention) {
+                Ok(pruned) => {
+                    for id in &pruned.removed {
+                        eprintln!(
+                            "privatium: {slug}: snapshot {id} pruned (spec/protocol.md §5.4)"
+                        );
+                    }
+                    if let Err(error) = lock().record_pruned(slug, &pruned, &retention) {
+                        eprintln!("privatium: {slug}: pruning not recorded: {error}");
+                    }
+                }
+                Err(error) => eprintln!("privatium: {slug}: pruning failed: {error}"),
+            },
+            Err(error) => eprintln!("privatium: {slug}: maintenance failed: {error}"),
+        }
     }
-    if let Err(error) = node.flush() {
+    if let Err(error) = lock().flush() {
         eprintln!("privatium: could not write local/state.jsonl: {error}");
     }
 }

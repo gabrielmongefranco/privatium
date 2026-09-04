@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/snapshot.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-02  |  Modified: 2026-09-03
+// Created:  2026-09-02  |  Modified: 2026-09-05
 // Summary:  spec/protocol.md §5.1, §5.2 and §5.4 — the snapshot id, MANIFEST.json, the
 //           writer that produces one snapshot directory from the log (a SQLite file and a
 //           CSV per table), checksum verification (spec/cli.md §7), retention, and the
@@ -559,33 +559,55 @@ pub fn due(
     Ok(since >= policy.min_events)
 }
 
-/// The writer (`spec/protocol.md §5.1`, `§5.2`).
-impl Store {
-    /// Write one snapshot of this app from its log, at `now`, by `dev`.
-    ///
-    /// **From the log, not from the cache tables.** The log is read once and `hi_lam`,
-    /// `hi_seq` and every table's `§4.5` winners are computed from that one reading, so
-    /// the manifest describes exactly the rows in the files. Copying the cache tables and
-    /// then reading the log for the marks would race a hand `echo` between the two.
-    ///
-    /// An existing directory with the same id is replaced. The id names a log state, and
-    /// a second snapshot of the same state — after a `schema.sql` change, say — is the one
-    /// that should survive.
-    pub fn snapshot(&self, dev: &NodeId, now: Timestamp) -> Result<Snapshot, StoreError> {
-        let cutoff = crate::store::cutoff_from(now);
-        let events = self.read_log(&cutoff)?;
-        let hi_lam = events::hi_lam(&events);
-        let hi_seq = events::hi_seq(&events);
-        let winners = winners(&events);
+/// A snapshot decided and read but not yet written.
+///
+/// Everything [`write`](Self::write) needs, taken from the store in one reading of the
+/// log — so the files describe one moment — and nothing of the store itself, so the
+/// writing, which is the slow part, can run with no lock held while requests go on
+/// appending. The id is fixed at [`Store::snapshot_job`]: it names the log state that
+/// was read, whatever lands afterwards.
+#[derive(Debug)]
+pub struct SnapshotJob {
+    id: SnapshotId,
+    slug: String,
+    snap_dir: PathBuf,
+    schema: Schema,
+    engine: String,
+    created: String,
+    hi_lam: u64,
+    hi_seq: BTreeMap<String, u64>,
+    events: Vec<events::Event>,
+}
 
-        let id = SnapshotId::new(now, dev, hi_lam);
-        let snap_dir = self.snap_dir().to_path_buf();
-        let part = snap_dir.join(format!("{id}{PART_SUFFIX}"));
+impl SnapshotJob {
+    /// The id the snapshot will have.
+    #[must_use]
+    pub fn id(&self) -> &SnapshotId {
+        &self.id
+    }
+
+    /// The app.
+    #[must_use]
+    pub fn slug(&self) -> &str {
+        &self.slug
+    }
+
+    /// Write the snapshot directory (`spec/protocol.md §5.1`, `§5.2`).
+    ///
+    /// Into `<id>.part` first — every file synced, the manifest last, the directory
+    /// flushed — then one rename, so a crash leaves a directory [`list`] ignores rather
+    /// than a snapshot whose manifest names files that never made it. An existing
+    /// directory with the same id is replaced: the id names a log state, and a second
+    /// snapshot of the same state — after a `schema.sql` change, say — is the one that
+    /// should survive.
+    pub fn write(self) -> Result<Snapshot, StoreError> {
+        let winners = winners(&self.events);
+        let part = self.snap_dir.join(format!("{}{PART_SUFFIX}", self.id));
         remove_if_present(&part)?;
         fs::create_dir_all(&part).map_err(SnapshotError::io(&part))?;
 
-        let mut tables = Vec::with_capacity(self.schema().tables.len());
-        for table in &self.schema().tables {
+        let mut tables = Vec::with_capacity(self.schema.tables.len());
+        for table in &self.schema.tables {
             let rows: Vec<Vec<rusqlite::types::Value>> = winners
                 .iter()
                 .filter(|((tbl, _), event)| *tbl == table.name && event.op == Op::Put)
@@ -610,6 +632,7 @@ impl Store {
                 }),
             )
             .map_err(SnapshotError::io(&csv_path))?;
+            sync_file(&csv_path)?;
 
             tables.push(ManifestTable {
                 name: table.name.clone(),
@@ -620,17 +643,17 @@ impl Store {
         }
 
         let schema_path = part.join(SCHEMA_FILE);
-        fs::write(&schema_path, render_ddl(self.schema()))
+        crate::durable::write_synced(&schema_path, render_ddl(&self.schema).as_bytes())
             .map_err(SnapshotError::io(&schema_path))?;
 
         let manifest = Manifest {
             v: MANIFEST_VERSION,
-            snapshot_id: id.to_string(),
-            app: self.slug().to_owned(),
-            created: crate::log::format_ts(now),
-            hi_lam,
-            hi_seq,
-            engine: engine_string(self.conn())?,
+            snapshot_id: self.id.to_string(),
+            app: self.slug.clone(),
+            created: self.created.clone(),
+            hi_lam: self.hi_lam,
+            hi_seq: self.hi_seq.clone(),
+            engine: self.engine.clone(),
             tables,
         };
         // Last, so a directory that has a manifest has everything the manifest names.
@@ -641,20 +664,63 @@ impl Store {
                 problem: error.to_string(),
             })?;
         text.push('\n');
-        fs::write(&manifest_path, text).map_err(SnapshotError::io(&manifest_path))?;
+        crate::durable::write_synced(&manifest_path, text.as_bytes())
+            .map_err(SnapshotError::io(&manifest_path))?;
 
         let bytes = dir_bytes(&part)?;
-        let dir = snap_dir.join(id.to_string());
+        let dir = self.snap_dir.join(self.id.to_string());
         remove_if_present(&dir)?;
         fs::rename(&part, &dir).map_err(SnapshotError::io(&dir))?;
+        crate::durable::sync_dir(&self.snap_dir).map_err(SnapshotError::io(&self.snap_dir))?;
 
         Ok(Snapshot {
-            id,
+            id: self.id,
             dir,
             manifest,
             bytes,
         })
     }
+}
+
+/// The writer (`spec/protocol.md §5.1`, `§5.2`).
+impl Store {
+    /// Read what a snapshot of this app at `now`, by `dev`, will hold — the log, once —
+    /// and hand it back as a job that writes the files without the store.
+    ///
+    /// **From the log, not from the cache tables.** The log is read once and `hi_lam`,
+    /// `hi_seq` and every table's `§4.5` winners come from that one reading, so the
+    /// manifest describes exactly the rows in the files. Copying the cache tables and
+    /// then reading the log for the marks would race a hand `echo` between the two. The
+    /// reading is the fast part and belongs under whatever lock keeps the log still; the
+    /// writing is [`SnapshotJob::write`] and needs no lock at all.
+    pub fn snapshot_job(&self, dev: &NodeId, now: Timestamp) -> Result<SnapshotJob, StoreError> {
+        let cutoff = crate::store::cutoff_from(now);
+        let events = self.read_log(&cutoff)?;
+        let hi_lam = events::hi_lam(&events);
+        Ok(SnapshotJob {
+            id: SnapshotId::new(now, dev, hi_lam),
+            slug: self.slug().to_owned(),
+            snap_dir: self.snap_dir().to_path_buf(),
+            schema: self.schema().clone(),
+            engine: engine_string(self.conn())?,
+            created: crate::log::format_ts(now),
+            hi_lam,
+            hi_seq: events::hi_seq(&events),
+            events,
+        })
+    }
+
+    /// Write one snapshot of this app from its log, at `now`, by `dev`:
+    /// [`snapshot_job`](Self::snapshot_job) and [`SnapshotJob::write`] in one call, for a
+    /// caller that holds no lock anyone is waiting on.
+    pub fn snapshot(&self, dev: &NodeId, now: Timestamp) -> Result<Snapshot, StoreError> {
+        self.snapshot_job(dev, now)?.write()
+    }
+}
+
+/// Flush one file the manifest is about to name.
+fn sync_file(path: &Path) -> Result<(), SnapshotError> {
+    crate::durable::sync_file(path).map_err(SnapshotError::io(path))
 }
 
 /// One table's SQLite file: the same `CREATE TABLE` the cache uses, its rows in `id`

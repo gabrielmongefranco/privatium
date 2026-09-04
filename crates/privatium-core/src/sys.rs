@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/sys.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-03
+// Created:  2026-09-01  |  Modified: 2026-09-05
 // Summary:  The framework's own tables (spec/data-dictionary.md §3), written through the
 //           same event log apps use. M1 writes two rows: this node's sys_device entry and
 //           its sys_node singleton. M2 adds sys_audit; M4 adds sys_snapshot and the
@@ -52,6 +52,11 @@ pub const KIND_EVENT_REJECTED: &str = "event.rejected";
 
 /// This node's own clock appears to have moved backwards (`§4.4`, second sentence).
 pub const KIND_CLOCK_SKEW: &str = "clock.skew";
+
+/// A batch in a log file has fewer lines than its first line announced
+/// (`spec/protocol.md §4.1`): a crash between the write and the disk. Its lines are
+/// skipped by every reader and stay in the file; this row is written once.
+pub const KIND_BATCH_INCOMPLETE: &str = "batch.incomplete";
 
 /// A snapshot was written (`spec/protocol.md §5`).
 pub const KIND_SNAPSHOT_CREATED: &str = "snapshot.created";

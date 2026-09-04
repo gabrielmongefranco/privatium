@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/local.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-03
+// Created:  2026-09-01  |  Modified: 2026-09-05
 // Summary:  local/state.jsonl — the node-local state of spec/protocol.md §3. Never synced,
 //           never backed up, and never required for restore. In M2 it holds one record per
 //           app: the Lamport counter and the highest `seq` seen per device.
@@ -160,7 +160,9 @@ impl State {
     /// Temp file then rename, so a crash mid-write leaves the previous state rather than
     /// half of this one. The temp file is not fsynced first: a `local/` that loses its last
     /// update is a `local/` that makes the next start do a little more work, which is the
-    /// worst thing that can happen to a cache.
+    /// worst thing that can happen to a cache. The directory is flushed after the rename
+    /// where the platform can (`crate::durable`), which costs nothing and keeps the
+    /// replacement from being the half that is lost.
     pub fn flush(&mut self) -> Result<()> {
         if !self.dirty {
             return Ok(());
@@ -175,6 +177,9 @@ impl State {
         let temp = self.path.with_extension("jsonl.tmp");
         fs::write(&temp, out.as_bytes()).map_err(io_at(&temp))?;
         fs::rename(&temp, &self.path).map_err(io_at(&self.path))?;
+        if let Some(dir) = self.path.parent() {
+            crate::durable::sync_dir(dir).map_err(io_at(dir))?;
+        }
 
         self.dirty = false;
         Ok(())

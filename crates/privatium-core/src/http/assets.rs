@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/assets.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-05
 // Summary:  /static/* (spec/protocol.md §9.1): the shell's own assets, embedded from
 //           assets/shell/ — its stylesheet, the vendored htmx, and pv.js, the data API
 //           helper of spec/data-api.md §5.
@@ -63,8 +63,8 @@ mod tests {
                 .contains("export const pv")
         );
         assert!(
-            pv.bytes.len() < 8 * 1024,
-            "{} bytes: ~4 KB, no build",
+            pv.bytes.len() < 10 * 1024,
+            "{} bytes: spec/data-api.md §5 says under 10 KB, unminified, no build",
             pv.bytes.len()
         );
         assert!(get("VENDOR.md").is_none());

@@ -42,6 +42,11 @@ behaviour. Failures and warnings are reported whether or not it is set.
 Global flags may stand anywhere on the line; `--version` and `--help` end parsing where
 they stand.
 
+A data directory is one process's at a time (`spec/protocol.md §3.1`): every command that
+opens the node — a bare run, `dev`, `snapshot`, `restore` — takes its lock and holds it to
+the end, and a second on the same directory is a runtime error naming the lock file.
+`new`, `lint` and `skill` open no node and take nothing.
+
 **No subcommand requires elevated privileges.** The one exception is `privatium firewall
 --apply`, which prints what it would run and requires explicit confirmation
 (`docs/deployment.md §4.2`). Implementations MUST NOT elevate silently.
@@ -326,7 +331,12 @@ byte-for-byte prefix of the backup's; it is kept when identical or when this nod
 is the longer one; and a file that is neither — two writers, or an edited backup — refuses
 the whole restore before anything is written, since a device's log is one writer's
 (`§3.1`). Snapshot directories are copied when absent. `local/` and `cache/` are never
-read from a backup. Then each app's cache is rebuilt by `§5.3`'s three tiers, and
+read from a backup. A copy never overwrites: a log this node lacks is written beside its
+destination and renamed into place, a log this node holds a prefix of grows by the
+backup's suffix, appended and synced, and each file is decided again against the disk at
+the moment it is written; the root's lock (`§1`, `spec/protocol.md §3.1`) is held from
+before the plan is read until the rebuild is done, so a node that is running is refused
+rather than raced. Then each app's cache is rebuilt by `§5.3`'s three tiers, and
 `restore` reports which tier it used per app and exits non-zero if it fell through to tier
 3 unexpectedly. An app the backup holds but this node has no folder for keeps its data and
 is not rebuilt. `--dry-run` prints what would be copied and, for each app, the tier the

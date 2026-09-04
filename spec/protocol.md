@@ -3,13 +3,15 @@ Project:  Privatium™
 File:     spec/protocol.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-03
+Modified: 2026-09-05
 Summary:  NORMATIVE. Wire formats, event log, discovery, pairing, session crypto, sync.
 -->
 
 # Privatium Protocol Specification — `pv/1`
 
-**Status:** Draft 0.1 — pre-implementation
+**Status:** Draft 0.1 — Phase 1 implementation in progress (`docs/plans/phase-1.md`); a
+build that does not yet satisfy every item of §13 identifies itself as
+`pv/1 (partial: phase 1)` (`spec/cli.md §1`)
 **Protocol identifier:** `pv/1`
 
 The key words MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, RECOMMENDED,
@@ -165,6 +167,7 @@ platform's file-chooser portal.
 │       ├── log/<device-id>.jsonl
 │       └── snap/<snapshot-id>/
 ├── local/                       node-local state, NEVER synced, NOT required for restore
+│   ├── lock                     held exclusively by the process that has this root open (§3.1)
 │   └── state.jsonl
 └── cache/                       fully disposable
     ├── <slug>.sqlite
@@ -174,6 +177,11 @@ platform's file-chooser portal.
 ### 3.1 Rules
 
 - A node MUST append only to `data/<slug>/log/<its-own-node-id>.jsonl`.
+- A node MUST hold an exclusive lock on `local/lock` for as long as it has the root open,
+  and MUST refuse to open a root whose lock another process holds: two processes on one
+  root would both mint `seq` for the same log (§4.1). The lock is advisory — every writer
+  goes through the node — and is released when its holder exits, so a crash leaves nothing
+  stale behind.
 - A node MUST NOT modify, truncate, reorder, or delete any line of any log file, including
   its own.
 - A node MUST treat `local/` and `cache/` as excluded from sync and from backup.
@@ -210,6 +218,7 @@ MUST NOT depend on key order.
 | `op` | string | ✔ | `put` or `del`. |
 | `tbl` | string | ✔ | Table name within the app. |
 | `id` | string | ✔ | Row key. Unique within `(app, tbl)` and stable across amendments to the same row. A ULID unless the table defines its own key — see below. |
+| `batch` | integer | first of a batch | On the first line of a batch of two or more events, how many lines the batch has. Absent on every other line — see *Batches* below. |
 | `d` | object | put | Column values. MUST be absent when `op` is `del`. |
 
 A **reader** MUST NOT reject, reorder, or repair a `seq` gap it finds in a local log file.
@@ -228,6 +237,19 @@ Two writers that choose the same `id` for the same `(app, tbl)` converge on one 
 cross-device merge, which is why minting is the default. `id` plays no part in sync itself:
 §10.1 is a set union over `(dev, seq)`, and §10.6 depends only on a retry carrying the *same*
 `id`, not on its shape.
+
+**Batches.** Several events written as one act — `pv.batch` (`spec/lua-api.md §3.3`), a
+data API append (`spec/data-api.md §2`) — share one `ts`, take contiguous `seq` and `lam`,
+and reach the file in one write. The first line of a batch of `n ≥ 2` events carries
+`"batch": n`; no other line carries the key. A reader that finds, after such a header,
+fewer than `n` consecutive lines with that `ts` and a `seq` one past the previous — the
+segment ended, a line with another `ts` came first, a new header began — has a batch that
+reached the disk short, which a crash between the write and the disk leaves. A reader MUST
+NOT materialize, serve or forward the lines of such a batch, MUST NOT remove them, and MUST
+continue past them; the writer continues after them with the next `seq`, and the node
+records the batch once in `sys_audit` as `batch.incomplete` (`spec/data-dictionary.md
+§3.10`). A single event, a tombstone on its own, and a line appended by hand are batches of
+one and carry no marker: nothing about a line a person writes changes.
 
 ### 4.2 Forward compatibility
 
@@ -259,7 +281,7 @@ the owner when its own clock appears to have moved backwards more than 60 second
 To materialize table `T` of app `A`:
 
 1. Read every event where `app = A` and `tbl = T` from every log file under
-   `data/A/log/`.
+   `data/A/log/`, skipping the lines of a batch that reached the disk short (§4.1).
 2. Group by `id`.
 3. Within each group, order by `(lam, ts, dev)` ascending. `dev` is a deterministic
    lexicographic tie-break and carries no meaning.
@@ -843,6 +865,12 @@ The manifest is one JSON object:
 
 All four are on every response, including refusals and errors.
 
+In solo mode, when the app at `/` declares `permissions.cross_origin_isolated`
+(`spec/app-contract.md §5.4`), every response of the origin — the framework's own
+included, since both headers are document-level and the solo app owns the origin — also
+carries `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy:
+require-corp`. Never in host mode, where the loader refuses the permission.
+
 ---
 
 ## 10. Sync
@@ -966,13 +994,27 @@ leader election, or an authoritative-copy check appears anywhere, that is a defe
 ### 10.6 Offline behaviour
 
 A client that cannot reach any endpoint queues writes in an **outbox** and replays them on
-reconnection.
+reconnection, in the order they were queued.
 
 The outbox requires no deduplication table, no transaction identifiers, and no
-acknowledgement protocol, because **ULIDs make replay idempotent**: a write that may or may
-not have landed carries the same `(app, tbl, id)` on retry, and row-granularity
-last-write-wins converges to the same row either way. Implementations MUST NOT add a
-dedupe mechanism; doing so indicates a misunderstanding of §4.5.
+acknowledgement protocol, because **ULIDs make replay idempotent at the row**: a write that
+may or may not have landed carries the same `(app, tbl, id)` on retry, and row-granularity
+last-write-wins (§4.5) converges to one row either way — never two. Implementations MUST
+NOT add a dedupe mechanism; doing so indicates a misunderstanding of §4.5.
+
+Whether a write *did* land is decided by reading the log, never by remembering. A queued
+entry carries the Lamport high-water mark the client held when it queued it; before
+replaying, the client reads the row's events past that mark (`spec/data-api.md §1`,
+`/api/events?tbl&id&after`) and drops an entry whose every event is already there — the
+node wrote it and the response was lost — rather than sending it again. That read is the
+whole of the bookkeeping, and it is not remembered either.
+
+What a replay cannot recover is the moment it was made. A browser client is not a device
+(§10.7): it holds no log and stamps nothing, so the node stamps its events as they arrive,
+and a queued edit replayed after another device edited the same row wins by arrival under
+§4.5. A native replica's own log carries its own `lam` and merges by causal order instead.
+An app that needs the causal answer from a browser keeps each edit as a row of its own
+(§4.5, field-level merge).
 
 Reads in offline mode come from whatever the client cached. A client MUST show its offline
 state explicitly and MUST NOT present stale data as current.

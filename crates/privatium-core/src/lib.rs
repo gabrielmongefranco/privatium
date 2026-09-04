@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lib.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-08-31  |  Modified: 2026-09-03
+// Created:  2026-08-31  |  Modified: 2026-09-05
 // Summary:  Crate root. The error type, the M0 linkage probe, `Node::open` — steps 1 to 4
 //           of the bootstrap order in docs/plans/phase-1.md §2.6 — the sink that turns
 //           what a log scan found into sys_audit rows (spec/protocol.md §4.4), and the
@@ -23,11 +23,13 @@ use thiserror::Error;
 pub mod app;
 pub mod backup;
 pub mod config;
+mod durable;
 pub mod http;
 pub mod icons;
 pub mod identity;
 pub mod lint;
 pub mod local;
+pub mod lock;
 pub mod log;
 pub mod lua;
 pub mod store;
@@ -41,11 +43,14 @@ pub use app::{
 pub use config::{Config, LuaConfig, Mode, NodeConfig, Paths};
 pub use http::{AuthLayer, Device, Peer};
 pub use identity::{Identity, NodeId};
+pub use lock::DataLock;
 pub use log::{AppLog, Durability, Op};
-pub use store::{Restored, Schema, Snapshot, SnapshotId, Store, StoreError, Tier};
+pub use store::{Restored, Schema, Snapshot, SnapshotId, SnapshotJob, Store, StoreError, Tier};
 pub use wire::{Body, Handler, Request, Response, url};
 
-use store::{Pruned, RestoreRecord, SnapshotError, SnapshotPolicy, Verification, snapshot};
+use store::{
+    Pruned, RestoreRecord, Retention, SnapshotError, SnapshotPolicy, Verification, snapshot,
+};
 
 /// The protocol this build speaks (`spec/protocol.md §12`).
 ///
@@ -109,6 +114,17 @@ pub enum Error {
     #[error("{path}: log file already exists")]
     LogExists {
         /// The log file.
+        path: PathBuf,
+    },
+
+    /// Another process — or another open in this one — holds the data root
+    /// (`spec/protocol.md §3.1`). Two writers on one log would both mint `seq`.
+    #[error(
+        "{path}: another privatium process has this data directory open; stop it first \
+         (spec/protocol.md §3.1)"
+    )]
+    Locked {
+        /// `local/lock`.
         path: PathBuf,
     },
 
@@ -287,12 +303,17 @@ pub struct Node {
     /// Every loaded app, by slug (`app::App`). Owned here so the node-level snapshot,
     /// restore and maintenance reach every store through one map.
     apps: BTreeMap<String, App>,
+    /// The root's lock (`spec/protocol.md §3.1`). Last, so it is released after every
+    /// log and store above it has closed.
+    lock: DataLock,
 }
 
 impl Node {
     /// Open — or on first run, create — the node rooted at `data_dir`.
     ///
-    /// This is the signature `spec/app-contract.md §2.3` gives embedded mode.
+    /// This is the signature `spec/app-contract.md §2.3` gives embedded mode. It takes
+    /// the root's lock (`spec/protocol.md §3.1`) and holds it until the node is dropped;
+    /// a root another process has open is [`Error::Locked`].
     pub fn open(data_dir: impl Into<PathBuf>) -> Result<Self> {
         Self::open_paths(Paths::rooted(data_dir))
     }
@@ -305,7 +326,21 @@ impl Node {
         Self::open_paths(Paths::resolve(data_dir, config)?)
     }
 
+    /// Open a root whose lock the caller already holds — `privatium restore`, which
+    /// has to keep other processes out from before it copies a backup in until the
+    /// rebuild is done (`spec/cli.md §7`).
+    pub fn open_holding(lock: DataLock) -> Result<Self> {
+        let paths = lock.paths().clone();
+        Self::open_locked(paths, lock)
+    }
+
     fn open_paths(paths: Paths) -> Result<Self> {
+        paths.create_tree()?;
+        let lock = DataLock::acquire(paths.clone())?;
+        Self::open_locked(paths, lock)
+    }
+
+    fn open_locked(paths: Paths, lock: DataLock) -> Result<Self> {
         // 1. The tree, the keypair, and the Node ID derived from it.
         paths.create_tree()?;
         let identity = Identity::load_or_create(&paths.identity_dir())?;
@@ -376,6 +411,7 @@ impl Node {
             store,
             state,
             apps: BTreeMap::new(),
+            lock,
         })
     }
 
@@ -413,12 +449,41 @@ impl Node {
     /// [`snapshot`](Self::snapshot) at a given instant, which is what names the snapshot.
     ///
     /// The store writes it from the log while the app's read-only connections, if any,
-    /// go on reading — no window to open, nothing to reseal.
+    /// go on reading — no window to open, nothing to reseal. Read, written and recorded
+    /// in one call; a caller others are waiting on takes the three steps apart
+    /// ([`snapshot_job`](Self::snapshot_job), [`SnapshotJob::write`],
+    /// [`record_snapshot`](Self::record_snapshot)) and holds its lock for the first and
+    /// the last only.
     pub fn snapshot_at(&mut self, app: &str, now: jiff::Timestamp) -> Result<Snapshot> {
-        let dev = self.identity.id().clone();
-        let snapshot = self.store_for(app)?.snapshot(&dev, now).map_err(boxed)?;
+        let snapshot = self.snapshot_job(app, now)?.write().map_err(boxed)?;
         self.record_snapshot(&snapshot)?;
         Ok(snapshot)
+    }
+
+    /// Read what a snapshot of `app` at `now` will hold, and hand it back as a job that
+    /// writes the files without the node (`Store::snapshot_job`). The reading is a pass
+    /// over the log and belongs under the node's lock, which is what keeps the log
+    /// still; the writing is the slow part and needs no lock at all.
+    pub fn snapshot_job(&self, app: &str, now: jiff::Timestamp) -> Result<SnapshotJob> {
+        let dev = self.identity.id().clone();
+        self.store_for(app)?.snapshot_job(&dev, now).map_err(boxed)
+    }
+
+    /// The snapshot [`maintain`](Self::maintain) would write now under the policy of
+    /// `spec/data-dictionary.md §3.6`, if one is due — as a job, for the same reason as
+    /// [`snapshot_job`](Self::snapshot_job).
+    pub fn snapshot_due(&self, app: &str, now: jiff::Timestamp) -> Result<Option<SnapshotJob>> {
+        let policy = self.snapshot_policy()?;
+        let snap_dir = self.paths.app_snap_dir(app);
+        let newest = snapshot::newest(&snap_dir)
+            .map_err(snap_err)?
+            .and_then(|id| snapshot::read_manifest(&snap_dir.join(id.to_string())).ok());
+        let heads = self.heads_for(app)?;
+        if snapshot::due(newest.as_ref(), &heads, now, &policy).map_err(snap_err)? {
+            Ok(Some(self.snapshot_job(app, now)?))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Append the `sys_snapshot` row (`spec/data-dictionary.md §3.9`) and the
@@ -508,10 +573,31 @@ impl Node {
     /// removed `sys_snapshot` row and auditing `snapshot.pruned`.
     ///
     /// Works from the directory alone, so it does not need the app's store to be open.
+    /// The deleting is `store::snapshot::prune`, which needs nothing of the node; a
+    /// caller others are waiting on runs it with no lock held, between
+    /// [`snapshot_retention`](Self::snapshot_retention) and
+    /// [`record_pruned`](Self::record_pruned).
     pub fn prune_snapshots(&mut self, app: &str, now: jiff::Timestamp) -> Result<Pruned> {
-        let retention = self.snapshot_policy()?.retention();
+        let retention = self.snapshot_retention()?;
         let pruned =
             snapshot::prune(&self.paths.app_snap_dir(app), now, &retention).map_err(snap_err)?;
+        self.record_pruned(app, &pruned, &retention)?;
+        Ok(pruned)
+    }
+
+    /// `§5.4`'s retention as the settings stand, for `store::snapshot::prune`.
+    pub fn snapshot_retention(&self) -> Result<Retention> {
+        Ok(self.snapshot_policy()?.retention())
+    }
+
+    /// Record what a prune removed: a tombstone for each `sys_snapshot` row and a
+    /// `snapshot.pruned` audit row beside it, one batch per snapshot.
+    pub fn record_pruned(
+        &mut self,
+        app: &str,
+        pruned: &Pruned,
+        retention: &Retention,
+    ) -> Result<()> {
         for id in &pruned.removed {
             let id = id.to_string();
             let detail = serde_json::to_string(&serde_json::json!({
@@ -528,7 +614,7 @@ impl Node {
                 )
             })?;
         }
-        Ok(pruned)
+        Ok(())
     }
 
     /// The `snapshot.*` settings of `spec/data-dictionary.md §3.6`, from `sys_setting`,
@@ -548,20 +634,20 @@ impl Node {
     }
 
     /// The scheduled maintenance of `spec/protocol.md §5`: a snapshot if one is due under
-    /// the policy, then retention. The caller owns the timer — M6's server loop weekly,
-    /// M11's `privatium snapshot` on demand.
+    /// the policy, then retention. The caller owns the timer — the run loop daily,
+    /// `privatium snapshot` on demand — and a caller that holds the node's lock while
+    /// requests wait takes the same steps apart ([`snapshot_due`](Self::snapshot_due),
+    /// [`SnapshotJob::write`], [`record_snapshot`](Self::record_snapshot),
+    /// `store::snapshot::prune`, [`record_pruned`](Self::record_pruned)) so that the
+    /// files are written with the lock released.
     pub fn maintain(&mut self, app: &str, now: jiff::Timestamp) -> Result<Maintenance> {
-        let policy = self.snapshot_policy()?;
-        let snap_dir = self.paths.app_snap_dir(app);
-        let newest = snapshot::newest(&snap_dir)
-            .map_err(snap_err)?
-            .and_then(|id| snapshot::read_manifest(&snap_dir.join(id.to_string())).ok());
-        let heads = self.heads_for(app)?;
-        let due = snapshot::due(newest.as_ref(), &heads, now, &policy).map_err(snap_err)?;
-        let snapshot = if due {
-            Some(self.snapshot_at(app, now)?)
-        } else {
-            None
+        let snapshot = match self.snapshot_due(app, now)? {
+            Some(job) => {
+                let snapshot = job.write().map_err(boxed)?;
+                self.record_snapshot(&snapshot)?;
+                Some(snapshot)
+            }
+            None => None,
         };
         let pruned = self.prune_snapshots(app, now)?;
         Ok(Maintenance { snapshot, pruned })
@@ -580,6 +666,12 @@ impl Node {
     #[must_use]
     pub fn paths(&self) -> &Paths {
         &self.paths
+    }
+
+    /// The root's lock, held for this node's lifetime (`spec/protocol.md §3.1`).
+    #[must_use]
+    pub fn lock(&self) -> &DataLock {
+        &self.lock
     }
 
     /// This node's configuration, with defaults filled in.
@@ -800,6 +892,31 @@ fn audit_recovery(sys_log: &mut AppLog, app: &str, recovered: &log::Recovered) -
                 &at,
                 sys::KIND_EVENT_REJECTED,
                 Some(rejected.dev.as_str()),
+                &detail,
+            ),
+        )?;
+    }
+
+    // A batch that reached the disk short (`spec/protocol.md §4.1`): its lines are
+    // skipped by every reader and stay in the file; the owner hears about it once.
+    for short in &recovered.incomplete {
+        let detail = serde_json::to_string(&serde_json::json!({
+            "app": app,
+            "dev": short.dev,
+            "seq": short.seq,
+            "expected": short.expected,
+            "found": short.found,
+            "segment": file_name(&short.segment),
+            "offset": short.offset,
+        }))?;
+        let at = log::now();
+        sys_log.put(
+            sys::AUDIT,
+            &new_ulid(),
+            &sys::AuditRow::warn(
+                &at,
+                sys::KIND_BATCH_INCOMPLETE,
+                Some(short.dev.as_str()),
                 &detail,
             ),
         )?;

@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/snapshot.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-02  |  Modified: 2026-09-03
+// Created:  2026-09-02  |  Modified: 2026-09-05
 // Summary:  spec/protocol.md §5 — the snapshot id and manifest, the three-tier read with
 //           real bytes flipped on disk, when a snapshot does not apply, retention that
 //           never prunes the oldest, verification, the weekly policy, and where the tier
@@ -1069,6 +1069,64 @@ fn test_weekly_snapshot_is_due_by_interval_or_events() {
         node.maintain("hello", now),
         Err(Error::AppNotLoaded { .. })
     ));
+}
+
+/// `spec/protocol.md §5` — a snapshot is read at one moment and may be written at
+/// another: the job taken from the store describes the log as it stood, and what lands
+/// in the log between the reading and the writing — a request served while the node's
+/// lock was released — is neither in its files nor in its marks. The same steps through
+/// the node record the row once written, and a `.part` never survives.
+#[test]
+fn test_spec_5_snapshot_job_describes_the_moment_it_was_read() {
+    let mut fixture = Fixture::open(HELLO_DDL);
+    seed_hello(&fixture);
+    let job = fixture
+        .store
+        .snapshot_job(fixture.node.id(), at("2026-08-30T03:00:00Z"))
+        .unwrap();
+    let id = job.id().clone();
+    assert_eq!(job.slug(), APP);
+    // The log grows while the job is unwritten: `a` is amended, `c` comes and goes.
+    tail_hello(&fixture);
+    fixture.rematerialize();
+    assert_eq!(
+        fixture.cell("profile", "a", "display_name"),
+        "Amended",
+        "the tail is in the tables"
+    );
+
+    let snapshot = job.write().unwrap();
+    assert_eq!(snapshot.id, id);
+    assert_eq!(snapshot.manifest.hi_lam, 3);
+    assert_eq!(snapshot.manifest.hi_seq[&fixture.dev], 3);
+    assert_eq!(snapshot.manifest.tables[0].rows, 1, "a; b was deleted");
+    let csv = fs::read_to_string(snapshot.dir.join("profile.csv")).unwrap();
+    assert!(
+        csv.contains("Gabriel") && !csv.contains("Amended"),
+        "the files describe the moment the job was read: {csv}"
+    );
+    assert!(snapshot.dir.join(snapshot::MANIFEST_FILE).is_file());
+    assert!(
+        !fixture.snap_dir().join(format!("{id}.part")).exists(),
+        "the part directory was renamed away"
+    );
+
+    // Through the node: decide and read, write, record.
+    let now = jiff::Timestamp::now();
+    let job = fixture
+        .node
+        .snapshot_due("_sys", now)
+        .unwrap()
+        .expect("events and no snapshot: due");
+    let written = job.write().unwrap();
+    fixture.node.record_snapshot(&written).unwrap();
+    // The row is an event in `_sys`; the tables see it on the next refresh.
+    fixture.node.refresh().unwrap();
+    assert!(common::sys_row(&fixture.node, "sys_snapshot", &written.id.to_string()).is_some());
+    assert!(
+        fixture.node.snapshot_due("_sys", now).unwrap().is_none(),
+        "nothing due a moment later"
+    );
 }
 
 /// `spec/app-contract.md §7` — a snapshot is written while an app's read-only connection

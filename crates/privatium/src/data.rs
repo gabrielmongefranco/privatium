@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium/src/data.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-04
+// Created:  2026-09-04  |  Modified: 2026-09-05
 // Summary:  `privatium snapshot` and `privatium restore` (spec/cli.md §7). Snapshot writes
 //           the SQLite + CSV + schema.sql set of spec/protocol.md §5 for one app or all of
 //           them, or with --verify recomputes every existing snapshot's checksums and
@@ -13,7 +13,7 @@ use std::path::Path;
 use anyhow::{Context as _, Result, bail};
 use privatium_core::backup::Plan;
 use privatium_core::store::snapshot;
-use privatium_core::{Node, Restored, Tier, sys};
+use privatium_core::{DataLock, Node, Restored, Tier, sys};
 
 use crate::cli::Global;
 use crate::node;
@@ -96,6 +96,11 @@ pub fn snapshot(global: &Global, app: Option<&str>, verify: bool) -> Result<u8> 
 
 pub fn restore(global: &Global, from: &Path, app: Option<&str>, dry_run: bool) -> Result<u8> {
     let paths = node::paths(global)?;
+    // The root's lock, from before the plan reads a log until the rebuild is done — a
+    // node that is running would otherwise append to a file this is about to grow
+    // (`spec/protocol.md §3.1`, `spec/cli.md §7`).
+    paths.create_tree().context("creating the data directory")?;
+    let lock = DataLock::acquire(paths.clone()).context("locking the data directory")?;
     let plan =
         Plan::build(from, &paths, app).with_context(|| format!("reading {}", from.display()))?;
     println!("restore from {}:", plan.from.display());
@@ -128,8 +133,9 @@ pub fn restore(global: &Global, from: &Path, app: Option<&str>, dry_run: bool) -
         plan.apply().context("copying the backup in")?;
     }
 
-    // The rebuild. The node opens after the copy, so the logs it scans are the merged ones.
-    let (mut node, report) = node::open_loaded(global)?;
+    // The rebuild. The node opens after the copy, so the logs it scans are the merged
+    // ones — holding the same lock, so nothing else opened them in between.
+    let (mut node, report) = node::open_loaded_holding(global, lock)?;
     let mut unexpected = false;
     let mut slugs = plan.slugs();
     if let Some(only) = app {

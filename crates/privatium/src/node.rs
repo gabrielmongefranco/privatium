@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium/src/node.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-04
+// Created:  2026-09-04  |  Modified: 2026-09-05
 // Summary:  What every subcommand that touches a node shares: opening it from the two
 //           global flags of spec/cli.md §1, the app roots it loads (the owner's apps/ and,
 //           in a checkout, the repository's reference apps as bundled), the load report
@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{Context as _, Result};
-use privatium_core::{AppRoot, LoadReport, Node, Paths};
+use privatium_core::{AppRoot, DataLock, LoadReport, Node, Paths};
 
 use crate::cli::Global;
 
@@ -58,6 +58,15 @@ pub fn roots(node: &Node) -> Vec<AppRoot> {
 /// Open the node and load its apps, printing the report.
 pub fn open_loaded(global: &Global) -> Result<(Node, LoadReport)> {
     let mut node = open(global)?;
+    let report = node.load_apps(&roots(&node))?;
+    print_report(&report, global.verbose);
+    Ok((node, report))
+}
+
+/// [`open_loaded`] for a caller that already holds the root's lock — `restore`, which
+/// takes it before it copies anything in (`spec/cli.md §7`).
+pub fn open_loaded_holding(global: &Global, lock: DataLock) -> Result<(Node, LoadReport)> {
+    let mut node = Node::open_holding(lock).context("opening the node")?;
     let report = node.load_apps(&roots(&node))?;
     print_report(&report, global.verbose);
     Ok((node, report))

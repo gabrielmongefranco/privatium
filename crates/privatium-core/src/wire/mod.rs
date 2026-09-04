@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/wire/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-05
 // Summary:  core::handle(Request) -> Response (ADR 0003): the one entry point for application
 //           traffic. Bodies are streams in both directions. The router is built from
 //           Node::mounts(); the auth layer runs here so every adapter gets it; the §9.3
@@ -164,6 +164,9 @@ impl Handler {
             Err(never) => match never {},
         };
         headers::secure(&mut response, headers::CSP_DEFAULT);
+        if self.isolated() {
+            headers::isolate(&mut response);
+        }
         response
     }
 
@@ -173,6 +176,17 @@ impl Handler {
 
     fn solo(&self) -> bool {
         self.mode == Mode::Solo
+    }
+
+    /// Whether the solo app has `permissions.cross_origin_isolated`
+    /// (`spec/app-contract.md §5.4`): then every response of the origin carries the two
+    /// headers, the framework's own included, since the app owns the origin. Read under
+    /// the lock each time, because an `app.toml` edit is reloaded on the next request.
+    fn isolated(&self) -> bool {
+        self.solo()
+            && self.lock().mounts().any(|(mount, app)| {
+                mount == "/" && app.manifest().permissions.cross_origin_isolated
+            })
     }
 
     async fn dispatch(&self, request: Request) -> Response {

@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/log.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-01
+// Created:  2026-09-01  |  Modified: 2026-09-05
 // Summary:  The event log against spec/protocol.md §4 — the envelope, gapless `seq`, a
 //           reader that tolerates a gap, the Lamport clock across a restart, §4.4 clock
 //           hygiene, and what a batch can promise on a file that must stay appendable by
@@ -748,14 +748,151 @@ fn test_batch_that_fails_writes_nothing() {
     assert_eq!(session.log.seq(), 2);
 }
 
+/// `spec/protocol.md §4.1` — the first line of a batch of two or more carries
+/// `"batch": n`, before `d`; no other line of the batch, no single event, and no line
+/// appended by hand carries the key at all.
+#[test]
+fn test_spec_4_1_batch_marker_on_the_first_line_only() {
+    let root = tempfile::tempdir().unwrap();
+    let mut session = Session::open(root.path());
+    session
+        .log
+        .put("note", "alone", &serde_json::json!({}))
+        .unwrap();
+    let written = session
+        .log
+        .batch(|batch| {
+            batch.put("node", "a", &serde_json::json!({"text": "wombat"}))?;
+            batch.put("node", "b", &serde_json::json!({"text": "penguin"}))?;
+            batch.del("cursor", "cursor")
+        })
+        .unwrap();
+    session
+        .log
+        .batch(|batch| batch.put("note", "one", &serde_json::json!({})))
+        .unwrap();
+
+    let events = session.events();
+    assert_eq!(events.len(), 5);
+    assert!(events[0].get("batch").is_none(), "{}", events[0]);
+    assert_eq!(events[1]["batch"], 3, "{}", events[1]);
+    assert!(events[2].get("batch").is_none(), "{}", events[2]);
+    assert!(events[3].get("batch").is_none(), "{}", events[3]);
+    assert!(
+        events[4].get("batch").is_none(),
+        "a batch of one is an event: {}",
+        events[4]
+    );
+    // The key stands before `d`, so `d` stays last on the line.
+    let first = std::str::from_utf8(&written[0]).unwrap();
+    assert!(
+        first.find("\"batch\":3").unwrap() < first.find("\"d\":").unwrap(),
+        "{first}"
+    );
+}
+
+/// `spec/protocol.md §4.1`, `spec/lua-api.md §3.3` — a batch that reached the disk with
+/// fewer lines than it announced, cut on a line boundary, is skipped whole by every
+/// reader: nothing of it materializes, the writer continues past it with the next
+/// `seq`, the lines stay in the file, and `sys_audit` says so once. Cut mid-file, after
+/// the writer resumed, it stays skipped and what follows is not.
+#[test]
+fn test_spec_4_1_incomplete_batch_is_skipped_by_replay_and_audited_once() {
+    let root = tempfile::tempdir().unwrap();
+    let ids = [
+        "01K4B0000000000000000000A1",
+        "01K4B0000000000000000000A2",
+        "01K4B0000000000000000000A3",
+    ];
+    let path = {
+        let mut node = Node::open(root.path()).unwrap();
+        node.sys_log_mut()
+            .batch(|batch| {
+                for id in ids {
+                    batch.put("sys_setting", id, &serde_json::json!({"value": "\"x\""}))?;
+                }
+                Ok(())
+            })
+            .unwrap();
+        node.flush().unwrap();
+        node.paths().app_log("_sys", node.id())
+    };
+
+    // The batch is lines 3..=5 (after the two bootstrap rows). Keep the first two of
+    // them whole: a crash that landed two lines of three.
+    let whole = fs::read_to_string(&path).unwrap();
+    let lines: Vec<&str> = whole.lines().collect();
+    assert_eq!(lines.len(), 5);
+    assert!(lines[2].contains("\"batch\":3"), "{}", lines[2]);
+    let kept = format!("{}\n{}\n{}\n{}\n", lines[0], lines[1], lines[2], lines[3]);
+    fs::write(&path, &kept).unwrap();
+
+    let setting = |node: &Node, id: &str| -> Option<String> {
+        node.store()
+            .conn()
+            .query_row("SELECT value FROM sys_setting WHERE id = ?", [id], |row| {
+                row.get(0)
+            })
+            .ok()
+    };
+    let audits = |node: &Node| {
+        sys_events(node)
+            .into_iter()
+            .filter(|e| e["tbl"] == "sys_audit" && e["d"]["kind"] == "batch.incomplete")
+            .count()
+    };
+
+    let mut node = Node::open(root.path()).unwrap();
+    assert!(
+        setting(&node, ids[0]).is_none(),
+        "a line of a short batch materialized"
+    );
+    assert!(setting(&node, ids[1]).is_none());
+    assert_eq!(audits(&node), 1, "{:?}", sys_events(&node));
+    // The lines stay — the file still begins with every byte that was there — and the
+    // writer continues past them.
+    assert!(fs::read_to_string(&path).unwrap().starts_with(&kept));
+    let next = node
+        .sys_log_mut()
+        .put(
+            "sys_setting",
+            "01K4B0000000000000000000B1",
+            &serde_json::json!({"value": "1"}),
+        )
+        .unwrap();
+    assert_eq!(
+        next, 6,
+        "seq 3 and 4 are positions in the file, so the next is past the audit row at 5"
+    );
+    // A raw append to `_sys` is applied on the next refresh, as a request would.
+    node.refresh().unwrap();
+    assert_eq!(
+        setting(&node, "01K4B0000000000000000000B1").as_deref(),
+        Some("1")
+    );
+    node.flush().unwrap();
+    drop(node);
+
+    // Reopened: the short batch is still short (its `ts` is not the audit row's), still
+    // skipped, and not reported again; what came after it is there.
+    let node = Node::open(root.path()).unwrap();
+    assert!(setting(&node, ids[0]).is_none());
+    assert_eq!(
+        setting(&node, "01K4B0000000000000000000B1").as_deref(),
+        Some("1")
+    );
+    assert_eq!(audits(&node), 1);
+}
+
 /// A batch interrupted by a crash is **detectable**, which is the most an append-only,
-/// `echo`-appendable JSONL file can offer.
+/// `echo`-appendable JSONL file can offer for a cut that lands mid-line.
 ///
 /// One `write_all` plus one `fsync` is the ceiling: a length prefix, a checksum footer, or a
 /// temp-file rename would each buy true atomicity, and each would break `AGENTS.md`
-/// invariant 1. What a crash leaves is a byte prefix, which ends mid-line — and a mid-line
-/// tail is reported by byte offset and never repaired. Truncating the file to a byte inside
-/// the last line reproduces that exactly, and deterministically on all three platforms.
+/// invariant 1. A byte prefix that ends mid-line is reported by byte offset and never
+/// repaired; one that ends on a line boundary is the batch marker's case, above.
+/// Truncating the file to a byte inside the last line reproduces the first exactly, and
+/// deterministically on all three platforms.
 #[test]
 fn test_batch_is_atomic_under_kill() {
     let root = tempfile::tempdir().unwrap();

@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/data-dictionary.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-03
+Modified: 2026-09-05
 Summary:  NORMATIVE. System tables, app index, type mappings, and field definitions.
 -->
 
@@ -377,12 +377,16 @@ Security-relevant events. Replicated, so a pairing on the laptop is visible from
 `p2p.direct`, `p2p.relayed`, `discovery.method`,
 `device.revoked`, `key.mismatch`, `app.installed`, `app.enabled`, `app.disabled`,
 `app.load_failed`, `lua.limit_exceeded`, `snapshot.created`, `snapshot.pruned`,
-`restore.tier2`, `restore.tier3`, `clock.skew`, `event.rejected`, `sync.peer_seen`,
-`config.changed`.
+`restore.tier2`, `restore.tier3`, `clock.skew`, `event.rejected`, `batch.incomplete`,
+`sync.peer_seen`, `config.changed`.
 
 `lua.limit_exceeded` (`spec/lua-api.md §5`) is `warn`, its `subject` the app, and its
 `detail` names the route, which limit (`instructions` | `memory` | `seconds`), and what
 was measured.
+
+`batch.incomplete` (`spec/protocol.md §4.1`) is `warn`, its `subject` the device whose
+log holds the batch, and its `detail` names the app, the first line's `seq`, the count
+announced and the count found, the segment and the byte offset. Written once per batch.
 
 `key.mismatch`, `node.admitted`, `cluster.rotated`, and `restore.tier3` MUST be `alert` and MUST surface in the UI, not only in
 the log.

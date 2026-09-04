@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-03
+// Created:  2026-09-01  |  Modified: 2026-09-05
 // Summary:  One app's cache/<slug>.sqlite: the framework's connection that materializes it
 //           from the log or from a snapshot (spec/protocol.md §5.3), the read-only sandboxed
 //           connection app SQL gets (spec/app-contract.md §7), the watermark that notices a
@@ -36,7 +36,7 @@ pub use restore::{Restored, SkipReason, Skipped, Tier};
 pub use schema::{Column, Kind, Schema, Table, View};
 pub use snapshot::{
     LogRetention, Manifest, ManifestTable, Pruned, Retention, Snapshot, SnapshotError, SnapshotId,
-    SnapshotPolicy, TableCheck, Verification,
+    SnapshotJob, SnapshotPolicy, TableCheck, Verification,
 };
 pub use validate::{Violation, validate};
 
