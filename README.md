@@ -27,9 +27,14 @@ framework to get it.
 
 ## Status
 
-**Pre-implementation.** This repository currently contains specifications only.
-No code has been written. The documents here are the contract that the implementation
-must satisfy.
+**Phase 1 in progress.** `docs/roadmap.md` Phase 1 — *a node that works on one machine*
+— is implemented through milestone M12 of [docs/plans/phase-1.md](docs/plans/phase-1.md):
+the event log, materialization into SQLite, snapshots and the three-tier restore, the app
+loader, the Lua host and LSP templates, the data API and `pv.js`, the CLI, and the linter.
+Pairing, discovery and sync are later phases, so the binary calls itself
+`pv/1 (partial: phase 1)` and listens on loopback only. The documents below are the
+contract the code satisfies; where they disagree, the specification wins and the code is
+wrong.
 
 | Document | Purpose |
 |---|---|
@@ -48,18 +53,26 @@ must satisfy.
 | [docs/frameworks.md](docs/frameworks.md) | Which libraries, frameworks and game engines fit, and which do not |
 | [docs/skills.md](docs/skills.md) | How LLM-authored apps get correct, accessible, secure code |
 | [docs/icons.md](docs/icons.md) | Icon system: Bootstrap Icons, inlined server-side |
-| [docs/decisions/](docs/decisions/) | Decision records: Barracuda declined (0001); Rust core, pkarr, peer transport (0002); one core interface behind three transports (0003); Gun, RxDB, libp2p, SharkTrustX and BAS-in-Rust declined (0004); what a phone is in the cluster (0005) |
+| [docs/decisions/](docs/decisions/) | Decision records: Barracuda declined (0001); Rust core, pkarr, peer transport (0002); one core interface behind three transports (0003); Gun, RxDB, libp2p, SharkTrustX and BAS-in-Rust declined (0004); what a phone is in the cluster (0005); SQLite as the query engine (0006) |
+| [docs/plans/phase-1.md](docs/plans/phase-1.md) | The Phase 1 work breakdown, the decisions it made, and the spec defects it found and fixed |
 | [docs/naming.md](docs/naming.md) | Name, taglines, and the rename checklist |
 
 ## Quick Start Guide
 
-*Not yet buildable.* When Phase 1 ships, the quick start will be:
+From a checkout, with a Rust toolchain (`rust-toolchain.toml` pins it):
 
-1. Download the binary for your platform from Releases.
-2. Run it. It prints a LAN URL and a pairing code.
-3. Open the URL on your phone (same WiFi), tap the four emoji shown on the desktop.
-4. Use the bundled `hello` app, or drop an app folder into `~/.local/share/privatium/apps/`.
+1. `cargo build --release` — one binary, `target/release/privatium`, with SQLite and Lua
+   compiled in.
+2. Run it: `privatium`. It prints `http://127.0.0.1:8420/`. Phase 1 listens on loopback
+   only; a LAN URL and a pairing code arrive with Phase 2.
+3. Open the URL. The launcher lists the bundled apps — `hello`, `animals`, `sketch`.
+4. Drop an app folder into `~/.local/share/privatium/apps/` (`%LOCALAPPDATA%\privatium\apps\`
+   on Windows), or start one with `privatium new <slug>` and run `privatium dev --app <slug>`.
 5. To back up, copy the `data/` folder anywhere — Syncthing, a USB stick, Dropbox.
+   `privatium restore --from <the copy>` brings it back.
+
+`privatium --help` lists the rest: `lint`, `snapshot`, `skill`. Binaries for each
+platform arrive with M13.
 
 ## Example Applications
 

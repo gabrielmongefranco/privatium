@@ -167,7 +167,7 @@ If the app needs canvas, WebGL, animation, or a custom interaction model, stop a
 privatium new <slug>            # an empty app; --from hello copies the reference app,
                                 # --scaffold <table> emits CRUD screens for a table
 privatium dev --app <slug>      # runs it; a save is served on the next request, no restart
-                                # (--open opens it in a browser; a LAN QR code arrives with pairing)
+                                # (--open opens it in a browser; Phase 1 listens on loopback only)
 privatium lint apps/<slug>      # exit 3 on findings; --format json to read them back
 privatium lint apps/<slug> --fix   # only url() for a literal mount path and focusable="false"
 ```

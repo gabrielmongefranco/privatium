@@ -1,29 +1,39 @@
 /*
  * Project:  Privatium™  |  File: crates/privatium-core/assets/shell/pv.js
  * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
- * Created:  2026-09-03  |  Modified: 2026-09-03
+ * Created:  2026-09-03  |  Modified: 2026-09-05
  * Summary:  The data API helper of spec/data-api.md §5, served at /static/pv.js. A plain
  *           ES module with no dependencies and no build step: query, sql, get, events,
  *           append, put, del, subscribe, ulid, node, url, online, on. Writes queue in an
- *           outbox keyed by ULID while the node is unreachable and replay exactly as they
- *           were — nothing records what landed and nothing acknowledges, because the ULID
- *           makes a replay converge (spec/protocol.md §10.6). DECIMAL and BIGINT columns
- *           arrive as strings and stay strings.
+ *           outbox while the node is unreachable and replay exactly as they were: an entry
+ *           carries the high-water mark the helper held when it queued it, and before a
+ *           replay the row's events past that mark are read — an entry already in the log
+ *           is dropped, not sent again (spec/protocol.md §10.6). Nothing else is
+ *           remembered and nothing acknowledges. DECIMAL and BIGINT arrive as strings.
  */
 const MOUNT = (() => {
   const m = location.pathname.match(/^\/a\/[a-z][a-z0-9-]{1,30}\//);
   return m ? m[0] : '/';
 })();
-const OUTBOX = 'pv:outbox:' + MOUNT;
+const OUTBOX = 'pv:outbox:' + MOUNT, APP = 'pv:app:' + MOUNT;
 const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
 export class PvOffline extends Error {
   constructor(message) { super(message || 'the node is unreachable'); this.name = 'PvOffline'; }
 }
 
-const state = { online: navigator.onLine !== false, lam: 0, node: null, es: null, delay: 1000 };
+function read(key) { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } }
+function write(key, value) {
+  try { if (value == null) localStorage.removeItem(key); else localStorage.setItem(key, JSON.stringify(value)); }
+  catch { /* no storage: the queue lives for the page */ }
+}
+
+const state = { online: navigator.onLine !== false, lam: 0, node: null, app: read(APP), es: null, delay: 1000 };
 const handlers = {};
 const subscribers = new Set();
+// The outbox: one queue in memory — the truth for this page — mirrored to storage when it can be.
+let queue = read(OUTBOX);
+if (!Array.isArray(queue)) queue = [];
 
 function emit(event, data) {
   for (const fn of handlers[event] || []) { try { fn(data); } catch (e) { console.error(e); } }
@@ -61,28 +71,49 @@ async function call(method, path, body) {
 }
 
 // ---- the outbox: entries keyed by a ULID, replayed as they are -------------------------
-function load() { try { return JSON.parse(localStorage.getItem(OUTBOX)) || []; } catch { return []; } }
-function save(queue) {
-  try { if (queue.length) localStorage.setItem(OUTBOX, JSON.stringify(queue)); else localStorage.removeItem(OUTBOX); }
-  catch { /* no storage: the queue lives for the page */ }
+function persist() { write(OUTBOX, queue.length ? queue : null); }
+function same(a, b) {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const ka = Object.keys(a);
+  return ka.length === Object.keys(b).length && ka.every(k => Object.hasOwn(b, k) && same(a[k], b[k]));
+}
+// Whether every event of the entry is already in the log past the mark it was queued at —
+// read, not remembered (spec/protocol.md §10.6).
+async function landed(entry) {
+  for (const ev of entry.events) {
+    const text = await (await call('GET', 'events' + qs({ tbl: ev.tbl, id: ev.id, after: entry.lam }))).text();
+    const found = text.split('\n').filter(l => l.trim()).map(l => JSON.parse(l))
+      .some(line => line.op === ev.op && (ev.op === 'del' || same(line.d, ev.d)));
+    if (!found) return false;
+  }
+  return true;
 }
 let flushing = null;
 function flush() {
   if (flushing) return flushing;
-  flushing = (async () => {
-    const queue = load();
+  const run = (async () => {
     while (queue.length) {
       const entry = queue[0];
-      try { noteLam((await (await call('POST', 'events', { events: entry.events })).json()).lam); }
-      catch (e) {
-        if (e instanceof PvOffline) break;                       // still unreachable: keep it
-        emit('rejected', { id: entry.id, events: entry.events, error: e }); // refused: nothing to retry
+      try {
+        if (!state.app) await node();                       // which app this origin serves now
+        if (entry.app && entry.app !== state.app) {
+          const err = new Error('queued for app ' + entry.app + '; this origin now serves ' + state.app);
+          err.status = 409; throw err;
+        }
+        if (!(await landed(entry))) noteLam((await (await call('POST', 'events', { events: entry.events })).json()).lam);
+      } catch (e) {
+        // Unreachable, or the node's trouble rather than the entry's: keep it for next time.
+        if (e instanceof PvOffline || e.status >= 500 || e.status === 429 || e.status === 408) break;
+        emit('rejected', { id: entry.id, events: entry.events, error: e });   // refused: nothing to retry
       }
-      queue.shift(); save(queue);
+      queue.shift(); persist();
     }
-    flushing = null;
   })();
-  return flushing;
+  flushing = run;
+  run.finally(() => { if (flushing === run) flushing = null; });
+  return run;
 }
 
 async function append(events) {
@@ -94,12 +125,11 @@ async function append(events) {
     return out;
   });
   const ids = list.map(ev => ev.id);
-  const queue = load();
   if (state.online && !queue.length) {
     try { const out = await (await call('POST', 'events', { events: list })).json(); noteLam(out.lam); return out; }
     catch (e) { if (!(e instanceof PvOffline)) throw e; }
   }
-  queue.push({ id: ulid(), events: list }); save(queue);
+  queue.push({ id: ulid(), lam: state.lam, app: state.app, events: list }); persist();
   if (state.online) flush();
   return { queued: true, appended: 0, ids };
 }
@@ -133,7 +163,10 @@ async function* events(filter) {
   if (buffer.trim()) { const ev = JSON.parse(buffer); noteLam(ev.lam); yield ev; }
 }
 async function node() {
-  if (!state.node) state.node = await (await call('GET', 'node')).json();
+  if (!state.node) {
+    state.node = await (await call('GET', 'node')).json();
+    if (state.node.app) { state.app = state.node.app; write(APP, state.app); }
+  }
   return state.node;
 }
 
@@ -166,7 +199,7 @@ function ulid() {
 
 addEventListener('online', () => setOnline(true));
 addEventListener('offline', () => setOnline(false));
-if (state.online) flush();
+if (state.online) node().catch(() => {}).then(flush);   // learn the app, then replay what waited
 
 export const pv = {
   query, sql, get, events, append, subscribe, ulid, node, url, flush,

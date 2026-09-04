@@ -59,20 +59,26 @@ From `crates/privatium-core/src/lib.rs`. Phase 1 has no discovery, pairing or sy
 ```rust
 pub fn open(data_dir: impl Into<PathBuf>) -> Result<Self>
 pub fn open_with(data_dir: Option<&Path>, config: Option<&Path>) -> Result<Self>
+pub fn open_holding(lock: DataLock) -> Result<Self>
 pub fn flush(&mut self) -> Result<()>
 pub fn refresh(&mut self) -> Result<bool>
 pub fn snapshot(&mut self, app: &str) -> Result<Snapshot>
 pub fn snapshot_at(&mut self, app: &str, now: jiff::Timestamp) -> Result<Snapshot>
+pub fn snapshot_job(&self, app: &str, now: jiff::Timestamp) -> Result<SnapshotJob>
+pub fn snapshot_due(&self, app: &str, now: jiff::Timestamp) -> Result<Option<SnapshotJob>>
 pub fn record_snapshot(&mut self, snapshot: &Snapshot) -> Result<()>
 pub fn restore(&mut self, app: &str) -> Result<Restored>
 pub fn restore_dry_run(&self, app: &str) -> Result<Restored>
 pub fn restore_tier(&self, app: &str) -> Option<Tier>
 pub fn verify_snapshot(&mut self, app: &str, id: &SnapshotId) -> Result<Verification>
 pub fn prune_snapshots(&mut self, app: &str, now: jiff::Timestamp) -> Result<Pruned>
+pub fn snapshot_retention(&self) -> Result<Retention>
+pub fn record_pruned( &mut self, app: &str, pruned: &Pruned, retention: &Retention, ) -> Result<()>
 pub fn snapshot_policy(&self) -> Result<SnapshotPolicy>
 pub fn maintain(&mut self, app: &str, now: jiff::Timestamp) -> Result<Maintenance>
 pub fn auth_layer(&self) -> AuthLayer
 pub fn paths(&self) -> &Paths
+pub fn lock(&self) -> &DataLock
 pub fn config(&self) -> &Config
 pub fn config_mut(&mut self) -> &mut Config
 pub fn identity(&self) -> &Identity

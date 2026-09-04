@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/log/envelope.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-03
+// Created:  2026-09-01  |  Modified: 2026-09-05
 // Summary:  The two halves of spec/protocol.md §4.1 — the struct a writer serializes, and
 //           the much smaller struct a reader deserializes. They are separate types on
 //           purpose: §4.2 makes preservation a property of the bytes, so nothing here ever
@@ -40,6 +40,11 @@ impl Op {
 /// `op` is `del`. The type cannot express "present if and only if `op` is `put`", so that
 /// pairing is enforced at the two construction sites in `writer.rs`, each with a
 /// `debug_assert` naming it.
+///
+/// `batch` is the marker of §4.1's batch rule: the first line of a batch of `n ≥ 2`
+/// events carries `"batch": n`, and no other line carries the key at all — a single
+/// event, a tombstone on its own, and a line appended by hand are batches of one and say
+/// nothing. It stands before `d` so `d` stays last on the line for a person grepping.
 #[derive(Debug, Serialize)]
 pub(crate) struct Envelope<'a, D: Serialize> {
     pub seq: u64,
@@ -50,6 +55,8 @@ pub(crate) struct Envelope<'a, D: Serialize> {
     pub op: Op,
     pub tbl: &'a str,
     pub id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub batch: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub d: Option<&'a D>,
 }
@@ -76,6 +83,9 @@ pub(crate) struct Meta<'a> {
     pub ts: std::borrow::Cow<'a, str>,
     #[serde(borrow)]
     pub dev: std::borrow::Cow<'a, str>,
+    /// The batch marker (`§4.1`), on the first line of a batch of that many events.
+    #[serde(default)]
+    pub batch: Option<u64>,
 }
 
 // AGENTS.md, Style: unwrap() is permitted in tests. The crate-level deny reaches unit
@@ -98,6 +108,7 @@ mod tests {
             op: Op::Put,
             tbl: "profile",
             id: "01J9YQ2W7C8XKF3M0N5RTVB6ZP",
+            batch: None,
             d: Some(&d),
         };
         assert_eq!(
@@ -114,11 +125,37 @@ mod tests {
             op: Op::Del,
             tbl: "profile",
             id: "01J9YQ2W7C8XKF3M0N5RTVB6ZP",
+            batch: None,
             d: None,
         };
         let line = serde_json::to_string(&del).unwrap();
         assert!(!line.contains("\"d\""), "{line}");
         assert!(line.contains("\"op\":\"del\""), "{line}");
+    }
+
+    /// `§4.1`'s batch marker: on the line, between `id` and `d`, and absent when `None`.
+    #[test]
+    fn the_batch_marker_stands_before_d() {
+        let d = serde_json::json!({});
+        let first = Envelope {
+            seq: 1,
+            lam: 1,
+            ts: "2026-08-28T14:03:11.412Z",
+            dev: "k7m2q9xf",
+            app: "hello",
+            op: Op::Put,
+            tbl: "t",
+            id: "x",
+            batch: Some(3),
+            d: Some(&d),
+        };
+        let line = serde_json::to_string(&first).unwrap();
+        assert_eq!(
+            line,
+            r#"{"seq":1,"lam":1,"ts":"2026-08-28T14:03:11.412Z","dev":"k7m2q9xf","app":"hello","op":"put","tbl":"t","id":"x","batch":3,"d":{}}"#
+        );
+        let meta: Meta<'_> = serde_json::from_str(&line).unwrap();
+        assert_eq!(meta.batch, Some(3));
     }
 
     /// `§4.2`. The line below carries a field `pv/1` has never heard of; parsing it must

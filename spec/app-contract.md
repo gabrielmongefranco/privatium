@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/app-contract.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-04
+Modified: 2026-09-05
 Summary:  NORMATIVE. What an app is, the three tiers of app, and the three
           deployment modes. The declarative tier is one option, not the model.
 -->
@@ -237,8 +237,10 @@ it will never mutate a log.
 
 `io`, `os.execute`, `os.getenv`, `debug`, `load`, `dofile`, and `package.loadlib` are
 removed. `require` is confined to the app's `lib/`. Instruction, memory, and wall-clock
-limits are enforced per request. Lua states are pooled, so globals are per-VM and do not
-persist — shared state MUST go through the event log. See `spec/lua-api.md §5`.
+limits are enforced per request. A global assigned while `app.lua` loads is the VM's
+baseline; one assigned in a handler lasts that request and is seen by no other; a
+load-time table mutated from a handler persists per VM and is the footgun the linter
+warns about — shared state MUST go through the event log. See `spec/lua-api.md §5`.
 
 ### 4.7 Scaffolding
 
@@ -338,7 +340,7 @@ await pv.append([
 pv.subscribe(ev => redraw(ev));
 ```
 
-`pv` is a script of under 8 KB, unminified, served by the framework at `/static/pv.js`.
+`pv` is a script of under 10 KB, unminified, served by the framework at `/static/pv.js`.
 It is optional — the endpoints are plain HTTP and you can `fetch` them yourself.
 
 ### 5.3 Storage without SQL
@@ -395,7 +397,11 @@ exists to avoid; the installer says so. Each `remote` entry MUST be an origin �
 
 `cross_origin_isolated` is refused at load in host mode: the headers it needs are
 document-level on one origin and would break every other app on the node
-(`docs/frameworks.md §5.4`). It is honoured only for the solo app.
+(`docs/frameworks.md §5.4`). It is honoured only for the solo app, and honoured in full:
+the node sends `Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp` on every response of the origin
+(`spec/protocol.md §9.3`), so a subresource the app loads from elsewhere needs CORP or
+CORS of its own.
 
 ---
 

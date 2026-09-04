@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lua/lsp.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-05
 // Summary:  LSP templates (spec/lua-api.md §4, docs/plans/phase-1.md M8). The compiler turns
 //           views/<name>.lsp — HTML with <? ?>, <?= ?>, <?raw ?> and <?-- --?> — into a Lua
 //           chunk plus a line map, so a traceback names the .lsp line the author wrote.
@@ -364,13 +364,34 @@ impl CompiledView {
 /// Every view by name — one immutable snapshot, replaced whole on a reload.
 pub type ViewMap = HashMap<String, Arc<CompiledView>>;
 
-/// An app's compiled templates: the current snapshot, and the generation counter that
-/// invalidates the per-VM chunks.
+/// A recompiled generation that is not current yet: what a reload holds while a VM
+/// checks that every chunk parses, and what it publishes only then. A broken edit never
+/// becomes the snapshot a request resolves against — the error page shows in its place
+/// until the next save loads (`spec/cli.md §3`), and what is current stays what last
+/// loaded, unserved but intact.
+#[derive(Debug)]
+pub struct Candidate {
+    views: Arc<ViewMap>,
+    stat: BTreeMap<String, Stat>,
+}
+
+impl Candidate {
+    /// The views this generation would publish.
+    #[must_use]
+    pub fn views(&self) -> &Arc<ViewMap> {
+        &self.views
+    }
+}
+
+/// An app's compiled templates: the current snapshot, the generation counter that
+/// invalidates the per-VM chunks, and the stat of the last edit that failed to load — so
+/// the same broken files are not recompiled on every request, only the next edit.
 #[derive(Debug)]
 pub struct Templates {
     views_dir: PathBuf,
     current: RwLock<Arc<ViewMap>>,
     generation: AtomicU64,
+    failed: RwLock<Option<BTreeMap<String, Stat>>>,
 }
 
 type Stat = (Option<SystemTime>, u64);
@@ -385,6 +406,7 @@ impl Templates {
             views_dir,
             current: RwLock::new(Arc::new(views)),
             generation: AtomicU64::new(1),
+            failed: RwLock::new(None),
         })
     }
 
@@ -401,12 +423,22 @@ impl Templates {
     }
 
     /// Whether a `views/*.lsp` appeared, vanished, or moved by `(mtime, len)` since the
-    /// snapshot was compiled. A stat per file, no reads.
+    /// snapshot was compiled — or since the last edit that failed to load, which is not
+    /// worth compiling again until it changes. A stat per file, no reads.
     #[must_use]
     pub fn changed(&self) -> bool {
         let Ok(on_disk) = scan_views(&self.views_dir) else {
             return true;
         };
+        if self
+            .failed
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .is_some_and(|failed| *failed == on_disk)
+        {
+            return false;
+        }
         let current = self.snapshot();
         on_disk.len() != current.len()
             || on_disk
@@ -414,14 +446,43 @@ impl Templates {
                 .any(|(name, stat)| current.get(name).is_none_or(|v| (v.mtime, v.len) != *stat))
     }
 
-    /// Recompile what changed and publish a new snapshot. Unchanged views keep their
-    /// `Arc` and their generation, so a VM's loaded chunk for them stays valid.
-    pub fn reload(&self) -> Result<(), String> {
+    /// Recompile what changed into a candidate generation, publishing nothing.
+    /// Unchanged views keep their `Arc` and their generation, so a VM's loaded chunk for
+    /// them stays valid. A template that does not compile is the error, and the files as
+    /// they stand are remembered so [`changed`](Self::changed) waits for the next edit.
+    pub fn prepare(&self) -> Result<Candidate, String> {
         let generation = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
         let previous = self.snapshot();
-        let views = compile_dir(&self.views_dir, &previous, generation)?;
-        *self.current.write().unwrap_or_else(PoisonError::into_inner) = Arc::new(views);
-        Ok(())
+        let stat = scan_views(&self.views_dir)?;
+        match compile_dir(&self.views_dir, &previous, generation) {
+            Ok(views) => Ok(Candidate {
+                views: Arc::new(views),
+                stat,
+            }),
+            Err(error) => {
+                self.remember_failure(stat);
+                Err(error)
+            }
+        }
+    }
+
+    /// Make a candidate the snapshot every later request resolves against. Only after
+    /// the caller has proven it loads (`preload`); a candidate that did not is dropped
+    /// and [`remember_failure`](Self::remember_failure) is told.
+    pub fn publish(&self, candidate: Candidate) {
+        *self.current.write().unwrap_or_else(PoisonError::into_inner) = candidate.views;
+        *self.failed.write().unwrap_or_else(PoisonError::into_inner) = None;
+    }
+
+    /// A candidate that compiled but did not load in a VM: keep serving what is current
+    /// — unserved, behind the error page — and do not try these files again until they
+    /// change.
+    pub fn refuse(&self, candidate: Candidate) {
+        self.remember_failure(candidate.stat);
+    }
+
+    fn remember_failure(&self, stat: BTreeMap<String, Stat>) {
+        *self.failed.write().unwrap_or_else(PoisonError::into_inner) = Some(stat);
     }
 
     /// `message` with every generated line of every view rewritten to its `.lsp` line.

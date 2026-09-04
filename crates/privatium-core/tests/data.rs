@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/data.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-05
 // Summary:  The data API against spec/data-api.md and docs/plans/phase-1.md M9, every test
 //           through core::handle with no listener: the client's four fields and nothing
 //           stamped (§2, PV304), batches all or nothing with the offending index, the
@@ -71,7 +71,7 @@ fn handler(root: &tempfile::TempDir) -> Handler {
 
 /// The `meds` app: Tier 2, `FILL_DDL`, SQL permitted.
 fn with_meds(root: &tempfile::TempDir) -> Handler {
-    let apps = Node::open(root.path()).unwrap().paths().apps_dir();
+    let apps = privatium_core::Paths::rooted(root.path()).apps_dir();
     write_app(
         &apps,
         "meds",
@@ -454,7 +454,7 @@ async fn test_spec_4_6_tombstoned_minted_id_refused() {
 #[tokio::test]
 async fn test_api_append_fires_pv_on_append() {
     let root = tempfile::tempdir().unwrap();
-    let apps = Node::open(root.path()).unwrap().paths().apps_dir();
+    let apps = privatium_core::Paths::rooted(root.path()).apps_dir();
     fs::write(
         root.path().join("config.toml"),
         "[lua]\npool_size = 1\nmax_instructions = 5000000\nmax_memory_mb = 16\nmax_seconds = 20\n",
@@ -825,6 +825,82 @@ async fn test_api_events_ndjson_byte_identical_and_row() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
+/// `spec/protocol.md §4.1`, `spec/data-api.md §1`, `§2` — a batch the API appended is
+/// one batch of the log, its first line carrying the count; and a batch that reached the
+/// disk short — the node crashed between the write and the disk, then restarted — is
+/// served by nothing: not `/api/events`, not `/api/row`, not the tables, though its lines
+/// are still in the file.
+#[tokio::test]
+async fn test_spec_4_1_short_batch_is_served_by_nothing() {
+    let root = tempfile::tempdir().unwrap();
+    let ids: Vec<String> = (0..3).map(|_| ulid()).collect();
+    let path = {
+        let before = handler(&root);
+        let events: Vec<Value> = ids.iter().map(|id| stroke(Some(id))).collect();
+        let (status, _) = json_of(
+            before
+                .handle(post_json(
+                    "/a/sketch/api/events",
+                    &json!({ "events": events }),
+                ))
+                .await,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, _) = json_of(
+            before
+                .handle(post_json(
+                    "/a/sketch/api/events",
+                    &json!({ "events": [stroke(Some(&ulid()))] }),
+                ))
+                .await,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        log_path(&before, "sketch")
+    };
+    let disk = fs::read_to_string(&path).unwrap();
+    let lines: Vec<&str> = disk.lines().collect();
+    assert_eq!(lines.len(), 4);
+    assert!(lines[0].contains("\"batch\":3"), "{}", lines[0]);
+    assert!(!lines[1].contains("\"batch\""), "{}", lines[1]);
+    assert!(!lines[3].contains("\"batch\""), "{}", lines[3]);
+    // What `/api/events` serves is the file, batch and all, while the batch is whole.
+    let whole = handler(&root);
+    assert_eq!(
+        body_of(whole.handle(get("/a/sketch/api/events")).await).await,
+        disk
+    );
+    drop(whole);
+
+    // The crash: the third line of the batch never reached the disk.
+    fs::write(&path, format!("{}\n{}\n", lines[0], lines[1])).unwrap();
+    let after = handler(&root);
+    let body = body_of(after.handle(get("/a/sketch/api/events")).await).await;
+    assert_eq!(body, "", "a short batch is not served");
+    let response = after
+        .handle(get(&format!("/a/sketch/api/row/stroke/{}", ids[0])))
+        .await;
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    // The lines stay, and the next append lands past them.
+    assert_eq!(fs::read_to_string(&path).unwrap().lines().count(), 2);
+    let (status, out) = json_of(
+        after
+            .handle(post_json(
+                "/a/sketch/api/events",
+                &json!({ "events": [stroke(Some(&ulid()))] }),
+            ))
+            .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{out}");
+    let on_disk: Vec<Value> = log_lines(&path);
+    assert_eq!(on_disk.len(), 3);
+    assert_eq!(on_disk[2]["seq"], 3);
+    let body = body_of(after.handle(get("/a/sketch/api/events")).await).await;
+    assert_eq!(body.lines().count(), 1, "{body}");
+}
+
 /// `spec/data-api.md §4` — the schema with every declared column, `id` first, and the
 /// views with their placeholders; the node facts with no application data.
 #[tokio::test]
@@ -923,7 +999,7 @@ async fn test_api_sql_rate_limited() {
 #[tokio::test]
 async fn test_sys_views_readable_from_app_sql() {
     let root = tempfile::tempdir().unwrap();
-    let apps = Node::open(root.path()).unwrap().paths().apps_dir();
+    let apps = privatium_core::Paths::rooted(root.path()).apps_dir();
     fs::write(
         root.path().join("config.toml"),
         "[lua]\npool_size = 1\nmax_instructions = 5000000\nmax_memory_mb = 16\nmax_seconds = 20\n",
@@ -1114,7 +1190,7 @@ async fn test_stream_frames_arrive_before_the_handler_finishes() {
 #[tokio::test]
 async fn test_stream_resync_on_schema_change() {
     let root = tempfile::tempdir().unwrap();
-    let apps = Node::open(root.path()).unwrap().paths().apps_dir();
+    let apps = privatium_core::Paths::rooted(root.path()).apps_dir();
     let dir = write_web_app(
         &apps,
         "notes",
@@ -1298,7 +1374,7 @@ async fn test_api_max_streams() {
 #[tokio::test]
 async fn test_api_reserved_beneath_every_mount() {
     let root = tempfile::tempdir().unwrap();
-    let apps = Node::open(root.path()).unwrap().paths().apps_dir();
+    let apps = privatium_core::Paths::rooted(root.path()).apps_dir();
     write_web_app(
         &apps,
         "shadow",

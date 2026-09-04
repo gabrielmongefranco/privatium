@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/identity.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-03
+// Created:  2026-09-01  |  Modified: 2026-09-05
 // Summary:  The node's Ed25519 keypair, the Node ID derived from it, and the CSRF key derived
 //           from it (spec/protocol.md §2.1, docs/plans/phase-1.md §2.2). First run generates
 //           the pair; every run after loads it, and both derivations are pure.
@@ -239,6 +239,11 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
     let mut file = options.open(path).map_err(io_at(path))?;
     file.write_all(bytes).map_err(io_at(path))?;
     file.sync_all().map_err(io_at(path))?;
+    // The key's *name* has to survive a power cut too, or a first run that flushed the
+    // bytes can come back without a key and mint a second identity.
+    if let Some(dir) = path.parent() {
+        crate::durable::sync_dir(dir).map_err(io_at(dir))?;
+    }
     Ok(())
 }
 

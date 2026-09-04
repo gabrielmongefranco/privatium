@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium/tests/cli.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-04
+// Created:  2026-09-04  |  Modified: 2026-09-05
 // Summary:  spec/cli.md against the real binary, section by section: the qualified
 //           --version (§1) and the exit codes; the flags, which are exactly the spec's
 //           synopsis lines (§1–§9, both directions); a node on loopback with --port,
@@ -742,6 +742,40 @@ fn walk(dir: &Path) -> Vec<PathBuf> {
 
 /// `§7` — `snapshot` writes the set of `spec/protocol.md §5`; `--verify` recomputes the
 /// checksums and exits non-zero on a mismatch, writing nothing.
+/// `spec/cli.md §1`, `spec/protocol.md §3.1` — a data directory is one process's at a
+/// time: while a node runs, `snapshot` and `restore` on the same directory are refused
+/// naming the lock, `lint` — which opens no node — is not, and once the node stops the
+/// same command succeeds.
+#[test]
+fn test_spec_cli_1_a_running_node_refuses_a_second_command() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = data_dir(&root);
+    let node = Running::start(&["--data-dir", &dir, "--port", "0"]);
+
+    let (code, _, err) = privatium(root.path(), &["--data-dir", &dir, "snapshot"]);
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("another privatium process"), "{err}");
+    assert!(err.contains("local"), "{err}");
+
+    let (code, _, err) = privatium(
+        root.path(),
+        &["--data-dir", &dir, "restore", "--from", &dir, "--dry-run"],
+    );
+    assert_eq!(code, 1, "{err}");
+    assert!(err.contains("another privatium process"), "{err}");
+
+    let hello = repo().join("apps").join("hello");
+    let (code, _, err) = privatium(
+        root.path(),
+        &["--data-dir", &dir, "lint", hello.to_str().unwrap()],
+    );
+    assert_eq!(code, 0, "lint takes no lock: {err}");
+
+    drop(node);
+    let (code, _, err) = privatium(root.path(), &["--data-dir", &dir, "snapshot"]);
+    assert_eq!(code, 0, "{err}");
+}
+
 #[test]
 fn test_spec_cli_7_snapshot_and_verify() {
     let root = tempfile::tempdir().unwrap();

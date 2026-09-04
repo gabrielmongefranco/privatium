@@ -34,10 +34,11 @@ not instead of.
 
 ## The rule that matters
 
-Every skill ends with `privatium lint apps/<slug>`. **Run it.** Advice you cannot verify is
-advice you should not trust — including this advice. `--format json` gives you each
-finding with the rule, the line, a fix and the spec section to read; `--fix` applies the
-two mechanical corrections and nothing else (`spec/cli.md §5`).
+Every skill verifies with `privatium lint apps/<slug>`. **Run it.** Advice you cannot
+verify is advice you should not trust — including this advice. `--format json` gives you
+each finding with the rule, the line, a fix and the spec section to read; `--fix` applies
+the two mechanical corrections and nothing else (`spec/cli.md §5`). The Tier 3 skill adds
+`cargo test`, since the linter reads app folders and not binaries.
 
 ## The reference files
 

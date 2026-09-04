@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/log/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-01
+// Created:  2026-09-01  |  Modified: 2026-09-05
 // Summary:  The append-only event log (spec/protocol.md §4). This module is the timestamp
 //           printer, the `op` and envelope types, and AppLog — one app's log, which owns
 //           the §4.3 Lamport counter and the single writer §3.1 allows this node.
@@ -16,6 +16,7 @@ use crate::identity::NodeId;
 use crate::local::State;
 use crate::{Result, io_at};
 
+pub(crate) mod batch;
 mod envelope;
 mod lamport;
 mod reader;
@@ -23,7 +24,7 @@ mod writer;
 
 pub use envelope::Op;
 pub use lamport::Lamport;
-pub use reader::{Line, Lines, Malformed, Reader, Recovered, Rejected, Segment, Skew};
+pub use reader::{Incomplete, Line, Lines, Malformed, Reader, Recovered, Rejected, Segment, Skew};
 pub use writer::{Batch, Durability, Writer};
 
 /// RFC 3339 UTC with millisecond precision and a literal `Z` (`spec/protocol.md §4.1`).

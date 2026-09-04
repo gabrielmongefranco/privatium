@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/wire/data.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-05
 // Summary:  The data API of spec/data-api.md beneath an app's mount — the one namespace the
 //           framework reserves there (spec/protocol.md §9.1). Reads run on the sandboxed
 //           connection off the node lock; writes go through Node::append like every other
@@ -31,7 +31,7 @@ use tokio::sync::{broadcast, mpsc};
 
 use crate::app::{Change, StreamEvent};
 use crate::http::{self, Device, headers};
-use crate::log::Reader;
+use crate::log::{Reader, batch};
 use crate::lua::{ColumnType, column_types};
 use crate::store::materialize::quote_ident;
 use crate::store::{Kind, Schema};
@@ -500,47 +500,67 @@ struct Head {
     op: Option<String>,
     tbl: Option<String>,
     id: Option<String>,
+    /// `§4.1`'s batch marker.
+    batch: Option<u64>,
 }
 
-/// Every line of `app`'s log that is an envelope and inside `§4.4`'s horizon, in `§4.5`
-/// order — `(lam, ts, dev, seq)` — which is the order a client resuming from `after=`
-/// needs. Reading only; nothing is re-serialized (`spec/protocol.md §4.2`).
+/// Every line of `app`'s log that is an envelope, inside `§4.4`'s horizon and not part
+/// of a batch that reached the disk short (`§4.1`), in `§4.5` order — `(lam, ts, dev,
+/// seq)` — which is the order a client resuming from `after=` needs. Reading only;
+/// nothing is re-serialized (`spec/protocol.md §4.2`).
 fn read_lines(log_dir: &std::path::Path, app: &str) -> Vec<RawLine> {
     let horizon: Option<jiff::Timestamp> = crate::store::cutoff_now().parse().ok();
     let Ok(reader) = Reader::open(log_dir) else {
         return Vec::new();
     };
     let mut lines = Vec::new();
-    for line in reader.lines() {
-        let Ok(line) = line else {
+    for segment in reader.segments() {
+        let Ok(segment_lines) = segment.lines() else {
             continue;
         };
-        let Ok(head) = serde_json::from_slice::<Head>(line.raw()) else {
-            continue;
-        };
-        if head.app.as_deref() != Some(app) {
-            continue;
+        let parsed: Vec<(Head, Vec<u8>)> = segment_lines
+            .filter_map(Result::ok)
+            .filter_map(|line| {
+                serde_json::from_slice::<Head>(line.raw())
+                    .ok()
+                    .map(|head| (head, line.raw().to_vec()))
+            })
+            .collect();
+        let heads: Vec<batch::Head<'_>> = parsed
+            .iter()
+            .map(|(head, _)| batch::Head {
+                seq: head.seq.unwrap_or(0),
+                ts: head.ts.as_deref(),
+                batch: head.batch,
+            })
+            .collect();
+        let short = batch::incomplete(&heads);
+        for (index, (head, raw)) in parsed.into_iter().enumerate() {
+            if batch::covered(&short, index) || head.app.as_deref() != Some(app) {
+                continue;
+            }
+            let (Some(seq), Some(lam), Some(tbl), Some(id)) =
+                (head.seq, head.lam, head.tbl, head.id)
+            else {
+                continue;
+            };
+            if let (Some(ts), Some(horizon)) = (head.ts.as_deref(), horizon)
+                && let Ok(at) = ts.parse::<jiff::Timestamp>()
+                && at > horizon
+            {
+                continue;
+            }
+            lines.push(RawLine {
+                seq,
+                lam,
+                ts: head.ts,
+                dev: head.dev.unwrap_or_default(),
+                put: head.op.as_deref() == Some("put"),
+                tbl,
+                id,
+                line: raw,
+            });
         }
-        let (Some(seq), Some(lam), Some(tbl), Some(id)) = (head.seq, head.lam, head.tbl, head.id)
-        else {
-            continue;
-        };
-        if let (Some(ts), Some(horizon)) = (head.ts.as_deref(), horizon)
-            && let Ok(at) = ts.parse::<jiff::Timestamp>()
-            && at > horizon
-        {
-            continue;
-        }
-        lines.push(RawLine {
-            seq,
-            lam,
-            ts: head.ts,
-            dev: head.dev.unwrap_or_default(),
-            put: head.op.as_deref() == Some("put"),
-            tbl,
-            id,
-            line: line.raw().to_vec(),
-        });
     }
     lines.sort_by(|a, b| a.rank().cmp(&b.rank()));
     lines
@@ -1232,7 +1252,9 @@ impl Handler {
         )
     }
 
-    /// `GET /api/node` (`spec/data-api.md §4`): no application data.
+    /// `GET /api/node` (`spec/data-api.md §4`): no application data. `app` is the slug
+    /// this API is scoped to — what a page at a solo mount cannot read from its path,
+    /// and what `pv.js` keys its outbox by (`§6`).
     fn api_node(&self, slug: &str, request: &Request) -> Response {
         let node = self.lock();
         if node.app(slug).is_none() {
@@ -1246,6 +1268,7 @@ impl Handler {
                 "id": facts.id,
                 "dev": device,
                 "name": facts.name,
+                "app": slug,
                 "solo": facts.solo,
                 "peers": 0,
                 "restore_tier": facts.restore_tier,

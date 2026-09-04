@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/events.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-05
 // Summary:  The staged log: every sane event of one app, read from data/<slug>/log/*.jsonl
 //           once, and spec/protocol.md §4.5's ranking over it. The materializer, the three
 //           restore tiers and the snapshot writer all work from this one reading, which is
@@ -14,6 +14,7 @@ use std::path::Path;
 use serde::Deserialize;
 use serde_json::value::RawValue;
 
+use crate::log::batch;
 use crate::store::StoreError;
 
 /// `op` (`spec/protocol.md §4.1`).
@@ -63,21 +64,27 @@ struct Line<'a> {
     op: Option<String>,
     tbl: Option<String>,
     id: Option<String>,
+    /// `§4.1`'s batch marker.
+    batch: Option<u64>,
     #[serde(borrow)]
     d: Option<&'a RawValue>,
 }
 
 /// Every sane event of `app` under `log_dir`, in file order.
 ///
-/// **What disqualifies a line.** Two families, two reasons. A line that is not an envelope
-/// — unparseable, or missing `seq`, `lam`, `tbl` or `id` — has no place in a causal ordering
-/// and is skipped; `§4.2`'s unknown *fields* are kept by never being read. And `§4.4`: an
-/// event more than the horizon ahead of this node's clock must not win a row permanently,
-/// so a `ts` past `cutoff` is skipped too — with the same mercy M2's reader grants, that a
-/// `ts` this node cannot parse carries no information and is accepted, because rejecting it
-/// would be gap rejection by another name and `§4.1` forbids a reader that.
+/// **What disqualifies a line.** Three families, three reasons. A line that is not an
+/// envelope — unparseable, or missing `seq`, `lam`, `tbl` or `id` — has no place in a
+/// causal ordering and is skipped; `§4.2`'s unknown *fields* are kept by never being read.
+/// `§4.4`: an event more than the horizon ahead of this node's clock must not win a row
+/// permanently, so a `ts` past `cutoff` is skipped too — with the same mercy M2's reader
+/// grants, that a `ts` this node cannot parse carries no information and is accepted,
+/// because rejecting it would be gap rejection by another name and `§4.1` forbids a
+/// reader that. And `§4.1`'s batch rule: the lines of a batch that reached the disk short
+/// are skipped as one, so a `pv.batch` is every event or none here as well as on the
+/// write path.
 ///
-/// No audit row is written from here. M2's `recover()` reports each rejection once.
+/// No audit row is written from here. M2's `recover()` reports each rejection and each
+/// short batch once.
 pub(crate) fn read_log(log_dir: &Path, app: &str, cutoff: &str) -> Result<Vec<Event>, StoreError> {
     let horizon: Option<jiff::Timestamp> = cutoff.parse().ok();
     let mut segments: Vec<_> = match fs::read_dir(log_dir) {
@@ -100,14 +107,25 @@ pub(crate) fn read_log(log_dir: &Path, app: &str, cutoff: &str) -> Result<Vec<Ev
         let text = fs::read_to_string(&segment).map_err(|error| StoreError::Schema {
             problem: format!("{}: {error}", segment.display()),
         })?;
-        for raw in text.lines() {
-            let raw = raw.trim_end_matches('\r');
-            if raw.trim().is_empty() {
+        let parsed: Vec<Line<'_>> = text
+            .lines()
+            .map(|raw| raw.trim_end_matches('\r'))
+            .filter(|raw| !raw.trim().is_empty())
+            .filter_map(|raw| serde_json::from_str::<Line<'_>>(raw).ok())
+            .collect();
+        let heads: Vec<batch::Head<'_>> = parsed
+            .iter()
+            .map(|line| batch::Head {
+                seq: line.seq.unwrap_or(0),
+                ts: line.ts.as_deref(),
+                batch: line.batch,
+            })
+            .collect();
+        let short = batch::incomplete(&heads);
+        for (index, line) in parsed.into_iter().enumerate() {
+            if batch::covered(&short, index) {
                 continue;
             }
-            let Ok(line) = serde_json::from_str::<Line<'_>>(raw) else {
-                continue;
-            };
             if let Some(event) = sane(line, app, horizon) {
                 events.push(event);
             }
