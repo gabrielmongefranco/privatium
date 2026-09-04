@@ -1,0 +1,14 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV502/pv502bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV502 fail: cross_origin_isolated under a host-mode node.
+
+[app]
+slug    = "pv502bad"
+title   = "Lint PV502"
+version = "1.0.0"
+api     = 1
+tier    = "lua"
+
+[permissions]
+cross_origin_isolated = true  # a threaded WASM build needs SharedArrayBuffer

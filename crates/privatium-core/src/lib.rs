@@ -26,6 +26,7 @@ pub mod config;
 pub mod http;
 pub mod icons;
 pub mod identity;
+pub mod lint;
 pub mod local;
 pub mod log;
 pub mod lua;

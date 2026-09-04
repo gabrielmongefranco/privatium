@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV308/pv308bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV308 fail: SUM() over a DECIMAL and + on a DATE.
+
+[app]
+slug    = "pv308bad"
+title   = "Lint PV308"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

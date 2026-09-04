@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV106/pv106bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV106 fail: the table's id is an INTEGER and not the primary key.
+
+[app]
+slug    = "pv106bad"
+title   = "Lint PV106"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

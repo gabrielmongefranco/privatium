@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV402/pv402bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV402 fail: an input with a placeholder and no label.
+
+[app]
+slug    = "pv402bad"
+title   = "Lint PV402"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

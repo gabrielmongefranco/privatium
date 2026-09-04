@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV302/pv302bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV302 fail: tonumber() on a DECIMAL column.
+
+[app]
+slug    = "pv302bad"
+title   = "Lint PV302"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

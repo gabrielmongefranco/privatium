@@ -1,0 +1,14 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV205/pv205bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV205 fail: a widened permission with no comment.
+
+[app]
+slug    = "pv205bad"
+title   = "Lint PV205"
+version = "1.0.0"
+api     = 1
+tier    = "lua"
+
+[permissions]
+sql = true

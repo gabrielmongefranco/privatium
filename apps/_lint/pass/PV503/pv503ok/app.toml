@@ -1,0 +1,12 @@
+# Project:  Privatium™  |  File: apps/_lint/pass/PV503/pv503ok/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  An icon the vendored set has.
+
+[app]
+slug    = "pv503ok"
+title   = "Lint PV503"
+version = "1.0.0"
+api     = 1
+tier    = "lua"
+icon    = "gear"

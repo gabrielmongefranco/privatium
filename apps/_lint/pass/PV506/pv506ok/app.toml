@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/pass/PV506/pv506ok/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  Routes beneath names the framework does not reserve.
+
+[app]
+slug    = "pv506ok"
+title   = "Lint PV506"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

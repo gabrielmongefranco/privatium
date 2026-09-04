@@ -1,0 +1,8 @@
+/* Project:  Privatium™  |  File: apps/_lint/fail/PV406/pv406bad/static/app.css
+ * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+ * Created:  2026-09-05  |  Modified: 2026-09-05
+ * Summary:  PV406 fail: --fg on --bg is 2.85:1.
+ */
+
+:root { --fg: #999999; --bg: #ffffff; }
+body { color: var(--fg); background: var(--bg); }

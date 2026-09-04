@@ -1,0 +1,10 @@
+# Project:  Privatium™  |  File: apps/_lint/pass/PV502/config.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  The node configuration this fixture is linted under (`privatium lint --config`):
+#           solo mode with pv502ok at /, which is the one place cross_origin_isolated is
+#           honoured (spec/app-contract.md §5.4).
+
+[node]
+mode = "solo"
+app  = "pv502ok"

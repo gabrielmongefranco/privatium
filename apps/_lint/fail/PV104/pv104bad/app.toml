@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV104/pv104bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV104 fail: the slug says other, the folder says pv104bad (spec/app-contract.md §3.1).
+
+[app]
+slug    = "other"
+title   = "Lint PV104"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

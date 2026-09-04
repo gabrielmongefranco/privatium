@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/pass/PV304/pv304ok/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  Events carry op, tbl, id and d only.
+
+[app]
+slug    = "pv304ok"
+title   = "Lint PV304"
+version = "1.0.0"
+api     = 1
+tier    = "web"

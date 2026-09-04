@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV307/pv307bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV307 fail: a global assigned in a handler, a cache mutated from one.
+
+[app]
+slug    = "pv307bad"
+title   = "Lint PV307"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

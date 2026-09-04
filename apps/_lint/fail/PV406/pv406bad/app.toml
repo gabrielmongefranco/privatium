@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV406/pv406bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV406 fail: grey text on white at under 3:1.
+
+[app]
+slug    = "pv406bad"
+title   = "Lint PV406"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

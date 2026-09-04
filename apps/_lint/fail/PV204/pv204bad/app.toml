@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV204/pv204bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV204 fail: a POST form without csrf().
+
+[app]
+slug    = "pv204bad"
+title   = "Lint PV204"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

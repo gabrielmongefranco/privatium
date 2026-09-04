@@ -134,6 +134,19 @@ privatium lint [<path>...] [--format text|json] [--severity error|warn|info] [--
 
 With no path, lints every installed app plus the node configuration.
 
+A `<path>` is an app folder — one holding `app.toml` — a folder of app folders, which is
+searched to three levels so the corpus of `§5.4` is one path, or a file inside an app,
+which lints that app and reports the findings in that file. A path with no app under it
+is one `PV101` finding. Installed apps are the folders the node would mount
+(`spec/app-contract.md §3.1`): the owner's `apps/` and, in a checkout, the repository's.
+"The node configuration" is `config.toml` as `--data-dir` and `--config` name it: its
+mode decides `PV502` and `PV506`, and a configuration that does not load is a runtime
+error, since the node would not start on it either. `--severity` is a floor — `warn` is
+warnings and errors — and the exit code is `3` when anything at or above it remains
+(`§1`), whatever the format. `--format text` is one line per finding, `<file>:<line>:
+<id> <severity>: <message>`, with the fix and the section after it; a count goes to
+standard error.
+
 Advice an assistant can ignore is worth little. The linter is what makes `skills/`
 enforceable, which is why it ships in Phase 1 rather than later (`docs/roadmap.md`).
 
@@ -149,7 +162,7 @@ Rule IDs are stable. Removing or renumbering one is a breaking change to the ski
 | `PV102` | Slug matches `^[a-z][a-z0-9-]{1,30}$` and is not reserved (`spec/protocol.md §1.1`) |
 | `PV103` | `api` does not exceed the framework's supported version |
 | `PV104` | Slug directory name matches `app.slug` |
-| `PV105` | Tier-required files present — `app.lua` for `lua`, `web/index.html` for `web` |
+| `PV105` | Tier-required files present — `app.lua` for `lua`, `web/index.html` for `web` — and every `app.lua`, `lib/*.lua` and `views/*.lsp` parses |
 | `PV106` | Every table in `schema.sql` has `id VARCHAR PRIMARY KEY` |
 | `PV107` | `schema.sql` contains only `CREATE TABLE`, `CREATE VIEW`, `CREATE INDEX` and comments |
 
@@ -159,7 +172,7 @@ Rule IDs are stable. Removing or renumbering one is a breaking change to the ski
 |---|---|---|
 | `PV201` | No string-concatenated SQL — parameters must be bound | error |
 | `PV202` | Every `<?raw ?>` use is reported for review | warn |
-| `PV203` | No banned Lua global — `io`, `os.execute`, `os.getenv`, `debug`, `load`, `dofile`, `package.loadlib` | error |
+| `PV203` | No banned Lua global — `io`, `os.execute`, `os.getenv`, `debug`, `load`, `dofile`, `package.loadlib`, and the rest of `spec/lua-api.md §5`'s closed list | error |
 | `PV204` | Every non-GET form contains `csrf()` | error |
 | `PV205` | Declared `[permissions]` beyond the defaults carry a justifying comment | warn |
 | `PV206` | No `innerHTML` with non-literal data in Tier 2 JavaScript | error |
@@ -176,7 +189,8 @@ Rule IDs are stable. Removing or renumbering one is a breaking change to the ski
 | `PV304` | Client code does not set `seq`, `lam`, `ts`, `dev`, or `app` on an event | error |
 | `PV305` | No outbox dedupe table, transaction ID, or acknowledgement protocol | warn |
 | `PV306` | Multi-event writes that must land together use `pv.batch` | warn |
-| `PV307` | No Lua global assigned at module scope expecting persistence (VMs are pooled) | warn |
+| `PV307` | No global assigned in a handler expecting persistence, and no load-time table mutated from one — a global lives one request, and a VM's baseline is never shared (`spec/lua-api.md §5`) | warn |
+| `PV308` | No `SUM()` over a `DECIMAL` column and no `+` or `-` on a `DATE` column in app SQL — `decimal_sum()` and `date(x, '+30 days')` (`spec/data-dictionary.md §2`) | error |
 
 **Accessibility — `PV4xx`**
 
@@ -190,6 +204,14 @@ Rule IDs are stable. Removing or renumbering one is a breaking change to the ski
 | `PV406` | Declared colour tokens meet 4.5:1 body / 3:1 large and UI | warn |
 | `PV407` | Tabular data uses `<table>` with `<th scope>`, not a grid of divs | warn |
 
+The `PV4xx` rules are the framework's reading of WCAG 2.2 AA (`AGENTS.md`, Accessibility
+target), and this table is the document they enforce: `PV401` is 1.1.1 Non-text Content
+and 4.1.2 Name, Role, Value; `PV402` 1.3.1 Info and Relationships and 3.3.2 Labels or
+Instructions; `PV403` and `PV407` 1.3.1; `PV404` 1.3.1 and 2.4.6 Headings and Labels;
+`PV405` 1.4.1 Use of Color; `PV406` 1.4.3 Contrast (Minimum) and 1.4.11 Non-text Contrast.
+`PV401`'s icon requirements — `aria-hidden` beside text, a label when the icon is the only
+content, `focusable="false"` always — are `docs/icons.md`'s, which is what its findings cite.
+
 **Portability — `PV5xx`**
 
 | ID | Rule | Severity |
@@ -200,6 +222,17 @@ Rule IDs are stable. Removing or renumbering one is a breaking change to the ski
 | `PV504` | No CDN reference — libraries are vendored under `web/vendor/` | error |
 | `PV505` | No absolute filesystem path, and nothing written beside the binary | error |
 | `PV506` | No app route matching a framework prefix — shadowed in solo mode (`spec/protocol.md §9.1`) | warn |
+
+**What the linter reads.** Lua — `app.lua`, `lib/*.lua`, and the code inside a template's
+tags — is judged over a syntax tree, never by pattern-matching the text. A template is
+read through the same front end that compiles it, so a `<? if ?>` is a branch and each
+branch is a state of the page; the HTML between tags is parsed as it would render, with
+`icon()` and `csrf()` standing in for what they emit. `schema.sql` is judged by the
+engine: `PV106` asks the catalog, and `PV107` prepares each statement and classifies it by
+the actions SQLite reports, never by its first word. The SQL literals handed to
+`pv.query`, `pv.query1` and `pv.sql`, and the bodies of `CREATE VIEW`, are tokenized for
+`PV303` and `PV308`. A Tier 2 app's JavaScript is lexed — strings, template literals,
+comments, identifiers — not parsed, which is enough for the rules that read it and no more.
 
 ### 5.2 Output
 
@@ -221,11 +254,25 @@ Applies only unambiguous mechanical corrections — literal mount paths to `url(
 `focusable="false"` on inline icons. It MUST NOT touch SQL, Lua control flow, or anything
 where the intent is inferred. Everything else is reported for a human.
 
+A mount path is rewritten only where the literal is the whole value — a Lua string that
+is exactly the path, an attribute whose value is exactly the path — and only for the
+app's own slug; a path to another app has no mechanical answer. After fixing, the linter
+lints again and reports what remains, so the exit code describes the files as they now
+stand; the files it rewrote are named on standard error.
+
 ### 5.4 In CI
 
 `privatium lint` runs against every app in this repository. The reference apps are the
 linter's test corpus, and a rule without a passing and a failing case in `apps/` is not
 considered implemented.
+
+The cases live under `apps/_lint/pass/<rule>/<slug>/` and `apps/_lint/fail/<rule>/<slug>/`
+— the rule directory holds the app rather than being it, since `PV104` compares the slug
+to the folder name and a rule ID is not a slug. A `pass` app is clean under every rule; a
+`fail` app trips its own. A rule directory may hold a `config.toml`, the node
+configuration the fixture is linted under (`pass/PV502` needs solo mode), which the test
+suite reads and the command line takes as `--config`. The loader never mounts anything
+under `_lint/`: a folder whose name starts with `_` is not an app.
 
 The `PV4xx` rules bind the framework's own pages too — the launcher, the settings pages,
 the error pages, and the page frame a Tier 1 view renders inside — not only apps. Those

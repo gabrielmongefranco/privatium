@@ -53,9 +53,21 @@ jobs:
       - name: Header block on every source file
         run: cargo xtask header-check
 
-      # Warn-only until M12, when the skill reference generator can say what drifted.
-      - name: Spec against skills
-        run: cargo xtask spec-drift
+      # docs/skills.md §7: a change to spec/ that is not reflected in skills/ is an
+      # incomplete change. The reference sections are generated from the crate and the
+      # spec and committed; this fails naming the file that drifted (M12).
+      - name: Skill references against the crate and the spec
+        run: cargo xtask gen-skill-reference --check
+
+      # spec/cli.md §5.2: every lint finding cites a section that exists.
+      - name: Lint rules cite real sections
+        run: cargo xtask lint-spec-refs
+
+      # spec/cli.md §5.4: the reference apps are the linter's corpus and lint clean; the
+      # corpus itself is exercised by the test step above.
+      - name: Reference apps lint clean
+        shell: bash
+        run: cargo run -p privatium --locked -- --data-dir "$RUNNER_TEMP/lint-node" lint apps/hello apps/animals apps/sketch
 
       - name: Release build
         run: cargo build --workspace --release --locked

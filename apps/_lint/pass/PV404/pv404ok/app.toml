@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/pass/PV404/pv404ok/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  One h1 in every state, levels in order, the h1 in the partial htmx swaps.
+
+[app]
+slug    = "pv404ok"
+title   = "Lint PV404"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

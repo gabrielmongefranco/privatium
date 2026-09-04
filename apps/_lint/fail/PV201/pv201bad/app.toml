@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV201/pv201bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV201 fail: SQL built by concatenation.
+
+[app]
+slug    = "pv201bad"
+title   = "Lint PV201"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

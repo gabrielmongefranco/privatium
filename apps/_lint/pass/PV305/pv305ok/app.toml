@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/pass/PV305/pv305ok/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  No bookkeeping around the outbox.
+
+[app]
+slug    = "pv305ok"
+title   = "Lint PV305"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

@@ -97,7 +97,7 @@ const FRAMEWORK_MODULES: [&str; 1] = ["privatium"];
 /// What `os` loses. `spec/lua-api.md §5`'s six, plus `setlocale`, which is process-wide
 /// state: one app calling it would change how every other app — and the node — formats a
 /// number.
-const OS_REMOVED: [&str; 7] = [
+pub const OS_REMOVED: [&str; 7] = [
     "execute",
     "exit",
     "getenv",
@@ -108,7 +108,7 @@ const OS_REMOVED: [&str; 7] = [
 ];
 
 /// The globals that load code from data.
-const GLOBALS_REMOVED: [&str; 4] = ["load", "loadstring", "dofile", "loadfile"];
+pub const GLOBALS_REMOVED: [&str; 4] = ["load", "loadstring", "dofile", "loadfile"];
 
 /// A fresh state with the sandbox applied and the memory limit set. No app code has run.
 pub(crate) fn new_state(config: &LuaConfig) -> mlua::Result<Lua> {

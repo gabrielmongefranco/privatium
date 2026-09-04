@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV306/pv306bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV306 fail: two appends that could land apart.
+
+[app]
+slug    = "pv306bad"
+title   = "Lint PV306"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

@@ -138,6 +138,124 @@ pub fn rewrite(sql: &str) -> String {
     out
 }
 
+/// One statement of a `schema.sql`, for the linter's `PV107` (`spec/cli.md §5.1`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Statement {
+    /// 1-based line the statement's first token is on.
+    pub line: u32,
+    /// The statement's text, the terminating `;` excluded, comments inside kept.
+    pub sql: String,
+}
+
+/// Split `sql` at every `;` outside a string, a quoted identifier or a comment. A piece
+/// that is only whitespace and comments is not a statement — that is what "and comments"
+/// means in `PV107` — so the file's leading commentary yields nothing.
+#[must_use]
+pub fn split_statements(sql: &str) -> Vec<Statement> {
+    let bytes = sql.as_bytes();
+    let mut statements = Vec::new();
+    let mut i = 0;
+    let mut line = 1u32;
+    // The current statement: where its first non-trivia byte is, and the line it is on.
+    let mut start: Option<(usize, u32)> = None;
+    // A trigger body runs from BEGIN to its END and holds `;` of its own; CASE … END
+    // inside it nests.
+    let mut trigger_pending = false;
+    let mut trigger_depth = 0u32;
+    let finish = |statements: &mut Vec<Statement>, start: Option<(usize, u32)>, end: usize| {
+        if let Some((from, at)) = start {
+            let text = sql[from..end].trim_end();
+            if !text.is_empty() {
+                statements.push(Statement {
+                    line: at,
+                    sql: text.to_owned(),
+                });
+            }
+        }
+    };
+    while i < bytes.len() {
+        let b = bytes[i];
+        let skip = |from: usize, to: usize| -> u32 {
+            sql[from..to].bytes().filter(|c| *c == b'\n').count() as u32
+        };
+        if b == b'-' && bytes.get(i + 1) == Some(&b'-') {
+            let end = sql[i..].find('\n').map_or(bytes.len(), |at| i + at);
+            i = end;
+            continue;
+        }
+        if b == b'/' && bytes.get(i + 1) == Some(&b'*') {
+            let end = sql[i + 2..]
+                .find("*/")
+                .map_or(bytes.len(), |at| i + 2 + at + 2);
+            line += skip(i, end);
+            i = end;
+            continue;
+        }
+        if b == b'\n' {
+            line += 1;
+            i += 1;
+            continue;
+        }
+        if b.is_ascii_whitespace() {
+            i += 1;
+            continue;
+        }
+        if b == b';' && trigger_depth == 0 {
+            finish(&mut statements, start, i);
+            start = None;
+            trigger_pending = false;
+            i += 1;
+            continue;
+        }
+        if start.is_none() {
+            start = Some((i, line));
+        }
+        if b.is_ascii_alphabetic() || b == b'_' {
+            let mut end = i;
+            while end < bytes.len() && (bytes[end].is_ascii_alphanumeric() || bytes[end] == b'_') {
+                end += 1;
+            }
+            let word = sql[i..end].to_ascii_uppercase();
+            match word.as_str() {
+                "TRIGGER" => trigger_pending = true,
+                "BEGIN" if trigger_pending && trigger_depth == 0 => trigger_depth = 1,
+                "CASE" if trigger_depth > 0 => trigger_depth += 1,
+                "END" if trigger_depth > 0 => trigger_depth -= 1,
+                _ => {}
+            }
+            i = end;
+            continue;
+        }
+        if b == b'\'' || b == b'"' || b == b'`' {
+            i += 1;
+            while i < bytes.len() {
+                if bytes[i] == b'\n' {
+                    line += 1;
+                }
+                if bytes[i] == b {
+                    if bytes.get(i + 1) == Some(&b) {
+                        i += 2;
+                        continue;
+                    }
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+            continue;
+        }
+        if b == b'[' {
+            let end = sql[i..].find(']').map_or(bytes.len(), |at| i + at + 1);
+            line += skip(i, end);
+            i = end;
+            continue;
+        }
+        i += 1;
+    }
+    finish(&mut statements, start, bytes.len());
+    statements
+}
+
 /// The placeholder names a rewritten statement reads — every `pv_param('name')` in it, in
 /// order of first appearance.
 #[must_use]

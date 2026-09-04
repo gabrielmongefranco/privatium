@@ -222,6 +222,12 @@ singleton itself with a constant the way `apps/animals` keys its `cursor` row
 Changing `schema.sql` rematerializes from the logs. Safe at any time, loses nothing; new
 columns are NULL for old events.
 
+`schema.sql` is declarations: `CREATE TABLE`, `CREATE VIEW`, `CREATE INDEX` and comments.
+Nothing in it writes a row, drops or alters an object, opens a transaction or sets a
+pragma — rows arrive by append, and the linter refuses the rest (`spec/cli.md §5.1`,
+`PV107`), judging each statement by the actions the engine reports for it rather than by
+its first word.
+
 `migrations/` is **reserved and not implemented in `pv/1`** (`spec/data-dictionary.md §3.11`).
 It would be needed only when the *meaning* of stored data changes — a unit conversion, a
 re-encoding — and no such case exists yet. A migration will transform events at replay time;
@@ -357,6 +363,11 @@ own path — external `.js` files work, inline `<script>` does not.
 **Inline event handler attributes are script too.** `onclick`, `onsubmit`, and their
 relatives are blocked by the same default. This is the most common way an otherwise correct
 app fails silently: nothing errors, the handler simply never runs.
+
+**Markup built from data is the injection the policy cannot see.** `innerHTML`,
+`outerHTML` and `insertAdjacentHTML` take a literal or nothing; a value goes through
+`textContent`, or `createElement` and `append` (`spec/cli.md §5.1`, `PV206`). The CSP
+stops a script from running, not a string from becoming an element.
 
 **Reactive micro-frameworks usually need a CSP-specific build.** Alpine is the common case:
 its standard build compiles attribute expressions with the `Function` constructor and

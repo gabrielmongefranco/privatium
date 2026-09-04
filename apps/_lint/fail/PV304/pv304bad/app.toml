@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV304/pv304bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV304 fail: the client sets seq and ts.
+
+[app]
+slug    = "pv304bad"
+title   = "Lint PV304"
+version = "1.0.0"
+api     = 1
+tier    = "web"

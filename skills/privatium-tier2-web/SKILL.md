@@ -125,7 +125,9 @@ Full matrix with reasoning: `docs/frameworks.md`.
 ```bash
 privatium new <slug> --tier web   # app.toml, web/index.html, web/app.js importing pv.js
 privatium dev --app <slug>        # static files are served fresh; no restart, no build
-privatium lint apps/<slug>
+privatium lint apps/<slug>        # index.html is held to PV401–PV407 as a whole document
 ```
 
-Spec: `spec/data-api.md`.
+Spec: `spec/data-api.md`; `reference/pv-js.md` here lists what `pv.js` exports at this
+version, `reference/endpoints.md` the API, `reference/anti-patterns.md` every Tier 2 rule
+failing and passing.

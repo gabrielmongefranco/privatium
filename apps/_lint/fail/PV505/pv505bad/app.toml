@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV505/pv505bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV505 fail: an absolute path into the owner's home.
+
+[app]
+slug    = "pv505bad"
+title   = "Lint PV505"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

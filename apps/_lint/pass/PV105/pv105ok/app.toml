@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/pass/PV105/pv105ok/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  tier = lua, and app.lua is here.
+
+[app]
+slug    = "pv105ok"
+title   = "Lint PV105"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

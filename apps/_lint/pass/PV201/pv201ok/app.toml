@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/pass/PV201/pv201ok/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  SQL with a bound parameter.
+
+[app]
+slug    = "pv201ok"
+title   = "Lint PV201"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

@@ -113,6 +113,10 @@ fn scanned(path: &str) -> bool {
         )
         && !path.contains("/vendor/")
         && !path.ends_with(".min.js")
+        // The linter's corpus names a missing icon on purpose (`fail/PV503`), and the
+        // generated anti-patterns reference quotes it.
+        && !path.starts_with("apps/_lint/")
+        && !path.contains("/reference/anti-patterns.md")
 }
 
 /// Every name that the set lacks, as a finding naming the file and line.

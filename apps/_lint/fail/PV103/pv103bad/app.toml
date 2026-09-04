@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV103/pv103bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV103 fail: api = 2 exceeds what a pv/1 node implements (spec/protocol.md §12).
+
+[app]
+slug    = "pv103bad"
+title   = "Lint PV103"
+version = "1.0.0"
+api     = 2
+tier    = "lua"

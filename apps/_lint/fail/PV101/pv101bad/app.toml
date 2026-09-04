@@ -1,0 +1,9 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV101/pv101bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV101 fail: version and api are missing, so the manifest does not carry what §3 requires.
+
+[app]
+slug  = "pv101bad"
+title = "Lint PV101"
+tier  = "lua"

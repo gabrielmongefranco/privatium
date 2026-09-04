@@ -29,6 +29,35 @@ const TX_KEY: &str = "pv.tx";
 /// The field that marks a table returned by a handler as a response, and its kinds.
 pub(crate) const RESPONSE_FIELD: &str = "pv_response";
 
+/// The module's surface — every `pv.<name>` [`install`] registers, with the section of
+/// `spec/lua-api.md` that specifies it. What `cargo xtask gen-skill-reference` writes
+/// into `skills/privatium-tier1-lua/reference/pv-api.md`, and what a unit test holds
+/// `install` to, so the reference cannot name a function the host lacks.
+pub const SURFACE: &[(&str, &str)] = &[
+    ("get", "3.1"),
+    ("post", "3.1"),
+    ("route", "3.1"),
+    ("render", "3.1"),
+    ("redirect", "3.1"),
+    ("json", "3.1"),
+    ("text", "3.1"),
+    ("query", "3.2"),
+    ("query1", "3.2"),
+    ("get_row", "3.2"),
+    ("dec", "3.2"),
+    ("append", "3.3"),
+    ("delete", "3.3"),
+    ("batch", "3.3"),
+    ("ulid", "3.4"),
+    ("now", "3.4"),
+    ("device", "3.4"),
+    ("node", "3.4"),
+    ("setting", "3.4"),
+    ("log", "3.4"),
+    ("on", "3.4"),
+    ("url", "4.0"),
+];
+
 /// Build the module, register it for `require 'privatium'`, and return it.
 pub(crate) fn install(lua: &Lua) -> mlua::Result<Table> {
     lua.set_named_registry_value(ROUTES_KEY, lua.create_table()?)?;
@@ -507,4 +536,28 @@ fn text(lua: &Lua, body: mlua::LuaString) -> mlua::Result<Table> {
     let table = response(lua, "text")?;
     table.raw_set("body", body)?;
     Ok(table)
+}
+
+// AGENTS.md, Style: unwrap() is permitted in tests. The crate-level deny reaches unit
+// tests inside src/, so each one opts out where it is declared.
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `SURFACE` is what the reference generator writes; `install` is what apps get. The
+    /// two are one list.
+    #[test]
+    fn the_surface_is_what_install_registers() {
+        let lua = sandbox::new_state(&crate::config::LuaConfig::default()).unwrap();
+        let pv = install(&lua).unwrap();
+        let mut registered: Vec<String> = pv
+            .pairs::<String, Value>()
+            .map(|pair| pair.unwrap().0)
+            .collect();
+        registered.sort();
+        let mut listed: Vec<String> = SURFACE.iter().map(|(name, _)| (*name).to_owned()).collect();
+        listed.sort();
+        assert_eq!(registered, listed);
+    }
 }

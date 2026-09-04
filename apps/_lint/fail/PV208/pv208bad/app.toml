@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV208/pv208bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV208 fail: a password in the sample data.
+
+[app]
+slug    = "pv208bad"
+title   = "Lint PV208"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

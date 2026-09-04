@@ -1,0 +1,14 @@
+# Project:  Privatium™  |  File: apps/_lint/pass/PV205/pv205ok/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  A widened permission with the comment that justifies it.
+
+[app]
+slug    = "pv205ok"
+title   = "Lint PV205"
+version = "1.0.0"
+api     = 1
+tier    = "lua"
+
+[permissions]
+sql = true  # the settings page offers an ad-hoc query box

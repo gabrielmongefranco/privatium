@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/pass/PV403/pv403ok/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  Checkboxes in a fieldset with a legend.
+
+[app]
+slug    = "pv403ok"
+title   = "Lint PV403"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

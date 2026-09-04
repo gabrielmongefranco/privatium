@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/pass/PV204/pv204ok/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  A POST form with csrf().
+
+[app]
+slug    = "pv204ok"
+title   = "Lint PV204"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

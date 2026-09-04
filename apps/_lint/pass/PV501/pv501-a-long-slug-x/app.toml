@@ -1,0 +1,14 @@
+# Project:  Privatium™  |  File: apps/_lint/pass/PV501/pv501-a-long-slug-x/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  A long slug that does not advertise.
+
+[app]
+slug    = "pv501-a-long-slug-x"
+title   = "Lint PV501"
+version = "1.0.0"
+api     = 1
+tier    = "lua"
+
+[nav]
+advertise = false

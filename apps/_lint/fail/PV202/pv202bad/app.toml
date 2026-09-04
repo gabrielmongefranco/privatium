@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV202/pv202bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV202 fail: a raw tag.
+
+[app]
+slug    = "pv202bad"
+title   = "Lint PV202"
+version = "1.0.0"
+api     = 1
+tier    = "lua"
