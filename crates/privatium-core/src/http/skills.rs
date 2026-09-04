@@ -40,6 +40,17 @@ pub fn skill(name: &str) -> Option<&'static str> {
         .and_then(|file| file.contents_utf8())
 }
 
+/// Every file under `skills/` at its repository-relative, slash-separated path, sorted —
+/// what `privatium skill export` writes to disk (`spec/cli.md §6`) and what the bundle
+/// below holds.
+#[must_use]
+pub fn files() -> Vec<(String, &'static [u8])> {
+    let mut entries: Vec<(String, &[u8])> = Vec::new();
+    collect(&SKILLS, &mut entries);
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    entries
+}
+
 /// `/skills/bundle.zip`: every file under `skills/` — `README.md`, each skill's `SKILL.md`
 /// and its `reference/` — at its repository-relative path, so extracting the archive in
 /// place reproduces the `skills/` tree the running version shipped (`spec/cli.md §6`).
@@ -48,12 +59,7 @@ pub fn skill(name: &str) -> Option<&'static str> {
 /// timestamp rather than the moment of the request.
 #[must_use]
 pub fn bundle() -> &'static [u8] {
-    static BUNDLE: LazyLock<Vec<u8>> = LazyLock::new(|| {
-        let mut entries: Vec<(String, &[u8])> = Vec::new();
-        collect(&SKILLS, &mut entries);
-        entries.sort_by(|a, b| a.0.cmp(&b.0));
-        zip::stored(&entries)
-    });
+    static BUNDLE: LazyLock<Vec<u8>> = LazyLock::new(|| zip::stored(&files()));
     BUNDLE.as_slice()
 }
 

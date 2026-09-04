@@ -123,6 +123,8 @@ Full matrix with reasoning: `docs/frameworks.md`.
 ## Verify
 
 ```bash
+privatium new <slug> --tier web   # app.toml, web/index.html, web/app.js importing pv.js
+privatium dev --app <slug>        # static files are served fresh; no restart, no build
 privatium lint apps/<slug>
 ```
 

@@ -1,6 +1,6 @@
 # Project:  Privatium™  |  File: .github/workflows/ci.yml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-08-31  |  Modified: 2026-09-03
+# Created:  2026-08-31  |  Modified: 2026-09-04
 # Summary:  The gate. Three platforms, because "runs on Linux, Windows and macOS from a
 #           single binary" is a Phase 1 acceptance bullet and finding out at M13 that the
 #           bundled SQLite build never worked on one of them would be too late.
@@ -53,21 +53,23 @@ jobs:
       - name: Header block on every source file
         run: cargo xtask header-check
 
-      # Warn-only until M13, when the skill reference generator can say what drifted.
+      # Warn-only until M12, when the skill reference generator can say what drifted.
       - name: Spec against skills
         run: cargo xtask spec-drift
 
       - name: Release build
         run: cargo build --workspace --release --locked
 
-      # Risk R1: both engines are C compiled from source. Running the artefact proves they
-      # really linked; printing its size is the number later milestones diff against.
+      # Risk R1: both engines are C compiled from source. Running the artefact proves it
+      # links and starts; printing its size is the number later milestones diff against.
+      # `--version` since M11 — bare `privatium` runs a node and would wait here forever.
       - name: Linked engines and binary size
         shell: bash
         run: |
           binary="target/release/privatium"
           [ "${{ matrix.os }}" = "windows-latest" ] && binary="target/release/privatium.exe"
-          "$binary"
+          "$binary" --version
+          "$binary" skill list
           # Bytes first and always. MB/MiB differ by 5% and by tool, and M6 and M13 diff
           # against this number.
           echo "binary size: $(wc -c < "$binary") bytes ($binary)"

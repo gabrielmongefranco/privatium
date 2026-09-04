@@ -1,9 +1,9 @@
 // Project:  Privatium™  |  File: crates/xtask/src/spec_drift.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-08-31  |  Modified: 2026-09-03
+// Created:  2026-08-31  |  Modified: 2026-09-04
 // Summary:  `cargo xtask spec-drift`. docs/skills.md §7 makes a change to spec/ that is
 //           not reflected in skills/ an incomplete change. Until the generator exists in
-//           M13 there is nothing to diff, so this records what spec/ looked like when
+//           M12 there is nothing to diff, so this records what spec/ looked like when
 //           skills/ was last reconciled and warns when that stops being true.
 
 use std::collections::BTreeMap;
@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 /// node serves at `/skills/<name>.md`, and not shipped in the binary either.
 const MANIFEST: &str = "crates/xtask/spec-hashes.toml";
 
-/// M0 warns; docs/plans/phase-1.md §8 (R8) promotes this to an error in M13, when
+/// M0 warns; docs/plans/phase-1.md §8 (R8) promotes this to an error in M12, when
 /// `xtask gen-skill-reference` can say what actually drifted rather than only that
 /// something did. Flipping this constant is the promotion.
 const FAIL_ON_DRIFT: bool = false;

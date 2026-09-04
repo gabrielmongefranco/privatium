@@ -80,8 +80,11 @@ Never propose shipping a native Lua interpreter that downloads and executes an a
 ## Verify
 
 ```bash
+privatium new <slug> [--tier lua|web|rust] [--from hello] [--scaffold <table>]
+privatium dev --app <slug>
 privatium lint apps/<slug>
 privatium lint apps/<slug> --format json
+privatium skill export          # these skills, matching the running version (spec/cli.md §6)
 ```
 
 Generate, lint, fix, repeat. Do not present an app as finished until the linter is clean.

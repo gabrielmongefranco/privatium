@@ -64,6 +64,11 @@ because Privatium keeps nothing important in a database file.
 It rebuilds everything — database, snapshots, views — from the text files. Depending on
 history size this takes seconds.
 
+`privatium restore --from <the backup>` does steps 3 and 5 in one go and tells you which
+of the three tiers below it read from. Add `--dry-run` to see what it would copy first.
+It never overwrites a log file it cannot reconcile with the one already there
+(`spec/cli.md §7`).
+
 ### From a partial backup
 
 The system reads in three tiers, and tells you which one it used:
