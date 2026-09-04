@@ -392,8 +392,8 @@ Scaffolding only. No behaviour.
 - `xtask header-check`: every source file carries the standard header block (`AGENTS.md`,
   Style). Fails CI.
 - `xtask spec-drift`: warns when `spec/` has changed since `skills/` was last reconciled
-  (R8). A hash manifest, not a diff — the generator that could diff is M13, and this is
-  replaced by it there.
+  (R8). A hash manifest, not a diff — the generator that could diff is M12 (it was M13
+  until M11 moved it), and this is replaced by it there.
 - CI matrix: Linux, macOS, Windows. `fmt`, `clippy -D warnings`, `test`.
 - Lint config denying `clippy::unwrap_used` and `clippy::expect_used` in
   `privatium-core`, allowed in `tests/` and in `main()` startup only.
@@ -923,10 +923,23 @@ Ships in Phase 1 because it is what makes `skills/` enforceable rather than advi
   `focusable="false"`. Never SQL, never Lua control flow.
 - Fixture corpus at `apps/_lint/{pass,fail}/<rule>/`, one of each per rule, and a
   meta-test that **fails if a rule has no fixture pair**.
+- `xtask gen-skill-reference`: generate `skills/*/reference/*.md` from the crate and the
+  spec, and fail CI on drift, per `docs/skills.md §7`. *Moved here from M13 after M11:*
+  the linter is the milestone that reads every app file with a rule attached, so it is the
+  one that will edit `spec/` and `skills/` most, and a drift check that can say *what*
+  drifted is worth more during that work than after it. Every spec edit made in M3, M5,
+  M6, M7, M9, M10, M11 and M12 itself must be reflected in the generated reference or this
+  fails, which is the intent. It replaces M0's `xtask spec-drift` hash manifest (R8), and
+  `FAIL_ON_DRIFT` in `crates/xtask/src/spec_drift.rs` flips to true in the same change —
+  or the file goes, if the generator's own check covers it. `docs/skills.md §7` names the
+  Tier 1 and Tier 2 reference sections as the generated ones; the generator decides what
+  the others hold and says so in `skills/README.md`.
 
 **Tests:** `test_lint_rule_<id>_passes` and `test_lint_rule_<id>_fails` generated over the
 corpus; `test_every_rule_has_fixtures`; `test_reference_apps_lint_clean`;
-`test_every_finding_has_resolvable_spec_ref`.
+`test_every_finding_has_resolvable_spec_ref`; and `cargo xtask gen-skill-reference
+--check` as a CI step that fails when the committed `skills/*/reference/` differs from
+what the generator writes.
 
 **Roadmap items satisfied:** the three lint bullets.
 
@@ -942,9 +955,9 @@ corpus; `test_every_rule_has_fixtures`; `test_reference_apps_lint_clean`;
   `Ok` is a lie an embedder will build on.
 - Single binary per platform, Linux/macOS/Windows, from CI. No installers — that is
   Phase 6.
-- `xtask gen-skill-reference`: generate `skills/*/reference/*.md` from the crate and the
-  spec; CI fails on drift, per `docs/skills.md §7`. Every spec edit made in M3, M5, M6, M7,
-  M9, M10, and M12 must be reflected there or this fails, which is the intent.
+- *`xtask gen-skill-reference` was here and is M12's now, so the drift check exists while
+  the linter edits the spec rather than after. M13 runs it like any other gate and adds
+  nothing to it.*
 - Fresh-clone check: `cargo build && ./privatium` on a clean machine produces a working
   `hello` at `http://127.0.0.1:8420`.
 
@@ -1024,10 +1037,13 @@ the lifecycle carve-out in M5 exist partly to make the boundary physical.
 **R8 — Spec edits outrunning `skills/`.** §3 already changed nine spec sections, and
 `docs/skills.md §7` makes an unreflected spec change an incomplete change. More will follow
 once code meets contract. The CI drift check was scheduled for M13, which is too late to be
-useful — add it in M0 as a warning and promote it to an error in M13. In M0 it cannot be
-a diff: `skills/*/reference/` holds placeholders and the generator is M13. What it can be,
-and is, is a recorded SHA-256 per `spec/` document that warns when one changes; M13
-replaces it with the real thing.
+useful — add it in M0 as a warning and promote it to an error when the generator lands.
+In M0 it cannot be a diff: `skills/*/reference/` holds placeholders and the generator is
+a later milestone. What it can be, and is, is a recorded SHA-256 per `spec/` document
+that warns when one changes. The generator was M13's and is M12's since M11 — eight
+milestones of spec edits made the case that the check should exist while the linter, the
+heaviest editor of `spec/` and `skills/`, is being written, not after — and it replaces
+the hash manifest there.
 
 ---
 
