@@ -327,6 +327,12 @@ why, not a to-do list.
 | 100 | `data-api.md §6` let an entry queued before the helper knew which app a solo mount served replay into whichever app owned `/` later | Refused and reported; a host-mode mount names its app in the path, so only a solo page loaded with the node unreachable and nothing cached is affected | `data-api.md §6` (hardening, second round) |
 | 101 | Row 93 had a queued edit replayed after another device edited the row win by arrival — honest, and the wrong default for a single owner, who was not told a newer edit had been overwritten | The row moved since the write was queued: the whole entry is refused and reported as a conflict, never written over the newer change. The owner's decision, after the review's re-audit | `protocol.md §10.6`, `data-api.md §6` (hardening, second round) |
 | 102 | `cli.md §2` and `lua-api.md §7` had `--open` print a QR code, and `apps/sketch/README.md` promised pairing, discovery and sync — none of which a Phase 1 build has | Each says what a Phase 1 build does and which phase the rest arrives with | `cli.md §2`, `lua-api.md §7`, `apps/sketch/README.md` (hardening, second round) |
+| 103 | `app-contract.md §2.3` depended on `privatium-core` and then called `privatium::Node::open`, a crate the dependency line does not name; the Tier 3 skill did the same and listed `default_data_dir`, `ulid()`, `now()`, `Decimal`, `query_one`, `get_row` and `events_since`, none of which `§6` lists or the crate has | `privatium_core::` throughout; the skill's table is `§6`'s and its skeleton is `examples/embedded.rs`; a Rust caller mints ids with `new_ulid` | `app-contract.md §2.3`, `skills/privatium-tier3-rust` (found in M13) |
+| 104 | `§2.3` appended to and queried `myapp` with nothing saying how the node knew the app existed or where its tables came from — a folder is what `§8` loads, and an embedder's binary has none | `open_app(slug, schema)`: the app's `schema.sql` text inline, empty for a document store; the log, the cache and the stream under `data/<slug>/` as a folder's, with no mount and no index row; `§6` gains the row and the example shows the call | `app-contract.md §2.3, §6`, `data-dictionary.md §3.4` (found in M13) |
+| 105 | `§2.3`'s `query` took SQL alone, so a value from outside could reach the statement only by being formatted into it — the injection `§7` sandboxes against — while the skill's took a third argument the spec never gave | `query(app, sql, params)`: positional `?` bound as `data-api.md §1` binds them, never interpolated, a mismatched count refused | `app-contract.md §2.3, §6` (found in M13) |
+| 106 | `§6` listed discovery, pairing and sync and said nothing about a build without them; a method returning `Ok` from a no-op is what this plan's M13 forbids, and an absent one is what a reader writes their own of | A build without an area keeps the method and answers with a typed error naming the phase — `Error::Unimplemented` — and MUST NOT return success | `app-contract.md §6` (found in M13) |
+| 107 | `§2.3` had an embedder wrap their own router in `auth_layer`, and the layer read a `Peer` extension only the framework's own adapter inserts — so on an embedder's router every caller read as "this process" and nothing was ever refused | The layer reads axum's `ConnectInfo<SocketAddr>` too, which `into_make_service_with_connect_info` attaches; `§2.3`'s example shows that call | `app-contract.md §2.3, §6` (found in M13) |
+| 108 | `skills/privatium-tier3-rust/reference/api.md` called itself `Node`'s public methods at this version and listed one file's `impl` block, so `load_apps`, `append` and their neighbours in `app/mod.rs` were absent from the pinned reference; and it said the Phase 2 methods were absent | Every `impl Node` block under `src/`, and what the four methods do | `skills/privatium-tier3-rust/reference/api.md`, `crates/xtask` (found in M13) |
 
 Defect 11 was found during M1 rather than while writing this plan, which is the rule in
 the last paragraph of this section working as intended. It could not be coded around: the
@@ -1105,12 +1111,57 @@ claims in `cli.md §2`, `lua-api.md §7` and sketch's README name their phase (r
 
 **Roadmap items satisfied:** the standalone-core bullet and the cross-platform bullet.
 
+*Landed (`§3` rows 103–108):*
+
+- **The `§6` surface, with the signatures the spec's example implies.** `Event` (was
+  `Change`) with `put` and `del`; `append` for one event beside `append_batch`, the
+  existing batch write renamed; `query(app, sql, params)` on the sandboxed connection with
+  the data API's typing, through one `store::query` both now use; `subscribe` handing out
+  the app's broadcast receiver; `close` flushing `local/state.jsonl`; `new_ulid` public.
+  The four Phase 2 and 3 methods are present with `Result<()>` and return
+  `Error::Unimplemented` naming the phase and the section — the CLI's `not_in_this_build`
+  shape — never `Ok`. *Present rather than absent because the spec's skeleton then compiles
+  against this version and fails naming the phase, which a reader of the skill meets at
+  once instead of writing their own.*
+- **`open_app(slug, schema)`**, the one call the spec's example needed and did not show
+  (row 104): an app with no folder gets its log, its cache and its stream as a folder's
+  does, with no mount, no Lua host and no `sys_app` row; `App::dir` became `Option`.
+- **`auth_layer` reads axum's `ConnectInfo`** (row 107), so an embedder's own router refuses
+  what the framework's adapter refuses.
+- **`examples/embedded.rs`**: 26 lines after the header, held to thirty by
+  `test_spec_app_contract_2_3_example_is_thirty_lines_of_the_spec_shape`; run on all three
+  platforms by `.github/scripts/embedded-example.sh`, which curls its route and sends it a
+  foreign `Host`.
+- **The fresh-clone check** is `.github/scripts/fresh-clone.sh`: `cargo build`, then the
+  debug binary on an empty data directory serves the launcher and `/a/hello/` at 8420.
+- **`§7` asserted by name**: `.github/scripts/conformance.sh` runs the named tests with
+  `--exact` and fails when fewer ran than were named.
+- **One binary per platform**: the release build is uploaded as a workflow artefact named
+  by its target triple, and a `v*` tag publishes the three as a GitHub release with `gh`.
+  No installer, no third-party release action. *Decided against embedding the reference
+  apps in the binary:* `data-dictionary.md §3.4` gives "the package's folder at install"
+  to packaging, which is Phase 6, and the fresh-clone check is from a checkout, where
+  `apps/` is beside the binary. A bare binary starts with an empty launcher and
+  `privatium new --scaffold`.
+- **The generator reads every `impl Node` block** (row 108); a defect in what the
+  reference claimed, not a new gate.
+- Tests in `crates/privatium-core/tests/embedded.rs`:
+  `test_spec_app_contract_2_3_open_app_append_query_with_no_folder`,
+  `test_spec_app_contract_2_3_embedded_app_survives_restart_and_a_cache_delete`,
+  `test_spec_app_contract_2_3_open_app_refuses_bad_slugs_and_a_folder_collision`,
+  `test_spec_app_contract_6_subscribe_sees_each_append`,
+  `test_spec_app_contract_6_snapshot_and_restore_reach_an_embedded_app`,
+  `test_spec_app_contract_6_phase_2_methods_never_ok`,
+  `test_spec_app_contract_6_auth_layer_wraps_an_embedders_router`,
+  `test_spec_app_contract_7_query_cannot_write`.
+
 ---
 
 ## 7. Conformance mapping
 
 Phase 1 can satisfy exactly these lines of `protocol.md §13`, quoted as written there, and
-CI should assert them by name:
+CI asserts them by name — `.github/scripts/conformance.sh`, since M13, runs the tests
+below with `--exact` and fails when fewer ran than were named:
 
 | Checklist item (§13 wording) | Milestone |
 |---|---|

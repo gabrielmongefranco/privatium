@@ -14,19 +14,31 @@ the materializer, sync, discovery, and pairing as a library. The framework has n
 about anything else.
 
 ```rust
-let node = privatium::Node::open(&data_dir)?;
+use privatium_core::{Event, Node, new_ulid};
+
+let mut node = Node::open(&data_dir)?;
+node.open_app("myapp", "CREATE TABLE score (id VARCHAR PRIMARY KEY, points BIGINT);")?;
 node.serve_discovery()?;          // mDNS, UDP, pairing
 node.start_sync()?;               // iroh + LAN peers
 
-// your own writes
-node.append("myapp", Event::put("score", &id, json!({"points": 42})))?;
+// your own writes — seq, lam, ts and dev are the node's to stamp
+node.append("myapp", Event::put("score", new_ulid(), json!({"points": 42})))?;
 
-// your own reads — the materialized SQLite connection, sandboxed
-let rows = node.query("myapp", "SELECT * FROM score ORDER BY points DESC")?;
+// your own reads — the materialized SQLite connection, sandboxed, parameters bound
+let rows = node.query("myapp", "SELECT * FROM score WHERE points > ?", &[json!(10)])?;
 
-// your own server
-axum::serve(listener, my_router.layer(node.auth_layer())).await?;
+// your own server — the peer comes from axum's ConnectInfo
+let service = my_router.layer(node.auth_layer()).into_make_service_with_connect_info::<SocketAddr>();
+axum::serve(listener, service).await?;
+node.close()?;
 ```
+
+`open_app` is what a folder is to the other modes: the app's slug and the text its
+`schema.sql` would hold — empty for the log as a document store (§4.5) — and the node
+opens its log, its cache and its stream under `data/<slug>/` exactly as §8 does for a
+folder. No folder, no mount, no index row (`spec/data-dictionary.md §3.4`). Call it at
+every start. `examples/embedded.rs` in the repository is this shape, whole, in thirty
+lines, and CI runs it.
 
 This is the shape to use when Privatium is a dependency of your app rather than the other
 way round. It is a first-class mode, not an escape hatch.
@@ -44,17 +56,24 @@ express: a serial port, a scheduled job, a filesystem watcher, a non-HTTP protoc
 
 | Area | What you get |
 |---|---|
-| `Node::open` / `close` | Data root, identity, materialization |
-| `append` / `append_batch` | Event writes with automatic `seq`/`lam`/`ts` |
-| `query` / `subscribe` | Sandboxed SQLite reads; event stream |
+| `Node::open` / `close` | Data root, identity, materialization; `close` flushes node-local state and releases the root |
+| `open_app` | Your own app, with no folder: its slug and its `schema.sql` text (§2.3) |
+| `append` / `append_batch` | One event, or a batch that lands whole or not at all, with `seq`/`lam`/`ts`/`dev` stamped by the node |
+| `query` / `subscribe` | Sandboxed SQLite reads with bound parameters, rows typed as `spec/data-api.md §1` types them; the app's event stream |
 | `serve_discovery` / `pair` | mDNS, UDP, PAKE pairing, device registry |
 | `start_sync` / `sync_now` | iroh + LAN peers |
-| `auth_layer` | Tower middleware enforcing session and grants. `core::handle` applies it itself, so every adapter gets it without doing anything (`docs/decisions/0003`); an embedder wraps their own router with it, as §2.3 shows |
+| `auth_layer` | Tower middleware enforcing session and grants. `core::handle` applies it itself, so every adapter gets it without doing anything (`docs/decisions/0003`); an embedder wraps their own router with it, as §2.3 shows, and the layer reads the peer from axum's `ConnectInfo` |
 | `snapshot` / `restore` | Manual snapshot and three-tier restore |
+
+A build that does not implement an area — one that says so in `--version`
+(`spec/cli.md §1`), as `pv/1 (partial: phase 1)` does for discovery, pairing and sync —
+MUST keep the method and answer it with a typed error naming the phase the area arrives
+in. It MUST NOT return success from a no-op: a program built on an `Ok` from `start_sync`
+would believe it was syncing.
 
 ## `Node`'s public methods at this version
 
-From `crates/privatium-core/src/lib.rs`. Phase 1 has no discovery, pairing or sync; those arrive as typed methods in later phases and are absent here rather than stubbed.
+From every `impl Node` block under `crates/privatium-core/src/`. `serve_discovery`, `pair`, `start_sync` and `sync_now` are present with their signatures and return `Error::Unimplemented` naming the phase they arrive in — discovery and pairing are Phase 2, sync Phase 3 (`docs/roadmap.md`) — never `Ok`.
 
 ```rust
 pub fn open(data_dir: impl Into<PathBuf>) -> Result<Self>
@@ -77,6 +96,12 @@ pub fn record_pruned( &mut self, app: &str, pruned: &Pruned, retention: &Retenti
 pub fn snapshot_policy(&self) -> Result<SnapshotPolicy>
 pub fn maintain(&mut self, app: &str, now: jiff::Timestamp) -> Result<Maintenance>
 pub fn auth_layer(&self) -> AuthLayer
+pub fn query(&self, app: &str, sql: &str, params: &[Value]) -> Result<Vec<Map<String, Value>>>
+pub fn close(mut self) -> Result<()>
+pub fn serve_discovery(&mut self) -> Result<()>
+pub fn pair(&mut self) -> Result<()>
+pub fn start_sync(&mut self) -> Result<()>
+pub fn sync_now(&mut self) -> Result<()>
 pub fn paths(&self) -> &Paths
 pub fn lock(&self) -> &DataLock
 pub fn config(&self) -> &Config
@@ -87,4 +112,17 @@ pub fn sys_log(&self) -> &AppLog
 pub fn sys_log_mut(&mut self) -> &mut AppLog
 pub fn store(&self) -> &Store
 pub fn store_mut(&mut self) -> &mut Store
+pub fn load_apps(&mut self, roots: &[AppRoot]) -> Result<LoadReport>
+pub fn apps(&self) -> impl Iterator<Item = &App>
+pub fn app(&self, slug: &str) -> Option<&App>
+pub fn mounts(&self) -> impl Iterator<Item = (&str, &App)>
+pub fn seed_available(&self, slug: &str) -> Option<PathBuf>
+pub fn load_seed(&mut self, slug: &str) -> Result<Seeded>
+pub fn append(&mut self, slug: &str, event: Event) -> Result<Appended>
+pub fn append_batch(&mut self, slug: &str, events: Vec<Event>) -> Result<Appended>
+pub fn open_app(&mut self, slug: &str, schema: &str) -> Result<()>
+pub fn subscribe(&self, slug: &str) -> Result<broadcast::Receiver<StreamEvent>>
+pub fn setting_value(&self, key: &str) -> Result<Option<String>>
+pub fn audit_lua_limit(&mut self, slug: &str, detail: &str) -> Result<()>
+pub fn refresh_app(&mut self, slug: &str) -> Result<bool>
 ```

@@ -27,14 +27,15 @@ framework to get it.
 
 ## Status
 
-**Phase 1 in progress.** `docs/roadmap.md` Phase 1 — *a node that works on one machine*
-— is implemented through milestone M12 of [docs/plans/phase-1.md](docs/plans/phase-1.md):
+**Phase 1 complete.** `docs/roadmap.md` Phase 1 — *a node that works on one machine* —
+is implemented, milestones M0 through M13 of [docs/plans/phase-1.md](docs/plans/phase-1.md):
 the event log, materialization into SQLite, snapshots and the three-tier restore, the app
-loader, the Lua host and LSP templates, the data API and `pv.js`, the CLI, and the linter.
-Pairing, discovery and sync are later phases, so the binary calls itself
-`pv/1 (partial: phase 1)` and listens on loopback only. The documents below are the
-contract the code satisfies; where they disagree, the specification wins and the code is
-wrong.
+loader, the Lua host and LSP templates, the data API and `pv.js`, the CLI, the linter, and
+`privatium-core` as a library for your own binary (`spec/app-contract.md §2.3`). Every
+acceptance bullet of the roadmap names the test that holds it. Pairing, discovery and sync
+are Phases 2 and 3, so the binary calls itself `pv/1 (partial: phase 1)` and listens on
+loopback only. The documents below are the contract the code satisfies; where they
+disagree, the specification wins and the code is wrong.
 
 | Document | Purpose |
 |---|---|
@@ -71,8 +72,19 @@ From a checkout, with a Rust toolchain (`rust-toolchain.toml` pins it):
 5. To back up, copy the `data/` folder anywhere — Syncthing, a USB stick, Dropbox.
    `privatium restore --from <the copy>` brings it back.
 
-`privatium --help` lists the rest: `lint`, `snapshot`, `skill`. Binaries for each
-platform arrive with M13.
+`privatium --help` lists the rest: `lint`, `snapshot`, `skill`.
+
+**Without a checkout:** CI builds one binary per platform — Linux, macOS and Windows —
+on every push, as the workflow's artefacts, and a tagged `v*` push publishes the three as
+a GitHub release. A bare binary carries the framework, the skills and the scaffold
+generator, not the reference apps, which live in this repository's `apps/`: it starts
+with an empty launcher, and `privatium new <slug> --scaffold <table>` or a folder copied
+into `apps/` under the data directory is the first app. Installers are Phase 6.
+
+**As a library:** `privatium-core` in your own `main()` — the log, the store and the
+auth layer with your own routes. [crates/privatium-core/examples/embedded.rs](crates/privatium-core/examples/embedded.rs)
+is the whole shape in thirty lines; `cargo run -p privatium-core --example embedded`
+runs it.
 
 ## Example Applications
 

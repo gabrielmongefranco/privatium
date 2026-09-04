@@ -10,6 +10,8 @@ name: CI
 on:
   push:
     branches: [main]
+    # A `v*` tag runs the whole gate and then `release` below (plan M13).
+    tags: ['v*']
   pull_request:
 
 concurrency:
@@ -49,6 +51,25 @@ jobs:
 
       - name: Test
         run: cargo test --workspace --locked
+
+      # docs/plans/phase-1.md §7: the lines of spec/protocol.md §13 a Phase 1 build can
+      # satisfy, asserted by name — and the two docs/roadmap.md bullets §7 says are easy to
+      # lose. The binaries were built by the step above; each name must run and pass.
+      - name: Conformance items by name (spec/protocol.md §13, Phase 1 subset)
+        shell: bash
+        run: bash .github/scripts/conformance.sh
+
+      # spec/app-contract.md §2.3: the thirty-line embedder, run — a node with no app
+      # folders, an append, a query, its own router behind auth_layer (M13).
+      - name: Embedded example (spec/app-contract.md §2.3)
+        shell: bash
+        run: bash .github/scripts/embedded-example.sh "$RUNNER_TEMP/embedded-node"
+
+      # docs/plans/phase-1.md M13: the fresh-clone check — `cargo build`, then the debug
+      # binary with nothing but an empty data directory serves hello at 127.0.0.1:8420.
+      - name: Fresh clone serves hello on 8420
+        shell: bash
+        run: bash .github/scripts/fresh-clone.sh "$RUNNER_TEMP/fresh-node"
 
       - name: Header block on every source file
         run: cargo xtask header-check
@@ -91,6 +112,28 @@ jobs:
           # against this number.
           echo "binary size: $(wc -c < "$binary") bytes ($binary)"
 
+      # docs/roadmap.md Phase 1, last bullet: one binary per platform, from CI, with no
+      # installer — that is Phase 6. Named by the host triple so the three never collide.
+      - name: Name the binary by its target
+        id: artifact
+        shell: bash
+        run: |
+          triple="$(rustc -vV | sed -n 's/^host: //p')"
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            name="privatium-${triple}.exe"
+            cp target/release/privatium.exe "$name"
+          else
+            name="privatium-${triple}"
+            cp target/release/privatium "$name"
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: ${{ steps.artifact.outputs.name }}
+          if-no-files-found: error
+
   # A second opinion from current stable, so a compiler change that will break us lands
   # as one failing job rather than as a surprise the next time the MSRV moves.
   stable:
@@ -113,3 +156,28 @@ jobs:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@cargo-deny
       - run: cargo deny check
+
+  # A `v*` tag publishes the three binaries the matrix built as a GitHub release —
+  # packaging-lite (plan M13): the artefacts as they are, attached with `gh`, which every
+  # hosted runner carries, rather than a third-party action. Installers are Phase 6.
+  release:
+    name: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [check, stable, deny]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: privatium-*
+          merge-multiple: true
+          path: dist
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ls -l dist
+          gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes

@@ -1,6 +1,6 @@
 # Project:  Privatium™  |  File: crates/privatium-core/Cargo.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-08-31  |  Modified: 2026-09-03
+# Created:  2026-08-31  |  Modified: 2026-09-05
 # Summary:  The library. One core crate per ADR 0002 — the server, the shells, and
 #           (later) uniffi all consume this and nothing else.
 
@@ -77,7 +77,13 @@ toml        = { workspace = true }
 # `hkdf` derive the CSRF key of docs/plans/phase-1.md §2.2 from the node key, so no
 # secret is written anywhere. `include_dir` embeds the icons, the shell's assets and
 # `skills/` (docs/icons.md, spec/cli.md §6).
-axum        = { workspace = true }
+# M13 — `tokio` is the one axum feature the core takes: `ConnectInfo<SocketAddr>`, the
+# extension an embedder's `into_make_service_with_connect_info` router attaches and
+# `auth_layer` reads the peer from (spec/app-contract.md §2.3, §6), is gated behind it.
+# Still no router and no `serve` here; the feature's own additions — hyper-util and
+# tokio's `net` — are already in the release graph through the binary crate, and any
+# program that calls `axum::serve` has them regardless.
+axum        = { workspace = true, features = ["tokio"] }
 tower       = { workspace = true, features = ["util"] }
 tower-http  = { workspace = true, features = ["fs"] }
 # M9 — `sync` is the per-app broadcast every append goes out on and the channel an SSE
@@ -93,7 +99,12 @@ include_dir = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 # M6 — the route tests drive `Handler::handle` on a runtime; there is no listener in them.
-tokio    = { workspace = true, features = ["macros", "rt-multi-thread"] }
+# M13 — examples/embedded.rs is an embedder: its own listener (`net`), its own Ctrl-C
+# (`signal`), and `axum::serve` over its own router (`http1`, `tokio`). Features on crates
+# already here, for the example and the tests alone; the library takes none of them, and
+# the workspace's release graph already carries all four through the binary crate.
+tokio    = { workspace = true, features = ["macros", "rt-multi-thread", "net", "signal"] }
+axum     = { workspace = true, features = ["http1", "tokio"] }
 
 [lints.rust]
 # AGENTS.md, Style: no `unsafe` without a comment naming the invariant it upholds. Deny

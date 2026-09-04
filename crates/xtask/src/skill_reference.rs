@@ -510,18 +510,42 @@ fn permissions(root: &Path) -> Result<String> {
     ))
 }
 
-fn rust_api(root: &Path) -> Result<String> {
-    let text = crate::repo::read_normalized(&root.join("crates/privatium-core/src/lib.rs"))?;
-    let start = text
-        .find("\nimpl Node {")
-        .context("lib.rs: no `impl Node`")?;
-    let block = &text[start + 1..];
-    let end = block
-        .find("\n}\n")
-        .context("lib.rs: `impl Node` never closes")?;
+/// Every `pub fn` signature in every `impl Node` block of the crate, `lib.rs` first —
+/// the bootstrap, the maintenance and the `§6` surface are there; the loader's, the
+/// writer's and the embedder's methods are in `app/mod.rs`. One file's block was read
+/// until M13, which left `load_apps`, `append` and their neighbours out of a page that
+/// called itself the public methods at this version.
+fn node_signatures(root: &Path) -> Result<Vec<String>> {
+    const LIB: &str = "crates/privatium-core/src/lib.rs";
+    let mut paths: Vec<String> = crate::repo::files(root)?
+        .into_iter()
+        .filter(|path| path.starts_with("crates/privatium-core/src/") && path.ends_with(".rs"))
+        .collect();
+    paths.sort_by_key(|path| (path != LIB, path.clone()));
+    let mut signatures = Vec::new();
+    for path in &paths {
+        let text = crate::repo::read_normalized(&root.join(path))?;
+        let mut rest = text.as_str();
+        while let Some(start) = rest.find("\nimpl Node {") {
+            let block = &rest[start + 1..];
+            let end = block
+                .find("\n}\n")
+                .with_context(|| format!("{path}: `impl Node` never closes"))?;
+            signatures.extend(pub_fn_signatures(&block[..end]));
+            rest = &block[end..];
+        }
+    }
+    if signatures.is_empty() {
+        anyhow::bail!("{LIB}: no `impl Node`");
+    }
+    Ok(signatures)
+}
+
+/// The `pub fn` lines of one `impl` block, each joined onto one line up to its `{`.
+fn pub_fn_signatures(block: &str) -> Vec<String> {
     let mut signatures = Vec::new();
     let mut current: Option<String> = None;
-    for line in block[..end].lines() {
+    for line in block.lines() {
         if let Some(sig) = current.as_mut() {
             sig.push(' ');
             sig.push_str(line.trim());
@@ -538,11 +562,20 @@ fn rust_api(root: &Path) -> Result<String> {
             }
         }
     }
-    let list: String = signatures.iter().map(|s| format!("{s}\n")).collect();
+    signatures
+}
+
+fn rust_api(root: &Path) -> Result<String> {
+    let list: String = node_signatures(root)?
+        .iter()
+        .map(|s| format!("{s}\n"))
+        .collect();
     Ok(format!(
         "# `privatium-core` as a library\n\n{}\n{}\n## `Node`'s public methods at this version\n\n\
-         From `crates/privatium-core/src/lib.rs`. Phase 1 has no discovery, pairing or sync; those \
-         arrive as typed methods in later phases and are absent here rather than stubbed.\n\n```rust\n{list}```\n",
+         From every `impl Node` block under `crates/privatium-core/src/`. `serve_discovery`, `pair`, \
+         `start_sync` and `sync_now` are present with their signatures and return \
+         `Error::Unimplemented` naming the phase they arrive in — discovery and pairing are Phase 2, \
+         sync Phase 3 (`docs/roadmap.md`) — never `Ok`.\n\n```rust\n{list}```\n",
         section(root, "spec/app-contract.md", "2.3")?,
         section(root, "spec/app-contract.md", "6")?
     ))

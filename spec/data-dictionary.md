@@ -237,7 +237,10 @@ about.
 - One row per folder whose name is a valid, unreserved slug, written whether or not the
   app loaded: a refusal at any step of `spec/app-contract.md §8` sets `last_error` on it.
   `installed_at` is when the app first loaded cleanly and is NULL for a folder that never
-  has; `enabled` is the owner's and survives every reload.
+  has; `enabled` is the owner's and survives every reload. An app a program opens with no
+  folder — embedded mode, `open_app` (`spec/app-contract.md §2.3`) — has no row: the
+  index is of folders, and `source`, `enabled` and `last_error` have nothing to say about
+  a binary's own app. Its data under `data/<slug>/` is as real as any other's.
 - Removing a folder MUST NOT delete the index row or the app's data. It sets
   `last_error = "folder missing"`.
 - Uninstalling is an explicit owner action that sets `enabled = false`. Data deletion is a

@@ -38,8 +38,6 @@ pub use lsp::{CompileError, Compiled, LineMap, Templates, ViewMap};
 pub use pv::SURFACE;
 pub use sandbox::{GLOBALS_REMOVED, OS_REMOVED};
 
-pub(crate) use convert::{ColumnType, column_types};
-
 /// One registered route: `(method, pattern)` in registration order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RouteSpec {
@@ -369,7 +367,7 @@ pub(crate) struct VmData {
     pub routes: Vec<RouteSpec>,
     pub ctx: Option<RequestCtx>,
     /// The events staged by the `pv.batch` in progress.
-    pub batch: Option<Vec<crate::app::Change>>,
+    pub batch: Option<Vec<crate::app::Event>>,
     /// The templates this run resolves against — one snapshot for the whole run, so a
     /// reload mid-request never mixes generations on one page (R3).
     pub views: Option<Arc<ViewMap>>,

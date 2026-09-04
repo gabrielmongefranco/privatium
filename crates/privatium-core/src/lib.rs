@@ -5,9 +5,12 @@
 //           of the bootstrap order in docs/plans/phase-1.md §2.6 — the sink that turns
 //           what a log scan found into sys_audit rows (spec/protocol.md §4.4), and the
 //           node-level snapshot, restore, verify, prune and maintenance API of
-//           spec/app-contract.md §6 (M4), routed to every loaded app's store (M5), and
-//           auth_layer (M6). core::handle itself is wire::Handler; the Lua host behind a
-//           Tier 1 mount is `lua` (M7).
+//           spec/app-contract.md §6 (M4), routed to every loaded app's store (M5),
+//           auth_layer (M6), and the rest of the §6 surface an embedder calls — query,
+//           close, and the discovery, pairing and sync methods that are present and never
+//           Ok until their phase (M13). core::handle itself is wire::Handler; the Lua host
+//           behind a Tier 1 mount is `lua` (M7); append, append_batch, open_app and
+//           subscribe are `app`'s.
 
 //! Privatium core.
 //!
@@ -17,7 +20,9 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
+use serde_json::{Map, Value};
 use thiserror::Error;
 
 pub mod app;
@@ -37,8 +42,8 @@ pub mod sys;
 pub mod wire;
 
 pub use app::{
-    App, AppRoot, Csp, LoadFailure, LoadReport, Manifest, Permissions, Seeded, Source, Stage,
-    Warning,
+    App, AppRoot, Appended, Csp, Event, LoadFailure, LoadReport, Manifest, Permissions, Seeded,
+    Source, Stage, StreamEvent, Warning,
 };
 pub use config::{Config, LuaConfig, Mode, NodeConfig, Paths};
 pub use http::{AuthLayer, Device, Peer};
@@ -268,6 +273,44 @@ pub enum Error {
         index: usize,
         /// What SQLite said.
         problem: String,
+    },
+
+    /// An area of `spec/app-contract.md §6` this build does not implement — discovery,
+    /// pairing and sync, which `docs/roadmap.md` places in Phases 2 and 3. The method is
+    /// present with its signature and answers with this rather than succeeding at
+    /// nothing, which an embedder would build on; `privatium --version` says `partial`
+    /// for the same reason (`spec/cli.md §1`).
+    #[error(
+        "{feature}: not in this build — Phase {phase} of docs/roadmap.md; {spec} is its contract"
+    )]
+    Unimplemented {
+        /// The `§6` method.
+        feature: &'static str,
+        /// The roadmap phase it arrives in.
+        phase: &'static str,
+        /// The section of `spec/protocol.md` that is its contract.
+        spec: &'static str,
+    },
+
+    /// A statement [`Node::query`] could not run: SQL the sandbox refuses
+    /// (`spec/app-contract.md §7`), a parameter count that does not match the
+    /// placeholders, a parameter that is not a scalar, or SQLite's own complaint.
+    #[error("{app}: {problem}")]
+    Sql {
+        /// The app.
+        app: String,
+        /// What was wrong.
+        problem: String,
+    },
+
+    /// [`Node::open_app`] refused the slug: reserved or malformed (`spec/protocol.md
+    /// §1.1`), or already loaded from a folder (`spec/app-contract.md §3.1`).
+    #[error("{slug}: {reason}")]
+    AppRefused {
+        /// The slug.
+        slug: String,
+        /// Why.
+        reason: String,
     },
 }
 
@@ -676,6 +719,90 @@ impl Node {
         AuthLayer::new(self.identity.id().clone())
     }
 
+    /// Run a read-only statement on `app`'s sandboxed connection (`spec/app-contract.md
+    /// §6`, `query`; `§7`), and hand back the rows as JSON objects typed as the data API
+    /// types them (`spec/data-api.md §1`): a declared `DECIMAL` or `BIGINT` is a string,
+    /// a `BOOLEAN` a boolean, a `JSON` column its value, NULL is `null`, and a computed
+    /// column arrives by its storage class. `params` bind the statement's positional
+    /// `?` placeholders — a string as text, an integer as an integer, another number as
+    /// a real, a boolean as 1/0, `null` as NULL — and are never interpolated; a count
+    /// that does not match the placeholders is refused, and so is an array or an object
+    /// among them. The connection is read-only at the file, `query_only`, behind the
+    /// authorizer that refuses every write, `PRAGMA`, `ATTACH` and extension load, has
+    /// `sys` attached read-only (`spec/data-dictionary.md §4`), and runs the statement
+    /// under `lua.max_seconds`. Opened per call; a program that queries per request does
+    /// what the framework's own routes do.
+    pub fn query(&self, app: &str, sql: &str, params: &[Value]) -> Result<Vec<Map<String, Value>>> {
+        let loaded = self.apps.get(app).ok_or_else(|| Error::AppNotLoaded {
+            slug: app.to_owned(),
+        })?;
+        let refused = |problem: String| Error::Sql {
+            app: app.to_owned(),
+            problem,
+        };
+        let bound = params
+            .iter()
+            .enumerate()
+            .map(|(index, value)| store::query::bind(index, value))
+            .collect::<std::result::Result<Vec<_>, String>>()
+            .map_err(refused)?;
+        let conn = loaded.store().app_conn().map_err(boxed)?;
+        let deadline = Duration::from_secs(self.config.lua.max_seconds.max(1));
+        let rows = store::query::run(&conn, loaded.store().schema(), deadline, sql, bound)
+            .map_err(refused)?;
+        Ok(rows.rows)
+    }
+
+    /// Close the node (`spec/app-contract.md §6`): write `local/state.jsonl` and release
+    /// the root's lock. Dropping the node releases the lock too; what `close` adds is
+    /// the flush and its result, which a drop cannot report.
+    pub fn close(mut self) -> Result<()> {
+        self.flush()
+    }
+
+    // -----------------------------------------------------------------------------------
+    // spec/app-contract.md §6 — the areas later phases fill. Present, never Ok.
+    // -----------------------------------------------------------------------------------
+
+    /// mDNS, UDP and pairing (`spec/protocol.md §6`, `§7`) — Phase 2 of `docs/roadmap.md`.
+    /// This build has none and says so ([`Error::Unimplemented`]) rather than returning
+    /// from a no-op, which an embedder would build on.
+    pub fn serve_discovery(&mut self) -> Result<()> {
+        Err(Error::Unimplemented {
+            feature: "serve_discovery",
+            phase: "2",
+            spec: "spec/protocol.md §6, §7",
+        })
+    }
+
+    /// Pair a device by PAKE (`spec/protocol.md §7`) — Phase 2. Never `Ok` here.
+    pub fn pair(&mut self) -> Result<()> {
+        Err(Error::Unimplemented {
+            feature: "pair",
+            phase: "2",
+            spec: "spec/protocol.md §7",
+        })
+    }
+
+    /// Sync with the cluster over iroh and the LAN (`spec/protocol.md §10`) — Phase 3.
+    /// Never `Ok` here.
+    pub fn start_sync(&mut self) -> Result<()> {
+        Err(Error::Unimplemented {
+            feature: "start_sync",
+            phase: "3",
+            spec: "spec/protocol.md §10",
+        })
+    }
+
+    /// One sync pass, now (`spec/protocol.md §10`) — Phase 3. Never `Ok` here.
+    pub fn sync_now(&mut self) -> Result<()> {
+        Err(Error::Unimplemented {
+            feature: "sync_now",
+            phase: "3",
+            spec: "spec/protocol.md §10",
+        })
+    }
+
     /// Where this node's files are.
     #[must_use]
     pub fn paths(&self) -> &Paths {
@@ -1009,8 +1136,11 @@ fn audit_restore(
     Ok(true)
 }
 
-/// A fresh ULID, Crockford Base32, 26 characters (`spec/protocol.md §4.1`).
-fn new_ulid() -> String {
+/// A fresh ULID, Crockford Base32, 26 characters (`spec/protocol.md §4.1`) — the default
+/// row key, minted by whoever writes the row: `pv.ulid()`, the data API, and an
+/// embedder's [`Event::put`].
+#[must_use]
+pub fn new_ulid() -> String {
     ulid::Ulid::generate().to_string()
 }
 

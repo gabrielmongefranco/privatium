@@ -69,19 +69,31 @@ the materializer, sync, discovery, and pairing as a library. The framework has n
 about anything else.
 
 ```rust
-let node = privatium::Node::open(&data_dir)?;
+use privatium_core::{Event, Node, new_ulid};
+
+let mut node = Node::open(&data_dir)?;
+node.open_app("myapp", "CREATE TABLE score (id VARCHAR PRIMARY KEY, points BIGINT);")?;
 node.serve_discovery()?;          // mDNS, UDP, pairing
 node.start_sync()?;               // iroh + LAN peers
 
-// your own writes
-node.append("myapp", Event::put("score", &id, json!({"points": 42})))?;
+// your own writes — seq, lam, ts and dev are the node's to stamp
+node.append("myapp", Event::put("score", new_ulid(), json!({"points": 42})))?;
 
-// your own reads — the materialized SQLite connection, sandboxed
-let rows = node.query("myapp", "SELECT * FROM score ORDER BY points DESC")?;
+// your own reads — the materialized SQLite connection, sandboxed, parameters bound
+let rows = node.query("myapp", "SELECT * FROM score WHERE points > ?", &[json!(10)])?;
 
-// your own server
-axum::serve(listener, my_router.layer(node.auth_layer())).await?;
+// your own server — the peer comes from axum's ConnectInfo
+let service = my_router.layer(node.auth_layer()).into_make_service_with_connect_info::<SocketAddr>();
+axum::serve(listener, service).await?;
+node.close()?;
 ```
+
+`open_app` is what a folder is to the other modes: the app's slug and the text its
+`schema.sql` would hold — empty for the log as a document store (§4.5) — and the node
+opens its log, its cache and its stream under `data/<slug>/` exactly as §8 does for a
+folder. No folder, no mount, no index row (`spec/data-dictionary.md §3.4`). Call it at
+every start. `examples/embedded.rs` in the repository is this shape, whole, in thirty
+lines, and CI runs it.
 
 This is the shape to use when Privatium is a dependency of your app rather than the other
 way round. It is a first-class mode, not an escape hatch.

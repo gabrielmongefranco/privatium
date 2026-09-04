@@ -1,16 +1,19 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/auth.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-05
 // Summary:  auth_layer (spec/app-contract.md §6) with its real signature — a tower::Layer —
 //           and its Phase 1 body (docs/plans/phase-1.md §2.2): a loopback caller is this
 //           node's own device row, anything else is 403. core::handle applies it itself, so
-//           every adapter gets it; an embedder wraps their own router with it (§2.3).
+//           every adapter gets it; an embedder wraps their own router with it (§2.3), and
+//           the peer is read from axum's ConnectInfo there, since that is what an axum
+//           router has (M13).
 
 use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use axum::extract::ConnectInfo;
 use axum::http::StatusCode;
 use axum::http::header::HOST;
 use tower::{Layer, Service};
@@ -120,13 +123,22 @@ const FORBIDDEN: &str = "403 Forbidden — this build serves loopback only; LAN 
 
 /// Phase 1's whole policy.
 ///
-/// A request with no [`Peer`] came from inside the process and is allowed. One with a peer
-/// is allowed only from a loopback address — and only with a `Host` header naming
-/// loopback, because a browser resolving an attacker's name to `127.0.0.1` (DNS rebinding)
-/// still connects from loopback, and the `Host` it sends is the one thing that gives the
-/// game away. An absent `Host` is allowed: HTTP/1.0 clients and custom schemes send none.
+/// The peer is the [`Peer`] the framework's adapter inserts or, on an embedder's own
+/// axum router, the `ConnectInfo<SocketAddr>` that `into_make_service_with_connect_info`
+/// attaches (`spec/app-contract.md §2.3`). A request with neither came from inside the
+/// process and is allowed. One with a peer is allowed only from a loopback address — and
+/// only with a `Host` header naming loopback, because a browser resolving an attacker's
+/// name to `127.0.0.1` (DNS rebinding) still connects from loopback, and the `Host` it
+/// sends is the one thing that gives the game away. An absent `Host` is allowed: HTTP/1.0
+/// clients and custom schemes send none.
 fn check(request: &Request) -> Result<(), Box<Response>> {
-    let Some(Peer(addr)) = request.extensions().get::<Peer>().copied() else {
+    let extensions = request.extensions();
+    let peer = extensions.get::<Peer>().map(|peer| peer.0).or_else(|| {
+        extensions
+            .get::<ConnectInfo<SocketAddr>>()
+            .map(|info| info.0)
+    });
+    let Some(addr) = peer else {
         return Ok(());
     };
     if !addr.ip().is_loopback() {
