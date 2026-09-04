@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/config.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-03
+// Created:  2026-09-01  |  Modified: 2026-09-05
 // Summary:  Where the node's data lives (spec/protocol.md §3) and what config.toml may
 //           say about it. Both halves are here because --data-dir picks the root and
 //           --config defaults to a file inside it, so neither resolves without the other.
@@ -130,6 +130,13 @@ impl Paths {
     #[must_use]
     pub fn local_state(&self) -> PathBuf {
         self.local_dir().join("state.jsonl")
+    }
+
+    /// `local/lock` — held exclusively by the process that has this root open
+    /// (`spec/protocol.md §3.1`, [`DataLock`](crate::lock::DataLock)).
+    #[must_use]
+    pub fn local_lock(&self) -> PathBuf {
+        self.local_dir().join(crate::lock::LOCK_FILE)
     }
 
     /// `cache/` — fully disposable. Deleting it must lose zero data.

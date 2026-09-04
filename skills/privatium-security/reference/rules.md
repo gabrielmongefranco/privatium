@@ -98,4 +98,8 @@ exists to avoid; the installer says so. Each `remote` entry MUST be an origin �
 
 `cross_origin_isolated` is refused at load in host mode: the headers it needs are
 document-level on one origin and would break every other app on the node
-(`docs/frameworks.md §5.4`). It is honoured only for the solo app.
+(`docs/frameworks.md §5.4`). It is honoured only for the solo app, and honoured in full:
+the node sends `Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp` on every response of the origin
+(`spec/protocol.md §9.3`), so a subresource the app loads from elsewhere needs CORP or
+CORS of its own.

@@ -1,6 +1,6 @@
 # Project:  Privatium™  |  File: .github/workflows/ci.yml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-08-31  |  Modified: 2026-09-04
+# Created:  2026-08-31  |  Modified: 2026-09-05
 # Summary:  The gate. Three platforms, because "runs on Linux, Windows and macOS from a
 #           single binary" is a Phase 1 acceptance bullet and finding out at M13 that the
 #           bundled SQLite build never worked on one of them would be too late.
@@ -52,6 +52,11 @@ jobs:
 
       - name: Header block on every source file
         run: cargo xtask header-check
+
+      # spec/data-api.md §5 and §6: the browser half of the data API, run for real. Node
+      # is preinstalled on every hosted runner; the tests fake the browser and the node.
+      - name: pv.js under node --test
+        run: node --test crates/privatium-core/tests/js/pv.test.mjs
 
       # docs/skills.md §7: a change to spec/ that is not reflected in skills/ is an
       # incomplete change. The reference sections are generated from the crate and the

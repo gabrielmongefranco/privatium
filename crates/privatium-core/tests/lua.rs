@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/lua.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-05
 // Summary:  The Lua host against spec/lua-api.md and docs/plans/phase-1.md M7 and M8, every
 //           test through core::handle with no listener: the sandbox of §5 and its four
 //           limits, adversarially (R2); the stable route index of §2.4; the pv module of §3
@@ -57,7 +57,7 @@ fn handler_for(root: &tempfile::TempDir) -> Handler {
 
 /// Write `app.lua` for `slug` under the root's `apps/`, plus `files`.
 fn app(root: &tempfile::TempDir, slug: &str, app_lua: &str, files: &[(&str, &str)]) {
-    let apps = Node::open(root.path()).unwrap().paths().apps_dir();
+    let apps = privatium_core::Paths::rooted(root.path()).apps_dir();
     let mut all = vec![("app.lua", app_lua)];
     all.extend_from_slice(files);
     write_lua_app(&apps, slug, &all);
@@ -1441,7 +1441,7 @@ end)
 async fn test_seed_and_own_appends_fire_pv_on() {
     let root = tempfile::tempdir().unwrap();
     configure(&root, LUA_CONFIG);
-    let apps = Node::open(root.path()).unwrap().paths().apps_dir();
+    let apps = privatium_core::Paths::rooted(root.path()).apps_dir();
     write_app(
         &apps,
         "react",
@@ -1705,6 +1705,8 @@ end)
         "local pv = require 'privatium'\npv.get('/', function() return pv.json({ date = fmt.date('2026-08-28'), money = fmt.money('1234.5'), setting = pv.setting('ui.locale', 'x') }) end)\n",
         &[],
     );
+    // A restart: the first node releases the root before the second takes it.
+    drop(handler);
     let handler = handler_for(&root);
     let facts = json_of(handler.handle(get("/a/facts2/")).await).await;
     assert_eq!(facts["date"], "28/08/2026");
@@ -2053,12 +2055,12 @@ async fn test_lsp_error_maps_to_source_line() {
         ],
     );
     write_lua_app(
-        &Node::open(root.path()).unwrap().paths().apps_dir(),
+        &privatium_core::Paths::rooted(root.path()).apps_dir(),
         "brk1",
         &[("views/x.lsp", "ok\n<? if y ?>\n")],
     );
     write_lua_app(
-        &Node::open(root.path()).unwrap().paths().apps_dir(),
+        &privatium_core::Paths::rooted(root.path()).apps_dir(),
         "brk2",
         &[("views/y.lsp", "\n\n<?= nope")],
     );
@@ -2137,11 +2139,31 @@ async fn test_hot_reload_template_next_request() {
         "a template edit writes no row"
     );
 
+    let generation = |handler: &Handler| {
+        handler
+            .node()
+            .lock()
+            .unwrap()
+            .app("hot")
+            .unwrap()
+            .lua_host()
+            .unwrap()
+            .views_generation()
+    };
+    let published = generation(&handler);
+
     write_file(&root, "hot", "views/index.lsp", "broken\n<? if who ?>\n");
     let page = handler.handle(get("/a/hot/")).await;
     assert_eq!(page.status(), StatusCode::INTERNAL_SERVER_ERROR);
     let text = body_of(page).await;
     assert!(text.contains("views/index.lsp:2:"), "{text}");
+    // The broken generation was never published: what is current is what last loaded,
+    // unserved behind the error page (`spec/cli.md §3`).
+    assert_eq!(
+        generation(&handler),
+        published,
+        "a broken edit was published"
+    );
     {
         let mut node = handler.node().lock().unwrap();
         node.refresh().unwrap();
@@ -2165,6 +2187,7 @@ async fn test_hot_reload_template_next_request() {
     write_file(&root, "hot", "views/index.lsp", "fixed <?= who ?>\n");
     let text = body_of(handler.handle(get("/a/hot/")).await).await;
     assert!(text.contains("fixed you"), "{text}");
+    assert!(generation(&handler) > published, "the fix was published");
     let mut node = handler.node().lock().unwrap();
     node.refresh().unwrap();
     assert!(sys_app_row(&node, "hot").unwrap()["last_error"].is_null());
@@ -2396,9 +2419,23 @@ pv.route('DELETE', '/d', function() return pv.text('deleted') end)
                 "/a/guard/w",
                 &format!(
                     "x=1&_csrf={}",
-                    Handler::new(open(&root, false).0, LoadReport::default())
-                        .csrf()
-                        .token("/a/guard/")
+                    // The same node, restarted: its identity in another root — the
+                    // running one holds this root's lock (`spec/protocol.md §3.1`) — so
+                    // the key is the same and the nonce is not.
+                    {
+                        let restarted = tempfile::tempdir().unwrap();
+                        fs::create_dir_all(restarted.path().join("identity")).unwrap();
+                        for file in ["node.key", "node.pub"] {
+                            fs::copy(
+                                root.path().join("identity").join(file),
+                                restarted.path().join("identity").join(file),
+                            )
+                            .unwrap();
+                        }
+                        Handler::new(open(&restarted, false).0, LoadReport::default())
+                            .csrf()
+                            .token("/a/guard/")
+                    }
                 ),
             ),
         ),

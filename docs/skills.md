@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/skills.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-28
+Modified: 2026-09-05
 Summary:  The skills system: how LLM-authored apps get correct, accessible, secure
           code without relying on the model's training data.
 -->
@@ -83,11 +83,15 @@ Normative. A skill missing any of these is incomplete.
 
 ## 4. Verification is the load-bearing part
 
-Advice a model can ignore is worth little. Every skill ends with a command:
+Advice a model can ignore is worth little. Every skill's verification is a command:
 
 ```bash
 privatium lint apps/myapp
 ```
+
+The Tier 3 skill adds `cargo test` for the binary the linter cannot read, and lints the
+folder its index entry lives in; the accessibility skill follows the command with the five
+checks by hand that no linter can make.
 
 The linter is part of the framework, not a doc. **Its rules are specified in
 `spec/cli.md §5`**, with stable IDs so a skill can cite `PV301` and mean something durable.

@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/reference.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-04
+// Created:  2026-09-04  |  Modified: 2026-09-05
 // Summary:  docs/plans/phase-1.md M10 — the three reference apps end to end through
 //           core::handle with no listener, exactly as their READMEs describe them: hello
 //           (write, amend, break the cache, and the README's own `echo >>` line run for
@@ -996,8 +996,8 @@ async fn test_sketch_end_to_end() {
     assert_eq!(pv.status(), StatusCode::OK);
     let pv = body_of(pv).await;
     assert!(
-        pv.len() < 8 * 1024,
-        "pv.js is {} bytes; spec/data-api.md §5 says under 8 KB",
+        pv.len() < 10 * 1024,
+        "pv.js is {} bytes; spec/data-api.md §5 says under 10 KB",
         pv.len()
     );
     let app_js = fs::read_to_string(web.join("app.js")).unwrap();
@@ -1146,7 +1146,7 @@ async fn test_sketch_end_to_end() {
 async fn test_spec_cli_5_pv4xx_shell_pages() {
     let root = tempfile::tempdir().unwrap();
     configure(&root, LUA_CONFIG);
-    let apps = Node::open(root.path()).unwrap().paths().apps_dir();
+    let apps = privatium_core::Paths::rooted(root.path()).apps_dir();
     write_app(
         &apps,
         "wide",

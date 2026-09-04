@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/lua-api.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-03
+Modified: 2026-09-05
 Summary:  NORMATIVE. Tier 1 — the Lua application API and LSP template engine.
 -->
 
@@ -177,7 +177,10 @@ create-or-amend without a branch.
 
 `tx.append` returns the minted ULID **before** the batch is written, so later events in the
 same batch may reference it. A `pv.batch` either appends every event or none; the framework
-assigns contiguous `seq` values to the batch, under one `ts`.
+assigns contiguous `seq` values to the batch, under one `ts`, writes it in one write with
+its first line carrying the count, and a batch a crash landed short is skipped whole by
+every reader (`spec/protocol.md §4.1`), so "every event or none" holds on the way out of
+the log as well as on the way in.
 
 **Encoding `data`.** `data` is a Lua table with string keys, written as the JSON object
 `d`: a string as a string, an integer as an integer, a boolean as a boolean, a `pv.dec` as

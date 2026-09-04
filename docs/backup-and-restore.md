@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/backup-and-restore.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-03
+Modified: 2026-09-05
 Summary:  The backup and restore procedure, written to be usable by a non-technical owner.
 -->
 
@@ -66,8 +66,11 @@ history size this takes seconds.
 
 `privatium restore --from <the backup>` does steps 3 and 5 in one go and tells you which
 of the three tiers below it read from. Add `--dry-run` to see what it would copy first.
-It never overwrites a log file it cannot reconcile with the one already there
-(`spec/cli.md §7`).
+It never overwrites a log file at all: a file you lack is copied in whole, a file you
+hold the start of grows by the rest, and one it cannot reconcile with what is already
+there stops the restore before anything is written (`spec/cli.md §7`). Stop the node
+first — a data folder is one process's at a time, and `restore` refuses to run while a
+node has it open.
 
 ### From a partial backup
 

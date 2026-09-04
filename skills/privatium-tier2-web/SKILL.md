@@ -42,7 +42,7 @@ pv.ulid();  pv.url('/path');  pv.node();  pv.lam;  pv.online;
 ```
 
 `pv.js` is optional; every endpoint is plain HTTP under `/a/<slug>/api/` (`/api/` in solo
-mode). It is under 8 KB, unminified and meant to be read — open it. A view may read
+mode). It is under 10 KB, unminified and meant to be read — open it. A view may read
 `$name` placeholders, bound from the query string of `/api/q/<view>`; a key the view does
 not read is refused, and elsewhere the placeholder is NULL. `sys.v_app_nav` and the other
 `sys.v_*` views are readable through `pv.sql`.
@@ -76,7 +76,9 @@ not read is refused, and elsewhere the placeholder is NULL. `sys.v_app_nav` and 
 - Assume you are online; `pv.query` throws `PvOffline`
 - Implement your own outbox deduplication, transaction IDs, or acknowledgement protocol.
   ULIDs already make replay idempotent — adding these can create the divergence they were
-  meant to prevent.
+  meant to prevent. The helper decides a retry by reading the row's events past the mark it
+  queued at, and a queued edit replayed later wins by arrival (`spec/data-api.md §6`); an
+  entry the node refuses reaches you as `pv.on('rejected')`.
 - Add a CSRF token, a CORS header or any other credential handling to the API. It is
   same-origin by construction (`spec/data-api.md §2.1`)
 - Construct absolute URLs to other endpoints. A browser client has exactly one origin.

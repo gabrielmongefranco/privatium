@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/wire.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-05
 // Summary:  core::handle against spec/protocol.md §9 and ADR 0003 — every route reachable
 //           with no listener, the headers of §9.3 on every response, nothing leaked
 //           unauthenticated (§9.2), solo mode at `/` with the framework prefixes winning
@@ -483,6 +483,75 @@ async fn test_solo_mode_mounts_at_root() {
             .unwrap();
     assert_eq!(manifest["apps"].as_array().unwrap().len(), 1);
     assert_eq!(manifest["apps"][0]["slug"], "sketch");
+}
+
+/// `spec/app-contract.md §5.4`, `spec/protocol.md §9.3` — the solo app's
+/// `permissions.cross_origin_isolated` is honoured, not merely accepted: every response
+/// of the origin carries `Cross-Origin-Opener-Policy: same-origin` and
+/// `Cross-Origin-Embedder-Policy: require-corp`, the framework's own routes included,
+/// since both are document-level and the solo app owns the origin. Without the
+/// permission neither header appears.
+#[tokio::test]
+async fn test_spec_app_contract_5_4_cross_origin_isolated_headers_in_solo_mode() {
+    let manifest = format!(
+        "{}\n[permissions]\ncross_origin_isolated = true\n",
+        common::web_manifest("iso")
+    );
+    let root = tempfile::tempdir().unwrap();
+    write_app(
+        &root.path().join("apps"),
+        "iso",
+        Some(&manifest),
+        &[("web/index.html", "<!doctype html><title>iso</title>\n")],
+    );
+    let handler = solo(&root, "iso");
+    for path in [
+        "/",
+        "/api/node",
+        "/api/v1/health",
+        "/settings",
+        "/static/pv.js",
+        "/nope",
+    ] {
+        let response = handler.handle(get(path)).await;
+        let headers = response.headers();
+        assert_eq!(
+            headers
+                .get("cross-origin-opener-policy")
+                .map(|v| v.to_str().unwrap()),
+            Some("same-origin"),
+            "{path}: {headers:?}"
+        );
+        assert_eq!(
+            headers
+                .get("cross-origin-embedder-policy")
+                .map(|v| v.to_str().unwrap()),
+            Some("require-corp"),
+            "{path}"
+        );
+    }
+
+    // The same app without the permission: nothing isolates.
+    let plain = tempfile::tempdir().unwrap();
+    write_web_app(&plain.path().join("apps"), "iso", &[]);
+    let handler = solo(&plain, "iso");
+    for path in ["/", "/api/node"] {
+        let response = handler.handle(get(path)).await;
+        assert!(
+            response
+                .headers()
+                .get("cross-origin-opener-policy")
+                .is_none(),
+            "{path}"
+        );
+        assert!(
+            response
+                .headers()
+                .get("cross-origin-embedder-policy")
+                .is_none(),
+            "{path}"
+        );
+    }
 }
 
 /// `spec/app-contract.md §2.2` — no launcher and no `/a/<slug>/` in solo mode; the shell's

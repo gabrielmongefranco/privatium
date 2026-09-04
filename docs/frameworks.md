@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/frameworks.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-03
+Modified: 2026-09-05
 Summary:  Which frameworks, libraries and engines work inside Privatium, which
           do not, and why. Selection criteria are explicit and testable.
 -->
@@ -179,7 +179,7 @@ Resolution:
 | Situation | Rule |
 |---|---|
 | Host mode (many apps) | Isolation-requiring builds are **not supported**. Export single-threaded. |
-| Solo mode (one app at `/`) | `permissions.cross_origin_isolated = true` is allowed |
+| Solo mode (one app at `/`) | `permissions.cross_origin_isolated = true` is allowed, and the node then sends both headers on every response of the origin (`spec/protocol.md §9.3`) |
 | Native engine over HTTP | Not affected |
 
 An app declaring `cross_origin_isolated` in host mode MUST fail to load with an explanatory

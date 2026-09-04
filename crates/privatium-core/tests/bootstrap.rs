@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/bootstrap.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-03
+// Created:  2026-09-01  |  Modified: 2026-09-05
 // Summary:  First run: the §3 directory tree, and the two _sys rows a node writes about
 //           itself before any app exists (docs/plans/phase-1.md §2.6, steps 1 to 3).
 
@@ -37,6 +37,29 @@ fn tree(root: &Path) -> BTreeSet<String> {
     let mut found = BTreeSet::new();
     walk(root, root, &mut found);
     found
+}
+
+/// `spec/protocol.md §3.1` — a root is one process's at a time: a second open, in this
+/// process as in another, is refused while the first stands and allowed once it is
+/// dropped. The lock file is `local/lock`, which the tree of §3 names.
+#[test]
+fn test_spec_3_1_second_open_of_a_root_is_refused() {
+    let root = tempfile::tempdir().unwrap();
+    let first = Node::open(root.path()).unwrap();
+    assert!(root.path().join("local").join("lock").is_file());
+    let second = Node::open(root.path());
+    match second {
+        Err(privatium_core::Error::Locked { path }) => {
+            assert!(
+                path.ends_with(Path::new("local").join("lock")),
+                "{}",
+                path.display()
+            );
+        }
+        other => panic!("a second open of a held root was not refused: {other:?}"),
+    }
+    drop(first);
+    assert!(Node::open(root.path()).is_ok());
 }
 
 /// Read the `_sys` log as parsed events.
@@ -84,6 +107,8 @@ fn test_spec_3_layout_created() {
         "identity/node.key".to_owned(),
         "identity/node.pub".to_owned(),
         "local/".to_owned(),
+        // The root's lock, held while the node is open (`§3.1`).
+        "local/lock".to_owned(),
         "local/state.jsonl".to_owned(),
     ]
     .into_iter()

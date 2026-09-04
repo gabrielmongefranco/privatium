@@ -118,7 +118,9 @@ returned, so what this hands out is what the cache was built from.
 
 ### `POST /a/<slug>/api/events`
 
-Append a batch. Atomic: all lines or none.
+Append a batch. Atomic: all lines or none — one write of one batch of the log, its first
+line carrying the count, so a crash that lands it short leaves lines every reader skips
+(`spec/protocol.md §4.1`).
 
 ```json
 {
@@ -267,16 +269,18 @@ An app with no `schema.sql` has empty `tables` and `views`.
 
 ### `GET /a/<slug>/api/node`
 
-Node ID, device ID, display name, `solo` flag, sync peer count, restore tier in use.
-No application data.
+Node ID, device ID, display name, the app's slug, `solo` flag, sync peer count, restore
+tier in use. No application data.
 
 ```json
-{ "id": "k7m2q9xf", "dev": "k7m2q9xf", "name": "Study", "solo": false, "peers": 0, "restore_tier": 3 }
+{ "id": "k7m2q9xf", "dev": "k7m2q9xf", "name": "Study", "app": "medtracker", "solo": false, "peers": 0, "restore_tier": 3 }
 ```
 
 `name` falls back to the Node ID while the owner has set none (`spec/protocol.md §9.2`);
-`dev` is the device the request is authenticated as — this node's own in Phase 1;
-`restore_tier` is `null` for an app this node has not materialized.
+`dev` is the device the request is authenticated as — this node's own in Phase 1; `app`
+is the slug this API is scoped to, which a page at a solo mount cannot read from its path
+and which `pv.js` keys its outbox entries by (§6); `restore_tier` is `null` for an app
+this node has not materialized.
 
 ## 7. Rate limits and quotas
 

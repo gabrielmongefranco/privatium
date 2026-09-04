@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/log/writer.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-01
+// Created:  2026-09-01  |  Modified: 2026-09-05
 // Summary:  The single writer of one data/<slug>/log/<dev>.jsonl (AGENTS.md 2). Appends
 //           puts, tombstones, and all-or-nothing batches, with `seq` gapless per
 //           spec/protocol.md §4.1 and the clock read here rather than taken from a caller.
@@ -76,6 +76,7 @@ impl Writer {
             .append(true)
             .open(&path)
             .map_err(io_at(&path))?;
+        sync_parent(&path, durability)?;
 
         Ok(Self::assembled(file, path, app, dev, 0, durability))
     }
@@ -99,11 +100,15 @@ impl Writer {
     ) -> Result<Self> {
         check_is_ours(&path, app, dev)?;
 
+        let existed = path.exists();
         let file = fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&path)
             .map_err(io_at(&path))?;
+        if !existed {
+            sync_parent(&path, durability)?;
+        }
 
         Ok(Self::assembled(file, path, app, dev, seq, durability))
     }
@@ -155,6 +160,7 @@ impl Writer {
             Op::Put,
             tbl,
             id,
+            None,
             Some(d),
         )?;
         self.commit(&line)?;
@@ -180,6 +186,7 @@ impl Writer {
             tbl,
             id,
             None,
+            None,
         )?;
         self.commit(&line)?;
         self.seq = seq;
@@ -195,36 +202,43 @@ impl Writer {
     /// `spec/lua-api.md §3.3` gives `pv.batch(function(tx) ... end)`, so M7's binding is a
     /// wrapper rather than a second implementation.
     ///
-    /// **The atomicity ceiling, stated rather than overclaimed.** One `write_all` followed by
-    /// one `fsync` is the most an append-only plain-JSONL file can offer. A crash can still
-    /// leave a byte prefix on disk — but a prefix almost always ends mid-line, and a
-    /// mid-line tail is *detectable*: [`Lines`](super::reader::Lines) reports it as
-    /// [`Error::PartialLine`] naming the byte offset, and nothing truncates it. A length
-    /// prefix, a checksum footer, or a temp-file rename would each buy true atomicity, and
-    /// each would break `AGENTS.md` invariant 1 — the live tail has to stay appendable by
-    /// `echo`.
+    /// **How all-or-nothing is kept on a file that has to stay `echo`-appendable.** One
+    /// `write_all` followed by one `fsync` is what reaches the disk, and a crash between
+    /// the two can leave a byte prefix. A prefix that ends mid-line is
+    /// [`Error::PartialLine`], reported by byte offset and never repaired. A prefix that
+    /// ends on a line boundary is the case a plain line-oriented file cannot see, so the
+    /// batch says its own length: its first line carries `"batch": n` (`§4.1`), and every
+    /// reader — the materializer, the snapshot writer, the data API — skips a batch that
+    /// has fewer lines than it announced ([`batch::incomplete`](super::batch::incomplete)).
+    /// The lines stay in the file, the writer continues after them, and the audit says so
+    /// once. No length prefix, no checksum footer, no temp-file rename: each would break
+    /// `AGENTS.md` invariant 1.
     pub fn batch<F>(&mut self, lam: &mut Lamport, build: F) -> Result<Vec<Vec<u8>>>
     where
         F: FnOnce(&mut Batch<'_>) -> Result<()>,
     {
-        let (buf, seq, staged, lines) = {
+        let (seq, staged, lines) = {
             let mut batch = Batch {
                 app: &self.app,
                 dev: &self.dev,
                 ts: now(),
                 seq: self.seq,
                 lam: *lam,
-                buf: Vec::new(),
-                lines: Vec::new(),
+                staged: Vec::new(),
             };
             build(&mut batch)?;
-            (batch.buf, batch.seq, batch.lam, batch.lines)
+            (batch.seq, batch.lam, batch.lines()?)
         };
 
         if lines.is_empty() {
             return Ok(lines);
         }
 
+        let mut buf = Vec::with_capacity(lines.iter().map(|line| line.len() + 1).sum());
+        for line in &lines {
+            buf.extend_from_slice(line);
+            buf.push(b'\n');
+        }
         self.commit(&buf)?;
         self.seq = seq;
         *lam = staged;
@@ -235,10 +249,8 @@ impl Writer {
     fn commit(&mut self, bytes: &[u8]) -> Result<()> {
         self.file.write_all(bytes).map_err(io_at(&self.path))?;
         if self.durability == Durability::Sync {
-            // The file's data and metadata. The *directory entry* is deliberately not
-            // synced: Windows has no equivalent, M2's bar is that a lost tail be
-            // detectable rather than impossible, and M4 is where tree-level durability
-            // actually has to be argued.
+            // The file's data and metadata. The directory entry was synced once, when
+            // the file was created (`sync_parent`); an append changes no entry.
             self.file.sync_all().map_err(io_at(&self.path))?;
         }
         Ok(())
@@ -266,7 +278,10 @@ impl Writer {
 /// A batch under construction. Nothing here has reached the file yet.
 ///
 /// Every event in the batch shares one `ts` — they describe one moment — and takes the next
-/// `seq` and `lam`, so a batch is contiguous in both.
+/// `seq` and `lam`, so a batch is contiguous in both. Each `d` is serialized as it is
+/// staged, so the caller's type is gone by the time the lines are built — and the lines
+/// are built only once the batch is closed, because the first of them has to say how many
+/// there are (`§4.1`).
 #[derive(Debug)]
 pub struct Batch<'a> {
     app: &'a str,
@@ -274,58 +289,80 @@ pub struct Batch<'a> {
     ts: String,
     seq: u64,
     lam: Lamport,
-    buf: Vec<u8>,
-    /// Each staged line without its newline, in order — handed back once written.
-    lines: Vec<Vec<u8>>,
+    staged: Vec<Staged>,
+}
+
+/// One event of a batch, everything but the marker decided.
+#[derive(Debug)]
+struct Staged {
+    seq: u64,
+    lam: u64,
+    op: Op,
+    tbl: String,
+    id: String,
+    /// `d` as JSON text, exactly as the caller's value serializes.
+    d: Option<String>,
 }
 
 impl Batch<'_> {
     /// Stage one `put`.
     pub fn put<D: Serialize>(&mut self, tbl: &str, id: &str, d: &D) -> Result<()> {
-        self.seq += 1;
-        let line = serialize(
-            self.seq,
-            self.lam.tick(),
-            &self.ts,
-            self.dev,
-            self.app,
-            Op::Put,
-            tbl,
-            id,
-            Some(d),
-        )?;
-        self.stage(line);
+        let d = serde_json::to_string(d)?;
+        self.stage(Op::Put, tbl, id, Some(d));
         Ok(())
     }
 
     /// Stage one tombstone.
     pub fn del(&mut self, tbl: &str, id: &str) -> Result<()> {
-        self.seq += 1;
-        let line = serialize::<()>(
-            self.seq,
-            self.lam.tick(),
-            &self.ts,
-            self.dev,
-            self.app,
-            Op::Del,
-            tbl,
-            id,
-            None,
-        )?;
-        self.stage(line);
+        self.stage(Op::Del, tbl, id, None);
         Ok(())
     }
 
-    fn stage(&mut self, mut line: Vec<u8>) {
-        self.buf.extend_from_slice(&line);
-        line.pop();
-        self.lines.push(line);
+    fn stage(&mut self, op: Op, tbl: &str, id: &str, d: Option<String>) {
+        self.seq += 1;
+        self.staged.push(Staged {
+            seq: self.seq,
+            lam: self.lam.tick(),
+            op,
+            tbl: tbl.to_owned(),
+            id: id.to_owned(),
+            d,
+        });
     }
 
     /// The instant every event in this batch carries.
     #[must_use]
     pub fn ts(&self) -> &str {
         &self.ts
+    }
+
+    /// Every staged line without its newline, in order — the first carrying the marker
+    /// when there are two or more (`§4.1`).
+    fn lines(&self) -> Result<Vec<Vec<u8>>> {
+        let count = u64::try_from(self.staged.len()).unwrap_or(u64::MAX);
+        let mut lines = Vec::with_capacity(self.staged.len());
+        for (index, staged) in self.staged.iter().enumerate() {
+            let d = match &staged.d {
+                Some(text) => Some(serde_json::value::RawValue::from_string(text.clone())?),
+                None => None,
+            };
+            let batch = (index == 0 && count >= 2).then_some(count);
+            let mut line = serialize(
+                staged.seq,
+                staged.lam,
+                &self.ts,
+                self.dev,
+                self.app,
+                staged.op,
+                &staged.tbl,
+                &staged.id,
+                batch,
+                d.as_ref(),
+            )?;
+            line.pop();
+            lines.push(line);
+        }
+        Ok(lines)
     }
 }
 
@@ -340,6 +377,7 @@ fn serialize<D: Serialize>(
     op: Op,
     tbl: &str,
     id: &str,
+    batch: Option<u64>,
     d: Option<&D>,
 ) -> Result<Vec<u8>> {
     // §4.1: `d` MUST be absent when `op` is `del`, and a `put` is the row's value, so it
@@ -360,6 +398,7 @@ fn serialize<D: Serialize>(
         op,
         tbl,
         id,
+        batch,
         d,
     })?;
     // §4.1: `\n` terminated, 0x0A, never \r\n — on Windows too, which is why the file is
@@ -367,6 +406,18 @@ fn serialize<D: Serialize>(
     // than by `writeln!`.
     line.push(b'\n');
     Ok(line)
+}
+
+/// A log file that has just come into existence has to survive a power cut as a name
+/// as well as as bytes: its directory entry is flushed where the platform can
+/// (`crate::durable`), under the same policy the appends follow.
+fn sync_parent(path: &Path, durability: Durability) -> Result<()> {
+    if durability == Durability::Sync
+        && let Some(dir) = path.parent()
+    {
+        crate::durable::sync_dir(dir).map_err(io_at(dir))?;
+    }
+    Ok(())
 }
 
 /// `§4.1`: `dev` MUST equal the log filename and `app` MUST equal the containing directory.

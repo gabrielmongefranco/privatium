@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/backup.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-04
+// Created:  2026-09-04  |  Modified: 2026-09-05
 // Summary:  `privatium restore --from <path>` (spec/cli.md §7): bringing a backed-up data/
 //           folder into this node's data root before the three-tier rebuild runs. A plan
 //           first, then an apply, so `--dry-run` and the real thing read the same
@@ -190,6 +190,13 @@ impl Plan {
 
     /// Copy everything the plan names. Refuses outright while a conflict stands, so a
     /// diverged log is never half-restored.
+    ///
+    /// Nothing here overwrites a log. Each file is decided again against the disk as it
+    /// stands at this moment — not as the plan saw it — and is either written beside its
+    /// destination and renamed into place, grown by the backup's suffix, left alone, or
+    /// refused (`copy_log`). The caller holds the root's lock (`spec/protocol.md §3.1`)
+    /// from before the plan until the rebuild is done, so "this moment" is also the
+    /// only moment anything else could have moved the file.
     pub fn apply(&self) -> Result<(), BackupError> {
         if let Some(first) = self.conflicts.first() {
             return Err(BackupError::Diverged {
@@ -201,10 +208,7 @@ impl Plan {
             if copy.from.is_dir() {
                 copy_dir(&copy.from, &copy.to)?;
             } else {
-                if let Some(parent) = copy.to.parent() {
-                    fs::create_dir_all(parent).map_err(io_at(parent))?;
-                }
-                fs::copy(&copy.from, &copy.to).map_err(io_at(&copy.from))?;
+                copy_log(&copy.from, &copy.to, &copy.slug, &copy.what)?;
             }
         }
         Ok(())
@@ -348,15 +352,76 @@ fn list_files(dir: &Path, keep: impl Fn(&str) -> bool) -> Result<Vec<String>, Ba
     Ok(names)
 }
 
-/// Copy a snapshot directory: its files, one level, which is all `§5.1` has.
+/// Bring one log file in, against the disk as it stands now.
+///
+/// A device's log is one writer's and only ever grows (`spec/protocol.md §3.1`), so
+/// there are exactly four cases and none of them is "replace": absent here, so the
+/// backup's bytes are written to `<name>.jsonl.part` — a name no reader lists — synced,
+/// and renamed into place; a strict prefix of the backup's, so the suffix is appended and
+/// synced, and a crash mid-way leaves at worst a partial last line the next start
+/// reports; identical, or this node ahead, so nothing; anything else, refused. A file
+/// that moved since the plan therefore gets the same answer the plan would have given it.
+fn copy_log(from: &Path, to: &Path, slug: &str, what: &str) -> Result<(), BackupError> {
+    let theirs = fs::read(from).map_err(io_at(from))?;
+    let dir = to.parent().unwrap_or(to);
+    fs::create_dir_all(dir).map_err(io_at(dir))?;
+    let ours = match fs::read(to) {
+        Ok(bytes) => Some(bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(io_at(to)(error)),
+    };
+    match ours {
+        None => {
+            let part = to.with_extension("jsonl.part");
+            crate::durable::write_synced(&part, &theirs).map_err(io_at(&part))?;
+            fs::rename(&part, to).map_err(io_at(to))?;
+            crate::durable::sync_dir(dir).map_err(io_at(dir))?;
+        }
+        Some(ours) if ours == theirs || ours.starts_with(&theirs) => {}
+        Some(ours) if theirs.starts_with(&ours) => {
+            use std::io::Write as _;
+            let mut file = fs::OpenOptions::new()
+                .append(true)
+                .open(to)
+                .map_err(io_at(to))?;
+            file.write_all(&theirs[ours.len()..]).map_err(io_at(to))?;
+            file.sync_all().map_err(io_at(to))?;
+        }
+        Some(_) => {
+            return Err(BackupError::Diverged {
+                count: 1,
+                first: format!("{slug}/{what}"),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Copy a snapshot directory: its files, one level, which is all `§5.1` has — into a
+/// `.part` beside the destination, every file synced, then one rename, so a crash leaves
+/// a directory `snapshot::list` ignores rather than a snapshot with files missing. A
+/// destination that appeared since the plan is left as it is.
 fn copy_dir(from: &Path, to: &Path) -> Result<(), BackupError> {
-    fs::create_dir_all(to).map_err(io_at(to))?;
+    if to.exists() {
+        return Ok(());
+    }
+    let part = to.with_extension("part");
+    if part.exists() {
+        fs::remove_dir_all(&part).map_err(io_at(&part))?;
+    }
+    fs::create_dir_all(&part).map_err(io_at(&part))?;
     for entry in fs::read_dir(from).map_err(io_at(from))? {
         let entry = entry.map_err(io_at(from))?;
         let path = entry.path();
         if path.is_file() {
-            fs::copy(&path, to.join(entry.file_name())).map_err(io_at(&path))?;
+            let bytes = fs::read(&path).map_err(io_at(&path))?;
+            let target = part.join(entry.file_name());
+            crate::durable::write_synced(&target, &bytes).map_err(io_at(&target))?;
         }
+    }
+    fs::rename(&part, to).map_err(io_at(to))?;
+    if let Some(parent) = to.parent() {
+        crate::durable::sync_dir(parent).map_err(io_at(parent))?;
     }
     Ok(())
 }
@@ -445,6 +510,62 @@ mod tests {
                 .exists()
         );
         assert!(!paths.app_snap_dir("hello").join("junk").exists());
+    }
+
+    /// `spec/cli.md §7`: a log this node holds a prefix of grows by the suffix — the file
+    /// is never rewritten — and a log that moved after the plan was built gets the answer
+    /// the plan would have given it: ahead is kept, diverged is refused, absent is written
+    /// beside its destination and renamed in with no `.part` left behind.
+    #[test]
+    fn a_log_grows_by_its_suffix_and_a_moved_log_is_decided_again() {
+        let backup = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let paths = Paths::rooted(root.path());
+        let data = backup.path().join("data");
+        write(&data.join("hello/log/aaa.jsonl"), "1\n2\n3\n");
+        write(&data.join("hello/log/bbb.jsonl"), "1\n2\n3\n");
+        write(&data.join("hello/log/ccc.jsonl"), "1\n2\n");
+        let ours = paths.app_log_dir("hello");
+        write(&ours.join("aaa.jsonl"), "1\n");
+        write(&ours.join("bbb.jsonl"), "1\n");
+
+        let plan = Plan::build(&data, &paths, None).unwrap();
+        assert!(plan.is_applicable());
+        // Between the plan and the apply: bbb ran ahead of the backup, ccc appeared.
+        write(&ours.join("bbb.jsonl"), "1\n2\n3\n4\n");
+        write(&ours.join("ccc.jsonl"), "1\n2\n");
+        plan.apply().unwrap();
+        assert_eq!(
+            fs::read_to_string(ours.join("aaa.jsonl")).unwrap(),
+            "1\n2\n3\n"
+        );
+        assert_eq!(
+            fs::read_to_string(ours.join("bbb.jsonl")).unwrap(),
+            "1\n2\n3\n4\n",
+            "a node that ran ahead keeps its lines"
+        );
+        assert_eq!(
+            fs::read_to_string(ours.join("ccc.jsonl")).unwrap(),
+            "1\n2\n"
+        );
+        assert!(!ours.join("ccc.jsonl.part").exists());
+
+        // Diverged since the plan: refused at the file, nothing else touched.
+        let plan = {
+            write(&data.join("hello/log/ddd.jsonl"), "1\n2\n3\n");
+            write(&ours.join("ddd.jsonl"), "1\n");
+            Plan::build(&data, &paths, None).unwrap()
+        };
+        write(&ours.join("ddd.jsonl"), "1\nX\n");
+        let error = plan.apply().unwrap_err();
+        assert!(
+            matches!(error, BackupError::Diverged { count: 1, .. }),
+            "{error}"
+        );
+        assert_eq!(
+            fs::read_to_string(ours.join("ddd.jsonl")).unwrap(),
+            "1\nX\n"
+        );
     }
 
     #[test]

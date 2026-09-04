@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/log/reader.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-03
+// Created:  2026-09-01  |  Modified: 2026-09-05
 // Summary:  Reading an app's log: the segment list of spec/protocol.md §3.2, a line
 //           iterator per segment, and the one startup scan that recovers `seq` and the
 //           Lamport counter and applies §4.4's clock hygiene.
@@ -16,8 +16,8 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use crate::identity::NodeId;
-use crate::log::Lamport;
 use crate::log::envelope::Meta;
+use crate::log::{Lamport, batch};
 use crate::{Error, Result, io_at};
 
 /// The extension every log segment carries. Plain JSONL, always, for the live tail.
@@ -296,6 +296,26 @@ pub struct Malformed {
     pub problem: String,
 }
 
+/// A batch with fewer lines than its first line announced (`§4.1`): what a crash between
+/// the write and the disk leaves behind. Reported once, never repaired — the lines stay
+/// where they are, every reader skips them ([`batch`]), and the writer continues past
+/// them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Incomplete {
+    /// The segment the batch is in.
+    pub segment: PathBuf,
+    /// The byte offset of its first line.
+    pub offset: u64,
+    /// The writer that started it.
+    pub dev: String,
+    /// The `seq` of its first line.
+    pub seq: u64,
+    /// How many lines it announced.
+    pub expected: u64,
+    /// How many arrived.
+    pub found: u64,
+}
+
 /// This node's clock appears to have moved backwards (`§4.4`, second sentence).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Skew {
@@ -320,8 +340,21 @@ pub struct Recovered {
     pub rejected: Vec<Rejected>,
     /// Lines that are not envelopes.
     pub malformed: Vec<Malformed>,
+    /// Batches with fewer lines than they announced (`§4.1`), not reported before.
+    pub incomplete: Vec<Incomplete>,
     /// Set when this node's own clock looks to have gone backwards.
     pub skew: Option<Skew>,
+}
+
+/// One envelope of a segment, as recovery reads it: owned, so a whole segment can be
+/// held at once for the batch rule.
+struct Parsed {
+    seq: u64,
+    lam: u64,
+    ts: String,
+    dev: String,
+    batch: Option<u64>,
+    offset: u64,
 }
 
 /// Scan every segment, recovering `seq` and the Lamport counter and applying `§4.4`.
@@ -352,7 +385,12 @@ pub(crate) fn recover(
     };
     let mut own_tail_ts: Option<String> = None;
 
+    // Every segment's envelopes first, in order, so the batch rule (§4.1) sees each
+    // header with the lines that followed it, and so the file's own heads are known
+    // before anything is judged against the recorded ones.
+    let mut segments: Vec<(&Segment, Vec<Parsed>)> = Vec::new();
     for segment in reader.segments() {
+        let mut parsed: Vec<Parsed> = Vec::new();
         for line in segment.lines()? {
             let line = line?;
             let meta: Meta<'_> = match serde_json::from_slice(line.raw()) {
@@ -366,8 +404,64 @@ pub(crate) fn recover(
                     continue;
                 }
             };
+            parsed.push(Parsed {
+                seq: meta.seq,
+                lam: meta.lam,
+                ts: meta.ts.into_owned(),
+                dev: meta.dev.into_owned(),
+                batch: meta.batch,
+                offset: line.offset(),
+            });
+        }
+        segments.push((segment, parsed));
+    }
+    let mut on_disk: BTreeMap<&str, u64> = BTreeMap::new();
+    for (_, parsed) in &segments {
+        for meta in parsed {
+            let head = on_disk.entry(meta.dev.as_str()).or_default();
+            *head = (*head).max(meta.seq);
+        }
+    }
 
-            let dev = meta.dev.into_owned();
+    for (segment, parsed) in &segments {
+        let heads: Vec<batch::Head<'_>> = parsed
+            .iter()
+            .map(|p| batch::Head {
+                seq: p.seq,
+                ts: Some(p.ts.as_str()),
+                batch: p.batch,
+            })
+            .collect();
+        for range in batch::incomplete(&heads) {
+            let header = &parsed[range.start];
+            // Reported before if an earlier scan recorded a head at or past this header
+            // — and that head is still inside the file. A recorded head *past* the
+            // file's own is the crash itself: the state was flushed after the batch, and
+            // the disk kept less than the process wrote, so this is the first look.
+            let file_head = on_disk.get(header.dev.as_str()).copied().unwrap_or(0);
+            let already_reported = known_heads
+                .get(&header.dev)
+                .is_some_and(|seen| header.seq <= *seen && *seen <= file_head);
+            if !already_reported {
+                out.incomplete.push(Incomplete {
+                    segment: segment.path().to_path_buf(),
+                    offset: header.offset,
+                    dev: header.dev.clone(),
+                    seq: header.seq,
+                    expected: header.batch.unwrap_or(0),
+                    found: range.len() as u64,
+                });
+            }
+        }
+    }
+
+    for (segment, parsed) in segments {
+        // A line of an incomplete batch still counts here: its `seq` is a position in
+        // the file the writer continues past, and its `lam` was minted by this counter
+        // and must not be minted again. What it is excluded from is materialization,
+        // which every reader decides with `batch::incomplete` (store::events, wire::data).
+        for meta in parsed {
+            let dev = meta.dev;
             let head = out.heads.entry(dev.clone()).or_default();
             *head = (*head).max(meta.seq);
             let is_ours = dev == own.as_str();
@@ -388,10 +482,10 @@ pub(crate) fn recover(
                 if !already_reported {
                     out.rejected.push(Rejected {
                         segment: segment.path().to_path_buf(),
-                        offset: line.offset(),
+                        offset: meta.offset,
                         dev,
                         seq: meta.seq,
-                        ts: meta.ts.into_owned(),
+                        ts: meta.ts,
                         ahead_secs: ahead,
                     });
                 }
@@ -402,7 +496,7 @@ pub(crate) fn recover(
 
             out.lam.observe(meta.lam);
             if is_ours {
-                own_tail_ts = Some(meta.ts.into_owned());
+                own_tail_ts = Some(meta.ts);
             }
         }
     }

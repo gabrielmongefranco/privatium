@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lua/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-05
 // Summary:  The Lua host (spec/lua-api.md, docs/plans/phase-1.md M7, M8): one pool of
 //           sandboxed VMs per Tier 1 app, every VM loading app.lua identically so the router
 //           can hold (method, pattern, index) from VM 0 (§2.4); one request holds one VM on
@@ -500,15 +500,38 @@ impl Host {
     /// Recompile the changed templates and publish them as the next generation. A
     /// request already running keeps the snapshot it started with (R3); the next one
     /// sees the edit. A template that fails to compile, or to parse in a VM, is the
-    /// error — nothing is published.
+    /// error — nothing is published, and what was current stays current, unserved
+    /// behind the error page until the next save loads (`spec/cli.md §3`).
     pub fn reload_views(&self) -> Result<(), String> {
-        self.templates.reload()?;
+        let candidate = self.templates.prepare()?;
         // Parse every chunk once, as the load did, so a syntax error is found here and
-        // named — not by whichever request first renders it.
+        // named — not by whichever request first renders it — and before anything is
+        // published.
         let vm = self.checkout()?;
-        let checked = lsp::preload(&vm.lua, &self.templates.snapshot());
+        let checked = lsp::preload(&vm.lua, candidate.views());
         self.checkin(vm);
-        checked
+        match checked {
+            Ok(()) => {
+                self.templates.publish(candidate);
+                Ok(())
+            }
+            Err(error) => {
+                self.templates.refuse(candidate);
+                Err(error)
+            }
+        }
+    }
+
+    /// The generation the current templates were published as — what a test holds still
+    /// across a broken edit.
+    #[must_use]
+    pub fn views_generation(&self) -> u64 {
+        self.templates
+            .snapshot()
+            .values()
+            .map(|view| view.generation)
+            .max()
+            .unwrap_or(0)
     }
 
     /// The error with its template lines mapped back to the `.lsp` and the offending

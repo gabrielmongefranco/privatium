@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/headers.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-05
 // Summary:  The headers of spec/protocol.md §9.3 and the small set of response shapes the
 //           shell and the API answer with. Every response leaving core::handle passes
 //           through `secure`, so a 403 from the auth layer and a 500 from a failed page
@@ -8,7 +8,7 @@
 
 use axum::body::Body;
 use axum::http::header::{
-    ALLOW, CACHE_CONTROL, CONTENT_SECURITY_POLICY, CONTENT_TYPE, HeaderValue, LOCATION,
+    ALLOW, CACHE_CONTROL, CONTENT_SECURITY_POLICY, CONTENT_TYPE, HeaderName, HeaderValue, LOCATION,
     REFERRER_POLICY, X_CONTENT_TYPE_OPTIONS,
 };
 use axum::http::{Response, StatusCode};
@@ -50,6 +50,23 @@ pub fn secure(response: &mut Response<Body>, csp: &str) {
     if !headers.contains_key(CACHE_CONTROL) {
         headers.insert(CACHE_CONTROL, HeaderValue::from_static(NO_STORE));
     }
+}
+
+/// What `permissions.cross_origin_isolated` asks for (`spec/app-contract.md §5.4`):
+/// `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy:
+/// require-corp`, which together give the page `SharedArrayBuffer`. Both are
+/// document-level on one origin, which is why the loader allows the permission to the
+/// solo app alone and why, once allowed, they go on every response of the origin.
+pub fn isolate(response: &mut Response<Body>) {
+    let headers = response.headers_mut();
+    headers.insert(
+        HeaderName::from_static("cross-origin-opener-policy"),
+        HeaderValue::from_static("same-origin"),
+    );
+    headers.insert(
+        HeaderName::from_static("cross-origin-embedder-policy"),
+        HeaderValue::from_static("require-corp"),
+    );
 }
 
 /// Mark a response as one of the two cacheable kinds.

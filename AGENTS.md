@@ -47,7 +47,12 @@ Violating any of these is a bug, regardless of how well the code works:
 10. **The cluster private key never leaves a node.** Phones, tablets, and browsers receive
    the public key only.
 11. **No outbox dedupe table.** ULIDs make replay idempotent. Adding transaction IDs or an
-   acknowledgement protocol means the merge rule was misread.
+   acknowledgement protocol means the merge rule was misread. Whether a queued write
+   already landed is decided by reading the log past the mark it was queued at
+   (`spec/protocol.md §10.6`), never by a table.
+12. **One process per data directory.** Whoever has a root open holds `local/lock`
+   (`spec/protocol.md §3.1`); a second `privatium` on the same directory is refused, not
+   allowed to mint `seq` beside the first.
 
 ## Language and stack
 
@@ -91,7 +96,7 @@ spread-out form used throughout `spec/` and `docs/`, and the compact form used i
 ```rust
 // Project:  Privatium™  |  File: crates/privatium-core/src/lib.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-08-31  |  Modified: 2026-09-03
+// Created:  2026-08-31  |  Modified: 2026-09-05
 // Summary:  What this file is for, in a sentence or three.
 ```
 
@@ -194,9 +199,11 @@ skill's `reference/` is generated from the crate and the spec by `cargo xtask
 gen-skill-reference` and committed; CI fails on drift, so regenerate after touching
 `spec/` or a fact the generator reads, and never edit a generated file by hand.
 
-Every skill ends with `privatium lint`. The linter is part of the framework, not advice —
-rules are specified with stable IDs in `spec/cli.md §5`, and `docs/skills.md §4` explains why
-it exists. A rule that cannot cite the spec section it enforces does not belong in it.
+Every skill's verification is `privatium lint` over the app folder — the Tier 3 skill
+lints the folder its index entry lives in and tests its binary with `cargo test`. The
+linter is part of the framework, not advice — rules are specified with stable IDs in
+`spec/cli.md §5`, and `docs/skills.md §4` explains why it exists. A rule that cannot cite
+the spec section it enforces does not belong in it.
 
 ## Security expectations
 
