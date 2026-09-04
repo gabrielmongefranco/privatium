@@ -1071,9 +1071,9 @@ fn test_weekly_snapshot_is_due_by_interval_or_events() {
     ));
 }
 
-/// `spec/protocol.md §5` — a snapshot is read at one moment and may be written at
-/// another: the job taken from the store describes the log as it stood, and what lands
-/// in the log between the reading and the writing — a request served while the node's
+/// `spec/protocol.md §5` — a snapshot is decided at one moment and read and written at
+/// another: the job taken from the store names the log as it stood, a length per
+/// segment, and what lands in the log afterwards — a request served while the node's
 /// lock was released — is neither in its files nor in its marks. The same steps through
 /// the node record the row once written, and a `.part` never survives.
 #[test]
@@ -1084,8 +1084,14 @@ fn test_spec_5_snapshot_job_describes_the_moment_it_was_read() {
         .store
         .snapshot_job(fixture.node.id(), at("2026-08-30T03:00:00Z"))
         .unwrap();
-    let id = job.id().clone();
+    let id: snapshot::SnapshotId = format!("2026-W35-{}-3", fixture.dev).parse().unwrap();
     assert_eq!(job.slug(), APP);
+    assert_eq!(job.segments().len(), 1);
+    assert_eq!(
+        job.segments()[0].1,
+        fs::metadata(fixture.log_path()).unwrap().len(),
+        "the job holds the log's length now"
+    );
     // The log grows while the job is unwritten: `a` is amended, `c` comes and goes.
     tail_hello(&fixture);
     fixture.rematerialize();
@@ -1127,6 +1133,46 @@ fn test_spec_5_snapshot_job_describes_the_moment_it_was_read() {
         fixture.node.snapshot_due("_sys", now).unwrap().is_none(),
         "nothing due a moment later"
     );
+}
+
+/// `spec/protocol.md §5` — the log grows while a snapshot is being read and written:
+/// the job runs on another thread with no lock at all, the appends go on beside it,
+/// and the snapshot describes the log as it stood when the job was taken.
+#[test]
+fn test_spec_5_snapshot_writes_while_the_log_grows() {
+    let fixture = Fixture::open(HELLO_DDL);
+    seed_hello(&fixture);
+    let job = fixture
+        .store
+        .snapshot_job(fixture.node.id(), at("2026-08-30T03:00:00Z"))
+        .unwrap();
+    let writer = std::thread::spawn(move || job.write());
+    let dev = fixture.dev.clone();
+    let ts = ts_offset_secs(-10);
+    for n in 4..=200u64 {
+        fixture.append(&event(
+            n,
+            n,
+            &ts,
+            &dev,
+            "profile",
+            &format!("row-{n}"),
+            Some(r#"{"display_name":"later"}"#),
+        ));
+    }
+    let snapshot = writer.join().unwrap().unwrap();
+    assert_eq!(snapshot.manifest.hi_seq[&fixture.dev], 3);
+    assert_eq!(snapshot.manifest.hi_lam, 3);
+    assert_eq!(snapshot.manifest.tables[0].rows, 1);
+    assert_eq!(
+        fs::read_to_string(fixture.log_path())
+            .unwrap()
+            .lines()
+            .count(),
+        200,
+        "every append landed while the snapshot was written"
+    );
+    assert!(snapshot::verify(&snapshot.dir).unwrap().ok());
 }
 
 /// `spec/app-contract.md §7` — a snapshot is written while an app's read-only connection

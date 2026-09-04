@@ -64,6 +64,10 @@ privatium [--port 8420] [--solo <slug>] [--no-discovery] [--open]
 Starts the node, mounts every enabled app, begins discovery (`spec/protocol.md §6`), and
 prints the LAN URL. `--open` additionally prints a QR code for pairing.
 
+A Phase 1 build — `pv/1 (partial: phase 1)`, `§1` — has no discovery and no pairing yet:
+it listens on loopback, prints that URL, and `--open` opens it in a browser. The LAN URL
+and the QR code arrive with pairing (`docs/roadmap.md`, Phase 2).
+
 `--solo <slug>` overrides `[node] mode` from the config file for this run.
 
 ---

@@ -6,15 +6,16 @@
  *           ES module with no dependencies and no build step: query, sql, get, events,
  *           append, put, del, subscribe, ulid, node, url, online, on. Writes queue in an
  *           outbox while the node is unreachable and replay exactly as they were: an entry
- *           carries the high-water mark the helper held when it queued it, and before a
- *           replay the row's events past that mark are read — an entry already in the log
- *           is dropped, not sent again (spec/protocol.md §10.6). Nothing else is
- *           remembered and nothing acknowledges. DECIMAL and BIGINT arrive as strings.
+ *           carries the high-water mark and the app it was queued under, and before a
+ *           replay the row's events past that mark are read — already there, it is
+ *           dropped; moved since, it is refused and reported; nothing, it is sent
+ *           (spec/protocol.md §10.6). Nothing else is remembered. DECIMAL stays a string.
  */
 const MOUNT = (() => {
   const m = location.pathname.match(/^\/a\/[a-z][a-z0-9-]{1,30}\//);
   return m ? m[0] : '/';
 })();
+const MOUNT_APP = MOUNT === '/' ? null : MOUNT.slice(3, -1);   // host mode names the app in the path
 const OUTBOX = 'pv:outbox:' + MOUNT, APP = 'pv:app:' + MOUNT;
 const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
@@ -28,7 +29,7 @@ function write(key, value) {
   catch { /* no storage: the queue lives for the page */ }
 }
 
-const state = { online: navigator.onLine !== false, lam: 0, node: null, app: read(APP), es: null, delay: 1000 };
+const state = { online: navigator.onLine !== false, lam: 0, node: null, app: MOUNT_APP || read(APP), es: null, delay: 1000 };
 const handlers = {};
 const subscribers = new Set();
 // The outbox: one queue in memory — the truth for this page — mirrored to storage when it can be.
@@ -72,6 +73,7 @@ async function call(method, path, body) {
 
 // ---- the outbox: entries keyed by a ULID, replayed as they are -------------------------
 function persist() { write(OUTBOX, queue.length ? queue : null); }
+function refuse(message, conflict) { const err = new Error(message); err.status = 409; if (conflict) err.conflict = conflict; throw err; }
 function same(a, b) {
   if (a === b) return true;
   if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
@@ -79,16 +81,18 @@ function same(a, b) {
   const ka = Object.keys(a);
   return ka.length === Object.keys(b).length && ka.every(k => Object.hasOwn(b, k) && same(a[k], b[k]));
 }
-// Whether every event of the entry is already in the log past the mark it was queued at —
-// read, not remembered (spec/protocol.md §10.6).
-async function landed(entry) {
+// Where the entry stands, read from the log past the mark it was queued at — never remembered
+// (spec/protocol.md §10.6): every event already there is 'landed'; another event on one of its
+// rows is a conflict, named; nothing on any row is 'fresh'.
+async function stand(entry) {
+  let landed = 0;
   for (const ev of entry.events) {
     const text = await (await call('GET', 'events' + qs({ tbl: ev.tbl, id: ev.id, after: entry.lam }))).text();
-    const found = text.split('\n').filter(l => l.trim()).map(l => JSON.parse(l))
-      .some(line => line.op === ev.op && (ev.op === 'del' || same(line.d, ev.d)));
-    if (!found) return false;
+    const lines = text.split('\n').filter(l => l.trim()).map(l => JSON.parse(l));
+    if (lines.some(line => line.op === ev.op && (ev.op === 'del' || same(line.d, ev.d)))) landed++;
+    else if (lines.length) return { conflict: { tbl: ev.tbl, id: ev.id } };
   }
-  return true;
+  return landed === entry.events.length ? 'landed' : 'fresh';
 }
 let flushing = null;
 function flush() {
@@ -98,11 +102,11 @@ function flush() {
       const entry = queue[0];
       try {
         if (!state.app) await node();                       // which app this origin serves now
-        if (entry.app && entry.app !== state.app) {
-          const err = new Error('queued for app ' + entry.app + '; this origin now serves ' + state.app);
-          err.status = 409; throw err;
-        }
-        if (!(await landed(entry))) noteLam((await (await call('POST', 'events', { events: entry.events })).json()).lam);
+        if (!entry.app) refuse('queued before the app at this mount was known; not replayed');
+        if (entry.app !== state.app) refuse('queued for app ' + entry.app + '; this origin now serves ' + state.app);
+        const where = await stand(entry);
+        if (where.conflict) refuse('a newer change to ' + where.conflict.tbl + '/' + where.conflict.id + ' landed after this was queued', where.conflict);
+        if (where !== 'landed') noteLam((await (await call('POST', 'events', { events: entry.events })).json()).lam);
       } catch (e) {
         // Unreachable, or the node's trouble rather than the entry's: keep it for next time.
         if (e instanceof PvOffline || e.status >= 500 || e.status === 429 || e.status === 408) break;

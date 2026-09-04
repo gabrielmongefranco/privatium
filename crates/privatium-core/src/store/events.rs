@@ -9,7 +9,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use serde_json::value::RawValue;
@@ -86,12 +86,14 @@ struct Line<'a> {
 /// No audit row is written from here. M2's `recover()` reports each rejection and each
 /// short batch once.
 pub(crate) fn read_log(log_dir: &Path, app: &str, cutoff: &str) -> Result<Vec<Event>, StoreError> {
-    let horizon: Option<jiff::Timestamp> = cutoff.parse().ok();
-    let mut segments: Vec<_> = match fs::read_dir(log_dir) {
+    let mut segments: Vec<(PathBuf, u64)> = match fs::read_dir(log_dir) {
         Ok(entries) => entries
             .filter_map(Result::ok)
-            .map(|entry| entry.path())
-            .filter(|path| path.extension().is_some_and(|ext| ext == "jsonl"))
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "jsonl"))
+            .map(|entry| {
+                let len = entry.metadata().map(|meta| meta.len()).unwrap_or(u64::MAX);
+                (entry.path(), len)
+            })
             .collect(),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(error) => {
@@ -101,12 +103,30 @@ pub(crate) fn read_log(log_dir: &Path, app: &str, cutoff: &str) -> Result<Vec<Ev
         }
     };
     segments.sort();
+    read_log_upto(&segments, app, cutoff)
+}
 
+/// [`read_log`] over segments named with a byte length each: every line inside the
+/// first `len` bytes of the file, and nothing past them.
+///
+/// This is what lets a snapshot be read with no lock held. A log only grows, so the
+/// lengths a caller took while it held the node's lock name a state of the log that
+/// nothing appended afterwards can change; reading up to them later, while requests go
+/// on appending, sees exactly that state. A length that cuts a line — a hand `echo` in
+/// progress at the moment of the stat — leaves a fragment the parser skips, as it skips
+/// any line that is not an envelope.
+pub(crate) fn read_log_upto(
+    segments: &[(PathBuf, u64)],
+    app: &str,
+    cutoff: &str,
+) -> Result<Vec<Event>, StoreError> {
+    let horizon: Option<jiff::Timestamp> = cutoff.parse().ok();
     let mut events = Vec::new();
-    for segment in segments {
-        let text = fs::read_to_string(&segment).map_err(|error| StoreError::Schema {
+    for (segment, len) in segments {
+        let bytes = read_prefix(segment, *len).map_err(|error| StoreError::Schema {
             problem: format!("{}: {error}", segment.display()),
         })?;
+        let text = String::from_utf8_lossy(&bytes);
         let parsed: Vec<Line<'_>> = text
             .lines()
             .map(|raw| raw.trim_end_matches('\r'))
@@ -132,6 +152,21 @@ pub(crate) fn read_log(log_dir: &Path, app: &str, cutoff: &str) -> Result<Vec<Ev
         }
     }
     Ok(events)
+}
+
+/// The first `len` bytes of a file — all of it when `len` is `u64::MAX`. A file that
+/// vanished reads as empty: a segment listed a moment ago and gone now is a restore's
+/// doing, and a restore does not run while a node does.
+fn read_prefix(path: &Path, len: u64) -> std::io::Result<Vec<u8>> {
+    use std::io::Read as _;
+    let file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error),
+    };
+    let mut bytes = Vec::with_capacity(usize::try_from(len.min(1 << 24)).unwrap_or(0));
+    file.take(len).read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 fn sane(line: Line<'_>, app: &str, horizon: Option<jiff::Timestamp>) -> Option<Event> {

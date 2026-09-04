@@ -143,6 +143,20 @@ pub enum Error {
         dev: String,
     },
 
+    /// The last append to this log failed and the file has not been re-read since
+    /// (`spec/protocol.md §4.1`). The failed write may be on disk in whole or in part,
+    /// so nothing is appended after it until the next scan says where the file ends —
+    /// which the next append attempts itself.
+    #[error(
+        "{path}: the last append failed ({reason}); the log takes no writes until it is re-read"
+    )]
+    WriterPoisoned {
+        /// The log file.
+        path: PathBuf,
+        /// What failed.
+        reason: String,
+    },
+
     /// A log file ends in the middle of a line.
     ///
     /// What a crash during an append leaves behind. Reported, never repaired: `§3.1` forbids

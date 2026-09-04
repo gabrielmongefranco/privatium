@@ -1,7 +1,8 @@
 # sketch — the Tier 2 reference app
 
-A shared canvas. Draw on the laptop, it shows up on the phone. Works offline; queued
-strokes replay on reconnect.
+A shared canvas. Draw in one browser window, it shows up in another; once pairing lands
+(Phase 2 of `docs/roadmap.md`), on the phone. Works offline; queued strokes replay on
+reconnect.
 
 It exists to prove one thing: **the framework does not impose an application model.**
 
@@ -19,15 +20,20 @@ JavaScript. That is the entire app.
 
 ## What the framework still gives it
 
-Everything that matters, and none of it is in this folder:
+Everything that matters, and none of it is in this folder. What a Phase 1 node gives it
+today:
 
 - **Storage** — every stroke is an append-only event in `data/sketch/log/<device>.jsonl`
-- **Sync** — strokes reach every paired device over LAN, iroh, or a synced folder
-- **Auth** — the canvas is behind the node's pairing; the app implements nothing
-- **Encryption** — session crypto is already applied by the time `fetch` returns
-- **Discovery** — the phone finds the node with no URL typed
 - **Backup** — copy `data/`, and every stroke you ever drew comes back
 - **Offline** — writes queue in an outbox, replay on reconnect
+- **Live updates** — a stroke drawn in one window reaches every other open window
+
+What arrives with the later phases of `docs/roadmap.md`, with nothing to change here:
+
+- **Auth** (Phase 2) — the canvas behind the node's pairing; the app implements nothing
+- **Encryption** (Phase 2) — session crypto already applied by the time `fetch` returns
+- **Discovery** (Phase 2) — the phone finds the node with no URL typed
+- **Sync** (Phase 3) — strokes reach every paired device over LAN, iroh, or a synced folder
 
 ## The event log as a document store
 

@@ -415,6 +415,20 @@ impl Store {
         events::read_log(&self.log_dir, &self.slug, cutoff)
     }
 
+    /// Every segment of this app's log with its length now — a stat per file, no read.
+    /// What a snapshot job takes under the lock, so that it can read exactly this state
+    /// of the log later with no lock at all (`events::read_log_upto`).
+    pub(crate) fn log_segments(&self) -> Result<Vec<(PathBuf, u64)>, StoreError> {
+        let mut segments: Vec<(PathBuf, u64)> = self
+            .take_inputs()?
+            .segments
+            .into_iter()
+            .map(|(name, len)| (self.log_dir.join(name), len))
+            .collect();
+        segments.sort();
+        Ok(segments)
+    }
+
     /// The tables were just rebuilt, by `tier`: take the watermark and stamp the record.
     pub(crate) fn note_rebuilt(&mut self, tier: Tier, snapshot: Option<String>) {
         let inputs = self.take_inputs().unwrap_or_default();

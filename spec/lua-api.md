@@ -468,7 +468,8 @@ privatium dev --app myapp
 - Lua and templates: reloaded in place, next request picks them up. **No restart.**
 - `schema.sql`: triggers rematerialization from the logs, which is safe at any time
 - Errors render in the browser with the Lua traceback and the offending template line
-- `--open` prints a QR code so a phone on the LAN follows along live
+- `--open` opens the app in a browser; the QR code a phone on the LAN follows along with
+  arrives with pairing (Phase 2, `spec/cli.md §2`)
 
 The reloading is the host's, on every run, not a mode: a change is noticed by a stat on the
 next request, so `privatium dev` adds nothing to it beyond its flags (`spec/cli.md §3`). A
