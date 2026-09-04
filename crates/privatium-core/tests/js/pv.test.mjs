@@ -138,16 +138,54 @@ test('spec/protocol.md §10.6: an entry already in the log past its mark is not 
   assert.equal(p.store.map.has('pv:outbox:/a/sketch/'), false);
 });
 
-test('spec/protocol.md §10.6: a different value for the row is not "landed" and is sent', async () => {
+test('spec/protocol.md §10.6: a row that moved since the entry was queued is a conflict — refused and reported, never written over', async () => {
   const p = await page({ respond: downNode(), online: false });
+  const rejected = [];
+  p.pv.on('rejected', e => rejected.push(e));
+  // Queued offline: an edit of A, and a brand-new row B.
   await p.pv.put('stroke', '01K4B0000000000000000000A1', { n: 2 });
+  await p.pv.put('stroke', '01K4B0000000000000000000B1', { n: 9 });
   const up = upNode();
-  p.respond((m, path, body) => (m === 'GET' && path.includes('/api/events?')
-    ? { text: JSON.stringify({ op: 'put', tbl: 'stroke', id: '01K4B0000000000000000000A1', d: { n: 1 } }) + '\n' }
-    : up(m, path, body)));
+  p.respond((m, path, body) => {
+    if (m === 'GET' && path.includes('/api/events?')) {
+      const id = new URL('http://x' + path).searchParams.get('id');
+      // Another device edited A after the mark; nobody has touched B.
+      if (id === '01K4B0000000000000000000A1') return { text: JSON.stringify({ op: 'put', tbl: 'stroke', id, d: { n: 1 } }) + '\n' };
+    }
+    return up(m, path, body);
+  });
   p.fire('online');
   await p.pv.flush();
-  assert.equal(posts(p.requests).length, 1);
+  assert.equal(rejected.length, 1);
+  assert.equal(rejected[0].error.status, 409);
+  assert.deepEqual(rejected[0].error.conflict, { tbl: 'stroke', id: '01K4B0000000000000000000A1' });
+  assert.match(rejected[0].error.message, /newer change to stroke\/01K4B0000000000000000000A1/);
+  assert.deepEqual(posts(p.requests).map(r => r.body.events[0].id), ['01K4B0000000000000000000B1'], 'the fresh row went, the stale edit did not');
+  assert.equal(p.store.map.has('pv:outbox:/a/sketch/'), false);
+});
+
+test('spec/data-api.md §6: in solo mode an entry queued before the app was known is refused; in host mode the mount names it', async () => {
+  // Solo mount, first load with the node down and nothing cached: the app is unknown.
+  const solo = await page({ pathname: '/', respond: downNode(), online: false });
+  const rejected = [];
+  solo.pv.on('rejected', e => rejected.push(e));
+  await solo.pv.put('save', '01K4B0000000000000000000A1', { level: 7 });
+  assert.equal(JSON.parse(solo.store.map.get('pv:outbox:/'))[0].app, null);
+  solo.respond(upNode('mygame'));
+  solo.fire('online');
+  await solo.pv.flush();
+  assert.equal(posts(solo.requests).length, 0, 'never replayed into whichever app owns / now');
+  assert.equal(rejected.length, 1);
+  assert.match(rejected[0].error.message, /before the app at this mount was known/);
+
+  // A host-mode mount carries the app in its path, node or no node.
+  const host = await page({ pathname: '/a/sketch/', respond: downNode(), online: false });
+  await host.pv.put('stroke', '01K4B0000000000000000000A1', { n: 1 });
+  assert.equal(JSON.parse(host.store.map.get('pv:outbox:/a/sketch/'))[0].app, 'sketch');
+  host.respond(upNode('sketch'));
+  host.fire('online');
+  await host.pv.flush();
+  assert.equal(posts(host.requests).length, 1);
 });
 
 test('spec/data-api.md §6: an entry queued for another app at this mount is refused, never replayed', async () => {

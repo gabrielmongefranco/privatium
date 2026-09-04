@@ -317,12 +317,16 @@ why, not a to-do list.
 | 90 | `protocol.md §3` showed `local/` holding `state.jsonl` alone, and nothing kept a second `privatium` — a `snapshot --verify` beside a running node — from opening the same logs and minting `seq` beside it | `local/lock`, held exclusively by the process that has the root open, a second refused; `cli.md §1` names which commands take it | `protocol.md §3, §3.1`, `cli.md §1` (hardening) |
 | 91 | `cli.md §7` said a log is "copied" when this node's copy is a prefix of the backup's — `fs::copy` truncates the destination first, so a crash mid-copy left the node a shorter log than it had — and nothing held other processes off during the copy | A copy never overwrites: written beside and renamed, or grown by the suffix, each file decided again at the moment it is written, under the root's lock from the plan to the rebuild | `cli.md §7`, `docs/backup-and-restore.md §3` (hardening) |
 | 92 | `data-api.md §2` said "atomic: all lines or none" and `lua-api.md §3.3` "every event or none", while a batch was one write of plain lines: a crash that landed a newline-aligned prefix left a batch every reader took for a smaller one, and only a torn last line was detectable | The first line of a batch of two or more carries `"batch": n`; a reader skips a batch that reached the disk short, keeps its lines, continues past them, and the node audits `batch.incomplete` once | `protocol.md §4.1, §4.5`, `lua-api.md §3.3`, `data-api.md §2`, `data-dictionary.md §3.10` (hardening) |
-| 93 | `protocol.md §10.6` said "ULIDs make replay idempotent" and `data-api.md §6` "needs no bookkeeping", while a browser's retry of a write that had landed was stamped afresh by the node and superseded any edit made in between; neither said what a replayed edit does to one | Idempotent at the row; whether a write landed is read from the log past the mark the entry was queued at, never remembered; a queued edit replayed later wins by arrival, because a browser is not a device (`§10.7`) | `protocol.md §10.6`, `data-api.md §6`, `AGENTS.md` 11 (hardening) |
+| 93 | `protocol.md §10.6` said "ULIDs make replay idempotent" and `data-api.md §6` "needs no bookkeeping", while a browser's retry of a write that had landed was stamped afresh by the node and superseded any edit made in between; neither said what a replayed edit does to one | Idempotent at the row; whether a write landed is read from the log past the mark the entry was queued at, never remembered; a queued edit whose row moved since is refused and reported rather than written over the newer change (row 101); what a browser does send is stamped as it arrives, since it is not a device (`§10.7`) | `protocol.md §10.6`, `data-api.md §6`, `AGENTS.md` 11 (hardening) |
 | 94 | `data-api.md §4`'s `/api/node` named no app, so a page at a solo mount — `/`, for whichever app the node serves — could not tell which app its outbox was for, and `pv.js` keyed the queue by the mount alone | `app` in `/api/node`; an entry carries the app it was queued under and is refused, not replayed, when the mount serves another | `data-api.md §4, §6` (hardening) |
 | 95 | `data-api.md §6` dropped every non-2xx replay as "refused", a 503 from a node that was up but failing included; `pv.js` also lost a queued entry to an append made during a replay, since each call re-read storage, lost the queue outright without storage, and — the one that mattered — never replayed at all after an empty flush at load | A 429, a 5xx or an unreachable node keeps the entry and ends the pass; one queue in memory, mirrored to storage; the helper runs under `node --test` in CI | `data-api.md §6` (hardening) |
 | 96 | `data-api.md §5` and `app-contract.md §5.2` promised `pv.js` under 8 KB (row 69); the landed check, the app check and the retention rule are 1.9 KB more | Under 10 KB | `data-api.md §5`, `app-contract.md §5.2` (hardening) |
 | 97 | `app-contract.md §5.4` said `cross_origin_isolated` "is honoured only for the solo app" and `§9.3` listed the headers of every response; no response carried COOP or COEP, so the permission was accepted and did nothing | The two headers on every response of the origin in solo mode; `§9.3` says so | `app-contract.md §5.4`, `protocol.md §9.3`, `docs/frameworks.md §5.4` (hardening) |
 | 98 | `app-contract.md §4.6` still said "globals are per-VM and do not persist" after row 47 made a handler's global request-scoped and `app.lua`'s the baseline; `README.md` said no code existed; `protocol.md` called itself pre-implementation; the Tier 1 skill promised a LAN QR code; `AGENTS.md`, `docs/skills.md §4` and `skills/README.md` said every skill ends with `privatium lint` while the Tier 3 skill ended with `skill export` | Each says what is so | `app-contract.md §4.6`, `README.md`, `protocol.md`, `skills/`, `AGENTS.md`, `docs/skills.md §4` (hardening) |
+| 99 | `protocol.md §4.1` said nothing about an append that fails part-way: the writer advanced nothing and would have minted the same `seq` again, or appended after a torn line | A writer whose write or flush fails MUST NOT append again until it has re-read its file; the next `seq` is what the file ends with, and a file ending mid-line stays closed | `protocol.md §4.1` (hardening, second round) |
+| 100 | `data-api.md §6` let an entry queued before the helper knew which app a solo mount served replay into whichever app owned `/` later | Refused and reported; a host-mode mount names its app in the path, so only a solo page loaded with the node unreachable and nothing cached is affected | `data-api.md §6` (hardening, second round) |
+| 101 | Row 93 had a queued edit replayed after another device edited the row win by arrival — honest, and the wrong default for a single owner, who was not told a newer edit had been overwritten | The row moved since the write was queued: the whole entry is refused and reported as a conflict, never written over the newer change. The owner's decision, after the review's re-audit | `protocol.md §10.6`, `data-api.md §6` (hardening, second round) |
+| 102 | `cli.md §2` and `lua-api.md §7` had `--open` print a QR code, and `apps/sketch/README.md` promised pairing, discovery and sync — none of which a Phase 1 build has | Each says what a Phase 1 build does and which phase the rest arrives with | `cli.md §2`, `lua-api.md §7`, `apps/sketch/README.md` (hardening, second round) |
 
 Defect 11 was found during M1 rather than while writing this plan, which is the rule in
 the last paragraph of this section working as intended. It could not be coded around: the
@@ -1067,6 +1071,20 @@ Fixed as one PR between M12 and M13, with `§3` rows 90–98 for the spec each o
   `test_spec_app_contract_5_4_cross_origin_isolated_headers_in_solo_mode`.
 - **The documents say what is so** (`§3` row 98).
 
+*Second round, after the review's re-audit of the first:* a failed append closes the
+writer until the file is re-read — `Writer::poisoned`, and `AppLog` re-reads on the next
+append, continuing whenever the file ends on a line boundary and refusing over a torn
+line (`§3` row 99; `a_write_that_fails_part_way_closes_the_writer`,
+`a_closed_writer_reopens_from_an_intact_file`,
+`a_closed_writer_stays_closed_over_a_torn_line`). The snapshot job takes a length per log
+segment under the lock and reads that bounded prefix with no lock held
+(`events::read_log_upto`; `test_spec_5_snapshot_writes_while_the_log_grows` appends two
+hundred lines while a snapshot is written on another thread). `pv.js` refuses an entry
+queued before the app at a solo mount was known, and refuses a conflict — the row moved
+since the write was queued — rather than writing over the newer change, which is the
+owner's decision (rows 100–101; eleven tests under `node --test`). The last Phase 2
+claims in `cli.md §2`, `lua-api.md §7` and sketch's README name their phase (row 102).
+
 ---
 
 ### M13 — Embedded mode, packaging-lite, release
@@ -1194,6 +1212,7 @@ whole spec sections, so an edit to a section a skill cites is drift by construct
 | 11 | `m11-cli` | M10 | — |
 | 12 | `m12-lint` | M11 | — |
 | 12b | `phase1-hardening` | M12 | as found (§3 rows 90–98) |
+| 12c | `phase1-hardening-2` | 12b | as found (§3 rows 99–102) |
 | 13 | `m13-embedded-release` | M12 | roadmap: tick Phase 1 |
 
 ---

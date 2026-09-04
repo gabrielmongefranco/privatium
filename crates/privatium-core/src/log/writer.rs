@@ -6,7 +6,6 @@
 //           spec/protocol.md §4.1 and the clock read here rather than taken from a caller.
 
 use std::fs;
-use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -44,14 +43,39 @@ pub enum Durability {
 /// The writer owns `seq` and not `lam`: `§4.3`'s counter is per **app**, and in Phase 3 a
 /// sync receiver folds another device's events into it without ever touching this writer.
 /// So [`Lamport`] arrives as an argument, from [`AppLog`](super::AppLog), which owns it.
+///
+/// **A failed append closes the writer** (`§4.1`). When a write or a flush fails, some of
+/// the bytes may have reached the file and some not, and `seq` was not advanced; a
+/// writer that carried on could mint that `seq` a second time or append after a torn
+/// line. So the writer refuses every append until [`AppLog`](super::AppLog) has re-read
+/// the file and told it where the file now ends ([`reconcile`](Self::reconcile)) — which
+/// happens on the next append, and succeeds whenever the file ends on a line boundary.
 #[derive(Debug)]
 pub struct Writer {
-    file: fs::File,
+    sink: Box<dyn Sink>,
     path: PathBuf,
     app: String,
     dev: String,
     seq: u64,
     durability: Durability,
+    /// Why the last append failed, while it stands.
+    poisoned: Option<String>,
+}
+
+/// What the writer needs of its file, so a test can hand it one that fails part-way.
+pub(crate) trait Sink: std::fmt::Debug + Send + Sync {
+    fn write_all(&mut self, bytes: &[u8]) -> std::io::Result<()>;
+    fn sync_all(&self) -> std::io::Result<()>;
+}
+
+impl Sink for fs::File {
+    fn write_all(&mut self, bytes: &[u8]) -> std::io::Result<()> {
+        std::io::Write::write_all(self, bytes)
+    }
+
+    fn sync_all(&self) -> std::io::Result<()> {
+        fs::File::sync_all(self)
+    }
 }
 
 impl Writer {
@@ -78,7 +102,14 @@ impl Writer {
             .map_err(io_at(&path))?;
         sync_parent(&path, durability)?;
 
-        Ok(Self::assembled(file, path, app, dev, 0, durability))
+        Ok(Self::assembled(
+            Box::new(file),
+            path,
+            app,
+            dev,
+            0,
+            durability,
+        ))
     }
 
     /// Attach to an existing log, resuming from `seq`.
@@ -110,11 +141,18 @@ impl Writer {
             sync_parent(&path, durability)?;
         }
 
-        Ok(Self::assembled(file, path, app, dev, seq, durability))
+        Ok(Self::assembled(
+            Box::new(file),
+            path,
+            app,
+            dev,
+            seq,
+            durability,
+        ))
     }
 
     fn assembled(
-        file: fs::File,
+        sink: Box<dyn Sink>,
         path: PathBuf,
         app: &str,
         dev: &NodeId,
@@ -122,12 +160,13 @@ impl Writer {
         durability: Durability,
     ) -> Self {
         Self {
-            file,
+            sink,
             path,
             app: app.to_owned(),
             dev: dev.to_string(),
             seq,
             durability,
+            poisoned: None,
         }
     }
 
@@ -151,9 +190,12 @@ impl Writer {
     ) -> Result<u64> {
         let ts = now();
         let seq = self.seq + 1;
+        // The counter is ticked on a copy and taken only once the line is on disk, as a
+        // batch does: a line that did not land consumed no `lam`.
+        let mut staged = *lam;
         let line = serialize(
             seq,
-            lam.tick(),
+            staged.tick(),
             &ts,
             &self.dev,
             &self.app,
@@ -165,6 +207,7 @@ impl Writer {
         )?;
         self.commit(&line)?;
         self.seq = seq;
+        *lam = staged;
         Ok(seq)
     }
 
@@ -176,9 +219,10 @@ impl Writer {
     pub fn del(&mut self, lam: &mut Lamport, tbl: &str, id: &str) -> Result<u64> {
         let ts = now();
         let seq = self.seq + 1;
+        let mut staged = *lam;
         let line = serialize::<()>(
             seq,
-            lam.tick(),
+            staged.tick(),
             &ts,
             &self.dev,
             &self.app,
@@ -190,6 +234,7 @@ impl Writer {
         )?;
         self.commit(&line)?;
         self.seq = seq;
+        *lam = staged;
         Ok(seq)
     }
 
@@ -245,13 +290,27 @@ impl Writer {
         Ok(lines)
     }
 
-    /// One `write_all`, then the durability policy.
+    /// One `write_all`, then the durability policy. A failure of either poisons the
+    /// writer: the bytes may be on disk in whole or in part, and nothing may be appended
+    /// after them until the file has been re-read.
     fn commit(&mut self, bytes: &[u8]) -> Result<()> {
-        self.file.write_all(bytes).map_err(io_at(&self.path))?;
+        if let Some(reason) = &self.poisoned {
+            return Err(Error::WriterPoisoned {
+                path: self.path.clone(),
+                reason: reason.clone(),
+            });
+        }
+        if let Err(error) = self.sink.write_all(bytes) {
+            self.poisoned = Some(format!("write failed: {error}"));
+            return Err(io_at(&self.path)(error));
+        }
         if self.durability == Durability::Sync {
             // The file's data and metadata. The directory entry was synced once, when
             // the file was created (`sync_parent`); an append changes no entry.
-            self.file.sync_all().map_err(io_at(&self.path))?;
+            if let Err(error) = self.sink.sync_all() {
+                self.poisoned = Some(format!("flush failed: {error}"));
+                return Err(io_at(&self.path)(error));
+            }
         }
         Ok(())
     }
@@ -262,10 +321,37 @@ impl Writer {
         self.seq
     }
 
+    /// Why the writer refuses to append, if it does: the last commit failed and the
+    /// file has not been re-read since.
+    #[must_use]
+    pub fn poisoned(&self) -> Option<&str> {
+        self.poisoned.as_deref()
+    }
+
     /// Continue from `seq` when the file holds more than this writer wrote — a line
     /// appended by hand while the node ran. Never moves backwards.
     pub(crate) fn resume(&mut self, seq: u64) {
         self.seq = self.seq.max(seq);
+    }
+
+    /// The file has been re-read to its end and ends on a line boundary: continue from
+    /// the `seq` it holds, and take appends again. What a failed commit left is now
+    /// either a whole line the scan counted or nothing.
+    pub(crate) fn reconcile(&mut self, seq: u64) {
+        self.resume(seq);
+        self.poisoned = None;
+    }
+
+    /// Poison the writer as a failed commit would, for a test of the recovery path.
+    #[cfg(test)]
+    pub(crate) fn poison_for_test(&mut self, reason: &str) {
+        self.poisoned = Some(reason.to_owned());
+    }
+
+    /// A writer over any sink, for the unit tests of the failure path.
+    #[cfg(test)]
+    pub(crate) fn over(sink: Box<dyn Sink>, path: PathBuf, app: &str, dev: &NodeId) -> Self {
+        Self::assembled(sink, path, app, dev, 0, Durability::Sync)
     }
 
     /// The file being appended to.
@@ -491,5 +577,102 @@ mod tests {
         let id = an_id();
         let path = PathBuf::from(format!("root/data/animals/log/{id}.jsonl"));
         assert!(check_is_ours(&path, "hello", &id).is_err());
+    }
+
+    /// A sink that takes some of each write and then fails, or whose flush fails: what a
+    /// full disk or a dying device does to an append.
+    #[derive(Debug)]
+    struct Failing {
+        /// Bytes accepted before the write fails; `None` accepts every write.
+        accept: Option<usize>,
+        sync_fails: bool,
+        landed: Vec<u8>,
+    }
+
+    impl Sink for Failing {
+        fn write_all(&mut self, bytes: &[u8]) -> std::io::Result<()> {
+            match self.accept {
+                Some(n) if n < bytes.len() => {
+                    self.landed.extend_from_slice(&bytes[..n]);
+                    Err(std::io::Error::other("no space left on device"))
+                }
+                _ => {
+                    self.landed.extend_from_slice(bytes);
+                    Ok(())
+                }
+            }
+        }
+
+        fn sync_all(&self) -> std::io::Result<()> {
+            if self.sync_fails {
+                Err(std::io::Error::other("input/output error"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    fn writer_over(sink: Failing) -> (Writer, NodeId) {
+        let id = an_id();
+        let path = PathBuf::from(format!("root/data/hello/log/{id}.jsonl"));
+        (Writer::over(Box::new(sink), path, "hello", &id), id)
+    }
+
+    /// `§4.1`: a write that lands part of a line poisons the writer — `seq` stays where
+    /// it was and every later append is refused, naming the reason — until the file has
+    /// been re-read. A batch behaves the same, with the Lamport counter untouched too.
+    #[test]
+    fn a_write_that_fails_part_way_closes_the_writer() {
+        let (mut writer, _) = writer_over(Failing {
+            accept: Some(10),
+            sync_fails: false,
+            landed: Vec::new(),
+        });
+        let mut lam = Lamport::new(0);
+        let error = writer
+            .put(&mut lam, "note", "a", &serde_json::json!({}))
+            .unwrap_err();
+        assert!(matches!(error, Error::Io { .. }), "{error}");
+        assert_eq!(writer.seq(), 0, "seq did not advance over a failed write");
+        assert_eq!(lam.get(), 0, "a line that did not land consumed no lam");
+        assert!(writer.poisoned().unwrap().contains("write failed"));
+
+        let again = writer
+            .put(&mut lam, "note", "b", &serde_json::json!({}))
+            .unwrap_err();
+        assert!(matches!(again, Error::WriterPoisoned { .. }), "{again}");
+        let batch = writer
+            .batch(&mut lam, |batch| {
+                batch.put("note", "c", &serde_json::json!({}))
+            })
+            .unwrap_err();
+        assert!(matches!(batch, Error::WriterPoisoned { .. }), "{batch}");
+        assert_eq!(writer.seq(), 0);
+
+        // Told where the file ends, it takes appends again from there.
+        writer.reconcile(0);
+        assert!(writer.poisoned().is_none());
+    }
+
+    /// A flush that fails poisons the writer too: the bytes were handed to the OS and
+    /// may or may not be on disk, and the next append must not assume either.
+    #[test]
+    fn a_flush_that_fails_closes_the_writer() {
+        let (mut writer, _) = writer_over(Failing {
+            accept: None,
+            sync_fails: true,
+            landed: Vec::new(),
+        });
+        let mut lam = Lamport::new(0);
+        let error = writer
+            .put(&mut lam, "note", "a", &serde_json::json!({}))
+            .unwrap_err();
+        assert!(matches!(error, Error::Io { .. }), "{error}");
+        assert!(writer.poisoned().unwrap().contains("flush failed"));
+        assert_eq!(writer.seq(), 0);
+        assert!(matches!(
+            writer.del(&mut lam, "note", "a").unwrap_err(),
+            Error::WriterPoisoned { .. }
+        ));
     }
 }

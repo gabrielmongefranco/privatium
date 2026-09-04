@@ -251,6 +251,11 @@ records the batch once in `sys_audit` as `batch.incomplete` (`spec/data-dictiona
 §3.10`). A single event, a tombstone on its own, and a line appended by hand are batches of
 one and carry no marker: nothing about a line a person writes changes.
 
+**A failed append.** A writer whose write or flush fails MUST NOT append again until it
+has re-read its own file: the failed line may be on disk in whole or in part, and the
+next `seq` is whatever the file now ends with. A file that then ends mid-line stays
+closed to writes until the owner resolves it — §3.1 forbids the writer to truncate.
+
 ### 4.2 Forward compatibility
 
 Readers MUST accept and **preserve** unknown top-level fields and unknown keys inside `d`.
@@ -1004,17 +1009,18 @@ NOT add a dedupe mechanism; doing so indicates a misunderstanding of §4.5.
 
 Whether a write *did* land is decided by reading the log, never by remembering. A queued
 entry carries the Lamport high-water mark the client held when it queued it; before
-replaying, the client reads the row's events past that mark (`spec/data-api.md §1`,
-`/api/events?tbl&id&after`) and drops an entry whose every event is already there — the
-node wrote it and the response was lost — rather than sending it again. That read is the
-whole of the bookkeeping, and it is not remembered either.
+replaying, the client reads each of its rows' events past that mark
+(`spec/data-api.md §1`, `/api/events?tbl&id&after`). An exact copy of its event means it
+landed — the node wrote it and the response was lost — and the entry is dropped rather
+than sent again. Another event on one of its rows means a newer change the client did not
+see, and the whole entry is refused and reported to the app, never written over that
+change. No event on any row means it is sent. That read is the whole of the bookkeeping,
+and it is not remembered either.
 
-What a replay cannot recover is the moment it was made. A browser client is not a device
-(§10.7): it holds no log and stamps nothing, so the node stamps its events as they arrive,
-and a queued edit replayed after another device edited the same row wins by arrival under
-§4.5. A native replica's own log carries its own `lam` and merges by causal order instead.
-An app that needs the causal answer from a browser keeps each edit as a row of its own
-(§4.5, field-level merge).
+A browser client is not a device (§10.7): it holds no log and stamps nothing, so what it
+does send is stamped by the node as it arrives, and what it cannot do is overwrite what
+it did not see. A native replica's own log carries its own `lam` and merges by causal
+order under §4.5 instead.
 
 Reads in offline mode come from whatever the client cached. A client MUST show its offline
 state explicitly and MUST NOT present stale data as current.

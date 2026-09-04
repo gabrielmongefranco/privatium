@@ -75,20 +75,25 @@ succeeds, marks it back and replays the queue in order, one entry at a time.
 
 **Replay is idempotent and needs no bookkeeping.** A queued write carries its ULID, so
 resending one that may already have landed converges to the same row under
-`spec/protocol.md §4.5`. Whether it did land is read, not remembered
-(`spec/protocol.md §10.6`): before an entry is sent, the helper reads each of its rows'
-events past the entry's mark (`/api/events`, §1) and drops the entry when every event is
-already there, comparing `d` as it was sent — a typed app's normalized value can differ,
-and the entry then lands as the same row again, which `§4.5` makes harmless. A queued edit
-replayed after another device edited the row wins by arrival. Apps MUST NOT implement
-their own deduplication, transaction identifiers, or acknowledgement protocol — all three
-indicate a misreading of the merge rule, and all three can introduce the divergence they
-were meant to prevent. An entry the node refuses — a 4xx other than 429, such as `§4.6`'s
-reused id — is dropped and reported through `pv.on('rejected')`; a 429, a 5xx or a node
-that cannot be reached keeps the entry for the next replay and ends this one; an entry
-queued while the mount served another app — which a solo node's `/` can, across an
-`app.toml` change — is refused the same way rather than written into the wrong app.
-Nothing else about a replay is remembered.
+`spec/protocol.md §4.5`. Where an entry stands is read, not remembered
+(`spec/protocol.md §10.6`): before it is sent, the helper reads each of its rows' events
+past the entry's mark (`/api/events`, §1). Every event already there — compared as it was
+sent; a typed app's normalized value can differ, and the entry then lands as the same row
+again, which `§4.5` makes harmless — and the entry is dropped. Another event on one of its
+rows, and the whole entry is refused and reported: the row moved since the write was
+queued, and a browser never writes over what it did not see. No event on any row, and it
+is sent. Apps MUST NOT implement their own deduplication, transaction identifiers, or
+acknowledgement protocol — all three indicate a misreading of the merge rule, and all three
+can introduce the divergence they were meant to prevent.
+
+An entry the node refuses — a 4xx other than 429, such as `§4.6`'s reused id — is dropped
+and reported through `pv.on('rejected')`, as is one the helper refuses: a conflict, whose
+error carries `status` 409 and `conflict: { tbl, id }`; an entry queued while the mount
+served another app, which a solo node's `/` can across an `app.toml` change; and an entry
+queued before the helper knew which app the mount serves — a solo page loaded while the
+node was unreachable with nothing cached, since a host-mode mount names its app in the
+path. A 429, a 5xx or a node that cannot be reached keeps the entry for the next replay and
+ends this one. Nothing else about a replay is remembered.
 
 Endpoint selection and failover are handled by the client runtime
 (`spec/protocol.md §10.4`), not by the app. In a browser there is exactly one endpoint — the

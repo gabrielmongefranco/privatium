@@ -123,6 +123,7 @@ impl AppLog {
 
     /// Append one `put`, returning its `seq`.
     pub fn put<D: Serialize>(&mut self, tbl: &str, id: &str, d: &D) -> Result<u64> {
+        self.reconcile_if_poisoned()?;
         let seq = self.writer.put(&mut self.lamport, tbl, id, d)?;
         self.note_own_head(seq);
         Ok(seq)
@@ -130,6 +131,7 @@ impl AppLog {
 
     /// Append one tombstone (`§4.6`), returning its `seq`.
     pub fn del(&mut self, tbl: &str, id: &str) -> Result<u64> {
+        self.reconcile_if_poisoned()?;
         let seq = self.writer.del(&mut self.lamport, tbl, id)?;
         self.note_own_head(seq);
         Ok(seq)
@@ -144,10 +146,29 @@ impl AppLog {
     where
         F: FnOnce(&mut Batch<'_>) -> Result<()>,
     {
+        self.reconcile_if_poisoned()?;
         let lines = self.writer.batch(&mut self.lamport, build)?;
         let seq = self.writer.seq();
         self.note_own_head(seq);
         Ok(lines)
+    }
+
+    /// After a failed append (`§4.1`, [`Writer`]): re-read the file before writing
+    /// again. A file that ends on a line boundary tells the writer where to continue —
+    /// whether the failed line landed whole or not at all — and the append goes ahead; a
+    /// file that ends mid-line is [`Error::PartialLine`](crate::Error::PartialLine), the
+    /// writer stays closed, and nothing is appended after the tear.
+    fn reconcile_if_poisoned(&mut self) -> Result<()> {
+        if self.writer.poisoned().is_some() {
+            self.rescan()?;
+        }
+        Ok(())
+    }
+
+    /// Why the log refuses to append, if it does — see [`Writer::poisoned`].
+    #[must_use]
+    pub fn poisoned(&self) -> Option<&str> {
+        self.writer.poisoned()
     }
 
     /// A fresh view of every segment on disk.
@@ -160,11 +181,13 @@ impl AppLog {
     }
 
     /// Scan the log again, as [`open`](Self::open) did, because it moved behind this
-    /// writer — `apps/hello/README.md`'s `echo >>` while the node runs. The Lamport
-    /// counter folds in every line it had not seen (`§4.3`), the per-device heads follow,
-    /// and the writer continues past any `seq` that is now in its own file (`§4.1`:
-    /// gapless, and never a duplicate). What the scan found that the owner should hear
-    /// about comes back, as at open.
+    /// writer — `apps/hello/README.md`'s `echo >>` while the node runs, or an append of
+    /// its own that failed. The Lamport counter folds in every line it had not seen
+    /// (`§4.3`), the per-device heads follow, and the writer continues past any `seq`
+    /// that is now in its own file (`§4.1`: gapless, and never a duplicate) — and takes
+    /// appends again if a failed commit had closed it, since the scan reached the end of
+    /// the file on a line boundary. What the scan found that the owner should hear about
+    /// comes back, as at open.
     pub fn rescan(&mut self) -> Result<Recovered> {
         let reader = Reader::open(&self.log_dir)?;
         let recovered = reader::recover(
@@ -176,7 +199,7 @@ impl AppLog {
         )?;
         self.lamport = recovered.lam;
         self.heads = recovered.heads.clone();
-        self.writer.resume(recovered.own_seq);
+        self.writer.reconcile(recovered.own_seq);
         Ok(recovered)
     }
 
@@ -271,5 +294,86 @@ mod tests {
     fn now_parses_back_as_a_timestamp() {
         let ts = now();
         assert!(ts.parse::<jiff::Timestamp>().is_ok(), "{ts}");
+    }
+
+    fn a_log(root: &Path) -> AppLog {
+        let paths = Paths::rooted(root);
+        paths.create_tree().unwrap();
+        let identity = crate::Identity::load_or_create(&paths.identity_dir()).unwrap();
+        let state = State::load(&paths.local_state()).unwrap();
+        AppLog::open(&paths, "hello", identity.id(), Durability::Os, &state)
+            .unwrap()
+            .0
+    }
+
+    /// `§4.1`: a writer closed by a failed append re-reads its file on the next append
+    /// and, the file ending on a line boundary, continues from the `seq` it holds — the
+    /// case where the failed line never landed, and the case where it landed whole.
+    #[test]
+    fn a_closed_writer_reopens_from_an_intact_file() {
+        let root = tempfile::tempdir().unwrap();
+        let mut log = a_log(root.path());
+        log.put("note", "a", &serde_json::json!({})).unwrap();
+
+        // Nothing landed: the next seq is the one the failed append would have taken.
+        log.writer
+            .poison_for_test("write failed: no space left on device");
+        assert!(log.poisoned().is_some());
+        assert_eq!(log.put("note", "b", &serde_json::json!({})).unwrap(), 2);
+        assert!(log.poisoned().is_none());
+
+        // The line landed whole but the flush failed: the scan finds it, and the writer
+        // continues past it rather than minting its seq again.
+        let line = r#"{"seq":3,"lam":3,"ts":"2026-09-05T00:00:00.000Z","dev":"DEV","app":"hello","op":"put","tbl":"note","id":"c","d":{}}"#
+            .replace("DEV", log.dev().as_str());
+        {
+            use std::io::Write as _;
+            let mut file = fs::OpenOptions::new()
+                .append(true)
+                .open(log.path())
+                .unwrap();
+            file.write_all(line.as_bytes()).unwrap();
+            file.write_all(b"\n").unwrap();
+        }
+        log.writer
+            .poison_for_test("flush failed: input/output error");
+        assert_eq!(log.put("note", "d", &serde_json::json!({})).unwrap(), 4);
+        assert_eq!(log.seq(), 4);
+        assert_eq!(fs::read_to_string(log.path()).unwrap().lines().count(), 4);
+    }
+
+    /// `§4.1`, `§3.1`: a file that ends mid-line after a failed append stays closed —
+    /// the append is refused naming the tear, nothing is written after it, and the
+    /// writer never truncates it.
+    #[test]
+    fn a_closed_writer_stays_closed_over_a_torn_line() {
+        let root = tempfile::tempdir().unwrap();
+        let mut log = a_log(root.path());
+        log.put("note", "a", &serde_json::json!({})).unwrap();
+        {
+            use std::io::Write as _;
+            let mut file = fs::OpenOptions::new()
+                .append(true)
+                .open(log.path())
+                .unwrap();
+            file.write_all(br#"{"seq":2,"lam":2,"ts":"2026-09-05T00:0"#)
+                .unwrap();
+        }
+        let before = fs::read(log.path()).unwrap();
+        log.writer
+            .poison_for_test("write failed: no space left on device");
+
+        let error = log.put("note", "b", &serde_json::json!({})).unwrap_err();
+        assert!(matches!(error, crate::Error::PartialLine { .. }), "{error}");
+        assert!(log.poisoned().is_some(), "still closed");
+        assert_eq!(
+            fs::read(log.path()).unwrap(),
+            before,
+            "nothing after the tear"
+        );
+        assert!(matches!(
+            log.del("note", "a").unwrap_err(),
+            crate::Error::PartialLine { .. }
+        ));
     }
 }
