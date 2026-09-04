@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV506/pv506bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV506 fail: a route the framework's /settings prefix shadows in solo mode.
+
+[app]
+slug    = "pv506bad"
+title   = "Lint PV506"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

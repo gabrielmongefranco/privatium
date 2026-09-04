@@ -84,10 +84,12 @@ privatium new <slug> [--tier lua|web|rust] [--from hello] [--scaffold <table>]
 privatium dev --app <slug>
 privatium lint apps/<slug>
 privatium lint apps/<slug> --format json
+privatium lint apps/<slug> --fix      # the two mechanical corrections of spec/cli.md §5.3, nothing else
 privatium skill export          # these skills, matching the running version (spec/cli.md §6)
 ```
 
 Generate, lint, fix, repeat. Do not present an app as finished until the linter is clean.
+Every rule, with its severity and the section to read, is `reference/lint-rules.md`.
 
 ## Also load
 

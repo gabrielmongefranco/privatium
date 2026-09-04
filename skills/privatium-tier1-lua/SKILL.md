@@ -83,6 +83,8 @@ Helpers in every template: `render`, `layout`, `icon`, `url`, `fmt.date`, `fmt.m
   is a string, a `BOOLEAN` a boolean, a `JSON` column a table. Print or `fmt.money` a
   `DECIMAL` as it is; for arithmetic wrap it in `pv.dec()` — `+ - * /` are exact, `/`
   rounds half away from zero at the larger scale, `a:div(b, 4)` names the scale
+- Total a `DECIMAL` column with `decimal_sum(col)`, never `SUM(col)`, and add to a `DATE`
+  with `date(col, '+30 days')`, never `col + 30` — the linter refuses both (`PV308`)
 - Write dates, times and timestamps in any common spelling — `3/9/2026`, `March 9, 2026`,
   `2:30 pm`, `2026-09-03 14:03` — the framework normalizes them to ISO on write and
   refuses what it cannot read, naming the column
@@ -166,7 +168,10 @@ privatium new <slug>            # an empty app; --from hello copies the referenc
                                 # --scaffold <table> emits CRUD screens for a table
 privatium dev --app <slug>      # runs it; a save is served on the next request, no restart
                                 # (--open opens it in a browser; a LAN QR code arrives with pairing)
-privatium lint apps/<slug>
+privatium lint apps/<slug>      # exit 3 on findings; --format json to read them back
+privatium lint apps/<slug> --fix   # only url() for a literal mount path and focusable="false"
 ```
 
-Full API: `spec/lua-api.md`. CLI and lint rules: `spec/cli.md`.
+Full API: `spec/lua-api.md`, and `reference/pv-api.md` here for the surface this version
+registers. CLI and lint rules: `spec/cli.md`; `reference/anti-patterns.md` shows every
+Tier 1 rule failing and passing.

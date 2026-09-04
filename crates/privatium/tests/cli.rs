@@ -229,7 +229,6 @@ fn test_cli_exit_codes() {
         &["restore", "--from", "no-such-dir"],
         &["dev", "--app", "no-such-app"],
         &["new", "xy", "--from", "no-such-app"],
-        &["lint"],
         &["pair"],
         &["firewall"],
     ];
@@ -542,6 +541,116 @@ fn test_new_from_hello_rewrites_slug_and_title() {
     let (status, body) = node.get("/a/profiles/");
     assert_eq!(status, 200);
     assert!(body.contains("<h1>Profile</h1>"), "{body}");
+}
+
+/// `§5` — `lint` exits 0 on a clean app and 3 on findings (`§1`); `--format json` is one
+/// object per finding with the seven fields of `§5.2`; `--severity error` hides a
+/// warn-only fixture; `--fix` rewrites a mount path and reports what it touched (`§5.3`);
+/// with no path it lints the installed apps, the reference apps included.
+#[test]
+fn test_spec_cli_5_lint_exit_codes_and_formats() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = data_dir(&root);
+    let repo = repo();
+
+    let (code, out, err) = privatium(&repo, &["--data-dir", &dir, "lint", "apps/hello"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(out.is_empty(), "{out}");
+    assert!(err.contains("0 finding(s)"), "{err}");
+
+    let (code, out, err) = privatium(
+        &repo,
+        &["--data-dir", &dir, "lint", "apps/_lint/fail/PV301"],
+    );
+    assert_eq!(code, 3, "{out}{err}");
+    assert!(out.contains("PV301 error:"), "{out}");
+    assert!(
+        out.contains("apps/_lint/fail/PV301/pv301bad/app.lua:"),
+        "{out}"
+    );
+    assert!(out.contains("spec/app-contract.md §2.2"), "{out}");
+
+    let (code, out, _) = privatium(
+        &repo,
+        &[
+            "--data-dir",
+            &dir,
+            "lint",
+            "apps/_lint/fail/PV301",
+            "--format",
+            "json",
+        ],
+    );
+    assert_eq!(code, 3);
+    for line in out.lines() {
+        let value: serde_json::Value = serde_json::from_str(line).unwrap();
+        for key in ["id", "severity", "file", "line", "message", "fix", "spec"] {
+            assert!(value.get(key).is_some(), "{key}: {line}");
+        }
+        assert_eq!(value["id"], "PV301");
+    }
+
+    let (code, out, _) = privatium(
+        &repo,
+        &["--data-dir", &dir, "lint", "apps/_lint/fail/PV202"],
+    );
+    assert_eq!(code, 3, "{out}");
+    assert!(out.contains("PV202 warn:"), "{out}");
+    let (code, out, _) = privatium(
+        &repo,
+        &[
+            "--data-dir",
+            &dir,
+            "lint",
+            "apps/_lint/fail/PV202",
+            "--severity",
+            "error",
+        ],
+    );
+    assert_eq!(code, 0, "{out}");
+    assert!(out.is_empty(), "{out}");
+
+    // --fix on a copy: the mount path becomes url(), and the app is clean afterwards.
+    let scratch = root.path().join("fix");
+    copy_dir(
+        &repo.join("apps/_lint/fail/PV301/pv301bad"),
+        &scratch.join("pv301bad"),
+    );
+    let scratch_text = scratch.to_string_lossy().into_owned();
+    let (code, _, err) = privatium(&repo, &["--data-dir", &dir, "lint", &scratch_text, "--fix"]);
+    assert_eq!(code, 0, "{err}");
+    assert!(err.contains("fixed 2 file(s)"), "{err}");
+    let lua = fs::read_to_string(scratch.join("pv301bad").join("app.lua")).unwrap();
+    assert!(lua.contains("pv.redirect(url('/'))"), "{lua}");
+
+    // The solo-mode fixture needs the node configuration it was written for.
+    let (code, out, _) = privatium(
+        &repo,
+        &["--data-dir", &dir, "lint", "apps/_lint/pass/PV502"],
+    );
+    assert_eq!(code, 3, "{out}");
+    let (code, out, _) = privatium(
+        &repo,
+        &[
+            "--data-dir",
+            &dir,
+            "--config",
+            "apps/_lint/pass/PV502/config.toml",
+            "lint",
+            "apps/_lint/pass/PV502",
+        ],
+    );
+    assert_eq!(code, 0, "{out}");
+
+    // No path: every installed app plus the checkout's reference apps.
+    let (code, out, err) = privatium(&repo, &["--data-dir", &dir, "lint"]);
+    assert_eq!(code, 0, "{out}{err}");
+    assert!(err.contains("3 app(s)"), "{err}");
+
+    // A path that is not an app.
+    let (code, out, _) = privatium(&repo, &["--data-dir", &dir, "lint", "docs"]);
+    assert_eq!(code, 3, "{out}");
+    assert!(out.contains("PV101"), "{out}");
 }
 
 /// `§6` — `skill list` names every skill this build ships and `skill export` writes the
@@ -877,12 +986,6 @@ fn test_spec_cli_8_9_pair_and_firewall_parse_and_refuse() {
     assert_eq!(code, 1);
     assert!(
         err.contains("privatium firewall: not in this build"),
-        "{err}"
-    );
-    let (code, _, err) = privatium(root.path(), &["lint", ".", "--format", "json"]);
-    assert_eq!(code, 1);
-    assert!(
-        err.contains("privatium lint: not in this build") && err.contains("M12"),
         "{err}"
     );
     // A wrong flag is still a usage error, not a "not in this build".

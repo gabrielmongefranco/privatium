@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/pass/PV301/pv301ok/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  Every internal link through url().
+
+[app]
+slug    = "pv301ok"
+title   = "Lint PV301"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

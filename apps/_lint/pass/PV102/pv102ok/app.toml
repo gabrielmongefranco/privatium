@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/pass/PV102/pv102ok/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  A slug of lowercase letters and digits.
+
+[app]
+slug    = "pv102ok"
+title   = "Lint PV102"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

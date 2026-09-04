@@ -1,16 +1,17 @@
 // Project:  Privatium™  |  File: crates/privatium/src/main.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-08-31  |  Modified: 2026-09-04
-// Summary:  Entry point: spec/cli.md. Bare `privatium` runs a node; `dev`, `new`, `skill`,
-//           `snapshot` and `restore` are the subcommands of Phase 1; `lint` is M12's and
-//           `pair` and `firewall` are later phases', and all three parse and say so rather
-//           than being absent, so the help text matches the spec. Exit codes are §1's.
-//           Errors are anyhow at this boundary (AGENTS.md, Style) and print as one line.
+// Summary:  Entry point: spec/cli.md. Bare `privatium` runs a node; `dev`, `new`, `lint`,
+//           `skill`, `snapshot` and `restore` are the subcommands of Phase 1; `pair` and
+//           `firewall` are later phases', and both parse and say so rather than being
+//           absent, so the help text matches the spec. Exit codes are §1's. Errors are
+//           anyhow at this boundary (AGENTS.md, Style) and print as one line.
 
 use std::process::ExitCode;
 
 mod cli;
 mod data;
+mod lint;
 mod new;
 mod node;
 mod run;
@@ -91,10 +92,12 @@ fn main() -> ExitCode {
             from.as_deref(),
             scaffold.as_deref(),
         ),
-        Command::Lint { .. } => not_in_this_build(
-            "lint",
-            "the linter is M12 of docs/plans/phase-1.md; spec/cli.md §5 is its contract",
-        ),
+        Command::Lint {
+            paths,
+            format,
+            severity,
+            fix,
+        } => lint::lint(&invocation.global, &paths, format, severity, fix),
         Command::SkillList => skill::list(),
         Command::SkillExport { names, out } => skill::export(&names, out.as_deref()),
         Command::Snapshot { app, verify } => {

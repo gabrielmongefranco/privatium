@@ -12,17 +12,21 @@ use anyhow::{Context, Result, bail};
 mod header;
 mod icons;
 mod repo;
-mod spec_drift;
+mod skill_reference;
+mod spec_refs;
 
 const USAGE: &str = "\
 cargo xtask <command>
 
   header-check          every source file carries the standard header block
                         (AGENTS.md, Style)
-  spec-drift [--update] warn when spec/ has changed since skills/ was last reconciled
-                        (docs/skills.md §7); --update records the current contents
   icons-verify          every icon name the shell, the apps, the skills and docs/icons.md
                         refer to exists in the vendored Bootstrap Icons set (docs/icons.md)
+  gen-skill-reference [--check]
+                        write skills/*/reference/ from the crate and the spec
+                        (docs/skills.md §7); --check fails naming what drifted
+  lint-spec-refs        every lint rule cites a document and section this checkout has
+                        (spec/cli.md §5.2)
 ";
 
 fn main() -> ExitCode {
@@ -46,10 +50,11 @@ fn run() -> Result<bool> {
     match command.as_deref() {
         Some("header-check") => header::check(&repo::root()?),
         Some("icons-verify") => icons::check(&repo::root()?),
-        Some("spec-drift") => {
-            let update = rest.iter().any(|a| a == "--update");
-            spec_drift::check(&repo::root()?, update)
+        Some("gen-skill-reference") => {
+            let check = rest.iter().any(|a| a == "--check");
+            skill_reference::run(&repo::root()?, check)
         }
+        Some("lint-spec-refs") => spec_refs::check(&repo::root()?),
         Some("--help" | "-h") | None => {
             print!("{USAGE}");
             Ok(true)

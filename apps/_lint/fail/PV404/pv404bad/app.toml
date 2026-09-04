@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV404/pv404bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV404 fail: a skipped level, and a state with no h1.
+
+[app]
+slug    = "pv404bad"
+title   = "Lint PV404"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

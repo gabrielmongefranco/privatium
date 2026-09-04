@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/pass/PV405/pv405ok/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  A status with words.
+
+[app]
+slug    = "pv405ok"
+title   = "Lint PV405"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

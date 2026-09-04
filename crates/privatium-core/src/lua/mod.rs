@@ -35,6 +35,8 @@ mod sandbox;
 pub use html::Html;
 pub use limits::{LimitKind, Limits};
 pub use lsp::{CompileError, Compiled, LineMap, Templates, ViewMap};
+pub use pv::SURFACE;
+pub use sandbox::{GLOBALS_REMOVED, OS_REMOVED};
 
 pub(crate) use convert::{ColumnType, column_types};
 

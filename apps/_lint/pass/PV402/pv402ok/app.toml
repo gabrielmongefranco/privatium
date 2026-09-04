@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/pass/PV402/pv402ok/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  Every input has a label.
+
+[app]
+slug    = "pv402ok"
+title   = "Lint PV402"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

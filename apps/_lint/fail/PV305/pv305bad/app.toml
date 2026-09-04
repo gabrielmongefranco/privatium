@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV305/pv305bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV305 fail: a transaction id table and an acknowledgement column.
+
+[app]
+slug    = "pv305bad"
+title   = "Lint PV305"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

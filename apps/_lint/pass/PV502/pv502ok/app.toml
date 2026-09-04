@@ -1,0 +1,14 @@
+# Project:  Privatium™  |  File: apps/_lint/pass/PV502/pv502ok/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  cross_origin_isolated under a solo-mode node.
+
+[app]
+slug    = "pv502ok"
+title   = "Lint PV502"
+version = "1.0.0"
+api     = 1
+tier    = "lua"
+
+[permissions]
+cross_origin_isolated = true  # a threaded WASM build needs SharedArrayBuffer

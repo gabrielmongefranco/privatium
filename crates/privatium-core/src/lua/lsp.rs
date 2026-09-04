@@ -161,25 +161,53 @@ fn newlines(text: &str) -> u32 {
     text.bytes().filter(|b| *b == b'\n').count() as u32
 }
 
-/// Compile one template. `name` is the chunk's spelling in messages, `views/index.lsp`.
-pub fn compile(source: &str) -> Result<Compiled, CompileError> {
-    let mut emitter = Emitter {
-        out: String::with_capacity(source.len() + source.len() / 4 + 128),
-        map: Vec::new(),
-    };
-    emitter.line(1, "local __concat, __esc, __str = ...");
-    emitter.line(1, "return function(_ENV)");
-    emitter.line(1, "local __b, __n = {}, 0");
+/// One piece of a template as the scanner reads it: the front end the compiler and the
+/// linter share (`docs/plans/phase-1.md` M12), so there is one reading of what a tag is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Segment {
+    /// 1-based `.lsp` line the segment begins on.
+    pub line: u32,
+    /// What it is.
+    pub kind: SegmentKind,
+}
 
+/// The kinds of segment a template is made of.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SegmentKind {
+    /// Literal text between tags, as written.
+    Text(String),
+    /// `<? code ?>` — Lua that emits nothing.
+    Code(String),
+    /// `<?= expr ?>` — emitted, escaped.
+    Emit(String),
+    /// `<?raw expr ?>` — emitted as it is. Every use is `PV202`.
+    Raw(String),
+    /// `<?-- --?>` — stripped, whatever it contains.
+    Comment(String),
+}
+
+/// Split a template into its segments: the tags of `spec/lua-api.md §4`, and the text
+/// between them. An unclosed tag is the one error.
+pub fn scan(source: &str) -> Result<Vec<Segment>, CompileError> {
+    let mut segments = Vec::new();
     let mut pos = 0;
     let mut line = 1u32;
     loop {
         let Some(open) = source[pos..].find("<?").map(|at| pos + at) else {
-            emitter.literal(line, &source[pos..]);
-            line = line.saturating_add(newlines(&source[pos..]));
+            if pos < source.len() {
+                segments.push(Segment {
+                    line,
+                    kind: SegmentKind::Text(source[pos..].to_owned()),
+                });
+            }
             break;
         };
-        emitter.literal(line, &source[pos..open]);
+        if open > pos {
+            segments.push(Segment {
+                line,
+                kind: SegmentKind::Text(source[pos..open].to_owned()),
+            });
+        }
         line = line.saturating_add(newlines(&source[pos..open]));
         let tag_line = line;
         let after = open + 2;
@@ -194,6 +222,10 @@ pub fn compile(source: &str) -> Result<Compiled, CompileError> {
                     message: "unclosed <?-- comment: no --?> follows it".to_owned(),
                 });
             };
+            segments.push(Segment {
+                line: tag_line,
+                kind: SegmentKind::Comment(body[..end].to_owned()),
+            });
             line = line.saturating_add(newlines(&body[..end]));
             pos = after + 2 + end + 4;
             continue;
@@ -214,21 +246,60 @@ pub fn compile(source: &str) -> Result<Compiled, CompileError> {
                 message: format!("unclosed {}: no ?> follows it", kind.spelling()),
             });
         };
-        let body = &source[body_start..end];
-        match kind {
-            Tag::Code => emitter.verbatim(tag_line, body),
-            Tag::Emit | Tag::Raw => {
-                let helper = if kind == Tag::Emit { "__esc" } else { "__str" };
-                emitter.line(tag_line, &format!("__n = __n + 1; __b[__n] = {helper}("));
-                emitter.verbatim(tag_line, body);
-                emitter.line(tag_line.saturating_add(newlines(body)), ")");
-            }
-        }
-        line = line.saturating_add(newlines(body));
+        let body = source[body_start..end].to_owned();
+        segments.push(Segment {
+            line: tag_line,
+            kind: match kind {
+                Tag::Code => SegmentKind::Code(body.clone()),
+                Tag::Emit => SegmentKind::Emit(body.clone()),
+                Tag::Raw => SegmentKind::Raw(body.clone()),
+            },
+        });
+        line = line.saturating_add(newlines(&body));
         pos = end + 2;
     }
-    emitter.line(line, "return __concat(__b)");
-    emitter.line(line, "end");
+    Ok(segments)
+}
+
+/// Compile one template. `name` is the chunk's spelling in messages, `views/index.lsp`.
+pub fn compile(source: &str) -> Result<Compiled, CompileError> {
+    let segments = scan(source)?;
+    let mut emitter = Emitter {
+        out: String::with_capacity(source.len() + source.len() / 4 + 128),
+        map: Vec::new(),
+    };
+    emitter.line(1, "local __concat, __esc, __str = ...");
+    emitter.line(1, "return function(_ENV)");
+    emitter.line(1, "local __b, __n = {}, 0");
+
+    let mut last = 1u32;
+    for segment in &segments {
+        let line = segment.line;
+        match &segment.kind {
+            SegmentKind::Text(text) => {
+                emitter.literal(line, text);
+                last = line.saturating_add(newlines(text));
+            }
+            SegmentKind::Comment(body) => last = line.saturating_add(newlines(body)),
+            SegmentKind::Code(body) => {
+                emitter.verbatim(line, body);
+                last = line.saturating_add(newlines(body));
+            }
+            SegmentKind::Emit(body) | SegmentKind::Raw(body) => {
+                let helper = if matches!(segment.kind, SegmentKind::Emit(_)) {
+                    "__esc"
+                } else {
+                    "__str"
+                };
+                emitter.line(line, &format!("__n = __n + 1; __b[__n] = {helper}("));
+                emitter.verbatim(line, body);
+                emitter.line(line.saturating_add(newlines(body)), ")");
+                last = line.saturating_add(newlines(body));
+            }
+        }
+    }
+    emitter.line(last, "return __concat(__b)");
+    emitter.line(last, "end");
     Ok(Compiled {
         lua: emitter.out,
         map: LineMap {
@@ -333,7 +404,7 @@ impl Templates {
     /// snapshot was compiled. A stat per file, no reads.
     #[must_use]
     pub fn changed(&self) -> bool {
-        let Ok(on_disk) = scan(&self.views_dir) else {
+        let Ok(on_disk) = scan_views(&self.views_dir) else {
             return true;
         };
         let current = self.snapshot();
@@ -374,7 +445,7 @@ fn rewrite_with(views: &ViewMap, message: &str) -> String {
 
 /// `views/*.lsp` by name with their `(mtime, len)`. A missing `views/` is an app with no
 /// templates, which is fine.
-fn scan(views_dir: &Path) -> Result<BTreeMap<String, Stat>, String> {
+fn scan_views(views_dir: &Path) -> Result<BTreeMap<String, Stat>, String> {
     let mut found = BTreeMap::new();
     let entries = match fs::read_dir(views_dir) {
         Ok(entries) => entries,
@@ -400,7 +471,7 @@ fn scan(views_dir: &Path) -> Result<BTreeMap<String, Stat>, String> {
 
 fn compile_dir(views_dir: &Path, previous: &ViewMap, generation: u64) -> Result<ViewMap, String> {
     let mut views = HashMap::new();
-    for (name, (mtime, len)) in scan(views_dir)? {
+    for (name, (mtime, len)) in scan_views(views_dir)? {
         if let Some(view) = previous.get(&name)
             && (view.mtime, view.len) == (mtime, len)
         {

@@ -189,8 +189,10 @@ either be wrong or fight every commit that touches the file.
 ## Skills
 
 `skills/` contains instruction sets for AI assistants building apps on this framework.
-**A change to `spec/` that is not reflected in `skills/` is an incomplete change.** The
-reference sections are generated from the crate and the spec, and CI fails on drift.
+**A change to `spec/` that is not reflected in `skills/` is an incomplete change.** Every
+skill's `reference/` is generated from the crate and the spec by `cargo xtask
+gen-skill-reference` and committed; CI fails on drift, so regenerate after touching
+`spec/` or a fact the generator reads, and never edit a generated file by hand.
 
 Every skill ends with `privatium lint`. The linter is part of the framework, not advice —
 rules are specified with stable IDs in `spec/cli.md §5`, and `docs/skills.md §4` explains why

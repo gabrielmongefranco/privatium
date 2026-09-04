@@ -1,0 +1,14 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV504/pv504bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV504 fail: a library loaded from a CDN, even though the origin is declared.
+
+[app]
+slug    = "pv504bad"
+title   = "Lint PV504"
+version = "1.0.0"
+api     = 1
+tier    = "web"
+
+[permissions]
+remote = ["https://cdn.example.com"]  # declared, and still the wrong way to load a library

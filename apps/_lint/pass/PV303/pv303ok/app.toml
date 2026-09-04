@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/pass/PV303/pv303ok/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  Reads are SQL, writes are appends.
+
+[app]
+slug    = "pv303ok"
+title   = "Lint PV303"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

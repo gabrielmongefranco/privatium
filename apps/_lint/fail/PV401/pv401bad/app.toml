@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV401/pv401bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV401 fail: an icon-only control with no name, and an inline svg missing focusable.
+
+[app]
+slug    = "pv401bad"
+title   = "Lint PV401"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

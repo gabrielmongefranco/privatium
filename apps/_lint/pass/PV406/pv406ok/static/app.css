@@ -1,0 +1,9 @@
+/* Project:  Privatium™  |  File: apps/_lint/pass/PV406/pv406ok/static/app.css
+ * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+ * Created:  2026-09-05  |  Modified: 2026-09-05
+ * Summary:  PV406 pass: dark text on white, a navy focus ring.
+ */
+
+:root { --fg: #1d2129; --bg: #ffffff; --accent: #00274c; }
+body { color: var(--fg); background: var(--bg); }
+:focus-visible { outline: 3px solid var(--accent); }

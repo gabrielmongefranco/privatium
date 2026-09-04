@@ -33,6 +33,11 @@ repository.workspace   = true
 # declares storage types, and DECIMAL or BIGINT lives only in the schema.
 rusqlite  = { workspace = true, features = ["bundled", "functions", "window", "collation", "hooks", "column_metadata"] }
 mlua      = { workspace = true, features = ["lua54", "vendored", "send"] }
+# M12 — the linter reads app.lua, lib/*.lua and every template's Lua as an AST rather than
+# as text (docs/plans/phase-1.md M12: rules over a full_moon AST, never regex). `lua54` is
+# the dialect the host runs; the default `serde` feature is off, since nothing here
+# serializes a tree. MPL-2.0, allowed in deny.toml since M0 for exactly this crate.
+full_moon = { workspace = true, features = ["lua54"] }
 thiserror = { workspace = true }
 
 # M1 — node identity (spec/protocol.md §2.1). Promoted from [dev-dependencies], where M0

@@ -1,0 +1,3 @@
+<?-- Project: Privatium™ | apps/_lint/pass/PV501/pv501-a-long-slug-x/views/index.lsp
+     Summary: The one page: a heading and nothing else. --?>
+<h1>Hello</h1>

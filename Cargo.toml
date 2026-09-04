@@ -80,7 +80,7 @@ serde_json = "1.0.151"
 toml       = "1.1.4"
 
 # Lua AST for the linter — M12. MPL-2.0; see deny.toml.
-full_moon = "2.2.0"
+full_moon = { version = "2.2.0", default-features = false }
 
 # CLI — M11 takes nothing. The plan's §5 named clap and owo-colors; the surface is eight
 # commands and twenty flags fixed by spec/cli.md, whose synopsis lines are the help text,

@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/pass/PV401/pv401ok/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  Icon-only controls carry a label.
+
+[app]
+slug    = "pv401ok"
+title   = "Lint PV401"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

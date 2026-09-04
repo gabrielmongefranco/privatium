@@ -17,9 +17,12 @@ repository.workspace   = true
 
 [dependencies]
 anyhow = { workspace = true }
-serde  = { workspace = true }
-sha2   = { workspace = true }
 toml   = { workspace = true }
+# M12 — `gen-skill-reference` writes the reference sections from the crate (the lint rule
+# table, the pv surface, the removed globals, the permissions) as docs/skills.md §7 asks,
+# and `lint-spec-refs` resolves every rule's citation. The core is already built by the
+# test step that precedes these checks in CI, so this costs one link, not a second build.
+privatium-core = { workspace = true }
 
 [lints.rust]
 unsafe_code = "deny"
