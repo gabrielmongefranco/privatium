@@ -31,8 +31,14 @@ a drawing app.
 
 ## Accessibility gaps to fix, not replicate
 
-The canvas currently has no keyboard alternative and no text description of its content.
-That is a known deficiency in this reference app, not a pattern to copy. See
+The canvas carries an `aria-label`, the swatches announce the current colour through
+`aria-pressed`, the viewport stays zoomable, and focus is navy on white. What is still
+missing is a keyboard way to draw and any text description of what has been drawn. That
+is a known deficiency in this reference app, not a pattern to copy. See
 `privatium-accessibility`.
+
+Two things to keep when touching the canvas: size it in `style.css`, and let `fit()` in
+`app.js` match the backing store to `clientWidth`/`clientHeight` at `devicePixelRatio`.
+Sizing from `innerWidth` draws past the viewport on every HiDPI display.
 
 Run `privatium lint apps/sketch` before finishing.

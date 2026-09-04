@@ -1,7 +1,7 @@
 -- Project:  Privatium™  |  File: apps/hello/app.lua
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
--- Created:  2026-08-28  |  Modified: 2026-09-03
--- Summary:  The entire application. Two routes, eleven lines of logic.
+-- Created:  2026-08-28  |  Modified: 2026-09-04
+-- Summary:  The entire application. Three routes, eleven lines of logic.
 
 local pv = require 'privatium'
 

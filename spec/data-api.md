@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/data-api.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-03
+Modified: 2026-09-04
 Summary:  NORMATIVE. The HTTP data API that custom-UI (Tier 2) apps build against.
 -->
 
@@ -317,7 +317,8 @@ No application data.
 
 ## 5. The `pv.js` helper
 
-Served at `/static/pv.js`. Roughly 4 KB, no dependencies, no framework, no build step.
+Served at `/static/pv.js`. Under 8 KB, unminified and meant to be read — there is no
+minifier in the runtime path — with no dependencies, no framework, no build step.
 **Optional** — every endpoint is plain HTTP and `fetch` works fine.
 
 ```js

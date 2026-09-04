@@ -60,10 +60,18 @@ Helpers in every template: `render`, `layout`, `icon`, `url`, `fmt.date`, `fmt.m
 - A view with no `layout()` renders inside the framework's page frame (title, stylesheet,
   htmx, header, `<main>`): write the page's one `<h1>` and the content, nothing more. To
   own the document, call `layout('base')` and put `<?= content ?>` in `views/base.lsp`.
+- The one `<h1>` is per *rendered page*, not per file (`PV404`): a page and its partials
+  together carry exactly one, so it may live in the partial htmx swaps — `_board.lsp` has
+  it, `play.lsp` does not. Every state of the view supplies one, the empty state included.
 - A request htmx makes gets the view's output alone, so `pv.render('_board', ctx)` from a
   `req.is_htmx` branch is a fragment swap; `render('_board', ctx)` includes it in a page.
 - `static/` is served at `url('/static/...')` beneath the mount; put CSS and vendored JS
   there.
+- Anything a script hides must be reachable with scripts off. Link a sheet from
+  `<noscript>` — `<noscript><link rel="stylesheet" href="<?= url('/static/nojs.css') ?>"></noscript>`
+  — that reverts `x-cloak` and hides `.pv-js-only`, the buttons whose only job is
+  toggling client state; `apps/animals` is the worked example. An external sheet, not an
+  inline `<style>`: the default CSP has no `style-src`.
 - Save a file, refresh: `views/*.lsp`, `app.lua`, `lib/`, `schema.sql` and `app.toml` are
   reloaded on the next request, no restart. A save that does not load is the error page,
   with the line, until the next save loads.

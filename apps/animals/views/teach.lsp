@@ -4,7 +4,8 @@
      This form is a navigation: you arrive here from the board and leave to the
      board. Swapping it in place would mean owning the back button, so it stays a
      plain post. The only Alpine on the page is a help disclosure, which is the
-     clearest possible case of "losing it on refresh costs nothing". --?>
+     clearest possible case of "losing it on refresh costs nothing" — and with
+     JavaScript off the examples are simply shown (static/nojs.css). --?>
 
 <?= render('_assets') ?>
 
@@ -32,7 +33,7 @@
        missed if the page reloads — the definition of the Alpine half. --?>
   <div id="question-help" x-data="disclosure">
     <p class="pv-help">Anything true for one animal and false for the other.</p>
-    <button type="button" class="pv-btn pv-btn-quiet"
+    <button type="button" class="pv-btn pv-btn-quiet pv-js-only"
             x-on:click="toggle" x-bind:aria-expanded="open">
       <span x-text="label">Show</span> examples
     </button>
@@ -47,10 +48,17 @@
     </p>
   </div>
 
+  <?-- Each radio is wrapped in its label AND named by `for`: the wrap gives a big
+       click target, the `for` is what PV402 checks and what every assistive
+       technology agrees on. --?>
   <fieldset>
     <legend>And for your animal, the answer is</legend>
-    <label><input type="radio" name="answer" value="yes" checked> Yes</label>
-    <label><input type="radio" name="answer" value="no"> No</label>
+    <label for="answer-yes">
+      <input id="answer-yes" type="radio" name="answer" value="yes" checked> Yes
+    </label>
+    <label for="answer-no">
+      <input id="answer-no" type="radio" name="answer" value="no"> No
+    </label>
   </fieldset>
 
   <button type="submit" class="pv-btn pv-btn-primary">Teach me</button>

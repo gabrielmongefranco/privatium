@@ -50,6 +50,12 @@ Two things worth noticing, because both look like exceptions and are not:
   enhancement on top, and `board()` in `app.lua` returns a fragment or a redirect
   depending on `req.is_htmx`. Do not delete either branch: without the redirect,
   recording a guess would require JavaScript.
+- **Every write is reachable with JavaScript off**, including the ones Alpine hides.
+  `views/_assets.lsp` links `static/nojs.css` from a `<noscript>`; it reverts
+  `x-cloak` and hides `.pv-js-only`. Mark a button whose only effect is Alpine state
+  (`toggle`, `ask`, `cancel`) with `pv-js-only`, and put `x-cloak` on what it reveals —
+  never hide a form behind Alpine without both. An inline `<style>` inside `<noscript>`
+  would be blocked by the CSP; the external sheet is not.
 
 ## Alpine must be the CSP build
 
@@ -69,6 +75,11 @@ Consequences for anything you add:
 - **Do not set `eval = true` in `app.toml`** to get the shorter syntax back.
 - Every `x-show` that starts closed needs `x-cloak`, and `static/animals.css`
   carries the matching rule.
+- **`static/animals.js` loads before `alpine-csp.min.js`**, both `defer`. Alpine's CDN
+  builds call `Alpine.start()` in a microtask the moment their script runs, and `start()`
+  dispatches `alpine:init` right then — a component registered from a listener in a
+  script loaded after Alpine is too late, and every `x-data` on the page becomes an
+  "Undefined variable". `views/_assets.lsp` has the order; a test holds it.
 
 See `static/VENDOR.md` for the vendored file and how to reproduce it.
 
@@ -83,7 +94,11 @@ input.
 - `tx.append` returns the minted ULID; the branch references both new leaves before they
   exist. Do not pre-generate ids outside the batch.
 - `reset` writes tombstones. It never rewrites a log.
-- The radio pair in `views/teach.lsp` is wrapped in `fieldset`/`legend`. Keep it.
+- The radio pair in `views/teach.lsp` is wrapped in `fieldset`/`legend`, and each radio
+  has an `id` its wrapping label names with `for` (`PV402`). Keep both.
+- `sample/seed.jsonl` is seven `CHECK`-clean events (three questions, four animals) with
+  no `cursor` row. Keep every leaf without `yes_id`/`no_id`, and the root the only node
+  nothing points at.
 - `knowledge()` selects `n.id AS animal_id` only so the collapsible path can pair
   `id` with `aria-controls`. Two animals can share a name; ULIDs cannot.
 - `views/_board.lsp` is a partial because HTMX swaps it. `views/play.lsp` is the

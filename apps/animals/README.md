@@ -53,6 +53,16 @@ And **every HTMX form still carries `method` and `action`**: `hx-post` is an
 enhancement, and `board()` in `app.lua` returns a fragment or a redirect depending
 on `req.is_htmx`, so recording a guess never requires JavaScript.
 
+The rule has a corollary the Alpine half has to honour too: **every write is reachable
+with JavaScript off.** Alpine hides the reset form behind a confirmation and the
+question paths behind a toggle, and without Alpine nothing would ever reveal them. So
+`views/_assets.lsp` links `static/nojs.css` from a `<noscript>` — an external sheet,
+since the default CSP has no `style-src` and an inline `<style>` would be dropped — which
+reverts `x-cloak` and hides the buttons marked `pv-js-only`, the ones whose only job is
+to toggle Alpine state. With JavaScript off the paths are printed and the reset form is
+simply on the page: one step instead of two, and nothing you can do with scripts that you
+cannot do without them.
+
 ### Alpine here is the CSP build, and that is the interesting part
 
 An app runs under `script-src 'self'` with no `'unsafe-eval'`
@@ -67,6 +77,12 @@ app `eval`, which hands any injected string a JavaScript engine to save a few
 characters. An earlier version of `knowledge.lsp` used
 `onsubmit="return confirm(...)"`, which was not a style problem but a silent
 failure: an inline handler is script, and the policy blocks it.
+
+One more thing the browser taught this app: `static/animals.js` must load **before**
+Alpine. Alpine's CDN builds start themselves in a microtask as soon as their script runs,
+and `alpine:init` fires right then — a component registered afterwards does not exist as
+far as Alpine is concerned, and every `x-data` is an "Undefined variable" in the console.
+`views/_assets.lsp` keeps the order, both scripts `defer`.
 
 Each use is commented in the source with *why that tool*, not *how it works*. The teaching
 happens in the contrast, on one page.
@@ -98,6 +114,14 @@ parent is never touched, and every existing pointer into the tree stays correct 
 branch reuses the leaf's id.
 
 That is only clean when identity is a ULID you control and writes are appends.
+
+## Sample data
+
+`sample/seed.jsonl` holds seven events — three questions and four animals — so a fresh
+node can play a round before it has taught anything. It is offered on the settings page
+while the app's log is empty and loaded only when you ask (`spec/app-contract.md §9`); the
+events are appended as this node's own, with fresh envelopes. There is no `cursor` row in
+it, so the first round starts at the root.
 
 ## Reading your own game history
 

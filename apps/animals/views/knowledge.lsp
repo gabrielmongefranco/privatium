@@ -9,7 +9,13 @@
          nothing and are worth nothing after a refresh. Alpine territory.
 
      The test is not "is it interactive". It is: if the user hit reload right now,
-     would they lose anything they meant to keep? --?>
+     would they lose anything they meant to keep?
+
+     And the corollary: everything Alpine hides must still be reachable with
+     JavaScript off. The toggles carry `pv-js-only` and the hidden parts carry
+     `x-cloak`; static/nojs.css (loaded from <noscript>) drops the former and
+     reveals the latter, so the paths are simply printed and the reset form is
+     simply there. --?>
 
 <?= render('_assets') ?>
 
@@ -37,7 +43,7 @@
                build cannot evaluate an inline x-data object, and this app does not
                grant itself 'unsafe-eval' to get one. --?>
           <td class="pv-path" x-data="disclosure">
-            <button type="button" class="pv-btn pv-btn-quiet"
+            <button type="button" class="pv-btn pv-btn-quiet pv-js-only"
                     x-on:click="toggle"
                     x-bind:aria-expanded="open"
                     aria-controls="path-<?= r.animal_id ?>">
@@ -58,9 +64,11 @@
        The old version of this used onsubmit="return confirm(...)". That was a bug
        rather than a preference: an inline handler is script, this app's CSP has no
        'unsafe-inline', and it would never have run. Two states in a component,
-       one plain form underneath, nothing persisted either way. --?>
+       one plain form underneath, nothing persisted either way. With JavaScript
+       off the first button is gone and the form is shown: one step instead of
+       two, and the write is still yours to make. --?>
   <div x-data="confirmable">
-    <button type="button" class="pv-btn pv-btn-danger" x-on:click="ask">
+    <button type="button" class="pv-btn pv-btn-danger pv-js-only" x-on:click="ask">
       <?= icon('trash') ?> Forget everything
     </button>
 
@@ -71,7 +79,7 @@
       <form method="post" action="<?= url('/reset') ?>">
         <?= csrf() ?>
         <button type="submit" class="pv-btn pv-btn-danger">Yes, forget them</button>
-        <button type="button" class="pv-btn" x-on:click="cancel">Keep them</button>
+        <button type="button" class="pv-btn pv-js-only" x-on:click="cancel">Keep them</button>
       </form>
     </div>
   </div>

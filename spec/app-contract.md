@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/app-contract.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-03
+Modified: 2026-09-04
 Summary:  NORMATIVE. What an app is, the three tiers of app, and the three
           deployment modes. The declarative tier is one option, not the model.
 -->
@@ -215,8 +215,9 @@ should ignore it.
 ### 4.5 `schema.sql` is optional
 
 Include it for typed tables and SQL queries; omit it to use the event log as a document
-store. Every table needs `id VARCHAR PRIMARY KEY` holding a ULID. Use `DECIMAL(18,2)` for
-money and `DATE` for dates.
+store. Every table needs `id VARCHAR PRIMARY KEY` — a ULID, unless the app keys a
+singleton itself with a constant the way `apps/animals` keys its `cursor` row
+(`spec/protocol.md §4.1`). Use `DECIMAL(18,2)` for money and `DATE` for dates.
 
 Changing `schema.sql` rematerializes from the logs. Safe at any time, loses nothing; new
 columns are NULL for old events.
@@ -331,8 +332,8 @@ await pv.append([
 pv.subscribe(ev => redraw(ev));
 ```
 
-`pv` is a ~4KB script served by the framework at `/static/pv.js`. It is optional — the
-endpoints are plain HTTP and you can `fetch` them yourself.
+`pv` is a script of under 8 KB, unminified, served by the framework at `/static/pv.js`.
+It is optional — the endpoints are plain HTTP and you can `fetch` them yourself.
 
 ### 5.3 Storage without SQL
 

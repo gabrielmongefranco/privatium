@@ -1,21 +1,29 @@
 /* Project: Privatium™ | File: apps/sketch/web/style.css
    Authors: Gabriel Mongefranco (@gabrielmongefranco)
-   Created: 2026-08-28 | Modified: 2026-09-03
+   Created: 2026-08-28 | Modified: 2026-09-04
    Summary: The app's own styling. The framework injects no CSS into Tier 2. The
             swatch colours live here rather than in style= attributes, which the
-            default CSP of spec/protocol.md §9.3 blocks. */
-:root { --navy:#00274C; --maize:#FFCB05; }
+            default CSP of spec/protocol.md §9.3 blocks. The canvas takes its size
+            from here; app.js only matches the backing store to it. Focus and the
+            selected swatch are navy on white (about 15:1), never maize on white. */
+:root { --navy:#00274C; --maize:#FFCB05; --charcoal:#333333; --muted:#5b6270; --line:#5b6270; }
 * { box-sizing:border-box; margin:0; }
-body { font:16px/1.4 system-ui,sans-serif; overflow:hidden; background:#fff; }
-#pad { display:block; touch-action:none; cursor:crosshair; }
+body { font:16px/1.4 system-ui,sans-serif; overflow:hidden; background:#fff; color:#1d2129; }
+#pad { display:block; width:100vw; height:calc(100vh - 56px); touch-action:none; cursor:crosshair; }
 #tools { display:flex; gap:.75rem; align-items:center; height:56px; padding:0 1rem;
          border-top:1px solid #ddd; background:#fafafa; }
-.swatch { width:32px; height:32px; border:2px solid #0002; border-radius:50%;
-          cursor:pointer; }
+#tools h1 { font-size:1rem; font-weight:600; color:var(--navy); margin-right:.5rem; }
+.swatch { width:32px; height:32px; border:2px solid #fff; border-radius:50%;
+          cursor:pointer; box-shadow:0 0 0 1px var(--line); }
 .swatch-navy { background:var(--navy); }
 .swatch-maize { background:var(--maize); }
-.swatch-charcoal { background:#333333; }
-.swatch:focus-visible { outline:3px solid var(--maize); outline-offset:2px; }
+.swatch-charcoal { background:var(--charcoal); }
+/* The current colour: a navy ring outside the white border, so it reads on all three. */
+.swatch[aria-pressed="true"] { box-shadow:0 0 0 3px var(--navy); }
+:focus-visible { outline:3px solid var(--navy); outline-offset:3px; }
 button#clear { padding:.4rem .9rem; border:1px solid var(--navy); border-radius:6px;
-               background:#fff; color:var(--navy); cursor:pointer; }
-#status { margin-left:auto; color:#666; font-size:.875rem; }
+               background:#fff; color:var(--navy); cursor:pointer; font:inherit; }
+#status { margin-left:auto; color:var(--muted); font-size:.875rem; }
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration:.01ms !important; animation-duration:.01ms !important; }
+}

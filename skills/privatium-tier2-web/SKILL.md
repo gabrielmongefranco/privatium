@@ -42,9 +42,10 @@ pv.ulid();  pv.url('/path');  pv.node();  pv.lam;  pv.online;
 ```
 
 `pv.js` is optional; every endpoint is plain HTTP under `/a/<slug>/api/` (`/api/` in solo
-mode). A view may read `$name` placeholders, bound from the query string of
-`/api/q/<view>`; a key the view does not read is refused, and elsewhere the placeholder is
-NULL. `sys.v_app_nav` and the other `sys.v_*` views are readable through `pv.sql`.
+mode). It is under 8 KB, unminified and meant to be read — open it. A view may read
+`$name` placeholders, bound from the query string of `/api/q/<view>`; a key the view does
+not read is refused, and elsewhere the placeholder is NULL. `sys.v_app_nav` and the other
+`sys.v_*` views are readable through `pv.sql`.
 
 ## MUST
 
@@ -56,6 +57,15 @@ NULL. `sys.v_app_nav` and the other `sys.v_*` views are readable through `pv.sql
   `pv.on('resync')` by re-reading — a `del` arrives as an event like a `put`
 - Vendor libraries into `web/vendor/`; never load from a CDN
 - Send the API JSON if you `fetch` it yourself — a POST is read only as `application/json`
+- Write the whole document: `<html lang>`, a `<title>`, one `<h1>`, a `<main>`, a labelled
+  `<nav>`, a zoomable viewport (never `user-scalable=no`), your own
+  `prefers-reduced-motion` guard. Nothing is injected, so nothing is supplied.
+- Size a `<canvas>` in CSS and match its backing store to
+  `clientWidth × devicePixelRatio` in a resize handler, with `ctx.setTransform(r, 0, 0,
+  r, 0, 0)` — sizing from `innerWidth` draws past the viewport on every HiDPI display,
+  which is every Windows laptop at 125 % and every phone. `apps/sketch/web/app.js` is the
+  worked example. Give the canvas an `aria-label`; a keyboard alternative is still yours
+  to build.
 
 ## MUST NOT
 

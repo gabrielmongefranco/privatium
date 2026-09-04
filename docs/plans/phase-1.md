@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/plans/phase-1.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-31
-Modified: 2026-09-03
+Modified: 2026-09-04
 Summary:  Implementation plan for Phase 1 — a node that works on one machine.
           Non-normative. Where this plan and spec/ disagree, spec/ wins and this
           file is wrong.
@@ -291,6 +291,11 @@ why, not a to-do list.
 | 64 | Nothing said what a refusal looks like | `{"error", "index"?, "column"?}` with the status, on every route | `data-api.md` preamble (found in M9) |
 | 65 | `data-dictionary.md §4` had apps reading `sys.v_*` and `app-contract.md §7` had the authorizer refusing `ATTACH`, with nothing between them | The framework attaches `cache/_sys.sqlite` read-only as `sys` before the authorizer goes on; it cannot be detached; `pv.query` and `/api/sql` read it | `app-contract.md §7`, `data-dictionary.md §4`, `lua-api.md §3.2` (found in M9) |
 | 66 | `protocol.md §9.1` made `/api/*` the framework's outright in both modes, which in solo mode left the solo app's data API unreachable | `/api/v1/*` is the framework's; the rest of `/api/` beneath the solo mount is the app's data API, resolved before its routes or `web/` | `protocol.md §9.1`, `data-api.md` preamble (found in M9) |
+| 67 | `cli.md §5` bound the `PV4xx` rules to apps; nothing said the framework's own pages met them, and the shell shipped `<th>` without `scope`, a focus ring at 1.5:1 and a bare `<ul>` for the settings navigation | The launcher, the settings pages, the error pages and the page frame are held to `PV401`–`PV407` by the framework's own tests over their rendered HTML, since the linter reads templates and those pages have none | `cli.md §5.4` (found in M10) |
+| 68 | `PV404`'s "exactly one `<h1>` per view" was not evaluable per file — `animals/views/play.lsp` has none and `_board.lsp` has it | The unit is the page as rendered: a view with its partials inside the frame, or the document a `layout()` owns; a fragment answering htmx is judged by the element it replaces | `cli.md §5.1` (found in M10) |
+| 69 | `data-api.md §5` and `app-contract.md §5.2` promised `pv.js` at "~4 KB"; the helper `§5` specifies — the outbox, the reconnecting stream, the async iterator — is 7.5 KB unminified, and there is no minifier in the runtime path | Under 8 KB, unminified, meant to be read | `data-api.md §5`, `app-contract.md §5.2` (found in M10) |
+| 70 | `app-contract.md §4.5` had every `id` "holding a ULID", while `protocol.md §4.1` blesses a caller-chosen key and `apps/animals` keys its `cursor` row `'cursor'` | A ULID unless the app keys a singleton itself, with the pointer to `§4.1` | `app-contract.md §4.5` (found in M10) |
+| 71 | `apps/hello/README.md`'s `echo >>` example named the next `seq` and said nothing about `lam`, which is what `§4.5` ranks a line by — a hand-written line with a stale `lam` is durable and loses the merge | The next `seq` **and** a `lam` above the log's highest; the node picks both up on the next request (`§4.3`, M9's rescan), which `test_hello_readme_echo_example_is_valid` runs for real | `apps/hello/README.md` (found in M10) |
 
 Defect 11 was found during M1 rather than while writing this plan, which is the rule in
 the last paragraph of this section working as intended. It could not be coded around: the
@@ -779,11 +784,44 @@ files; that is the purpose.
 - `sketch`: canvas, `pv.js`, event log as document store, no SQL, no `schema.sql`.
 - Accessibility baseline on the shell: labels, heading order, focus, contrast — the `PV4xx`
   rules apply to the framework's own HTML, not only to apps.
+  *Decided in M10: the `PV4xx` checker for rendered pages lives in the test suite
+  (`tests/common/a11y.rs`), not in `src/lint/` — M12's linter reads templates, and the
+  shell and the page frame have none (`§3` row 67); M12 may lift the contrast maths. The
+  unit for `PV404` is the page as rendered (row 68). The shell's focus ring is the
+  scheme's accent — navy on light, maize on dark — and a control's border is the muted
+  text colour, so both clear 3:1 in both schemes; the launcher no longer dims an
+  unavailable app; a `prefers-reduced-motion` guard; `<th scope>` on both tables; the
+  settings sub-navigation inside `<nav aria-label>`; and htmx told
+  `includeIndicatorStyles:false`, since the `<style>` it otherwise injects is refused by
+  the default CSP with a console error on every page (confirmed in Edge: an inline
+  `<style>` under this policy is refused with "Applying inline style violates …
+  'default-src 'self''"). Headless Edge over the DevTools protocol also found that the
+  Alpine CSP build had never initialised: Alpine's CDN builds call `Alpine.start()` in a
+  microtask as soon as their script runs and dispatch `alpine:init` right then, so
+  `animals.js`, loaded after Alpine, registered its components too late and every
+  `x-data` was an "Undefined variable" — invisible to a test through `handle`, since no
+  test runs the page's scripts. `_assets.lsp` now loads `animals.js` first, both `defer`,
+  and `test_animals_end_to_end` holds the order. `animals` gained
+  `sample/seed.jsonl` and a no-JavaScript path: `static/nojs.css` linked from a
+  `<noscript>` reverts `x-cloak` and hides the `pv-js-only` toggles, so the reset form
+  and the question paths are reachable with scripts off — an external sheet because an
+  inline `<style>` would be blocked; `PV402` stays as written and the teach radios gained
+  `id`/`for` inside their wrapping labels. `sketch` sizes its canvas in CSS and matches
+  the backing store to `clientWidth × devicePixelRatio` (the old `innerWidth` sizing drew
+  past the viewport on every HiDPI display), keeps the viewport zoomable, labels the
+  canvas, announces the current colour with `aria-pressed`, and gained an `<h1>` and a
+  `<main>`. `hello`'s empty state is an `<h1>`, and its README's `echo >>` line names a
+  `lam` as well as a `seq` (row 71). `pv.js` is specified at under 8 KB (row 69).*
 
 **Tests:** end-to-end per app: load, render, write, reload, verify against the log. Plus
 `test_animals_works_with_javascript_disabled` and
 `test_hello_readme_echo_example_is_valid` (parse the README's own command, run it, assert
 gapless).
+*Landed in M10 as `tests/reference.rs`: `test_hello_end_to_end`,
+`test_hello_readme_echo_example_is_valid`, `test_animals_end_to_end`,
+`test_animals_works_with_javascript_disabled`, `test_sketch_end_to_end`,
+`test_spec_cli_5_pv4xx_shell_pages`, `test_spec_cli_5_pv4xx_app_frame_and_reference_views`,
+`test_spec_cli_5_pv406_declared_tokens_meet_contrast`.*
 
 ---
 

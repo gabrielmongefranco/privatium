@@ -646,8 +646,15 @@ async fn test_seed_offer_shown_and_only_a_post_loads_it() {
     assert!(page.contains(&format!("action=\"{action}\"")), "{page}");
     assert!(page.contains("name=\"_csrf\""), "{page}");
     assert!(page.contains("Load sample data"), "{page}");
-    // The reference apps ship no seed, so no other offer appears.
-    assert_eq!(page.matches("Load sample data").count(), 1, "{page}");
+    // Of the reference apps only animals ships a seed, so exactly two offers appear —
+    // this app's and animals' — and nothing is offered for hello or sketch.
+    assert_eq!(page.matches("Load sample data").count(), 2, "{page}");
+    assert!(
+        page.contains("action=\"/settings/apps/animals/seed\""),
+        "{page}"
+    );
+    assert!(!page.contains("/settings/apps/hello/seed"), "{page}");
+    assert!(!page.contains("/settings/apps/sketch/seed"), "{page}");
 
     // A GET is not the act.
     assert_eq!(
@@ -686,7 +693,9 @@ async fn test_seed_offer_shown_and_only_a_post_loads_it() {
     assert_eq!(lines[0]["d"]["display_name"], "Ada");
     let page = body_of(handler.handle(get("/settings/apps")).await).await;
     assert!(page.contains("<code>profile</code>: 2 rows"), "{page}");
-    assert!(!page.contains("Load sample data"), "{page}");
+    // This app's offer is gone; animals', whose log is still empty, remains.
+    assert!(!page.contains(&format!("action=\"{action}\"")), "{page}");
+    assert_eq!(page.matches("Load sample data").count(), 1, "{page}");
 
     // Never over existing events.
     let refused = handler.handle(post(format!("_csrf={token}"))).await;
