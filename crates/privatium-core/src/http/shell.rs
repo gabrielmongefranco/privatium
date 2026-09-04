@@ -1,10 +1,11 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/shell.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-04
 // Summary:  The framework's own pages — launcher, settings, errors — as server-rendered HTML
 //           with HTMX and inlined Bootstrap Icons (docs/architecture.md §2.5, docs/icons.md).
 //           No client framework, no bundler, no inline script or style: every page renders
-//           under the default CSP of spec/protocol.md §9.3 exactly as written.
+//           under the default CSP of spec/protocol.md §9.3 exactly as written, and every
+//           page is held to the PV4xx rules of spec/cli.md §5 by tests/reference.rs.
 
 use std::fmt::Write as _;
 
@@ -110,9 +111,12 @@ fn page(
     out.push_str("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n");
     // htmx never evaluates anything: the shell has no `hx-on` and no `js:` values, and the
     // config says so, which keeps the default CSP's `script-src 'self'` honest (AGENTS.md).
+    // It also injects a `<style>` for its request indicators unless told not to, which the
+    // default CSP (no `style-src`, so `default-src 'self'`) refuses with a console error on
+    // every page; the shell's stylesheet is the only style there is.
     out.push_str(
         "<meta name=\"htmx-config\" content='{\"allowEval\":false,\"allowScriptTags\":false,\
-         \"selfRequestsOnly\":true}'>\n",
+         \"selfRequestsOnly\":true,\"includeIndicatorStyles\":false}'>\n",
     );
     let _ = writeln!(out, "<title>{} — Privatium</title>", escape(title));
     out.push_str("<link rel=\"stylesheet\" href=\"/static/shell.css\">\n");
@@ -219,7 +223,9 @@ pub fn launcher(cx: &Context<'_>) -> Result<String> {
 /// One of the four settings pages.
 pub fn settings(cx: &Context<'_>, page: SettingsPage, notice: Option<&Notice>) -> Result<String> {
     let solo = cx.node.config().node.mode == Mode::Solo;
-    let mut body = String::from("<h2>Settings</h2>\n<ul class=\"pv-subnav\">\n");
+    let mut body = String::from(
+        "<h2>Settings</h2>\n<nav aria-label=\"Settings\">\n<ul class=\"pv-subnav\">\n",
+    );
     for item in SettingsPage::ALL {
         let _ = writeln!(
             body,
@@ -229,7 +235,7 @@ pub fn settings(cx: &Context<'_>, page: SettingsPage, notice: Option<&Notice>) -
             item.title()
         );
     }
-    body.push_str("</ul>\n");
+    body.push_str("</ul>\n</nav>\n");
     if let Some(notice) = notice {
         let _ = writeln!(
             body,
@@ -336,7 +342,10 @@ fn node_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
     if alerts.is_empty() {
         body.push_str("<p class=\"pv-muted\">No alerts in the last 200 audit rows.</p>\n");
     } else {
-        body.push_str("<table><thead><tr><th>When</th><th>Kind</th><th>Subject</th><th>Detail</th></tr></thead><tbody>\n");
+        body.push_str(
+            "<table><thead><tr><th scope=\"col\">When</th><th scope=\"col\">Kind</th>\
+             <th scope=\"col\">Subject</th><th scope=\"col\">Detail</th></tr></thead><tbody>\n",
+        );
         for (at, kind, subject, detail) in alerts {
             let _ = writeln!(
                 body,
@@ -668,7 +677,11 @@ fn devices_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
         "<div>Pairing arrives in Phase 2. Until then this node is the only device: it listens on \
          loopback, and every request is its own.</div></div>\n",
     );
-    body.push_str("<table><thead><tr><th>Device</th><th>Kind</th><th>Replica</th><th>Label</th><th>Paired</th><th>Last seen</th></tr></thead><tbody>\n");
+    body.push_str(
+        "<table><thead><tr><th scope=\"col\">Device</th><th scope=\"col\">Kind</th>\
+         <th scope=\"col\">Replica</th><th scope=\"col\">Label</th><th scope=\"col\">Paired</th>\
+         <th scope=\"col\">Last seen</th></tr></thead><tbody>\n",
+    );
     for (id, kind, replica, label, paired_at, last_seen) in rows {
         let this_node = id == node.id().as_str();
         let _ = writeln!(

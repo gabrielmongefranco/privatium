@@ -1,7 +1,7 @@
 /*
  * Project:  Privatium™  |  File: apps/sketch/web/app.js
  * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
- * Created:  2026-08-28  |  Modified: 2026-09-03
+ * Created:  2026-08-28  |  Modified: 2026-09-04
  * Summary:  The whole app. Plain ES modules — no build step, no framework,
  *           no SQL. The event log is used directly as a document store.
  */
@@ -13,11 +13,15 @@ const status = document.getElementById('status');
 let color = '#00274C';
 let drawing = null;
 
+// The CSS sizes the canvas (style.css); this matches the backing store to that size at
+// the device's pixel ratio. Sizing from innerWidth instead would draw a 125 % or 200 %
+// display's canvas past the viewport, and setting width resets the context, so the
+// transform is set outright rather than scaled again on every resize.
 function fit() {
   const r = devicePixelRatio || 1;
-  pad.width = innerWidth * r;
-  pad.height = (innerHeight - 56) * r;
-  ctx.scale(r, r);
+  pad.width = pad.clientWidth * r;
+  pad.height = pad.clientHeight * r;
+  ctx.setTransform(r, 0, 0, r, 0, 0);
   ctx.lineCap = ctx.lineJoin = 'round';
   redrawAll();
 }
@@ -35,7 +39,7 @@ function paint(s) {
 }
 
 function redrawAll() {
-  ctx.clearRect(0, 0, pad.width, pad.height);
+  ctx.clearRect(0, 0, pad.clientWidth, pad.clientHeight);
   for (const s of strokes.values()) paint(s);
 }
 
@@ -59,8 +63,14 @@ pad.addEventListener('pointerup', async () => {
   drawing = null;
 });
 
-document.querySelectorAll('.swatch').forEach(b =>
-  b.onclick = () => { color = b.dataset.color; });
+// The current colour is state the page shows, not only a variable: aria-pressed on the
+// swatch is what a screen reader announces and what style.css draws the ring from.
+const swatches = document.querySelectorAll('.swatch');
+swatches.forEach(b =>
+  b.onclick = () => {
+    color = b.dataset.color;
+    swatches.forEach(s => s.setAttribute('aria-pressed', String(s === b)));
+  });
 
 document.getElementById('clear').onclick = async () => {
   const ids = [...strokes.keys()];

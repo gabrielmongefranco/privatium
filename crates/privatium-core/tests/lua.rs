@@ -1758,7 +1758,7 @@ async fn test_reference_apps_load_and_route() {
     let hello_token = token(&handler, "/a/hello/");
 
     // hello: the greeting page inside the frame, titled by the app, with the token for
-    // htmx on the body; the view keeps the page's only h1 (there is none before a name).
+    // htmx on the body; the view supplies the page's only h1, before a name and after.
     let home = handler.handle(get("/a/hello/")).await;
     assert_eq!(home.status(), StatusCode::OK);
     assert_eq!(header(&home, &CONTENT_TYPE), "text/html; charset=utf-8");
@@ -1778,7 +1778,8 @@ async fn test_reference_apps_load_and_route() {
         "{text}"
     );
     assert!(text.contains("<p class=\"pv-brand\">"), "{text}");
-    assert_eq!(text.matches("<h1").count(), 0, "{text}");
+    assert_eq!(text.matches("<h1").count(), 1, "{text}");
+    assert!(text.contains("<h1>We haven't met yet.</h1>"), "{text}");
     let edit = body_of(handler.handle(get("/a/hello/edit")).await).await;
     assert!(
         edit.contains(&format!("name=\"_csrf\" value=\"{hello_token}\"")),

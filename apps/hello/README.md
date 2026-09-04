@@ -62,9 +62,14 @@ echo '{"seq":4,"lam":4,"ts":"2026-08-28T20:00:00.000Z","dev":"<your-id>","app":"
   >> data/hello/log/<your-id>.jsonl
 ```
 
-That last one is the whole architecture in one command. Use the next unused `seq` for your
-device — `4` if the log holds three lines — because a writer must emit `seq` gaplessly
-(`spec/protocol.md §4.1`). Reading tolerates a gap; syncing does not.
+That last one is the whole architecture in one command. Two numbers matter. Use the next
+unused `seq` for your device — `4` if the log holds three lines — because a writer must
+emit `seq` gaplessly (`spec/protocol.md §4.1`); reading tolerates a gap, syncing does not.
+And give the line a `lam` above the highest one in the log — `4` after three writes —
+because `lam` is what decides the merge (`§4.5`): a hand-written line with a lower `lam`
+than the row it amends is durable, and loses. Read the last line of the file first; the
+node picks both counters up from it on the next request, so the name you save afterwards
+takes `seq` 5 and `lam` 5.
 
 ---
 

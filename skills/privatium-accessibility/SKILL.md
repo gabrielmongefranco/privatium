@@ -27,22 +27,45 @@ of them are.
   **An icon-only button with no label is a bug and the linter fails it.**
 
 **Colour and contrast**
-- 4.5:1 for body text, 3:1 for large text and UI boundaries
+- 4.5:1 for body text, 3:1 for large text and UI boundaries — the focus ring and a
+  control's border included, in **both** colour schemes. The framework's tokens clear
+  that (`PV406`); if you declare your own, check light and dark separately. Maize on
+  white is 1.5:1: never a focus ring.
 - Never colour alone — pair it with text, an icon, or a pattern
+- Do not dim text with `opacity` to mean "unavailable"; say so in words. Dimming takes a
+  token that passed below the floor.
 
 **Keyboard**
 - Everything reachable and operable by keyboard, in a sensible order
 - Visible focus indicator; never `outline: none` without a replacement
 - No keyboard trap. A modal returns focus where it came from.
 
+**JavaScript off**
+- Every write works without JavaScript. `hx-post` sits beside `method`/`action`; a
+  handler answers a fragment to htmx and a redirect to a plain post.
+- What Alpine hides must still be reachable: link a stylesheet from `<noscript>` that
+  reverts `x-cloak` and hides the buttons whose only job is toggling Alpine state
+  (`apps/animals/static/nojs.css`). An external sheet — an inline `<style>` in
+  `<noscript>` is blocked by the default CSP.
+
 **Structure**
-- One `<h1>` per page, headings in order, no level skipped
-- Landmarks: `<main>`, `<nav>`, `<footer>`
+- One `<h1>` per rendered page — the view with its partials inside the page frame, or
+  the document your `layout()` owns. A partial htmx swaps in is judged by the element it
+  replaces: `_board.lsp` carries the `<h1>` because `play.lsp` has none. Headings in
+  order, no level skipped (`PV404`).
+- Landmarks: `<main>`, `<nav aria-label="…">`, `<footer>` — a Tier 2 page writes its own
 - Real `<table>` with `<th scope>` for tabular data — never a grid of divs
 
 **Motion**
-- Honour `prefers-reduced-motion`
+- Honour `prefers-reduced-motion` — the framework's stylesheet already guards every
+  animation and transition; a Tier 2 page carries its own guard
 - Nothing flashes more than three times per second
+
+**The framework's own pages**
+- The launcher, settings, error pages and the Tier 1 page frame are held to `PV401`–
+  `PV407` by the framework's tests over their rendered HTML (`spec/cli.md §5.4`). Your
+  view inherits a frame that already passes: `lang`, one `<main>`, a labelled `<nav>`, a
+  skip link. Supply the `<h1>` and the content.
 
 **Language and clarity**
 - Set `lang` on the document
@@ -98,5 +121,6 @@ Then, by hand — the linter cannot do these:
 2. Turn on the screen reader. Complete the main task.
 3. Zoom to 200%. Nothing overlaps or is cut off.
 4. Disable images. The pairing flow still works.
+5. Disable JavaScript. Every write still lands.
 
-Do not present an app as finished before doing all four.
+Do not present an app as finished before doing all five.

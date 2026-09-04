@@ -1,10 +1,13 @@
 /* Project:  Privatium™  |  File: crates/privatium-core/assets/shell/shell.css
  * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
- * Created:  2026-09-03  |  Modified: 2026-09-03
- * Summary:  The shell's only stylesheet — launcher, settings, error pages. Served at
- *           /static/shell.css under the default CSP of spec/protocol.md §9.3, which is why
- *           nothing in the shell carries a style= attribute. System fonts, no icon font
- *           (docs/icons.md), visible focus, and status never carried by colour alone.
+ * Created:  2026-09-03  |  Modified: 2026-09-04
+ * Summary:  The shell's only stylesheet — launcher, settings, error pages, and the frame a
+ *           Tier 1 view renders inside. Served at /static/shell.css under the default CSP
+ *           of spec/protocol.md §9.3, which is why nothing in the shell carries a style=
+ *           attribute. System fonts, no icon font (docs/icons.md), visible focus, and
+ *           status never carried by colour alone. The tokens below are checked for
+ *           contrast by tests/reference.rs (PV406): text at 4.5:1, focus and control
+ *           borders at 3:1, in both colour schemes.
  */
 
 :root {
@@ -15,7 +18,7 @@
   --pv-panel: #f5f6f8;
   --pv-accent: #00274c;
   --pv-accent-fg: #ffffff;
-  --pv-focus: #ffcb05;
+  --pv-focus: #00274c;
   --pv-warn-bg: #fff6d6;
   --pv-warn-fg: #6b4e00;
   --pv-alert-bg: #fde8e8;
@@ -56,9 +59,20 @@ body {
 
 a { color: inherit; }
 
+/* The focus ring is the scheme's accent — navy on light, maize on dark — so it clears
+   3:1 against the page and the panels in both; maize on white did not. */
 :focus-visible {
   outline: 3px solid var(--pv-focus);
   outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 .pv-skip {
@@ -117,7 +131,8 @@ main h3 { font-size: 1.125rem; margin: 1.5rem 0 .5rem; }
   background: var(--pv-panel);
 }
 .pv-launcher .pv-icon { font-size: 1.75rem; }
-.pv-launcher .pv-unavailable { opacity: .75; }
+/* An unavailable app says so in words; dimming it would take its reason below 4.5:1. */
+.pv-launcher .pv-unavailable { border-style: dashed; }
 .pv-launcher small { display: block; color: var(--pv-muted); }
 
 .pv-subnav {
@@ -218,11 +233,23 @@ main footer.pv-meta { border-top: 1px solid var(--pv-line); margin-top: 2rem; pa
 .pv-trace, .pv-source { white-space: pre; }
 .pv-source mark { display: block; background: var(--pv-warn-bg); color: var(--pv-warn-fg); }
 
-/* Forms in apps: one field per line, labels above. */
+/* Forms in apps: one field per line, labels above. A control's border is the muted
+   text colour, not the hairline: a boundary has to clear 3:1 too (PV406). */
 main form label { display: block; margin: .75rem 0 .25rem; font-weight: 600; }
 main form fieldset label { display: inline-flex; gap: .35rem; margin: .25rem 1rem .25rem 0; font-weight: 400; }
-main form input[type="text"] { font: inherit; padding: .45rem .6rem; border: 1px solid var(--pv-line); border-radius: 6px; width: min(100%, 28rem); background: var(--pv-bg); color: var(--pv-fg); }
-main form fieldset { border: 1px solid var(--pv-line); border-radius: 6px; padding: .5rem 1rem; margin: 1rem 0; }
+main form input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="file"]):not([type="range"]):not([type="color"]),
+main form select,
+main form textarea {
+  font: inherit;
+  padding: .45rem .6rem;
+  border: 1px solid var(--pv-muted);
+  border-radius: 6px;
+  width: min(100%, 28rem);
+  background: var(--pv-bg);
+  color: var(--pv-fg);
+}
+main form textarea { min-height: 6rem; }
+main form fieldset { border: 1px solid var(--pv-muted); border-radius: 6px; padding: .5rem 1rem; margin: 1rem 0; }
 main form button, main form .pv-btn { margin: .75rem .5rem 0 0; }
 
 body > footer { text-align: center; color: var(--pv-muted); font-size: .875rem; padding: 1rem; border-top: 1px solid var(--pv-line); }

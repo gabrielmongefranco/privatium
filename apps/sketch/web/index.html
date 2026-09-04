@@ -1,27 +1,35 @@
 <!--
   Project:  Privatium™  |  File: apps/sketch/web/index.html
   Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-  Created:  2026-08-28  |  Modified: 2026-09-03
+  Created:  2026-08-28  |  Modified: 2026-09-04
   Summary:  Tier 2 entry point. The framework serves this file verbatim at
             the app's mount point and injects nothing. No HTMX, no shell,
             no opinions. The swatches are classes, not style= attributes:
             the default CSP (spec/protocol.md §9.3) has no style-src, so
             default-src 'self' governs styles and an inline one is dropped.
+            The viewport stays zoomable — pinch-zoom is an accessibility
+            feature, not a bug — and the canvas is sized by CSS, with app.js
+            matching the backing store to it at the device's pixel ratio.
 -->
 <!doctype html>
+<html lang="en">
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sketch</title>
 <link rel="stylesheet" href="style.css">
 
-<canvas id="pad"></canvas>
+<main>
+  <canvas id="pad" aria-label="Shared drawing canvas"></canvas>
+</main>
 
-<nav id="tools">
-  <button data-color="#00274C" class="swatch swatch-navy" aria-label="Navy"></button>
-  <button data-color="#FFCB05" class="swatch swatch-maize" aria-label="Maize"></button>
-  <button data-color="#333333" class="swatch swatch-charcoal" aria-label="Charcoal"></button>
+<nav id="tools" aria-label="Tools">
+  <h1>Sketch</h1>
+  <button data-color="#00274C" class="swatch swatch-navy" aria-label="Navy" aria-pressed="true"></button>
+  <button data-color="#FFCB05" class="swatch swatch-maize" aria-label="Maize" aria-pressed="false"></button>
+  <button data-color="#333333" class="swatch swatch-charcoal" aria-label="Charcoal" aria-pressed="false"></button>
   <button id="clear" aria-label="Clear the canvas">Clear</button>
   <span id="status" role="status"></span>
 </nav>
 
 <script type="module" src="app.js"></script>
+</html>

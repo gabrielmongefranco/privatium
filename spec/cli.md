@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/cli.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-30
-Modified: 2026-09-03
+Modified: 2026-09-04
 Summary:  NORMATIVE. The command-line interface, including the linter that makes
           the skills system enforceable rather than advisory.
 -->
@@ -161,7 +161,7 @@ Rule IDs are stable. Removing or renumbering one is a breaking change to the ski
 | `PV401` | No icon-only control without a label argument or `aria-label` | error |
 | `PV402` | Every form input has an associated `<label for>` | error |
 | `PV403` | Radio and checkbox groups are wrapped in `fieldset`/`legend` | warn |
-| `PV404` | Heading levels do not skip; exactly one `<h1>` per view | warn |
+| `PV404` | Heading levels do not skip; exactly one `<h1>` per rendered page — a view with its partials inside the page frame, or the document a `layout()` owns; a fragment answering an htmx request is judged by the element it replaces, not on its own | warn |
 | `PV405` | No status conveyed by colour alone | warn |
 | `PV406` | Declared colour tokens meet 4.5:1 body / 3:1 large and UI | warn |
 | `PV407` | Tabular data uses `<table>` with `<th scope>`, not a grid of divs | warn |
@@ -202,6 +202,12 @@ where the intent is inferred. Everything else is reported for a human.
 `privatium lint` runs against every app in this repository. The reference apps are the
 linter's test corpus, and a rule without a passing and a failing case in `apps/` is not
 considered implemented.
+
+The `PV4xx` rules bind the framework's own pages too — the launcher, the settings pages,
+the error pages, and the page frame a Tier 1 view renders inside — not only apps. Those
+pages have no template for the linter to read, so the framework's own test suite holds
+their *rendered* HTML to `PV401`–`PV407` on every run, and a change to the shell that
+fails one of them fails CI exactly as an app would.
 
 ---
 

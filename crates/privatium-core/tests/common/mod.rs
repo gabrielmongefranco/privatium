@@ -10,6 +10,8 @@
 // subset of these helpers, so the unused ones are not a finding.
 #![allow(clippy::unwrap_used, clippy::expect_used, dead_code)]
 
+pub mod a11y;
+
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::Write as _;

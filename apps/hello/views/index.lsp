@@ -3,7 +3,7 @@
               markup is displayed, never executed. --?>
 
 <? if not me then ?>
-  <p class="pv-empty">We haven't met yet.</p>
+  <h1>We haven't met yet.</h1>
   <a class="pv-btn pv-btn-primary" href="<?= url('/edit') ?>">
     <?= icon('chat-heart') ?> Introduce yourself
   </a>
