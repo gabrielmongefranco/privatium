@@ -102,8 +102,9 @@ of the node — which is exactly why Tier 2 exists.
 ## Verify
 
 ```bash
-cargo test
-privatium lint --embedded ./target/debug/myapp
+cargo test                      # the app's own suite; the linter reads app folders, not binaries
+privatium new <slug> --tier rust    # the index entry a host-mode node lists (spec/app-contract.md §8)
+privatium skill export privatium-tier3-rust   # this contract, matching the running version
 ```
 
 Spec: `spec/app-contract.md §6`, `spec/protocol.md`.

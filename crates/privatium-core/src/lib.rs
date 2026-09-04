@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 pub mod app;
+pub mod backup;
 pub mod config;
 pub mod http;
 pub mod icons;
@@ -467,6 +468,14 @@ impl Node {
         Ok(restored)
     }
 
+    /// Which tier [`restore`](Self::restore) would use for `app`, without writing a table
+    /// (`spec/cli.md §7`, `--dry-run`). A prediction, as [`Store::restore_dry_run`] says.
+    pub fn restore_dry_run(&self, app: &str) -> Result<Restored> {
+        self.store_for(app)?
+            .restore_dry_run(&store::cutoff_now())
+            .map_err(boxed)
+    }
+
     /// Which tier built `app`'s cache — what `pv.node()` and `/api/node` report.
     ///
     /// `None` for an app this node has never materialized.
@@ -576,6 +585,15 @@ impl Node {
     #[must_use]
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    /// The configuration, for the overrides a run may carry — `--port` and `--solo` of
+    /// `spec/cli.md §2` — which hold for this run and never touch `config.toml`.
+    ///
+    /// Apply them before [`load_apps`](Self::load_apps): the mode decides where every app
+    /// is mounted, and the port is what the handler renders its own origin from.
+    pub fn config_mut(&mut self) -> &mut Config {
+        &mut self.config
     }
 
     /// This node's keypair and ID.

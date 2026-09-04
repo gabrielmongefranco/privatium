@@ -162,7 +162,10 @@ If the app needs canvas, WebGL, animation, or a custom interaction model, stop a
 ## Verify
 
 ```bash
-privatium dev --app <slug>      # hot reload, prints a LAN QR code
+privatium new <slug>            # an empty app; --from hello copies the reference app,
+                                # --scaffold <table> emits CRUD screens for a table
+privatium dev --app <slug>      # runs it; a save is served on the next request, no restart
+                                # (--open opens it in a browser; a LAN QR code arrives with pairing)
 privatium lint apps/<slug>
 ```
 

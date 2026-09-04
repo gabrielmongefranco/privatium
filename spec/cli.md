@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/cli.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-30
-Modified: 2026-09-04
+Modified: 2026-09-05
 Summary:  NORMATIVE. The command-line interface, including the linter that makes
           the skills system enforceable rather than advisory.
 -->
@@ -35,6 +35,13 @@ privatium [--data-dir <path>] [--config <file>] [--verbose] [--version] [<comman
 implementation that does not satisfy every item in `spec/protocol.md §13` MUST qualify the
 protocol string rather than print a bare `pv/1` — for example `pv/1 (partial: phase 1)`.
 
+`--verbose` widens what a command reports on standard error from what failed to what
+happened: the apps a node loaded and the maintenance it decided on. It changes no
+behaviour. Failures and warnings are reported whether or not it is set.
+
+Global flags may stand anywhere on the line; `--version` and `--help` end parsing where
+they stand.
+
 **No subcommand requires elevated privileges.** The one exception is `privatium firewall
 --apply`, which prints what it would run and requires explicit confirmation
 (`docs/deployment.md §4.2`). Implementations MUST NOT elevate silently.
@@ -64,8 +71,11 @@ privatium dev [--app <slug>] [--open]
 
 Runs a node and opens it for editing. The reloading below is the host's own behaviour on
 every run — a change is noticed by a stat on the next request, with no daemon and no flag
-(`spec/lua-api.md §7`) — and `dev` is the front door to it, adding only its two flags. On
-change:
+(`spec/lua-api.md §7`) — and `dev` is the front door to it, adding only its two flags.
+`--app <slug>` names the app being edited: `dev` prints where its folder is and its URL,
+`--open` opens that URL rather than the node's, and an app that did not load is a runtime
+error naming the load failure. Without `--app`, `dev` is a node that reports what it
+loaded. On change:
 
 | Changed | Effect |
 |---|---|
@@ -91,10 +101,24 @@ privatium new <slug> [--tier lua|web|rust] [--from <existing-app>] [--scaffold <
 ```
 
 Creates `<data-dir>/apps/<slug>/` populated for the chosen tier. Defaults to `--tier lua`.
+The slug is validated as `spec/app-contract.md §3` requires and a reserved one is a usage
+error; the title is the slug's words capitalised, for the author to change.
 
-- `--from hello` copies a reference app and rewrites its slug and title.
-- `--scaffold <table>` reads `schema.sql` and emits `app.lua` plus `views/*.lsp` giving list,
-  detail, create, and edit screens for that table.
+- `--from hello` copies a reference app and rewrites its slug and title. `<existing-app>`
+  is an installed app's slug, a reference app's, or a folder holding an `app.toml`. What is
+  rewritten is what names the app — the manifest's `slug` and `title`, the `apps/<old>`
+  path in file headers and READMEs, the `privatium-app-<old>` skill name, a heading that
+  is the bare slug, an HTML `<title>` equal to the old title — and prose is left alone.
+  The tier is the copied app's; `--tier` beside `--from` must agree with it.
+- `--scaffold <table>` reads the app's own `schema.sql` — the one `--from` copied, or the
+  one already in the folder — and emits `app.lua` plus `views/*.lsp` giving list, detail,
+  create, and edit screens for that table. Structured columns (`JSON`, `VARCHAR[]`) are
+  shown and not edited. It is the one form of `new` that accepts an existing folder.
+
+**`new` never overwrites a file.** Within one invocation a later source replaces an earlier
+one — `--from hello --scaffold profile` copies hello, then the scaffold's `app.lua` and
+views stand in for hello's — but a file already on disk is a runtime error naming it,
+before anything is written.
 
 **The generator has no runtime presence.** It writes ordinary source files you then edit,
 delete, or rewrite. Implementations MUST NOT introduce a config format that describes a UI
@@ -220,7 +244,11 @@ privatium skill export [<name>...] [--out <dir>]
 
 Writes the skill folders matching **the running version** to disk, so an owner on v1.2 hands
 their assistant v1.2's contract rather than whatever a search engine returned
-(`docs/skills.md §6`).
+(`docs/skills.md §6`). `list` prints each skill's folder name and, indented beneath it,
+the `description` of its front matter. `export` writes each named folder — every folder
+and `README.md` when none is named — under `--out`, which defaults to `skills/` in the
+working directory, replacing files already there: a re-export after an upgrade is the
+new version. A name this build does not ship is a usage error listing what it does.
 
 A running node also serves them at `/skills/<name>.md` — `skills/<name>/SKILL.md` — and
 `/skills/bundle.zip`, which holds every file under `skills/` at its repository-relative
@@ -238,11 +266,25 @@ privatium snapshot [--app <slug>] [--verify]
 privatium restore --from <path> [--app <slug>] [--dry-run]
 ```
 
-`snapshot` writes a SQLite + CSV + `schema.sql` set (`spec/protocol.md §5`). `--verify`
-recomputes checksums against `MANIFEST.json` and exits non-zero on mismatch.
+`snapshot` writes a SQLite + CSV + `schema.sql` set (`spec/protocol.md §5`) for `--app`,
+or for `_sys` and every loaded app. `--verify` writes nothing: it recomputes the checksums
+of every existing snapshot of those apps against its `MANIFEST.json`, records a match as
+`sys_snapshot.verified_at`, and exits non-zero on any mismatch.
 
-`restore` reports which of the three tiers it used and exits non-zero if it fell through to
-tier 3 unexpectedly. `--dry-run` reports without writing.
+`restore --from <path>` takes a backup — a `data/` folder as `spec/protocol.md §3` lays it
+out, or a data root containing one (`docs/backup-and-restore.md §1`) — and brings it into
+this node's data root, for `--app` or for every app the backup holds, before rebuilding.
+A log file is copied when this node has none of that name, or when this node's copy is a
+byte-for-byte prefix of the backup's; it is kept when identical or when this node's copy
+is the longer one; and a file that is neither — two writers, or an edited backup — refuses
+the whole restore before anything is written, since a device's log is one writer's
+(`§3.1`). Snapshot directories are copied when absent. `local/` and `cache/` are never
+read from a backup. Then each app's cache is rebuilt by `§5.3`'s three tiers, and
+`restore` reports which tier it used per app and exits non-zero if it fell through to tier
+3 unexpectedly. An app the backup holds but this node has no folder for keeps its data and
+is not rebuilt. `--dry-run` prints what would be copied and, for each app, the tier the
+rebuild would use *as the node stands* — a prediction over the logs and snapshots already
+present, since nothing is copied.
 
 Neither is required for normal operation — snapshots are written automatically and restore
 is ordinarily "copy the folder back" (`docs/backup-and-restore.md`).

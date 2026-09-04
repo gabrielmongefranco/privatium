@@ -82,9 +82,10 @@ toml       = "1.1.4"
 # Lua AST for the linter — M12. MPL-2.0; see deny.toml.
 full_moon = "2.2.0"
 
-# CLI — M11.
-clap        = { version = "4.6.6", features = ["derive"] }
-owo-colors  = "4.4.0"
+# CLI — M11 takes nothing. The plan's §5 named clap and owo-colors; the surface is eight
+# commands and twenty flags fixed by spec/cli.md, whose synopsis lines are the help text,
+# so the binary parses `std::env::args_os` itself (crates/privatium/src/cli.rs), as xtask
+# already does. Colour is unspecified and unused.
 
 # Errors: thiserror in the library, anyhow at binary boundaries (AGENTS.md, Style).
 thiserror = "2.0.20"

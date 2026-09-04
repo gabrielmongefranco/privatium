@@ -29,6 +29,7 @@ use crate::{
 
 pub mod csp;
 pub mod manifest;
+pub mod scaffold;
 pub mod seed;
 
 pub use csp::Csp;

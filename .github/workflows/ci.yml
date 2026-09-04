@@ -60,14 +60,16 @@ jobs:
       - name: Release build
         run: cargo build --workspace --release --locked
 
-      # Risk R1: both engines are C compiled from source. Running the artefact proves they
-      # really linked; printing its size is the number later milestones diff against.
+      # Risk R1: both engines are C compiled from source. Running the artefact proves it
+      # links and starts; printing its size is the number later milestones diff against.
+      # `--version` since M11 — bare `privatium` runs a node and would wait here forever.
       - name: Linked engines and binary size
         shell: bash
         run: |
           binary="target/release/privatium"
           [ "${{ matrix.os }}" = "windows-latest" ] && binary="target/release/privatium.exe"
-          "$binary"
+          "$binary" --version
+          "$binary" skill list
           # Bytes first and always. MB/MiB differ by 5% and by tool, and M6 and M13 diff
           # against this number.
           echo "binary size: $(wc -c < "$binary") bytes ($binary)"

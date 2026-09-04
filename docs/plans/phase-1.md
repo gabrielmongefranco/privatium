@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/plans/phase-1.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-31
-Modified: 2026-09-04
+Modified: 2026-09-05
 Summary:  Implementation plan for Phase 1 — a node that works on one machine.
           Non-normative. Where this plan and spec/ disagree, spec/ wins and this
           file is wrong.
@@ -296,6 +296,13 @@ why, not a to-do list.
 | 69 | `data-api.md §5` and `app-contract.md §5.2` promised `pv.js` at "~4 KB"; the helper `§5` specifies — the outbox, the reconnecting stream, the async iterator — is 7.5 KB unminified, and there is no minifier in the runtime path | Under 8 KB, unminified, meant to be read | `data-api.md §5`, `app-contract.md §5.2` (found in M10) |
 | 70 | `app-contract.md §4.5` had every `id` "holding a ULID", while `protocol.md §4.1` blesses a caller-chosen key and `apps/animals` keys its `cursor` row `'cursor'` | A ULID unless the app keys a singleton itself, with the pointer to `§4.1` | `app-contract.md §4.5` (found in M10) |
 | 71 | `apps/hello/README.md`'s `echo >>` example named the next `seq` and said nothing about `lam`, which is what `§4.5` ranks a line by — a hand-written line with a stale `lam` is durable and loses the merge | The next `seq` **and** a `lam` above the log's highest; the node picks both up on the next request (`§4.3`, M9's rescan), which `test_hello_readme_echo_example_is_valid` runs for real | `apps/hello/README.md` (found in M10) |
+| 72 | `cli.md §7` gave `restore` a `--from <path>` and never said what the path is, what happens when the backup and the node both hold a log of the same name, or what `--dry-run` predicts with nothing copied; `docs/backup-and-restore.md` only said "copy the folder back" | `--from` is a backup: a `data/` folder or a data root holding one. A log is copied when absent here or when this node's copy is a byte prefix of the backup's, kept when identical or when this node is ahead, and a file that is neither refuses the whole restore before a byte moves (`protocol.md §3.1`, one writer). Snapshots are copied when absent; `local/` and `cache/` are never read. Then the three tiers, per app; `--dry-run` prints the copy plan and the tier as the node stands | `cli.md §7`, `docs/backup-and-restore.md §3` (found in M11) |
+| 73 | `cli.md §7`'s `snapshot --verify` "recomputes checksums" without saying whether it also writes a snapshot, or which snapshots it checks | It writes nothing: every existing snapshot of the named apps is checked, a match is recorded as `sys_snapshot.verified_at`, any mismatch is a non-zero exit | `cli.md §7` (found in M11) |
+| 74 | `cli.md §4`'s `--scaffold <table>` "reads `schema.sql`" of an app that `new` is in the act of creating, and nothing said whether `new` may touch an existing folder, whether `--from` and `--tier` may disagree, or what `--from` accepts | The schema is the target's own — copied by `--from` or already in the folder — and `--scaffold` is the one form that accepts an existing folder; `new` never overwrites a file on disk, while within one invocation the scaffold's files stand in for a copy's; `--tier` beside `--from` must agree with the copied manifest; `--from` takes an installed slug, a reference app's, or a folder path; a reserved or malformed slug is a usage error; the title is the slug's words | `cli.md §4` (found in M11) |
+| 75 | `cli.md §3`'s `dev --app <slug>` named an app and gave the flag no effect — reloading is the host's on every run, so the flag had nothing to switch on | It names the app being edited: `dev` prints its folder and URL, `--open` opens that URL, and an app that did not load is a runtime error carrying the load failure | `cli.md §3` (found in M11) |
+| 76 | `cli.md §6` said nothing about what `skill list` prints, where `export` writes without `--out`, whether it overwrites, or what an unknown name does | Name and front-matter description; `skills/` in the working directory; files replaced, so a re-export after an upgrade is the new version; an unknown name is a usage error listing the names shipped | `cli.md §6` (found in M11) |
+| 77 | `cli.md §1` listed `--verbose` with a default and no meaning, and did not say where global flags may stand | It widens the report on standard error from what failed to what happened, changing no behaviour; global flags stand anywhere and `--version`/`--help` end parsing where they stand | `cli.md §1` (found in M11) |
+| 78 | `skills/privatium-tier3-rust` told an assistant to run `privatium lint --embedded <binary>`, a flag no section of `cli.md` has, and `privatium-tier1-lua` had `dev` printing a LAN QR code, which is Phase 2 | The skills name the commands the spec has — `new`, `dev`, `lint`, `skill export` — and say what `--open` does in this phase | `skills/privatium-tier3-rust`, `-tier1-lua`, `-tier2-web`, `-overview` (found in M11) |
 
 Defect 11 was found during M1 rather than while writing this plan, which is the rule in
 the last paragraph of this section working as intended. It could not be coded around: the
@@ -335,7 +342,7 @@ crates/
 │   ├── assets/icons/         vendored twbs/icons + LICENSE + VERSION (M6)
 │   ├── examples/embedded.rs  the 30-line Tier 3 proof
 │   └── tests/                spec-named integration tests
-├── privatium/                the binary; clap, subcommands, axum adapter, terminal output
+├── privatium/                the binary; the argument grammar (by hand), subcommands, axum adapter, terminal output
 └── xtask/                    header check, icon verify, skill reference gen
 apps/hello  apps/animals  apps/sketch  apps/_lint/{pass,fail}/
 docs/plans/phase-1.md         this file
@@ -362,7 +369,7 @@ rules.
 | Config | `toml`, `figment` or hand-rolled | manifest + config.toml |
 | Watch | — | *Was `notify` + debounce for `privatium dev`. M8 decided a stat per request in the core instead — `refresh_app` already stats the log per request, and the code files and templates joined it — so nothing watches and nothing is taken; the workspace rows were removed.* |
 | Lua AST | `full_moon` | linter rules PV201/203/301/302/307 |
-| CLI | `clap` (derive), `owo-colors` | **no `qrcode`** — QR is pairing, which is Phase 2 |
+| CLI | — | *Was `clap` (derive) and `owo-colors`. M11 took neither: the surface is eight commands and twenty flags fixed by `spec/cli.md`, whose synopsis lines are the help text, so `std::env::args_os` and three hundred lines (`crates/privatium/src/cli.rs`) parse it — as `xtask` already did — with no proc-macro compile and nothing for the help to drift from. Colour is unspecified. The workspace rows were removed.* **No `qrcode`** — QR is pairing, which is Phase 2 |
 | Errors | `thiserror` in core, `anyhow` in the binary | `AGENTS.md` |
 | Embed | `include_dir` | icons, shell assets, `pv.js` |
 | Time | `jiff` | `default-features = false`; `ts` is RFC 3339 UTC to the millisecond (`§4.1`), `§4.4` compares against it, M3 stores it as text. Added in M1 — this row was missing. |
@@ -847,10 +854,40 @@ Implement `spec/cli.md` and nothing beyond it.
 - Remove the M0 engine-version placeholder from `main()`; the link gate moves to a
   `#[used]` reference or to the CI size check. Bare `privatium` runs a node from here on,
   and the comment in M0's `main()` saying so will not survive the rewrite that replaces it.
+  *Done: the placeholder, and the `PRIVATIUM_DEV_SERVE` start M6 kept behind it, are gone;
+  CI runs `--version` and `skill list` against the release binary, which is the linkage
+  proof now that a bare run would wait forever.*
+
+*Decided in M11: no `clap` (§5). The grammar is `crates/privatium/src/cli.rs`, and the
+help text is `spec/cli.md`'s synopsis lines verbatim, which is what
+`test_no_undocumented_flags` compares in both directions. The generator lives in the core
+(`app::scaffold`) and returns files; the binary writes them and refuses to overwrite. The
+backup import behind `restore --from` is the core's too (`backup::Plan`, built then
+applied, so `--dry-run` and the real run share one decision). `Node::config_mut` carries
+`--port` and `--solo` for one run. Nothing had called `Node::maintain` since M4 — M6's
+"server loop weekly" never existed — so the run loop now maintains `_sys` and every loaded
+app at start and every 24 hours, which is what makes `cli.md §7`'s "snapshots are written
+automatically" true. `--open` is the platform opener (`cmd /C start`, `open`, `xdg-open`).
+`lint` parses its flags and says it is M12's, as `pair` and `firewall` say their phases.
+The boolean input the scaffold emits is a checkbox inside a `fieldset`/`legend`, because
+`PV403` as `tests/common/a11y.rs` reads it takes a lone checkbox for a group of one. §3
+rows 72–78 are the spec gaps found.*
 
 **Tests:** `test_cli_exit_codes`, `test_new_from_hello_rewrites_slug_and_title`,
-`test_scaffold_output_passes_lint`, `test_no_undocumented_flags` (compare `clap` output
+`test_scaffold_output_passes_lint`, `test_no_undocumented_flags` (compare the help output
 against the flags named in `spec/cli.md`).
+*Landed in M11 as `crates/privatium/tests/cli.rs`, against the built binary:
+`test_spec_cli_1_version_qualifies_protocol`, `test_cli_exit_codes`,
+`test_no_undocumented_flags`, `test_spec_cli_2_runs_a_node_on_loopback`,
+`test_spec_cli_3_dev_names_the_app`, `test_spec_cli_4_new_each_tier_loads`,
+`test_new_from_hello_rewrites_slug_and_title`, `test_spec_cli_6_skill_list_and_export`,
+`test_spec_cli_7_snapshot_and_verify`, `test_spec_cli_7_restore_from_backup_reports_tier`,
+`test_spec_cli_7_restore_refuses_a_diverged_log`,
+`test_spec_cli_8_9_pair_and_firewall_parse_and_refuse`, `test_spec_cli_10_absent_commands`;
+and as `crates/privatium-core/tests/scaffold.rs`, through `core::handle`:
+`test_scaffold_output_passes_lint` (the CRUD round trip with every page held to the
+`PV4xx` checker), `test_spec_cli_4_every_tier_loads`,
+`test_spec_cli_4_from_copy_rewrites_slug_and_title`.*
 
 ---
 
