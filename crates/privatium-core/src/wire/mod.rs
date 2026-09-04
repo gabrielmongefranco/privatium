@@ -308,7 +308,10 @@ impl Handler {
             let node = self.lock();
             node.mounts()
                 .find(|(mount, app)| *mount == "/" && app.manifest().app.tier == Tier::Lua)
-                .map(|(_, app)| (app.dir().join("static"), app.csp().header_for(&origin)))
+                .and_then(|(_, app)| {
+                    app.dir()
+                        .map(|dir| (dir.join("static"), app.csp().header_for(&origin)))
+                })
         };
         match plan {
             Some((dir, csp)) if dir.is_dir() => {
@@ -333,7 +336,7 @@ impl Handler {
                 if let Error::AppReloadFailed { reason, .. } = &error
                     && let Some(app) = node.app(slug)
                 {
-                    let at = context_in(app.dir(), reason);
+                    let at = app.dir().and_then(|dir| context_in(dir, reason));
                     eprintln!("privatium: {slug}: not reloaded — {reason}");
                     if let Some(at) = &at {
                         eprint!("{}", at.render_text());
@@ -351,20 +354,25 @@ impl Handler {
             let Some(app) = node.app(slug) else {
                 return self.not_found(request.uri().path());
             };
+            // A mounted app has a folder; an embedder's (`Node::open_app`) has neither a
+            // folder nor a mount, so this is never reached for one — said in the type.
+            let Some(dir) = app.dir() else {
+                return self.not_found(request.uri().path());
+            };
             let csp = app.csp().header_for(&origin);
             if is_api {
                 Plan::Api
             } else {
                 match app.manifest().app.tier {
                     Tier::Web => Plan::Web {
-                        web_dir: app.dir().join("web"),
+                        web_dir: dir.join("web"),
                         csp,
                     },
                     // `static/` beneath a Tier 1 mount is the app's directory of that name
                     // (`spec/lua-api.md §2`), served as a Tier 2 app's `web/` is.
                     Tier::Lua if rest == "/static" || rest.starts_with("/static/") => {
                         Plan::Static {
-                            dir: app.dir().join("static"),
+                            dir: dir.join("static"),
                             csp,
                         }
                     }
@@ -729,7 +737,7 @@ impl Handler {
                 // The seed is this node's own append, so a Tier 1 app's `pv.on('append')`
                 // sees it (`spec/lua-api.md §3.4`) — after the lock is released, since a
                 // handler may append in turn.
-                if let Some(appended) = seeded.appended.filter(|a| !a.changes.is_empty()) {
+                if let Some(appended) = seeded.appended.filter(|a| !a.events.is_empty()) {
                     self.fire_append(slug, appended, device).await;
                 }
                 response

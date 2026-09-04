@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lua/convert.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-05
 // Summary:  Values crossing the Lua boundary. Lua tables to the JSON `d` of an event and
 //           back (spec/data-dictionary.md §2.1), bound parameters for pv.query, and the
 //           typing of a result column (spec/lua-api.md §3.2): what SQLite holds, as Lua
@@ -13,7 +13,8 @@ use rusqlite::types::ValueRef;
 
 use crate::lua::dec::Dec;
 use crate::lua::html::Html;
-use crate::store::{Kind, Schema};
+use crate::store::Kind;
+use crate::store::query::ColumnType;
 
 /// How deep a value may nest before it is refused rather than followed forever.
 const MAX_DEPTH: usize = 64;
@@ -179,48 +180,9 @@ pub fn bind_params(params: Option<Table>) -> mlua::Result<Vec<rusqlite::types::V
     Ok(out)
 }
 
-/// One result column: its name and, when it originates in a declared column, that
-/// column's kind.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ColumnType {
-    /// As SQLite names it — the alias, if the query gave one.
-    pub name: String,
-    /// The declared kind, for a column read from a table or through a view. `None` for an
-    /// expression such as `count(*)`, which arrives by its storage class.
-    pub kind: Option<Kind>,
-    /// The declared type as written — `DECIMAL(18,2)` — for the same column; what the data
-    /// API reports in `columns` (`spec/data-api.md §1`).
-    pub ty: Option<String>,
-}
-
-/// Type every column of a prepared statement against the schema
-/// (`spec/lua-api.md §3.2`).
-///
-/// SQLite's declared type of a cache column is the storage type (`TEXT`, `INTEGER`); the
-/// author's declaration lives only in the schema. The engine does report which table and
-/// column a result column originates in, through views too, and that is what is looked up.
-#[must_use]
-pub fn column_types(statement: &rusqlite::Statement<'_>, schema: &Schema) -> Vec<ColumnType> {
-    statement
-        .columns_with_metadata()
-        .into_iter()
-        .map(|column| {
-            let declared = match (column.table_name(), column.origin_name()) {
-                (Some(table), Some(origin)) => schema
-                    .table(table)
-                    .and_then(|t| t.columns.iter().find(|c| c.name == origin)),
-                _ => None,
-            };
-            ColumnType {
-                name: column.name().to_owned(),
-                kind: declared.map(|c| c.kind),
-                ty: declared.map(|c| c.ty.clone()),
-            }
-        })
-        .collect()
-}
-
-/// One row as a Lua table keyed by column name. A NULL is an absent key.
+/// One row as a Lua table keyed by column name. A NULL is an absent key. The columns are
+/// typed by `store::query::column_types`, the one typing the data API and `Node::query`
+/// use as well (`spec/lua-api.md §3.2`, `spec/data-api.md §1`).
 pub fn row_to_lua(
     lua: &Lua,
     row: &rusqlite::Row<'_>,

@@ -24,6 +24,7 @@ mod events;
 pub mod materialize;
 pub mod normalize;
 pub mod params;
+pub(crate) mod query;
 pub mod restore;
 pub mod sandbox;
 pub mod schema;

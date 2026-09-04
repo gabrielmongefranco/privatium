@@ -62,7 +62,8 @@ pub fn run(global: &Global, options: Options) -> Result<u8> {
                 eprintln!(
                     "privatium dev: {slug} at {} — a save is served on the next request, \
                      with no restart (spec/cli.md §3)",
-                    app.dir().display()
+                    app.dir()
+                        .map_or_else(|| "(no folder)".to_owned(), |dir| dir.display().to_string())
                 );
                 dev_mount = app.mount().map(str::to_owned);
             }

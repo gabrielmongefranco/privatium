@@ -5,9 +5,10 @@ Guidance for AI coding agents working in this repository.
 ## What this repository is
 
 A specification-first project. `spec/` is normative; `docs/` is explanatory; `apps/` holds
-example applications that double as the reference templates. Implementation
-is underway, docs/plans/phase-1.md is the first plan of record, and the git history
-names the milestones landed.
+example applications that double as the reference templates. Phase 1 of `docs/roadmap.md`
+is implemented — docs/plans/phase-1.md is its plan of record, M0 through M13, and the git
+history names the milestones landed; every Phase 1 acceptance bullet names the test that
+holds it. Phase 2 has no plan yet.
 
 **If you are asked to write code, read `spec/protocol.md` and `spec/app-contract.md`
 first, in full.** They are the contract. Deviating from them silently is the single worst
@@ -152,6 +153,12 @@ either be wrong or fight every commit that touches the file.
   URL construction point.
 - **Do not model request or response bodies as `Vec<u8>`.** Both directions stream. SSE
   needs it on the way out; uploads need it on the way in.
+- **Do not stub a later phase's method with `Ok(())`.** `serve_discovery`, `pair`,
+  `start_sync` and `sync_now` are on `Node` with their signatures and return
+  `Error::Unimplemented` naming the phase (`spec/app-contract.md §6`), exactly as the CLI's
+  `pair` and `firewall` parse and refuse. A no-op that succeeds is what an embedder builds
+  on; keep the error until the phase lands, and never make the example or the skill call a
+  method that does not exist.
 - **Do not treat the browser's offline limits as a rendering problem.** They are a secure
   context problem: a LAN IP cannot register a service worker at all. See
   `docs/architecture.md §2.5` and ADR 0003.

@@ -85,19 +85,31 @@ the materializer, sync, discovery, and pairing as a library. The framework has n
 about anything else.
 
 ```rust
-let node = privatium::Node::open(&data_dir)?;
+use privatium_core::{Event, Node, new_ulid};
+
+let mut node = Node::open(&data_dir)?;
+node.open_app("myapp", "CREATE TABLE score (id VARCHAR PRIMARY KEY, points BIGINT);")?;
 node.serve_discovery()?;          // mDNS, UDP, pairing
 node.start_sync()?;               // iroh + LAN peers
 
-// your own writes
-node.append("myapp", Event::put("score", &id, json!({"points": 42})))?;
+// your own writes — seq, lam, ts and dev are the node's to stamp
+node.append("myapp", Event::put("score", new_ulid(), json!({"points": 42})))?;
 
-// your own reads — the materialized SQLite connection, sandboxed
-let rows = node.query("myapp", "SELECT * FROM score ORDER BY points DESC")?;
+// your own reads — the materialized SQLite connection, sandboxed, parameters bound
+let rows = node.query("myapp", "SELECT * FROM score WHERE points > ?", &[json!(10)])?;
 
-// your own server
-axum::serve(listener, my_router.layer(node.auth_layer())).await?;
+// your own server — the peer comes from axum's ConnectInfo
+let service = my_router.layer(node.auth_layer()).into_make_service_with_connect_info::<SocketAddr>();
+axum::serve(listener, service).await?;
+node.close()?;
 ```
+
+`open_app` is what a folder is to the other modes: the app's slug and the text its
+`schema.sql` would hold — empty for the log as a document store (§4.5) — and the node
+opens its log, its cache and its stream under `data/<slug>/` exactly as §8 does for a
+folder. No folder, no mount, no index row (`spec/data-dictionary.md §3.4`). Call it at
+every start. `examples/embedded.rs` in the repository is this shape, whole, in thirty
+lines, and CI runs it.
 
 This is the shape to use when Privatium is a dependency of your app rather than the other
 way round. It is a first-class mode, not an escape hatch.
@@ -418,13 +430,20 @@ express: a serial port, a scheduled job, a filesystem watcher, a non-HTTP protoc
 
 | Area | What you get |
 |---|---|
-| `Node::open` / `close` | Data root, identity, materialization |
-| `append` / `append_batch` | Event writes with automatic `seq`/`lam`/`ts` |
-| `query` / `subscribe` | Sandboxed SQLite reads; event stream |
+| `Node::open` / `close` | Data root, identity, materialization; `close` flushes node-local state and releases the root |
+| `open_app` | Your own app, with no folder: its slug and its `schema.sql` text (§2.3) |
+| `append` / `append_batch` | One event, or a batch that lands whole or not at all, with `seq`/`lam`/`ts`/`dev` stamped by the node |
+| `query` / `subscribe` | Sandboxed SQLite reads with bound parameters, rows typed as `spec/data-api.md §1` types them; the app's event stream |
 | `serve_discovery` / `pair` | mDNS, UDP, PAKE pairing, device registry |
 | `start_sync` / `sync_now` | iroh + LAN peers |
-| `auth_layer` | Tower middleware enforcing session and grants. `core::handle` applies it itself, so every adapter gets it without doing anything (`docs/decisions/0003`); an embedder wraps their own router with it, as §2.3 shows |
+| `auth_layer` | Tower middleware enforcing session and grants. `core::handle` applies it itself, so every adapter gets it without doing anything (`docs/decisions/0003`); an embedder wraps their own router with it, as §2.3 shows, and the layer reads the peer from axum's `ConnectInfo` |
 | `snapshot` / `restore` | Manual snapshot and three-tier restore |
+
+A build that does not implement an area — one that says so in `--version`
+(`spec/cli.md §1`), as `pv/1 (partial: phase 1)` does for discovery, pairing and sync —
+MUST keep the method and answer it with a typed error naming the phase the area arrives
+in. It MUST NOT return success from a no-op: a program built on an `Ok` from `start_sync`
+would believe it was syncing.
 
 ---
 

@@ -1,12 +1,13 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/app/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-02  |  Modified: 2026-09-03
+// Created:  2026-09-02  |  Modified: 2026-09-05
 // Summary:  The app loader — step 5 of docs/plans/phase-1.md §2.6 and the lifecycle of
 //           spec/app-contract.md §8 up to and including mount. Discovers app folders,
 //           refuses per app and loudly (§3.1), keeps sys_app as events (§3.4), and owns
 //           each app's log, store and — for Tier 1 — its Lua host. The node's one public
-//           append path, `Node::append`, is here too, beside load_seed, so nothing above
-//           this module ever holds an app's log.
+//           write path, `Node::append_batch`, is here too, beside `append`, load_seed,
+//           `open_app` (an embedder's app with no folder, §2.3) and `subscribe`, so
+//           nothing above this module ever holds an app's log.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -278,16 +279,40 @@ pub struct Seeded {
     pub appended: Option<Appended>,
 }
 
-/// One event to append: a `put` with `d`, or a tombstone without (`spec/protocol.md
-/// §4.1`). The id is the caller's — minted by it, or a key it chose (`§4.1`, `§4.6`).
+/// One event to append (`spec/app-contract.md §2.3`, `§6`): a `put` with `d`, or a
+/// tombstone without (`spec/protocol.md §4.1`). The id is the caller's — minted by it
+/// ([`new_ulid`](crate::new_ulid)), or a key it chose (`§4.1`, `§4.6`). `seq`, `lam`,
+/// `ts`, `dev` and `app` are the node's to stamp, never the caller's.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Change {
+pub struct Event {
     /// The table.
     pub tbl: String,
     /// The row key.
     pub id: String,
     /// The column values, or `None` for a `del`.
     pub d: Option<serde_json::Value>,
+}
+
+impl Event {
+    /// A `put`: row `id` of `tbl` becomes `d`, a JSON object of column values
+    /// (`spec/protocol.md §4.1`, `§4.5`). A value naming a declared column is typed on
+    /// the way in ([`Node::append_batch`]).
+    pub fn put(tbl: impl Into<String>, id: impl Into<String>, d: serde_json::Value) -> Self {
+        Self {
+            tbl: tbl.into(),
+            id: id.into(),
+            d: Some(d),
+        }
+    }
+
+    /// A `del`: a tombstone for row `id` of `tbl` (`spec/protocol.md §4.6`).
+    pub fn del(tbl: impl Into<String>, id: impl Into<String>) -> Self {
+        Self {
+            tbl: tbl.into(),
+            id: id.into(),
+            d: None,
+        }
+    }
 }
 
 /// What one [`Node::append`] wrote: one batch, one `ts`, contiguous `seq` and `lam` from
@@ -305,7 +330,7 @@ pub struct Appended {
     /// The app.
     pub app: String,
     /// The events, in order.
-    pub changes: Vec<Change>,
+    pub events: Vec<Event>,
     /// The log lines as written, one per change and without the newline — the bytes on
     /// disk, never a re-serialization (`spec/protocol.md §4.2`).
     pub lines: Vec<Vec<u8>>,
@@ -345,7 +370,9 @@ pub const STREAM_CAPACITY: usize = 1024;
 pub struct App {
     manifest: Manifest,
     manifest_hash: String,
-    dir: PathBuf,
+    /// The folder — `None` for an app an embedder opened with no folder
+    /// ([`Node::open_app`]).
+    dir: Option<PathBuf>,
     source: Source,
     mount: Option<String>,
     csp: Csp,
@@ -371,8 +398,12 @@ pub struct App {
 struct Fingerprint(BTreeMap<PathBuf, (Option<SystemTime>, u64)>);
 
 impl Fingerprint {
-    /// Stat the files now. A file that cannot be read is simply absent.
-    fn take(dir: &Path) -> Self {
+    /// Stat the files now. A file that cannot be read is simply absent, and an app with
+    /// no folder has nothing to stat, so nothing ever changes.
+    fn take(dir: Option<&Path>) -> Self {
+        let Some(dir) = dir else {
+            return Self::default();
+        };
         let mut files = BTreeMap::new();
         for name in [MANIFEST_FILE, "app.lua", SCHEMA_FILE] {
             let path = dir.join(name);
@@ -453,10 +484,10 @@ impl App {
         &self.manifest_hash
     }
 
-    /// The folder.
+    /// The folder — `None` for an app an embedder opened with none ([`Node::open_app`]).
     #[must_use]
-    pub fn dir(&self) -> &Path {
-        &self.dir
+    pub fn dir(&self) -> Option<&Path> {
+        self.dir.as_deref()
     }
 
     /// Where the folder came from.
@@ -512,7 +543,7 @@ impl App {
     /// `sample/seed.jsonl`, if the folder ships one (`spec/app-contract.md §9`).
     #[must_use]
     pub fn seed_path(&self) -> Option<PathBuf> {
-        let path = self.dir.join(SEED_PATH);
+        let path = self.dir.as_ref()?.join(SEED_PATH);
         path.is_file().then_some(path)
     }
 
@@ -623,7 +654,7 @@ impl Node {
                     || self
                         .apps
                         .get(&candidate.folder)
-                        .is_some_and(|app| app.dir != candidate.dir);
+                        .is_some_and(|app| app.dir.as_deref() != Some(candidate.dir.as_path()));
                 if elsewhere {
                     let failure = LoadFailure {
                         folder: candidate.folder.clone(),
@@ -737,29 +768,37 @@ impl Node {
             });
         }
 
-        let changes: Vec<Change> = events
+        let changes: Vec<Event> = events
             .into_iter()
-            .map(|event| Change {
+            .map(|event| Event {
                 tbl: event.tbl,
                 id: event.id,
                 d: event.d,
             })
             .collect();
-        let appended = self.append(slug, changes)?;
+        let appended = self.append_batch(slug, changes)?;
         Ok(Seeded {
             slug: slug.to_owned(),
-            events: appended.changes.len(),
+            events: appended.events.len(),
             appended: Some(appended),
         })
     }
 
+    /// Append one event to a loaded app (`spec/app-contract.md §6`, `append`): a batch of
+    /// one, so everything [`append_batch`](Self::append_batch) says holds here.
+    pub fn append(&mut self, slug: &str, event: Event) -> Result<Appended> {
+        self.append_batch(slug, vec![event])
+    }
+
     /// Append `changes` to a loaded app as one batch of this node's events, and apply each
-    /// to the cache incrementally (`docs/plans/phase-1.md §2.3`).
+    /// to the cache incrementally (`docs/plans/phase-1.md §2.3`; `spec/app-contract.md
+    /// §6`, `append_batch`).
     ///
-    /// The one public write path: `pv.append`, `pv.delete` and `pv.batch` reach the log
-    /// through here (`spec/lua-api.md §3.3`), and so does [`load_seed`](Self::load_seed).
-    /// All or nothing — the log writer stages the batch and writes it once — with one `ts`
-    /// and contiguous `seq`, as `§3.3` promises. An empty `changes` writes nothing.
+    /// The one public write path: [`append`](Self::append), `pv.append`, `pv.delete` and
+    /// `pv.batch` reach the log through here (`spec/lua-api.md §3.3`), and so does
+    /// [`load_seed`](Self::load_seed). All or nothing — the log writer stages the batch
+    /// and writes it once — with one `ts` and contiguous `seq`, as `§3.3` promises. An
+    /// empty `changes` writes nothing.
     ///
     /// **Typed writes.** Every value that names a column `schema.sql` declares is checked
     /// and normalized first (`store::normalize`): digits for `BIGINT` and `DECIMAL`, a
@@ -772,7 +811,8 @@ impl Node {
     /// (`spec/data-api.md §2`, `spec/lua-api.md §3.3`).
     ///
     /// Once written, each line goes out on the app's stream ([`App::stream`]).
-    pub fn append(&mut self, slug: &str, mut changes: Vec<Change>) -> Result<Appended> {
+    pub fn append_batch(&mut self, slug: &str, events: Vec<Event>) -> Result<Appended> {
+        let mut changes = events;
         let order = store::normalize::DateOrder::from_setting(
             self.setting_value("ui.date_format")?
                 .and_then(|text| serde_json::from_str::<String>(&text).ok())
@@ -817,7 +857,7 @@ impl Node {
                 lam: app.log.lam().saturating_add(1),
                 dev,
                 app: slug.to_owned(),
-                changes,
+                events: changes,
                 lines: Vec::new(),
             });
         }
@@ -858,9 +898,93 @@ impl Node {
             lam,
             dev,
             app: slug.to_owned(),
-            changes,
+            events: changes,
             lines,
         })
+    }
+
+    /// Open an app this program owns and no folder holds — embedded mode
+    /// (`spec/app-contract.md §2.3`, `§6`). `schema` is the text `schema.sql` would carry,
+    /// or empty for the log as a document store (`§4.5`). The app gets what a folder's
+    /// gets and nothing more: its log under `data/<slug>/`, its cache through the
+    /// three-tier restore, and its stream ([`subscribe`](Self::subscribe)); no mount, no
+    /// Lua host, and no `sys_app` row, since the index is of folders
+    /// (`spec/data-dictionary.md §3.4`). Call it at every start, after
+    /// [`open`](Self::open). A second call for the same slug reopens it, as a folder's
+    /// reload does, and a changed `schema` rematerializes the cache.
+    ///
+    /// Refused ([`Error::AppRefused`]) for a slug that is reserved or malformed
+    /// (`spec/protocol.md §1.1`) and for one a folder already holds
+    /// (`spec/app-contract.md §3.1`).
+    pub fn open_app(&mut self, slug: &str, schema: &str) -> Result<()> {
+        let refused = |reason: String| Error::AppRefused {
+            slug: slug.to_owned(),
+            reason,
+        };
+        if manifest::is_reserved(slug) {
+            return Err(refused(
+                "a reserved slug (spec/protocol.md §1.1)".to_owned(),
+            ));
+        }
+        if !manifest::is_valid_slug(slug) {
+            return Err(refused(
+                "not a slug — ^[a-z][a-z0-9-]{1,30}$ (spec/protocol.md §1.1)".to_owned(),
+            ));
+        }
+        if let Some(dir) = self.apps.get(slug).and_then(|app| app.dir.as_deref()) {
+            return Err(refused(format!(
+                "already loaded from the folder {} (spec/app-contract.md §3.1)",
+                dir.display()
+            )));
+        }
+        let schema = Schema::parse(schema).map_err(boxed)?;
+        // A Tier 3 app's manifest, as `privatium new --tier rust` would write it, so the
+        // `App` an embedder opens answers `manifest()` like any other.
+        let text = format!(
+            "[app]\nslug = {slug:?}\ntitle = {slug:?}\nversion = \"0.0.0\"\napi = {SUPPORTED_API}\n\
+             tier = \"rust\"\n"
+        );
+        let manifest = Manifest::parse(&text).map_err(|error| refused(error.to_string()))?;
+        let manifest_hash = manifest::manifest_hash(&text);
+
+        // A reopen: the old store is dropped and a fresh one opened, as `load_apps` does.
+        self.apps.remove(slug);
+        let (log, store) = self.materialize(slug, schema, &store::cutoff_now())?;
+        self.apps.insert(
+            slug.to_owned(),
+            App {
+                manifest,
+                manifest_hash,
+                dir: None,
+                source: Source::Local,
+                mount: None,
+                csp: Csp::for_app(None, &Permissions::default()),
+                warnings: Vec::new(),
+                log,
+                store,
+                lua: None,
+                fingerprint: Fingerprint::default(),
+                reload_error: None,
+                stream: broadcast::channel(STREAM_CAPACITY).0,
+            },
+        );
+        self.flush()
+    }
+
+    /// The app's live stream (`spec/app-contract.md §6`, `subscribe`): every event this
+    /// node appends to `slug` from now on, as its log line with its `lam`, and a notice
+    /// when the cache was rebuilt underneath a reader ([`StreamEvent`]). Subscribe
+    /// before the query whose rows the events should follow and nothing appended in
+    /// between is missed; a receiver more than [`STREAM_CAPACITY`] events behind is told
+    /// so by the channel and re-queries. The data API's `/api/stream` is one such
+    /// subscriber (`spec/data-api.md §3`).
+    pub fn subscribe(&self, slug: &str) -> Result<broadcast::Receiver<StreamEvent>> {
+        self.apps
+            .get(slug)
+            .map(|app| app.stream.subscribe())
+            .ok_or_else(|| Error::AppNotLoaded {
+                slug: slug.to_owned(),
+            })
     }
 
     /// One `sys_setting` value, as the JSON text `§3.6` stores, if the key is set.
@@ -906,7 +1030,7 @@ impl Node {
             let app = self.apps.get_mut(slug).ok_or_else(|| Error::AppNotLoaded {
                 slug: slug.to_owned(),
             })?;
-            let now = Fingerprint::take(&app.dir);
+            let now = Fingerprint::take(app.dir.as_deref());
             let changed = now != app.fingerprint;
             app.fingerprint = now;
             changed
@@ -1042,7 +1166,12 @@ impl Node {
             let app = self.apps.get(slug).ok_or_else(|| Error::AppNotLoaded {
                 slug: slug.to_owned(),
             })?;
-            (app.dir.clone(), app.source, app.store.schema().hash.clone())
+            let Some(dir) = app.dir.clone() else {
+                // An embedder's app has no folder to reload from (`open_app`), and its
+                // fingerprint is empty, so this is not reached; said anyway.
+                return Ok(Ok(false));
+            };
+            (dir, app.source, app.store.schema().hash.clone())
         };
         let candidate = Candidate {
             folder: slug.to_owned(),
@@ -1114,7 +1243,7 @@ impl Node {
     fn load_one(&mut self, candidate: &Candidate, cutoff: &str) -> Result<Outcome> {
         // Taken before anything is read, so an edit that lands while the app loads is
         // seen by the next request rather than missed.
-        let fingerprint = Fingerprint::take(&candidate.dir);
+        let fingerprint = Fingerprint::take(Some(&candidate.dir));
         // The row is keyed by the folder name (`spec/app-contract.md §3.1`: the slug
         // equals the folder). A folder that could never be a slug has no row to carry
         // `last_error`; it gets the audit alone.
@@ -1168,11 +1297,11 @@ impl Node {
             return Ok(Outcome::Disabled);
         }
 
-        match self.materialize_app(&prepared, cutoff) {
+        match self.materialize(&prepared.manifest.app.slug, prepared.schema.clone(), cutoff) {
             Ok((log, store)) => Ok(Outcome::Loaded(Box::new(App {
                 manifest: prepared.manifest,
                 manifest_hash: prepared.manifest_hash,
-                dir: candidate.dir.clone(),
+                dir: Some(candidate.dir.clone()),
                 source: candidate.source,
                 mount: prepared.mount,
                 csp: prepared.csp,
@@ -1356,9 +1485,9 @@ impl Node {
     }
 
     /// `§8`'s "materialize from data/<slug>/": the log, the three-tier restore, the
-    /// health row — exactly what `Node::open` does for `_sys`, per app.
-    fn materialize_app(&mut self, prepared: &Prepared, cutoff: &str) -> Result<(AppLog, Store)> {
-        let slug = prepared.manifest.app.slug.as_str();
+    /// health row — exactly what `Node::open` does for `_sys`, per app, for a folder's
+    /// app and for an embedder's ([`open_app`](Self::open_app)) alike.
+    fn materialize(&mut self, slug: &str, schema: Schema, cutoff: &str) -> Result<(AppLog, Store)> {
         for dir in [self.paths.app_log_dir(slug), self.paths.app_snap_dir(slug)] {
             fs::create_dir_all(&dir).map_err(io_at(&dir))?;
         }
@@ -1372,7 +1501,7 @@ impl Node {
         )?;
         audit_recovery(&mut self.sys, slug, &recovered)?;
         log.save_to(&mut self.state);
-        let store = self.open_store(slug, prepared.schema.clone(), cutoff)?;
+        let store = self.open_store(slug, schema, cutoff)?;
         Ok((log, store))
     }
 

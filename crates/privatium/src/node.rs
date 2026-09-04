@@ -34,8 +34,10 @@ pub fn paths(global: &Global) -> Result<Paths> {
 /// The repository's `apps/`, when this binary runs from a checkout.
 ///
 /// A development start is the one situation in which the reference apps are on disk
-/// beside the binary's source; a packaged binary (M13) carries them another way. The
-/// path is fixed at compile time and simply absent anywhere else.
+/// beside the binary's source. A bare binary — a CI artefact, a release download — has
+/// no bundled folder and starts with an empty launcher; a package that ships the folder
+/// at a path of its own is Phase 6 (`spec/data-dictionary.md §3.4`, `source = bundled`).
+/// The path is fixed at compile time and simply absent anywhere else.
 #[must_use]
 pub fn checkout_apps() -> Option<PathBuf> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR"))

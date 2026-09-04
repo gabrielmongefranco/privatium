@@ -22,19 +22,17 @@ use std::time::{Duration, Instant};
 use axum::body::{Body, Bytes, to_bytes};
 use axum::http::header::{ALLOW, CONTENT_LENGTH, CONTENT_TYPE, HeaderValue, RETRY_AFTER};
 use axum::http::{Method, StatusCode};
-use base64::Engine as _;
 use rusqlite::Connection;
-use rusqlite::types::ValueRef;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use tokio::sync::{broadcast, mpsc};
 
-use crate::app::{Change, StreamEvent};
+use crate::app::{Event, StreamEvent};
 use crate::http::{self, Device, headers};
 use crate::log::{Reader, batch};
-use crate::lua::{ColumnType, column_types};
+use crate::store::Schema;
 use crate::store::materialize::quote_ident;
-use crate::store::{Kind, Schema};
+use crate::store::query::{self, ColumnType};
 use crate::wire::{Handler, Request, Response, node_facts};
 use crate::{Error, Node};
 
@@ -349,116 +347,14 @@ fn leading_keyword(sql: &str) -> String {
         .to_ascii_uppercase()
 }
 
-/// A JSON parameter as a bound value (`spec/data-api.md §1`): strings as text, integers
-/// as integers, other numbers as reals, booleans as 0/1, null as NULL. An object or an
-/// array is not a value.
-fn bind_json(index: usize, value: &Value) -> Result<rusqlite::types::Value, Response> {
-    use rusqlite::types::Value as V;
-    Ok(match value {
-        Value::Null => V::Null,
-        Value::Bool(b) => V::Integer(i64::from(*b)),
-        Value::Number(n) => match n.as_i64() {
-            Some(i) => V::Integer(i),
-            None => V::Real(n.as_f64().unwrap_or(f64::NAN)),
-        },
-        Value::String(s) => V::Text(s.clone()),
-        Value::Array(_) | Value::Object(_) => {
-            return Err(refuse(
-                StatusCode::BAD_REQUEST,
-                format!(
-                    "400 Bad Request: params[{index}] is not a scalar; bind strings, numbers, booleans or null"
-                ),
-            ));
-        }
-    })
-}
-
-/// What a read takes from under the node lock, to run without it.
+/// What a read takes from under the node lock, to run without it. The statement itself
+/// runs through `store::query`, which is what `Node::query` hands an embedder too, so
+/// a column is typed one way for both (`spec/data-api.md §1`).
 struct ReadPlan {
     conn: Connection,
     schema: Schema,
     lam: u64,
     deadline: Duration,
-}
-
-/// A query's result: the typed columns and the rows.
-struct QueryResult {
-    columns: Vec<ColumnType>,
-    rows: Vec<Value>,
-}
-
-/// Run one statement on the sandboxed connection under the node's statement deadline.
-/// A `?` count that does not match the parameters is refused, never padded
-/// (`spec/data-api.md §1`).
-fn run_query(
-    plan: &ReadPlan,
-    sql: &str,
-    params: Vec<rusqlite::types::Value>,
-) -> Result<QueryResult, String> {
-    let start = Instant::now();
-    let deadline = plan.deadline;
-    plan.conn
-        .progress_handler(1000, Some(move || start.elapsed() > deadline))
-        .map_err(|error| error.to_string())?;
-    let mut statement = plan.conn.prepare(sql).map_err(|error| error.to_string())?;
-    let expected = statement.parameter_count();
-    if expected != params.len() {
-        return Err(format!(
-            "the statement has {expected} placeholder(s) and {} parameter(s) were given; \
-             the counts must match — nothing is substituted",
-            params.len()
-        ));
-    }
-    let columns = column_types(&statement, &plan.schema);
-    let mut rows = statement
-        .query(rusqlite::params_from_iter(params))
-        .map_err(|error| error.to_string())?;
-    let mut out = Vec::new();
-    while let Some(row) = rows.next().map_err(|error| error.to_string())? {
-        out.push(row_to_json(row, &columns));
-    }
-    Ok(QueryResult { columns, rows: out })
-}
-
-/// One row as a JSON object (`spec/data-dictionary.md §2.1`): a declared `DECIMAL` or
-/// `BIGINT` is a string, a `BOOLEAN` a boolean, a `JSON` column its value, NULL is
-/// `null`; a computed column arrives by storage class, so `count(*)` is a number and
-/// `decimal_sum()` a string.
-fn row_to_json(row: &rusqlite::Row<'_>, columns: &[ColumnType]) -> Value {
-    let mut object = Map::with_capacity(columns.len());
-    for (index, column) in columns.iter().enumerate() {
-        let raw = row.get_ref(index).unwrap_or(ValueRef::Null);
-        object.insert(column.name.clone(), cell_to_json(raw, column.kind));
-    }
-    Value::Object(object)
-}
-
-fn cell_to_json(raw: ValueRef<'_>, kind: Option<Kind>) -> Value {
-    let text = |bytes: &[u8]| String::from_utf8_lossy(bytes).into_owned();
-    match (kind, raw) {
-        (_, ValueRef::Null) => Value::Null,
-        (Some(Kind::Integer | Kind::Decimal { .. }), ValueRef::Integer(i)) => {
-            Value::String(i.to_string())
-        }
-        (Some(Kind::Decimal { .. }), ValueRef::Real(r)) => Value::String(r.to_string()),
-        (Some(Kind::Boolean), ValueRef::Integer(i)) => Value::Bool(i != 0),
-        (Some(Kind::Boolean), ValueRef::Text(t)) => match text(t).as_str() {
-            "1" | "true" => Value::Bool(true),
-            "0" | "false" => Value::Bool(false),
-            other => Value::String(other.to_owned()),
-        },
-        (Some(Kind::Json), ValueRef::Text(t)) => {
-            serde_json::from_slice(t).unwrap_or_else(|_| Value::String(text(t)))
-        }
-        (_, ValueRef::Integer(i)) => Value::from(i),
-        (_, ValueRef::Real(r)) => {
-            serde_json::Number::from_f64(r).map_or(Value::Null, Value::Number)
-        }
-        (_, ValueRef::Text(t)) => Value::String(text(t)),
-        (_, ValueRef::Blob(b)) => {
-            Value::String(base64::engine::general_purpose::STANDARD.encode(b))
-        }
-    }
 }
 
 fn columns_json(columns: &[ColumnType]) -> Value {
@@ -568,12 +464,12 @@ fn read_lines(log_dir: &std::path::Path, app: &str) -> Vec<RawLine> {
 
 /// Everything the write path takes from one client event.
 struct Parsed {
-    change: Change,
+    change: Event,
     /// Whether the client chose the id (a minted one is never a reuse).
     client_id: bool,
 }
 
-/// One client event as a [`Change`] (`spec/data-api.md §2`): `op`, `tbl`, `id`, `d`
+/// One client event as a [`Event`] (`spec/data-api.md §2`): `op`, `tbl`, `id`, `d`
 /// and nothing else, the id a ULID or minted here.
 fn parse_event(index: usize, value: &Value) -> Result<Parsed, Response> {
     let bad = |error: String| {
@@ -628,7 +524,7 @@ fn parse_event(index: usize, value: &Value) -> Result<Parsed, Response> {
         (false, Some(_)) => return Err(bad("a del carries no `d`".to_owned())),
     };
     Ok(Parsed {
-        change: Change { tbl, id, d },
+        change: Event { tbl, id, d },
         client_id,
     })
 }
@@ -786,7 +682,7 @@ impl Handler {
                 rusqlite::types::Value::Integer(i64::try_from(limit).unwrap_or(i64::MAX)),
                 rusqlite::types::Value::Integer(i64::try_from(offset).unwrap_or(i64::MAX)),
             ];
-            let result = run_query(&plan, &sql, params)?;
+            let result = query::run(&plan.conn, &plan.schema, plan.deadline, &sql, params)?;
             Ok::<_, String>((result, plan.lam))
         })
         .await;
@@ -868,9 +764,14 @@ impl Handler {
             None | Some(Value::Null) => {}
             Some(Value::Array(items)) => {
                 for (index, item) in items.iter().enumerate() {
-                    match bind_json(index, item) {
+                    match query::bind(index, item) {
                         Ok(value) => params.push(value),
-                        Err(response) => return response,
+                        Err(error) => {
+                            return refuse(
+                                StatusCode::BAD_REQUEST,
+                                format!("400 Bad Request: {error}"),
+                            );
+                        }
                     }
                 }
             }
@@ -890,7 +791,7 @@ impl Handler {
             );
         }
         let outcome = tokio::task::spawn_blocking(move || {
-            let result = run_query(&plan, &sql, params)?;
+            let result = query::run(&plan.conn, &plan.schema, plan.deadline, &sql, params)?;
             Ok::<_, String>((result, plan.lam))
         })
         .await;
@@ -1062,7 +963,7 @@ impl Handler {
             // in the cache's tombstone set, or deleted earlier in this very batch.
             let mut deleted_here: Vec<&str> = Vec::new();
             for (index, item) in parsed.iter().enumerate() {
-                let Change { tbl, id, d } = &item.change;
+                let Event { tbl, id, d } = &item.change;
                 let reuse = d.is_some()
                     && item.client_id
                     && (deleted_here.contains(&id.as_str())
@@ -1084,8 +985,8 @@ impl Handler {
                     deleted_here.push(id.as_str());
                 }
             }
-            let changes: Vec<Change> = parsed.into_iter().map(|item| item.change).collect();
-            match node.append(slug, changes) {
+            let changes: Vec<Event> = parsed.into_iter().map(|item| item.change).collect();
+            match node.append_batch(slug, changes) {
                 Ok(appended) => appended,
                 Err(Error::Value {
                     index,
@@ -1125,9 +1026,9 @@ impl Handler {
                 }
             }
         };
-        let count = appended.changes.len();
+        let count = appended.events.len();
         let ids: Vec<&str> = appended
-            .changes
+            .events
             .iter()
             .map(|change| change.id.as_str())
             .collect();

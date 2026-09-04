@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lua/pv.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-05
 // Summary:  The `pv` module of spec/lua-api.md §3: routing (§3.1), reading on the sandboxed
 //           connection (§3.2), writing through the node's log as appends and batches (§3.3),
 //           and the rest of §3.4. Routes and `pv.on` register while app.lua loads; reads and
@@ -10,12 +10,13 @@ use std::sync::PoisonError;
 
 use mlua::{Function, Lua, Table, Value};
 
-use crate::app::{Appended, Change};
+use crate::app::{Appended, Event};
 use crate::lua::convert::{
-    bind_params, column_types, json_to_lua, lua_object, lua_to_json, row_to_lua, sql_error,
+    bind_params, json_to_lua, lua_object, lua_to_json, row_to_lua, sql_error,
 };
 use crate::lua::dec::Dec;
 use crate::lua::{Phase, RouteSpec, VmData, sandbox};
+use crate::store::query::column_types;
 
 /// Registry key: the sequence of route handlers, in registration order (`§2.4`'s index).
 pub(crate) const ROUTES_KEY: &str = "pv.routes";
@@ -229,7 +230,7 @@ fn is_table_name(name: &str) -> bool {
 
 /// The two arities of `append` (`§3.3`): `(tbl, data)` and `(tbl, id, data)` with a `nil`
 /// id allowed in the second. Returns the id, minted when none was given.
-fn change_of(what: &str, tbl: String, second: Value, third: Option<Value>) -> mlua::Result<Change> {
+fn change_of(what: &str, tbl: String, second: Value, third: Option<Value>) -> mlua::Result<Event> {
     if !is_table_name(&tbl) {
         return Err(mlua::Error::runtime(format!(
             "{what}: {tbl:?} is not a table name"
@@ -250,7 +251,7 @@ fn change_of(what: &str, tbl: String, second: Value, third: Option<Value>) -> ml
         Some(id) => check_id(what, id)?,
         None => crate::new_ulid(),
     };
-    Ok(Change {
+    Ok(Event {
         tbl,
         id,
         d: Some(serde_json::Value::Object(lua_object(&data)?)),
@@ -302,7 +303,7 @@ fn delete(lua: &Lua, (tbl, id): (String, String)) -> mlua::Result<()> {
             ));
         }
     }
-    write(lua, vec![Change { tbl, id, d: None }])
+    write(lua, vec![Event { tbl, id, d: None }])
 }
 
 /// `pv.batch(function(tx) … end)`: every event or none, contiguous `seq`, one `ts`.
@@ -346,10 +347,10 @@ fn tx_delete(lua: &Lua, (tbl, id): (String, String)) -> mlua::Result<()> {
         )));
     }
     let id = check_id("tx.delete", id)?;
-    stage(lua, Change { tbl, id, d: None })
+    stage(lua, Event { tbl, id, d: None })
 }
 
-fn stage(lua: &Lua, change: Change) -> mlua::Result<()> {
+fn stage(lua: &Lua, change: Event) -> mlua::Result<()> {
     let mut data = data_mut(lua)?;
     match data.batch.as_mut() {
         Some(staged) => {
@@ -364,7 +365,7 @@ fn stage(lua: &Lua, change: Change) -> mlua::Result<()> {
 
 /// Append `changes` through the node, apply them to the cache, then fire `pv.on('append')`
 /// for each in this VM.
-fn write(lua: &Lua, changes: Vec<Change>) -> mlua::Result<()> {
+fn write(lua: &Lua, changes: Vec<Event>) -> mlua::Result<()> {
     let (node, slug) = {
         let data = data(lua)?;
         let ctx = data.ctx.as_ref().ok_or_else(|| outside_request("append"))?;
@@ -372,7 +373,7 @@ fn write(lua: &Lua, changes: Vec<Change>) -> mlua::Result<()> {
     };
     let appended = {
         let mut node = node.lock().unwrap_or_else(PoisonError::into_inner);
-        node.append(&slug, changes)
+        node.append_batch(&slug, changes)
     }
     .map_err(|error| mlua::Error::runtime(format!("pv.append: {error}")))?;
     fire_append(lua, &appended)
@@ -388,7 +389,7 @@ pub(crate) fn fire_append(lua: &Lua, appended: &Appended) -> mlua::Result<()> {
     for handler in handlers.sequence_values::<Function>() {
         functions.push(handler?);
     }
-    for (offset, change) in appended.changes.iter().enumerate() {
+    for (offset, change) in appended.events.iter().enumerate() {
         let offset = offset as u64;
         let event = lua.create_table()?;
         event.raw_set("seq", appended.seq.saturating_add(offset))?;

@@ -25,16 +25,51 @@ Privatium is for people who want an app for exactly one purpose, want it private
 construction, and do not want to run a server, buy a domain, trust a cloud, or learn a
 framework to get it.
 
+## Quick Start Guide
+
+Privatium is one program, `privatium`. There is no installer and nothing to configure.
+
+1. **Get the binary.** The [releases page](https://github.com/gabrielmongefranco/privatium/releases)
+   has one per platform — Linux, macOS and Windows — named by its target. Put it anywhere
+   on your `PATH`. Until the first release is tagged, every CI run on `main` attaches the
+   same three binaries as its artefacts.
+2. **Run it.** Type `privatium` in a terminal. It creates its data directory
+   (`~/.local/share/privatium` on Linux, `~/Library/Application Support/privatium` on
+   macOS, `%LOCALAPPDATA%\privatium` on Windows) and prints `http://127.0.0.1:8420/`.
+   This phase listens on your own machine only; reaching it from your phone arrives with
+   Phase 2.
+3. **Open the URL.** The launcher lists your apps — none yet on a first run.
+4. **Add an app.** Copy an app folder into `apps/` under the data directory — the three in
+   this repository's [apps/](apps/) are the place to start — or make one:
+   `privatium new myapp` writes a small working app (a manifest, a route, a page) you edit
+   in place, and `privatium dev --app myapp` serves it while you edit, every save live on
+   the next reload. Once it has a `schema.sql`, `privatium new myapp --scaffold <table>`
+   adds list, detail, create and edit screens for a table.
+5. **Back up.** Copy the `data/` folder anywhere — Syncthing, a USB stick, Dropbox.
+   `privatium restore --from <the copy>` brings it back. Nothing else needs saving.
+
+`privatium --help` lists the rest: `lint`, `snapshot`, `skill`.
+
+**From source:** with a Rust toolchain (`rust-toolchain.toml` pins it), `cargo build
+--release` produces `target/release/privatium` with SQLite and Lua compiled in, and a
+checkout's `apps/` — `hello`, `animals`, `sketch` — are on the launcher without copying.
+
+**As a library:** `privatium-core` in your own `main()` — the log, the store and the
+auth layer with your own routes. [crates/privatium-core/examples/embedded.rs](crates/privatium-core/examples/embedded.rs)
+is the whole shape in thirty lines; `cargo run -p privatium-core --example embedded`
+runs it.
+
 ## Status
 
-**Phase 1 in progress.** `docs/roadmap.md` Phase 1 — *a node that works on one machine*
-— is implemented through milestone M12 of [docs/plans/phase-1.md](docs/plans/phase-1.md):
+**Phase 1 complete.** `docs/roadmap.md` Phase 1 — *a node that works on one machine* —
+is implemented, milestones M0 through M13 of [docs/plans/phase-1.md](docs/plans/phase-1.md):
 the event log, materialization into SQLite, snapshots and the three-tier restore, the app
-loader, the Lua host and LSP templates, the data API and `pv.js`, the CLI, and the linter.
-Pairing, discovery and sync are later phases, so the binary calls itself
-`pv/1 (partial: phase 1)` and listens on loopback only. The documents below are the
-contract the code satisfies; where they disagree, the specification wins and the code is
-wrong.
+loader, the Lua host and LSP templates, the data API and `pv.js`, the CLI, the linter, and
+`privatium-core` as a library for your own binary (`spec/app-contract.md §2.3`). Every
+acceptance bullet of the roadmap names the test that holds it. Pairing, discovery and sync
+are Phases 2 and 3, so the binary calls itself `pv/1 (partial: phase 1)` and listens on
+loopback only. The documents below are the contract the code satisfies; where they
+disagree, the specification wins and the code is wrong.
 
 | Document | Purpose |
 |---|---|
@@ -56,23 +91,6 @@ wrong.
 | [docs/decisions/](docs/decisions/) | Decision records: Barracuda declined (0001); Rust core, pkarr, peer transport (0002); one core interface behind three transports (0003); Gun, RxDB, libp2p, SharkTrustX and BAS-in-Rust declined (0004); what a phone is in the cluster (0005); SQLite as the query engine (0006) |
 | [docs/plans/phase-1.md](docs/plans/phase-1.md) | The Phase 1 work breakdown, the decisions it made, and the spec defects it found and fixed |
 | [docs/naming.md](docs/naming.md) | Name, taglines, and the rename checklist |
-
-## Quick Start Guide
-
-From a checkout, with a Rust toolchain (`rust-toolchain.toml` pins it):
-
-1. `cargo build --release` — one binary, `target/release/privatium`, with SQLite and Lua
-   compiled in.
-2. Run it: `privatium`. It prints `http://127.0.0.1:8420/`. Phase 1 listens on loopback
-   only; a LAN URL and a pairing code arrive with Phase 2.
-3. Open the URL. The launcher lists the bundled apps — `hello`, `animals`, `sketch`.
-4. Drop an app folder into `~/.local/share/privatium/apps/` (`%LOCALAPPDATA%\privatium\apps\`
-   on Windows), or start one with `privatium new <slug>` and run `privatium dev --app <slug>`.
-5. To back up, copy the `data/` folder anywhere — Syncthing, a USB stick, Dropbox.
-   `privatium restore --from <the copy>` brings it back.
-
-`privatium --help` lists the rest: `lint`, `snapshot`, `skill`. Binaries for each
-platform arrive with M13.
 
 ## Example Applications
 

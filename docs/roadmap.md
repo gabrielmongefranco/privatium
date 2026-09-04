@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/roadmap.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-03
+Modified: 2026-09-05
 Summary:  Build phases with explicit acceptance criteria. Non-normative.
 -->
 
@@ -23,29 +23,58 @@ the LSP compiler with hot reload, HTTP server, HTMX shell, SQLite materializatio
 snapshots, three-tier restore, the Tier 2 data API and `pv.js`, and the CLI including
 `privatium dev`, `new`, and `lint` (`spec/cli.md`).
 
-**Done when:**
-- [ ] `hello` and `animals` (Tier 1) load, render, and accept writes
-- [ ] `sketch` (Tier 2) works with its own JavaScript and no `schema.sql`
-- [ ] Editing a `.lsp` file is visible on the next request — no restart, no build
-- [ ] The Lua sandbox rejects `io`, `os.execute`, and `debug`, and enforces all four limits
-- [ ] Solo mode serves one app at `/` with no launcher
-- [ ] `privatium lint` passes on all three reference apps and fails on seeded violations
-- [ ] Every lint rule in `spec/cli.md §5` has both a passing and a failing case under
+**Done when** — each bullet names the test that holds it, under `crates/*/tests/`; the
+CI matrix runs every one on Linux, macOS and Windows:
+- [x] `hello` and `animals` (Tier 1) load, render, and accept writes —
+      `test_hello_end_to_end`, `test_animals_end_to_end`
+- [x] `sketch` (Tier 2) works with its own JavaScript and no `schema.sql` —
+      `test_sketch_end_to_end`, `test_sketch_works_without_schema_sql`
+- [x] Editing a `.lsp` file is visible on the next request — no restart, no build —
+      `test_hot_reload_template_next_request`
+- [x] The Lua sandbox rejects `io`, `os.execute`, and `debug`, and enforces all four limits —
+      `test_spec_lua_5_banned_globals_absent`, `test_spec_lua_5_instruction_limit_aborts`,
+      `test_spec_lua_5_memory_limit_aborts`, `test_spec_lua_5_wallclock_limit_aborts`, and
+      the pool size by `test_spec_lua_5_limit_does_not_kill_node` (a pool of one)
+- [x] Solo mode serves one app at `/` with no launcher — `test_solo_mode_mounts_at_root`,
+      `test_launcher_absent_in_solo_mode`
+- [x] `privatium lint` passes on all three reference apps and fails on seeded violations —
+      `test_reference_apps_lint_clean`, `test_spec_cli_5_lint_exit_codes_and_formats`
+- [x] Every lint rule in `spec/cli.md §5` has both a passing and a failing case under
       `apps/_lint/pass/<rule>/<slug>/` and `apps/_lint/fail/<rule>/<slug>/` — not in
-      `apps/` proper, where the loader would try to mount them
-- [ ] `--format json` findings each carry a resolvable `spec` reference
-- [ ] `privatium dev` reloads Lua, templates, and schema with no restart
-- [ ] `privatium-core` compiles and runs standalone in a 30-line embedded example
-- [ ] Every application route is reachable as `core::handle(Request) -> Response` with no
-      socket, and the HTTP server is a thin adapter over it (ADR 0003)
-- [ ] `Request` and `Response` bodies are streams in both directions — `/api/stream` is
-      served without buffering, and a large upload never lands in memory whole
-- [ ] `rm -rf cache/ data/*/snap/` then restart → identical state
-- [ ] A hand-written JSONL line appended by `echo` appears in the UI after reload
+      `apps/` proper, where the loader would try to mount them —
+      `test_every_rule_has_fixtures`, `test_spec_cli_5_4_lint_corpus_files_all_belong_to_a_rule`
+- [x] `--format json` findings each carry a resolvable `spec` reference —
+      `test_every_finding_has_resolvable_spec_ref`,
+      `test_spec_cli_5_2_json_findings_carry_seven_fields`
+- [x] `privatium dev` reloads Lua, templates, and schema with no restart —
+      `test_hot_reload_app_lua_reregisters_routes`, `test_hot_reload_template_next_request`,
+      `test_hot_reload_schema_rematerializes`, `test_spec_cli_3_dev_names_the_app`
+- [x] `privatium-core` compiles and runs standalone in a 30-line embedded example —
+      `test_spec_app_contract_2_3_example_is_thirty_lines_of_the_spec_shape`,
+      `test_spec_app_contract_2_3_open_app_append_query_with_no_folder`, and CI runs the
+      example (`.github/scripts/embedded-example.sh`)
+- [x] Every application route is reachable as `core::handle(Request) -> Response` with no
+      socket, and the HTTP server is a thin adapter over it (ADR 0003) —
+      `test_spec_9_1_every_prefix_reachable_through_handle`,
+      `test_adapter_registers_no_routes_of_its_own`
+- [x] `Request` and `Response` bodies are streams in both directions — `/api/stream` is
+      served without buffering, and a large upload never lands in memory whole —
+      `test_response_body_streams_without_buffering`,
+      `test_large_request_body_never_fully_buffered`
+- [x] `rm -rf cache/ data/*/snap/` then restart → identical state —
+      `test_spec_3_1_delete_cache_loses_nothing` (digests before and after), and
+      `test_hello_end_to_end` removes the cache and the snapshots and reopens
+- [x] A hand-written JSONL line appended by `echo` appears in the UI after reload
       *(this is the test that keeps `AGENTS.md` invariant 1 honest — the live tail stays
-      plain, uncompressed JSONL no matter what sealed segments become)*
-- [ ] Conformance checklist items for §3, §4, §5 pass
-- [ ] Runs on Linux, Windows and macOS from a single binary
+      plain, uncompressed JSONL no matter what sealed segments become)* —
+      `test_hand_appended_line_visible_without_restart`,
+      `test_hello_readme_echo_example_is_valid`
+- [x] Conformance checklist items for §3, §4, §5 pass — the names in
+      `docs/plans/phase-1.md §7`, run by `.github/scripts/conformance.sh` with `--exact`
+- [x] Runs on Linux, Windows and macOS from a single binary — the CI matrix runs the
+      suite on all three, `test_r1_sqlite_bundled_links` and
+      `test_r2_mlua_vendored_links_and_is_lua_54` prove the engines on each, and the
+      release binary is uploaded per target triple
 
 ## Phase 2 — Other devices on the LAN
 
