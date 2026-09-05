@@ -75,6 +75,9 @@ Helpers in every template: `render`, `layout`, `icon`, `url`, `fmt.date`, `fmt.m
 - Save a file, refresh: `views/*.lsp`, `app.lua`, `lib/`, `schema.sql` and `app.toml` are
   reloaded on the next request, no restart. A save that does not load is the error page,
   with the line, until the next save loads.
+- A third-party pure-Lua library is copied under `lib/` with its own file layout, so its
+  internal `require`s resolve; there is no package manager, and a rock with C sources
+  cannot load (`docs/frameworks.md §3`). Record where it came from and its licence.
 
 ## MUST
 

@@ -4,7 +4,8 @@ File:     docs/roadmap.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
 Modified: 2026-09-05
-Summary:  Build phases with explicit acceptance criteria. Non-normative.
+Summary:  Build phases with explicit acceptance criteria. Non-normative. Phases 2 and 3
+          have plans under docs/plans/; later phases have stubs there.
 -->
 
 # Roadmap
@@ -80,8 +81,10 @@ CI matrix runs every one on Linux, macOS and Windows:
 
 **Deliverable:** open the app on your phone by scanning a QR code.
 
-Scope: pairing (CPace/SPAKE2), emoji pad + word codes, session crypto in Rust and JS,
+Scope: pairing (SPAKE2, RFC 9382), emoji pad + word codes, session crypto in Rust and JS,
 device registry, mDNS + UDP discovery, key pinning.
+
+Plan: `docs/plans/phase-2.md`.
 
 **Done when:**
 - [ ] Pairing completes on a phone in under 20 seconds, without a keyboard
@@ -96,7 +99,10 @@ device registry, mDNS + UDP discovery, key pinning.
 **Deliverable:** desktop and laptop stay in sync with no server, and one pairing covers both.
 
 Scope: cluster identity and node admission, node certificates, sync protocol over LAN HTTP,
-filesystem watcher for externally-synced logs, endpoint candidate list with failover.
+filesystem watcher for externally-synced logs, endpoint candidate list with failover, and
+**attachments** — binary files beside the log, content-addressed, synced as a set union.
+
+Plan: `docs/plans/phase-3.md`.
 
 **Done when:**
 - [ ] A second node is admitted with one pairing; the phone reaches it **without re-pairing**
@@ -109,11 +115,21 @@ filesystem watcher for externally-synced logs, endpoint candidate list with fail
 - [ ] Lamport counters survive restart and remain monotonic
 - [ ] Cluster private key is absent from every event, snapshot, and backup export
 - [ ] Killing the active endpoint fails over in under 5 seconds, not 30
+- [ ] An attachment stored on one node reaches every other node and every restore; a file
+      whose bytes do not match its hash is refused, never served
+- [ ] `rm -rf cache/ data/*/snap/` then restart → identical state, attachments included
 
 **Sync demo, once §10 works:** wire `animals` to `/api/stream` with the HTMX SSE extension.
 Teaching an animal on the desktop makes the phone's history update live, on screen, with no
 polling code and no page reload. Two devices, one visible cause and effect — a far better
 demonstration than a passing test, and it costs one attribute.
+
+**Attachments, once §10 works:** a photo of a prescription or a PDF has no home in a JSONL
+line. Phase 3 adds `data/<slug>/blob/<sha256>` — immutable files named by their own hash,
+referenced from `d`, synced as a set union exactly as the logs are, and copied by the same
+backup. Never a mutable file sync: a file edited in place can conflict, and nothing in this
+design may. `spec/protocol.md §14` item 8 records the constraints; the wire shape lands with
+the milestone in `docs/plans/phase-3.md`.
 
 ## Phase 3b — The always-on node
 

@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/security.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-03
+Modified: 2026-09-05
 Summary:  Threat model, protections, and honest statements of what is not protected.
 -->
 
@@ -85,7 +85,7 @@ paths.
 | Path | Confidentiality | Peer authentication |
 |---|---|---|
 | Native client ↔ node | X25519 + HKDF + ChaCha20-Poly1305, pinned statics | Pinned key, TOFU at pairing |
-| Browser ↔ node, LAN HTTP | Same, in pure JS | Pinned key, TOFU at pairing |
+| Browser ↔ node, LAN HTTP | Same, in pure JS, inside the `/ws` channel (`spec/protocol.md §8.3`); only code and the bootstrap page cross in the clear (`§8.4`) | Pinned cluster key, TOFU at pairing |
 | Browser ↔ node, Tailscale | WireGuard + TLS on `ts.net` | Tailnet identity |
 | Browser ↔ node, DuckDNS + LE | TLS | webPKI |
 | Tor Browser ↔ node | Tor | Onion address is the key |
@@ -178,7 +178,17 @@ compromise — but it must be stated, not buried.
 - Pairing mode is off by default and requires a deliberate action to open.
 - Every pairing writes a permanent, replicated `sys_audit` event. A surprise pairing is
   visible on every device you own, forever.
-- After first pairing the node's key is pinned; the attacker's later arrival is refused.
+- After first pairing the cluster key is pinned; a later arrival presenting another key is
+  refused. Every page, fragment and API call then travels inside the encrypted channel
+  (`spec/protocol.md §8.3`), and each script and stylesheet a page names is pinned by
+  integrity to the copy the channel delivered, so a substituted file does not run.
+
+**What stays open after pairing, on plain HTTP.** A module that an app's own script
+imports carries no integrity — the browser has no attribute for it on an `import` — so
+an active on-path attacker can still substitute a Tier 2 app's imported modules. That is
+the whole of the residual gap: narrower than first contact, and stated here rather than
+implied away. An import map with integrity would close it in place once every target
+browser supports one; until then it closes the same way first contact does.
 
 **What closes it entirely:** pair over a native client, or over Tailscale, or over Tor —
 any transport with independent authentication. The settings page should say so.

@@ -12,7 +12,11 @@ From `crates/privatium-core/assets/shell/pv.js`, served at `/static/pv.js`; a na
 
 Served at `/static/pv.js`. Under 12 KB, unminified and meant to be read — there is no
 minifier in the runtime path — with no dependencies, no framework, no build step.
-**Optional** — every endpoint is plain HTTP and `fetch` works fine.
+**Optional** on loopback, in a native shell and on an origin `spec/protocol.md §8.2`
+exempts, where every endpoint is plain HTTP and `fetch` works fine. On a plain-HTTP LAN
+origin the API is reachable only through the channel (`§8.3`, `§8.4`) and a plain
+`fetch` of it is refused naming this helper; `pv.js` uses the channel when the page has
+one and `fetch` otherwise, and an app sees no difference.
 
 ```js
 import { pv } from '/static/pv.js';

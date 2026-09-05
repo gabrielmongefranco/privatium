@@ -89,7 +89,7 @@ disagree, the specification wins and the code is wrong.
 | [docs/skills.md](docs/skills.md) | How LLM-authored apps get correct, accessible, secure code |
 | [docs/icons.md](docs/icons.md) | Icon system: Bootstrap Icons, inlined server-side |
 | [docs/decisions/](docs/decisions/) | Decision records: Barracuda declined (0001); Rust core, pkarr, peer transport (0002); one core interface behind three transports (0003); Gun, RxDB, libp2p, SharkTrustX and BAS-in-Rust declined (0004); what a phone is in the cluster (0005); SQLite as the query engine (0006) |
-| [docs/plans/phase-1.md](docs/plans/phase-1.md) | The Phase 1 work breakdown, the decisions it made, and the spec defects it found and fixed |
+| [docs/plans/](docs/plans/) | The per-phase work breakdowns: Phase 1 as built, Phases 2 and 3 as planned, later phases as stubs to be written from the roadmap |
 | [docs/naming.md](docs/naming.md) | Name, taglines, and the rename checklist |
 
 ## Example Applications
@@ -168,8 +168,9 @@ Questions, bug reports, enhancement ideas and requests are welcome as GitHub iss
   `crypto.subtle` is unavailable on plain-HTTP origins (Phase 2).
 - [Tauri](https://github.com/tauri-apps/tauri) — desktop and mobile application shells
   (Phase 4).
-- [SPAKE2 (RFC 9382)](https://www.rfc-editor.org/rfc/rfc9382.html) and CPace — the
-  password-authenticated key exchange protocols for device pairing (Phase 2).
+- [SPAKE2 (RFC 9382)](https://www.rfc-editor.org/rfc/rfc9382.html) — the
+  password-authenticated key exchange for device pairing (Phase 2), implemented on both
+  sides from the libraries above rather than taken as a package.
 - [Magic Wormhole](https://github.com/magic-wormhole/magic-wormhole) — inspiration for the
   short human-readable pairing code experience. No code from that project will be used.
 

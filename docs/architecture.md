@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/architecture.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-03
+Modified: 2026-09-05
 Summary:  Explanatory architecture overview. Non-normative; see spec/ for the contract.
 -->
 
@@ -157,10 +157,15 @@ software does. So:
 
 - **Native clients** pin the node's public key at pairing and use X25519 + ChaCha20-Poly1305
   thereafter. No CA is involved. This is stronger than webPKI, not weaker.
-- **Browser clients on LAN** run the same handshake in JavaScript over plain HTTP. This
-  defeats passive eavesdroppers completely and detects active attackers after first
-  pairing. It cannot protect a first contact that is already man-in-the-middled. That is
-  the SSH trust model, stated honestly in `docs/security.md`.
+- **Browser clients on LAN** run the same handshake in JavaScript over plain HTTP, and
+  every page, fragment and API call then travels inside an encrypted WebSocket channel
+  (`spec/protocol.md §8.3`); only code and a bootstrap page cross the wire in the clear,
+  and the scripts a page names are pinned by integrity to what the channel delivered.
+  This defeats passive eavesdroppers completely and detects active attackers after first
+  pairing, with one narrow exception — a Tier 2 app's own imported modules, which carry
+  no integrity (`docs/security.md §4`). It cannot protect a first contact that is
+  already man-in-the-middled. That is the SSH trust model, stated honestly in
+  `docs/security.md`.
 - **Browser clients that need a real certificate** get one from a configured tunnel
   (Tailscale Serve) or a real domain with a DNS-01 issued certificate (DuckDNS). Both are
   optional.
@@ -176,7 +181,7 @@ software does. So:
 │  app        app-folder loader, manifest validation, SQL sandbox            │
 │  lua        mlua host, sandbox, VM pool, LSP compiler + hot reload         │
 │  identity   Ed25519 node key, device registry, keyring access              │
-│  pair       CPace/SPAKE2 handshake, code generation and rendering          │
+│  pair       SPAKE2 handshake, code generation and rendering                │
 │  session    X25519 + HKDF + ChaCha20-Poly1305 framing                      │
 │  discover   DNS-SD, UDP broadcast, pkarr publish/resolve, DNS               │
 │  peer       hole punching, relay fallback, direct QUIC transport           │

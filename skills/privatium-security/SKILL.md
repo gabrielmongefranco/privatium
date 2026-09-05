@@ -126,8 +126,14 @@ path that skips it.
 This is **property 1 only**. A browser loading `http://192.168.1.14:8420` receives its
 JavaScript over plaintext, so an attacker actively on-path during **both** the first page
 load and the 120-second pairing window can substitute their own client and win. Passive
-sniffing cannot, and properties 2 and 3 are unaffected. After first
-pairing the node's key is pinned and any later attacker is refused with no override.
+sniffing cannot, and properties 2 and 3 are unaffected. After first pairing the cluster
+key is pinned and a later attacker presenting another key is refused with no override;
+every page and API call then travels inside the encrypted channel (`spec/protocol.md
+§8.3`), and the scripts a page names are pinned by integrity to what the channel
+delivered. What stays open on plain HTTP is one thing: a module your own script imports
+carries no integrity, so a Tier 2 app's import graph can still be substituted — say so
+in your app's README if it matters to its data, and know that a native shell or an HTTPS
+origin closes it.
 
 This is the SSH trust-on-first-use model. It is defensible, and it must be stated rather
 than buried. Do not paper over it, and do not add a verification screen — the PAKE already

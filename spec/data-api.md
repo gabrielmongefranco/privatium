@@ -23,7 +23,8 @@ so the API is at `/api/…` and `/api/v1/*` stays the framework's. It is version
 `app.api` in the manifest rather than by a path segment, so that an app declares the
 contract it was written against.
 
-All endpoints require a live session (`spec/protocol.md §8`). Cookies carry it; no token
+All endpoints require a live session (`spec/protocol.md §8`): on a plain-HTTP origin the
+channel of `§8.3` carries it, on loopback the owner's own standing does, and no token
 handling is required in app code — see §2.1 for what keeps another site from riding it.
 
 Every response is JSON unless a section says otherwise, and a refusal is a JSON object
@@ -345,7 +346,11 @@ this node has not materialized.
 
 Served at `/static/pv.js`. Under 12 KB, unminified and meant to be read — there is no
 minifier in the runtime path — with no dependencies, no framework, no build step.
-**Optional** — every endpoint is plain HTTP and `fetch` works fine.
+**Optional** on loopback, in a native shell and on an origin `spec/protocol.md §8.2`
+exempts, where every endpoint is plain HTTP and `fetch` works fine. On a plain-HTTP LAN
+origin the API is reachable only through the channel (`§8.3`, `§8.4`) and a plain
+`fetch` of it is refused naming this helper; `pv.js` uses the channel when the page has
+one and `fetch` otherwise, and an app sees no difference.
 
 ```js
 import { pv } from '/static/pv.js';

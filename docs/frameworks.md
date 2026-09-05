@@ -55,6 +55,16 @@ top.
 | **Petite-Vue** | ⚠️ Works | ~6 KB, Vue template syntax, no build. Fine; Alpine has more momentum. |
 | **jQuery** | ⚠️ Works | Not recommended for new work, but it will not break anything. |
 
+**Lua libraries.** There is no package manager and no LuaRocks, and nothing is planned. A
+pure-Lua library is vendored by copying its files under the app's `lib/`, keeping the
+library's own layout — `lib/inspect.lua`, or `lib/penlight/…` — because `require` resolves
+a dotted name against `lib/` and only there (`spec/lua-api.md §5`), and the library's own
+internal `require`s have to resolve the same way. A rock that ships C sources cannot be
+used: the sandbox removes `package.loadlib` and `package.cpath`, and iOS forbids loading
+native code an app was not shipped with. Check the library's licence is GPL-3.0 compatible
+and record where it came from, as `apps/animals/static/VENDOR.md` does for a browser
+library; the linter reads `lib/` like any other app code.
+
 Server-side templating alternatives, all rejected in favour of LSP: **MiniJinja** and
 **Tera** (Rust-side, so a second language in one app), **etlua** (fine, but reimplementing
 gives us hot reload and escaping-by-default), **Mako Server / Barracuda** (non-commercial

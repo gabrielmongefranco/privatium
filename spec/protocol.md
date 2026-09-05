@@ -594,7 +594,7 @@ A password-authenticated key exchange performs authentication and key agreement 
 operation**. Deriving a usable key *is* the proof that both sides held the code:
 
 ```
-code (16 bits) ──▶ CPace / SPAKE2 ──▶ strong session key
+code (16 bits) ──▶ SPAKE2 (§7.4.1) ──▶ strong session key
                           │
                           └── produces nothing at all if either side had the wrong code
 ```
@@ -676,16 +676,72 @@ Rendering rules:
 Transport: WebSocket at `/ws/pair`, or an equivalent framed channel on native transports.
 
 1. Client connects. Node responds with its protocol version and Node ID.
-2. Both sides run a balanced PAKE — **CPace** (RECOMMENDED) or **SPAKE2** (RFC 9382) —
-   keyed on the 16-bit code, using X25519/Ristretto255.
-   Augmented variants (SPAKE2+, RFC 9383) MUST NOT be used: the code is ephemeral and
-   single-use, so there is no verifier to protect and augmentation buys nothing.
+2. Both sides run a balanced PAKE keyed on the 16-bit code. **`pv/1` uses SPAKE2 as
+   RFC 9382 specifies it, over edwards25519, with the `M` and `N` that RFC gives for
+   edwards25519** — one PAKE, because two implementations have to agree on it to pair.
+   An earlier draft allowed CPace beside it; it is not permitted. Augmented variants
+   (SPAKE2+, RFC 9383) MUST NOT be used: the code is ephemeral and single-use, so there
+   is no verifier to protect and augmentation buys nothing. §7.4.1 fixes the parameters.
 3. On success both sides hold a shared secret `K_pair`.
 4. Over `K_pair`, each side sends its Ed25519 public key and X25519 public key. The
    transcript MUST bind the node's static public key.
 5. Both sides persist the other's static keys. The node writes a `sys_device` event.
-   The client pins the node's key.
+   The client pins the cluster public key (§2.3.2, §7.6) and keeps the node's
+   certificate.
 6. The code is marked consumed. It MUST NOT be reusable.
+
+#### 7.4.1 SPAKE2 parameters
+
+The ciphersuite is SPAKE2 over edwards25519 with SHA-256, HKDF-SHA256 and HMAC-SHA256,
+following RFC 9382 §3 with the choices below. Every one of them is wire meaning.
+
+- The client is `A` and the node is `B`. `A` is the byte string `"pv/1 device "`
+  followed by the client's Ed25519 public key in base64; `B` is `"pv/1 node "` followed
+  by the node's Ed25519 public key in base64. Both static keys are in the transcript,
+  which is how step 4's binding is met.
+- `w` is `HKDF-SHA256(ikm = the code as two bytes, big-endian; salt = empty; info =
+  "pv/1 pake w")`, 64 bytes of output reduced modulo the order of the prime-order
+  subgroup. A memory-hard function adds nothing to sixteen bits
+  (`spec/data-dictionary.md §3.3`).
+- `pA = w·M + x·G` and `pB = w·N + y·G`, with `x` and `y` fresh CSPRNG scalars; `K` is
+  computed with the cofactor, as RFC 9382 §3.2 computes it.
+- In the transcript `TT` (RFC 9382 §3.3, eight-byte little-endian lengths), `pA`, `pB`
+  and `K` are the 32-byte point encodings of RFC 8032 and `w` is the 32-byte
+  little-endian scalar.
+- `Ke ‖ Ka = SHA-256(TT)`, sixteen bytes each. `KcA ‖ KcB = HKDF-SHA256(salt = empty,
+  ikm = Ka, info = "ConfirmationKeys")`, sixteen bytes each. `cA = HMAC-SHA256(KcA, TT)`
+  and `cB = HMAC-SHA256(KcB, TT)`. `K_pair` is `Ke`.
+
+#### 7.4.2 Messages on `/ws/pair`
+
+JSON text frames until `K_pair` exists, then the binary frames of §8.3 keyed by
+`HKDF-Expand(HKDF-Extract(salt = "pv/1 pair", ikm = K_pair), info = "pv/1 c2s" |
+"pv/1 s2c", 32)`, with §8.3's counters from zero.
+
+```
+node   → {"v":1,"id":"k7m2q9xf","pub":"<node Ed25519, base64>","open":true}
+client → {"v":1,"dev":"b3nn8t2q","pub":"<client Ed25519, base64>","kind":"browser","pA":"<base64>"}
+node   → {"pB":"<base64>","cB":"<base64>"}
+client → {"cA":"<base64>"}
+node   → sealed {"x25519":"<base64>","cert":"<base64>","cluster_id":"q4w8rt2n","cluster_pub":"<base64>"}
+client → sealed {"x25519":"<base64>","label":"Pixel 9","ua":"<user agent, or absent>"}
+```
+
+- `open: false` is followed by close code 4404: pairing is closed (§7.1).
+- `kind` is `browser`, `desktop`, `mobile` or `node` (`spec/data-dictionary.md §3.2`).
+  A build without node admission answers `kind: "node"` with close code 4403 naming the
+  phase it arrives in.
+- `dev` MUST be the Node ID §2.1 derives from `pub`; a mismatch is close code 4400.
+- The client verifies `cB` before sending `cA`; a `cB` that does not verify is the
+  wrong code, and the client says so. The node verifies `cA` before it sends anything
+  sealed; a `cA` that does not verify is one attempt (§7.5), audited, and close code
+  4401, and an exhausted code is 4429.
+- The node writes the `sys_device` row from the client's sealed message — `kind`,
+  `replica` (`false` for a browser), both public keys, `paired_at`, `paired_via`,
+  `user_agent`, `label` — then marks the code consumed and closes the window.
+
+The code, either rendering of it, and `w` appear in no message. An implementation MUST
+be able to show that from a transcript.
 
 ### 7.5 Constraints
 
@@ -727,7 +783,15 @@ This is trust-on-first-use, identical to accepting an unknown SSH host key. What
 - The attacker must be *active* on-path, not merely listening.
 - They must be present during the specific 120-second window the owner opened.
 - Pairing is permanently recorded in replicated `sys_audit` events.
-- After first pairing the cluster key is pinned and any later substitution is refused (§8.1).
+- After first pairing the cluster key is pinned, so a later substitution of the *node*
+  is refused (§8.1); every page, fragment and API call travels inside the channel
+  (§8.3), and a script or stylesheet the page names is pinned by integrity to the copy
+  the channel delivered.
+
+**What stays open after pairing** is narrower than first contact and MUST be stated
+rather than implied: a module that an app's own script imports carries no integrity, so
+on plain HTTP a Tier 2 app's import graph can still be substituted by an active on-path
+attacker. It closes when the origin is one §8.2 exempts, or the client is a native shell.
 
 **What closes it:** pair over a native client, or over any transport with independent
 authentication — a valid CA-issued certificate, a mesh VPN, or an onion service. An
@@ -776,7 +840,78 @@ offer a "continue anyway" affordance.
 
 When the transport already provides authenticated encryption bound to the peer's identity
 — Tailscale, TLS from a trusted CA, or a Tor onion service — the session layer MAY be
-skipped. Implementations MUST NOT skip it on plain HTTP under any circumstances.
+skipped. Implementations MUST NOT skip it on plain HTTP under any circumstances. On plain
+HTTP the session layer is the channel of §8.3, and §8.4 says what may travel outside it.
+
+### 8.3 The channel — `/ws`
+
+On plain HTTP the session layer is a WebSocket at `/ws` carrying encrypted frames, and
+every request a paired client makes travels inside it. The channel is an adapter over the
+one request/response interface every route answers (`docs/decisions/0003`); it defines no
+route of its own.
+
+**Handshake.** Two JSON text frames, then binary frames only:
+
+```
+client → {"v":1,"dev":"b3nn8t2q","e":"<client X25519 ephemeral, base64>"}
+node   → {"v":1,"id":"k7m2q9xf","e":"<node X25519 ephemeral, base64>","cert":"<node certificate, base64>"}
+client → sealed, c2s, counter 0: {"confirm":"<hex SHA-256 over the two text frames' bytes, in order>"}
+```
+
+The static keys are the X25519 keys exchanged at pairing (§7.4); both sides derive the
+keys above. The node MUST close with code 4403 on a `dev` that is not an active,
+unrevoked `sys_device` row with an X25519 key, and on a confirm that does not open. The
+client MUST verify `cert` against its pinned cluster public key before it sends the
+confirm, and MUST treat a failure as §8.1. The session is the connection: no cookie
+carries it, and a new connection is a new handshake.
+
+**Frames.** One AEAD ciphertext per WebSocket binary message. The nonce is the 4-byte
+big-endian direction tag — `1` client to node, `2` node to client — followed by the
+8-byte big-endian counter, from zero, incremented per frame in that direction. No
+associated data. A side whose counter reaches 2³² MUST close the connection rather than
+continue or rekey in place.
+
+**Plaintext.** `[u32 big-endian length of json][json][payload]`. `json` carries `id`,
+chosen by the client and unique for the life of the connection, and `kind`:
+
+| `kind` | Direction | `json` also carries | `payload` |
+|---|---|---|---|
+| `req` | c2s | `method`, `path` with its query, `headers` | the whole body, at most `api.max_body` |
+| `res` | s2c | `status`, `headers` | none |
+| `chunk` | s2c | — | a piece of the body, in order |
+| `end` | s2c | — | none |
+| `cancel` | c2s | — | none; the node abandons that response |
+
+A `req` is answered by one `res`, zero or more `chunk`s and one `end`. Answers to
+different ids MAY interleave, which is what lets a stream (`spec/data-api.md §3`) share a
+connection with a page. A `chunk` from the client — a streamed request body — is reserved
+and refused in `pv/1`. The node treats a decoded request as authenticated as `dev`,
+applies the token rule of `spec/lua-api.md §4.1` unchanged, and does not apply the
+cross-site refusal of `spec/data-api.md §2.1`, which no channel request can carry.
+
+**Integrity.** A document the node sends through the channel MUST carry `integrity` on
+every script and stylesheet the framework itself names, and a client MUST set
+`integrity` on every script and stylesheet element it re-creates, computed from bytes it
+received through the channel — so what the browser then fetches in the clear runs only
+if it is what the channel delivered.
+
+### 8.4 What plain HTTP serves
+
+To a peer that is not loopback and holds no session, a node on plain HTTP MUST answer
+only:
+
+- the **bootstrap document** — the client script, a `<noscript>` explanation, the path
+  that was asked for, and no application data, §9.2 applying to it — for a `GET` or
+  `HEAD` whose `Accept` names `text/html`;
+- `/static/*`, and a mounted app's `static/` and `web/` files, which are code and carry
+  no application data;
+- `/api/v1/health` and `/api/v1/manifest`;
+- `/ws/pair` and `/ws`.
+
+Everything else is 403. A loopback request with a loopback `Host`, and a call made
+in-process, are the node's owner and see every route with no session
+(`docs/plans/phase-1.md §2.2`). A transport §8.2 exempts serves as it did before the
+channel existed.
 
 ---
 
@@ -784,7 +919,7 @@ skipped. Implementations MUST NOT skip it on plain HTTP under any circumstances.
 
 ### 9.1 Route namespaces
 
-The framework reserves five prefixes and hands everything else to apps.
+The framework reserves six prefixes and hands everything else to apps.
 
 | Prefix | Owner | Notes |
 |---|---|---|
@@ -793,6 +928,7 @@ The framework reserves five prefixes and hands everything else to apps.
 | `/api/v1/*` | framework | §9.2 |
 | `/skills/*` | framework | Skill bundles for assistants (`spec/cli.md §6`) |
 | `/static/*` | framework | Shell assets and `pv.js` |
+| `/ws` | framework | The pairing handshake and the channel (§7.4, §8.3); the reserved slug `ws` (§1.1) covers the mount |
 | `/a/<slug>/**` | **the app** | Everything beneath a mount point |
 
 **The framework does not define an app's routes.** A Tier 1 app registers its own with
@@ -1154,6 +1290,8 @@ An implementation claiming `pv/1` conformance MUST satisfy all of:
 - [ ] Plain-HTTP pairing screens disclose the property-1 gap (§7.7)
 - [ ] Pinned key mismatch has no override path (§8.1)
 - [ ] Session layer never skipped on plain HTTP (§8.2)
+- [ ] Plain HTTP from a non-loopback peer serves only the bootstrap set (§8.4)
+- [ ] Framework-named scripts and stylesheets carry integrity through the channel (§8.3)
 - [ ] Unauthenticated endpoints leak no app data (§9.2)
 - [ ] Sync rejects `seq` gaps (§10.2)
 - [ ] Refuses apps declaring a higher `api` (§12)
@@ -1193,9 +1331,13 @@ Tracked, not decided. Do not implement speculatively.
    The constraint is already fixed — a migration transforms events at replay and never
    mutates a log — but the transform language is undesigned, deliberately, until a real case
    exists.
-8. **Attachments.** Binary blobs have no home in a JSONL log. Probably a content-addressed
-   `blobs/` directory with hashes referenced from `d`, but that reintroduces a binary
-   format into the backup story and needs thought.
+8. **Attachments.** Binary blobs have no home in a JSONL log. Decided in principle and
+   scheduled for Phase 3 (`docs/roadmap.md`), with the constraints fixed now and the wire
+   shape left to that phase's milestone (`docs/plans/phase-3.md`): a content-addressed
+   `data/<slug>/blob/<sha256>` directory of immutable files, each referenced from `d` by
+   its hash, synced as a set union exactly as the logs are, inside the same backup, and
+   never a mutable file sync — a file edited in place can conflict, and nothing here may.
+   Do not implement before that milestone.
 
 ---
 
