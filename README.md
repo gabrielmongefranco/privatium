@@ -1,75 +1,76 @@
+<!--
+Project:  Privatium™
+File:     README.md
+Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+Created:  2026-08-31
+Modified: 2026-09-05
+Summary:  Overview, quick start, examples, and documentation index for Privatium.
+Copyright © 2026 Gabriel Mongefranco
+Privatium™ is a trademark of Gabriel Mongefranco.
+Documentation license: GFDL-1.3-or-later, with no Invariant Sections,
+                      no Front-Cover Texts, and no Back-Cover Texts.
+Software license: GPL-3.0-or-later.
+See the License and Credits sections below for the full notices and attribution.
+-->
+
 # Privatium™
 
 ***The private element of personal software.***
 
 ## Description
 
-Privatium™ is a framework for building small, personal applications that run entirely on your hardware, that can be reached from any of your devices, and that sync your data across all your devices without depending on cloud services.
+Privatium™ is an open-source, local-first framework for building and running personal apps
+on your own devices. Use it to create a tracker, organize a collection, or build a small
+web app that does exactly what you need. Your apps and data stay on hardware you control,
+without cloud subscriptions or a separate database server.
 
-A Privatium node is a single binary. It finds your devices on the LAN with mDNS and
-anywhere else by publishing signed records to the BitTorrent mainline DHT — your key is the
-address, with no registrar, no dynamic-DNS account, and nothing to pay. It stores everything
-as append-only JSONL event logs that any file-sync tool can replicate without conflicts.
-Backup is copying a folder. Restore is copying it back.
+Built in Rust with Lua and SQLite, Privatium makes self-hosted apps easier to create and
+maintain. Start with an example, adapt it yourself, or ask an AI assistant to help. You can
+write simple pages in Lua, use your own HTML and JavaScript, or build a standalone Rust
+app. Run one app or keep several together. Back up your data by copying a folder.
 
-**What you build on top is up to you.** Write it in Lua with server-rendered templates that
-hot reload as you type. Or ship your own HTML, JavaScript, canvas, or WASM and use the
-framework purely as a syncing database with authentication solved. Or link the core crate
-into your own binary and keep your own `main()`. Three tiers by language, none with a
-ceiling, mixable on one node.
-
-One node can host one app or twenty unrelated ones, and in solo mode it is
-indistinguishable from a purpose-built application.
-
-Privatium is for people who want an app for exactly one purpose, want it private by
-construction, and do not want to run a server, buy a domain, trust a cloud, or learn a
-framework to get it.
+The goal is personal software that follows you across devices without giving up data
+ownership. Planned peer-to-peer sync will connect your devices without requiring a domain
+name, DNS setup, or port forwarding for native clients. Local apps work today; device
+pairing, sync, and remote access are being added in [Phases 2–5](docs/roadmap.md).
 
 ## Quick Start Guide
 
-Privatium is one program, `privatium`. There is no installer and nothing to configure.
+You can run Privatium on Windows, macOS, or Linux. Lua and SQLite are included.
 
-1. **Get the binary.** The [releases page](https://github.com/gabrielmongefranco/privatium/releases)
-   has one per platform — Linux, macOS and Windows — named by its target. Put it anywhere
-   on your `PATH`. Until the first release is tagged, every CI run on `main` attaches the
-   same three binaries as its artefacts.
-2. **Run it.** Type `privatium` in a terminal. It creates its data directory
-   (`~/.local/share/privatium` on Linux, `~/Library/Application Support/privatium` on
-   macOS, `%LOCALAPPDATA%\privatium` on Windows) and prints `http://127.0.0.1:8420/`.
-   This phase listens on your own machine only; reaching it from your phone arrives with
-   Phase 2.
-3. **Open the URL.** The launcher lists your apps — none yet on a first run.
-4. **Add an app.** Copy an app folder into `apps/` under the data directory — the three in
-   this repository's [apps/](apps/) are the place to start — or make one:
-   `privatium new myapp` writes a small working app (a manifest, a route, a page) you edit
-   in place, and `privatium dev --app myapp` serves it while you edit, every save live on
-   the next reload. Once it has a `schema.sql`, `privatium new myapp --scaffold <table>`
-   adds list, detail, create and edit screens for a table.
-5. **Back up.** Copy the `data/` folder anywhere — Syncthing, a USB stick, Dropbox.
-   `privatium restore --from <the copy>` brings it back. Nothing else needs saving.
+1. **Download Privatium.** Choose the file for your computer from the
+   [releases page](https://github.com/gabrielmongefranco/privatium/releases). Before the
+   first release, development builds are available under **Artifacts** in successful
+   [CI runs](https://github.com/gabrielmongefranco/privatium/actions/workflows/ci.yml)
+   on `main` (GitHub sign-in required). Extract the download into a folder.
+2. **Create a starter app.** Open a terminal in that folder and run:
 
-`privatium --help` lists the rest: `lint`, `snapshot`, `skill`.
+   ```sh
+   ./privatium new myapp
+   ```
 
-**From source:** with a Rust toolchain (`rust-toolchain.toml` pins it), `cargo build
---release` produces `target/release/privatium` with SQLite and Lua compiled in, and a
-checkout's `apps/` — `hello`, `animals`, `sketch` — are on the launcher without copying.
+   On Windows, use `./privatium.exe` in place of `./privatium`.
+3. **Run your app.** In the same terminal, run:
 
-**As a library:** `privatium-core` in your own `main()` — the log, the store and the
-auth layer with your own routes. [crates/privatium-core/examples/embedded.rs](crates/privatium-core/examples/embedded.rs)
-is the whole shape in thirty lines; `cargo run -p privatium-core --example embedded`
-runs it.
+   ```sh
+   ./privatium
+   ```
 
-## Status
+4. **Open it in your browser.** Visit [Privatium on your computer](http://127.0.0.1:8420/)
+   and select **myapp**. Keep the terminal open while using your apps. Access from another
+   device is planned for Phase 2.
 
-**Phase 1 complete.** `docs/roadmap.md` Phase 1 — *a node that works on one machine* —
-is implemented, milestones M0 through M13 of [docs/plans/phase-1.md](docs/plans/phase-1.md):
-the event log, materialization into SQLite, snapshots and the three-tier restore, the app
-loader, the Lua host and LSP templates, the data API and `pv.js`, the CLI, the linter, and
-`privatium-core` as a library for your own binary (`spec/app-contract.md §2.3`). Every
-acceptance bullet of the roadmap names the test that holds it. Pairing, discovery and sync
-are Phases 2 and 3, so the binary calls itself `pv/1 (partial: phase 1)` and listens on
-loopback only. The documents below are the contract the code satisfies; where they
-disagree, the specification wins and the code is wrong.
+To customize your app, edit the files in the folder printed when you created it, then
+refresh your browser. The [example apps](#example-applications) provide more starting points.
+See [backup and restore](docs/backup-and-restore.md) for saving your data and
+[command-line options](spec/cli.md) for development commands.
+
+**Building from source?** Run `cargo build --release` from a checkout with the Rust
+version in `rust-toolchain.toml`. The program is written to `target/release/`.
+To use Privatium inside your own Rust application, see the
+[embedded example](crates/privatium-core/examples/embedded.rs).
+
+## Documentation
 
 | Document | Purpose |
 |---|---|
@@ -95,18 +96,15 @@ disagree, the specification wins and the code is wrong.
 
 ## Example Applications
 
-Three example apps live in this repository, are on the launcher from a checkout, and serve
-as the normative templates:
+These small apps show what you can build. They appear in the launcher when you run
+Privatium from a source checkout:
 
-- **[apps/hello](apps/hello)** — Tier 1. Three routes, one table, two templates, no
-  JavaScript. Read this first to see how little a simple app needs.
-- **[apps/animals](apps/animals)** — Tier 1 at its interesting end. The guess-the-animal game
-  from the console era; recursive SQL, atomic multi-event writes, stored session state.
-- **[apps/sketch](apps/sketch)** — Tier 2. A canvas drawing app with its own JavaScript and
-  no SQL whatsoever. The framework used purely as a syncing datastore.
+- **[Hello](apps/hello)** — a simple Lua app with a form and a list. Start here.
+- **[Animals](apps/animals)** — a guessing game that learns new animals as you play.
+- **[Sketch](apps/sketch)** — a drawing app built with HTML and JavaScript.
 
-`skills/` holds instruction sets you can hand to any AI assistant so it writes apps that
-actually conform. See [docs/skills.md](docs/skills.md).
+[AI assistant guides](docs/skills.md) help an assistant build apps that follow Privatium's
+requirements, including security and accessibility.
 
 The first real application, a medication fill and prior-authorization tracker, will be
 built as a separate repository once this framework is proven.
@@ -128,7 +126,7 @@ Questions, bug reports, enhancement ideas and requests are welcome as GitHub iss
 
 ## Credits
 
-#### This work is based in part on the following projects and libraries:
+### This work is based in part on the following projects and libraries:
 
 - [SQLite](https://sqlite.org/) — the in-process SQL engine the event log is materialized
   into, via [rusqlite](https://github.com/rusqlite/rusqlite); public domain, on every
@@ -155,7 +153,7 @@ Questions, bug reports, enhancement ideas and requests are welcome as GitHub iss
   while this one stores the tree as an append-only event log so it can sync
   across devices.
 
-#### Chosen for the later phases of `docs/roadmap.md`, and not yet in the build:
+### Chosen for the later phases of `docs/roadmap.md`, and not yet in the build:
 
 - [iroh](https://github.com/n0-computer/iroh) — QUIC-based peer-to-peer transport with
   hole punching, for direct node-to-node sync (Phase 5).
