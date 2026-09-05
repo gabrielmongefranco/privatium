@@ -2,7 +2,7 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-04  |  Modified: 2026-09-05
 // Summary:  Bare `privatium` (spec/cli.md §2) and `privatium dev` (§3): open the node,
-//           apply the run's overrides, load every app, bind loopback, and serve
+//           apply the run's overrides, load every app, bind the LAN, and serve
 //           `core::handle` until Ctrl-C. `dev` is the same node with the app named — the
 //           reloading is the host's own, a stat on the next request (§3, spec/lua-api.md
 //           §7), so there is nothing for this file to watch. The weekly snapshots of
@@ -50,7 +50,7 @@ pub fn run(global: &Global, options: Options) -> Result<u8> {
     if options.no_discovery {
         eprintln!(
             "privatium: --no-discovery: there is no discovery to disable in this build — \
-             discovery is Phase 2 (docs/roadmap.md); the node listens on loopback only"
+             discovery is Phase 2 (docs/roadmap.md)"
         );
     }
 
@@ -84,11 +84,17 @@ pub fn run(global: &Global, options: Options) -> Result<u8> {
         .build()?
         .block_on(async {
             let listener = adapter::bind(port).await.with_context(|| {
-                format!("binding 127.0.0.1:{port} — is another node running on that port?")
+                format!("binding IPv4 port {port} — is another node running on that port?")
             })?;
             let addr = listener.local_addr()?;
             print!("{}", adapter::announce(addr));
-            let origin = format!("http://{addr}");
+            if global.verbose {
+                match adapter::other_urls(addr.port()) {
+                    Ok(urls) => for url in urls { eprintln!("privatium: interface at {url}"); },
+                    Err(_) => eprintln!("privatium: could not enumerate other interfaces; use the announced address"),
+                }
+            }
+            let origin = format!("http://127.0.0.1:{}", addr.port());
             let url = match &dev_mount {
                 Some(mount) => format!("{origin}{mount}"),
                 None => format!("{origin}/"),

@@ -96,7 +96,9 @@ fn run(
         &node_sealed,
         Some("Pixel 9"),
         Some("Mozilla/5.0 synthetic"),
-        when,
+        // Node::open issues its certificate on the real clock; window TTL tests use
+        // their separate synthetic clock so certificate validity is not time-of-day dependent.
+        jiff::Timestamp::now(),
     )?;
     wire.sealed.push(client_sealed.clone());
     let paired = node.pairing_finish(sealed, &client_sealed, when)?;
@@ -413,7 +415,9 @@ fn test_spec_7_4_the_client_pins_the_cluster_key_and_the_node_certificate() {
     let (exchange, reply) = node.pairing_begin(source(1), now(), &start).unwrap();
     let confirm = client.reply(&reply).unwrap();
     let (sealed, node_sealed) = node.pairing_confirm(exchange, &confirm).unwrap();
-    let (pins, client_sealed) = client.finish(&node_sealed, None, None, now()).unwrap();
+    let (pins, client_sealed) = client
+        .finish(&node_sealed, None, None, jiff::Timestamp::now())
+        .unwrap();
     let paired = node.pairing_finish(sealed, &client_sealed, now()).unwrap();
     assert_eq!(paired.kind, "mobile");
     assert_eq!(paired.label, None);
@@ -455,23 +459,17 @@ fn test_spec_7_0_the_code_never_crosses_the_wire() {
     let w = spake2::password(code).unwrap();
     let w_bytes = w.to_bytes();
     let w_b64 = STANDARD.encode(w_bytes);
-    let hex = format!("{:04x}", code.as_u16());
-    for text in &wire.texts {
-        for word in code.words() {
-            assert!(!text.to_lowercase().contains(word), "{text}");
-        }
-        for glyph in code.glyphs() {
-            assert!(!text.contains(glyph.glyph), "{text}");
-            assert!(
-                !text.to_lowercase().contains(&glyph.label.to_lowercase()),
-                "{text}"
-            );
-        }
-        assert!(!text.contains(&w_b64) && !text.contains(&hex));
-        // Every text frame is JSON whose values are keys, IDs, kinds and points; the
-        // code is not among them as a number either.
-        let value: Value = serde_json::from_str(text).unwrap();
-        assert!(!value.to_string().contains(&format!(":{}", code.as_u16())));
+    for (index, text) in wire.texts.iter().enumerate() {
+        // Random base64 can contain a short word or hex rendering by coincidence.
+        // Validate the complete §7.4.2 grammar instead of searching encoded fields.
+        assert!(pairing_text_has_only_protocol_fields(text, index));
+        assert!(!text.contains(&w_b64));
+        let mut value: Value = serde_json::from_str(text).unwrap();
+        value["code"] = json!(code.as_u16());
+        assert!(!pairing_text_has_only_protocol_fields(
+            &value.to_string(),
+            index
+        ));
     }
     for frame in &wire.sealed {
         assert!(!frame.windows(32).any(|window| window == w_bytes));
@@ -482,6 +480,36 @@ fn test_spec_7_0_the_code_never_crosses_the_wire() {
         !all.windows(w_b64.len())
             .any(|window| window == w_b64.as_bytes())
     );
+}
+
+fn pairing_text_has_only_protocol_fields(text: &str, index: usize) -> bool {
+    let Ok(Value::Object(value)) = serde_json::from_str::<Value>(text) else {
+        return false;
+    };
+    let fields: &[&str] = match index {
+        0 => &["v", "id", "pub", "open"],
+        1 => &["v", "dev", "pub", "kind", "pA"],
+        2 => &["pB", "cB"],
+        3 => &["cA"],
+        _ => return false,
+    };
+    value.len() == fields.len()
+        && fields.iter().all(|key| match *key {
+            "v" => value[*key] == 1,
+            "open" => value[*key] == true,
+            "kind" => value[*key] == "browser",
+            "id" | "dev" => value[*key].as_str().is_some_and(|id| {
+                id.len() == 8
+                    && id
+                        .bytes()
+                        .all(|byte| b"0123456789abcdefghjkmnpqrstvwxyz".contains(&byte))
+            }),
+            _ => value[*key].as_str().is_some_and(|encoded| {
+                STANDARD
+                    .decode(encoded)
+                    .is_ok_and(|bytes| bytes.len() == 32 && STANDARD.encode(bytes) == encoded)
+            }),
+        })
 }
 
 #[test]
@@ -836,7 +864,7 @@ fn test_spec_7_4_2_malformed_messages_and_a_mismatched_device_id_are_refused() {
     let (sealed, mut node_sealed) = node.pairing_confirm(exchange, &confirm).unwrap();
     node_sealed[3] ^= 1;
     assert!(matches!(
-        client.finish(&node_sealed, None, None, now()),
+        client.finish(&node_sealed, None, None, jiff::Timestamp::now()),
         Err(PairError::Format)
     ));
     let refused = node.pairing_finish(sealed, &[0; 64], now()).unwrap_err();
@@ -869,7 +897,7 @@ fn test_spec_7_6_a_registered_device_key_cannot_pair_again() {
         let (exchange, reply) = node.pairing_begin(source(1), when, &start)?;
         let confirm = client.reply(&reply)?;
         let (sealed, node_sealed) = node.pairing_confirm(exchange, &confirm)?;
-        let (_, client_sealed) = client.finish(&node_sealed, None, None, when)?;
+        let (_, client_sealed) = client.finish(&node_sealed, None, None, jiff::Timestamp::now())?;
         node.pairing_finish(sealed, &client_sealed, when)
     };
     let first = pair_with_key(&mut node, now(), code).unwrap();
@@ -909,7 +937,10 @@ fn test_spec_app_contract_6_pair_opens_a_window_and_returns_the_code() {
     assert_eq!(from_words, code_of(&node));
     assert_eq!(
         snapshot.url,
-        format!("http://127.0.0.1:{}", node.config().node.port)
+        format!(
+            "http://{}",
+            std::net::SocketAddr::new(privatium_core::http::lan_address(), node.config().node.port)
+        )
     );
     assert_eq!(snapshot.created_at, "2026-09-05T12:00:00.000Z");
     assert_eq!(snapshot.expires_at, "2026-09-05T12:02:00.000Z");

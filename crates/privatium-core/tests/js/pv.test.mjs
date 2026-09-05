@@ -15,6 +15,21 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { page, storage, upNode, downNode, source } from './harness.mjs';
 
+test('test_spec_8_3_pv_uses_the_channel_for_requests_and_subscriptions', async () => {
+  const requests = []; let subscribed = false;
+  globalThis.__pv_channel = {
+    fetch: async path => { requests.push(path); return new Response(JSON.stringify({ id: 'synthetic', app: 'sketch' })); },
+    eventSource: () => { subscribed = true; return { addEventListener() {}, close() {} }; },
+  };
+  try {
+    const p = await page({ respond: () => { throw new Error('plaintext request'); } });
+    await p.settle(); await p.pv.node();
+    const stop = p.pv.subscribe(() => {}); stop();
+    assert.ok(requests.includes('/a/sketch/api/node'));
+    assert.ok(subscribed); assert.equal(p.requests.length, 0);
+  } finally { delete globalThis.__pv_channel; }
+});
+
 /** The appends that reached the node; an attempt the network dropped is not one. */
 const posts = requests => requests.filter(r => r.method === 'POST' && r.path.endsWith('/api/events') && !r.failed);
 

@@ -104,11 +104,10 @@ everything. Treat it like a script a stranger emailed you.
 
 ## Three properties — do not conflate them
 
-Current Phase 2 work provides cluster identity, session cryptography and pairing — the
-code, the PAKE and the six messages of `/ws/pair` — in Rust and JavaScript, as data a
-test drives. The live LAN channel and the pairing screen are still planned for Phase 2;
-the binary remains loopback-only and nothing listens at `/ws/pair` yet. Do not describe
-these helpers as working LAN access.
+Current Phase 2 work provides live `/ws/pair` and `/ws` transports. Non-loopback clients
+need a paired channel for application data; only bootstrap documents and public assets
+are served without it. Discovery remains M18 and the pairing screen remains M19. Tests
+open the pairing window through `Node::pair`; do not claim the phone setup flow exists.
 Session transports must use fresh ephemerals on reconnect and close the connection on
 every frame error. Never reconstruct a frame counter under an existing key
 (`spec/protocol.md §8, §8.3`).
@@ -132,24 +131,32 @@ path that skips it.
 
 ## The framework's honest gap
 
-This is **property 1 only**. A browser loading `http://192.168.1.14:8420` receives its
-JavaScript over plaintext, so an attacker actively on-path during **both** the first page
-load and the 120-second pairing window can substitute their own client and win. Passive
-sniffing cannot, and properties 2 and 3 are unaffected. After first pairing the cluster
-key is pinned and a later attacker presenting another key is refused with no override;
-every page and API call then travels inside the encrypted channel (`spec/protocol.md
-§8.3`), and the scripts a page names are pinned by integrity to what the channel
-delivered. What stays open on plain HTTP is one thing: a module your own script imports
-carries no integrity, so a Tier 2 app's import graph can still be substituted — say so
-in your app's README if it matters to its data, and know that a native shell or an HTTPS
-origin closes it.
+Every load over plain HTTP can be replaced by an active on-path attacker, including
+later visits after pairing. Replacement JavaScript can read the stored device keys
+under the page origin, impersonate the device and read its data. Pairing need not be
+open. The bootstrap and its integrity hashes can both be replaced. Never claim pairing
+prevents this replacement, limits it to first pairing, or makes this equivalent to an
+installed SSH client (`spec/protocol.md §7.7`, `docs/security.md §4`).
 
-This is the SSH trust-on-first-use model. It is defensible, and it must be stated rather
-than buried. Do not paper over it, and do not add a verification screen — the PAKE already
-authenticates, and against a poisoned bundle a verification string is useless because the
-attacker's client renders whatever it likes.
+With genuine client code, pairing authenticates devices, pinned keys refuse a
+substituted node, and the channel protects application data from passive listeners.
+Integrity pins same-origin external scripts and stylesheets to channel bytes. A remote
+resource allowed by existing app permissions needs a hash in authenticated HTML;
+imported framework and app modules lack that protection. None authenticates a later
+bootstrap. Describe the exposure as every visit, including stored device keys.
 
-Closing it entirely means pairing over a native client, Tailscale, or Tor.
+Full-page navigation uses a fresh bootstrap with the destination app's CSP. Form
+responses may remain briefly as bounded, unpolled streams in node RAM. Only an opaque
+reference and destination metadata cross in per-tab storage; never persist form bodies
+or decrypted HTML for this handoff. Same-device attachment consumes the response once
+without running the request again. Expiry or loss does not undo a committed write;
+show the uncertainty and require checking before resubmission (`protocol.md §8.3.1`).
+This is not an outbox acknowledgement or an event deduplication mechanism.
+
+The plain-HTTP path remains supported without a domain, account or certificate setup.
+A signed native client or authenticated transport on every visit closes the bootstrap
+gap; protecting only initial pairing does not. Do not add a verification string: a
+substituted client can render any comparison it chooses.
 
 ## Cluster keys
 

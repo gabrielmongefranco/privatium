@@ -69,8 +69,14 @@ impl Running {
             );
             let line = line.trim_end().to_owned();
             stdout.push(line.clone());
-            if let Some(rest) = line.strip_prefix("privatium: listening on http://127.0.0.1:") {
-                break rest.trim_end_matches('/').parse::<u16>().unwrap();
+            if let Some(rest) = line.strip_prefix("privatium: listening on http://") {
+                break rest
+                    .rsplit(':')
+                    .next()
+                    .unwrap()
+                    .trim_end_matches('/')
+                    .parse::<u16>()
+                    .unwrap();
             }
         };
         // Drain the rest on a thread so the child never blocks on a full pipe.
@@ -92,13 +98,17 @@ impl Running {
             if started.elapsed() > Duration::from_secs(5) {
                 break;
             }
-            if running.stdout.iter().any(|l| l.contains(" at http://")) {
+            if running
+                .stdout
+                .iter()
+                .any(|l| l.contains(" at http://") && !l.contains("local browser at"))
+            {
                 break;
             }
             if !running
                 .stdout
                 .last()
-                .is_some_and(|l| l.contains("loopback only"))
+                .is_some_and(|l| l.contains("local browser at"))
             {
                 break;
             }
@@ -294,7 +304,7 @@ fn test_spec_cli_2_runs_a_node_on_loopback() {
     assert!(
         node.stdout
             .iter()
-            .any(|l| l.contains("loopback only — LAN access arrives with pairing")),
+            .any(|l| l.contains("local browser at http://127.0.0.1:")),
         "{:?}",
         node.stdout
     );

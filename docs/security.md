@@ -11,12 +11,11 @@ Summary:  Threat model, protections, and honest statements of what is not protec
 
 Non-normative narrative. Normative requirements live in `spec/protocol.md §7–9`.
 
-**Current build:** Phase 2 has cluster identity, transport-independent session
-cryptography, and pairing — the code, the PAKE, the six messages and the device
-registry write — in Rust and JavaScript, as data a test drives. The node still binds
-loopback, and nothing listens at `/ws/pair` or `/ws` yet. The encrypted LAN channel and
-the pairing screen remain planned for Phase 2; the network protections described below
-become available when that channel is connected to the request handler.
+**Current build:** Phase 2 provides live pairing at `/ws/pair` and the encrypted
+application channel at `/ws`. The node binds IPv4 on every interface and IPv6 where
+available. Unpaired LAN browsers receive only the bootstrap set; loopback keeps the
+owner's existing access. The pairing screen and CLI flow remain planned for M19, and
+discovery for M18. Tests open pairing through the core's `Node::pair` API.
 
 The session helpers reject invalid keys, expired or mismatched certificates, altered
 handshake transcripts, and unauthentic frames. A failed frame permanently closes its
@@ -28,10 +27,10 @@ use vendored Noble cryptography and `crypto.getRandomValues`, without `crypto.su
 
 | Adversary | Outcome |
 |---|---|
-| A passive sniffer on your LAN | **Defeated.** All traffic is encrypted, including plain-HTTP browser sessions. |
+| A passive sniffer on your LAN | **Defeated for channel content.** Application requests and responses are encrypted; bootstrap documents, public assets and network metadata remain visible. |
 | Someone who finds your node on the network — a guest on your Wi-Fi | **Defeated.** No pairing, no data. Unauthenticated endpoints return an ID and nothing else. See §2.1. |
-| An active on-path attacker arriving after you paired | **Detected.** Pinned key mismatch, hard refusal, no override. |
-| An active on-path attacker present at your first browser page load *and* first pairing | **Wins.** See §4. |
+| An active on-path attacker on any plain-HTTP load, including after pairing | **Wins by replacing the client.** Stored device keys are exposed. See §4. |
+| A substituted node reached by a genuine client | **Refused.** Pinned key mismatch, no override. |
 | Someone with your unlocked laptop | **Wins.** Privatium is not disk encryption. Use LUKS/FileVault/BitLocker. |
 | Someone who steals your backup folder | **Wins.** Backups are plain text by design. Encrypt the destination. |
 | A malicious app folder you installed | **Contained, not eliminated.** See §6. |
@@ -52,7 +51,7 @@ guarantees into one. Normative version: `spec/protocol.md §7.0`.
 |---|---|---|---|
 | Native desktop / mobile | ✔ | ✔ | ✔ |
 | Browser or PWA over TLS | ✔ | ✔ | ✔ |
-| **Browser over plain HTTP on LAN** | **✘ §3** | ✔ | ✔ |
+| **Browser over plain HTTP on LAN** | **✘ §4** | Conditional on genuine client code | Conditional on genuine client code |
 
 **Property 2 is not a login step layered on property 3.** A password-authenticated key
 exchange does both at once — deriving a usable key *is* the proof that both sides held the
@@ -110,6 +109,18 @@ The at-rest decision is the whole product. Encrypting the logs would defeat the 
 story, which is the reason the project exists. The correct place for at-rest encryption is
 the filesystem, where the OS already does it well.
 
+### 3.1 Full-page response handoff
+
+Full-page forms cross the encrypted channel once. The node can retain the response
+stream in memory while the browser opens a fresh document with the destination app's
+permissions. Per-tab storage holds only an opaque reference and destination metadata,
+never the form body or rendered page. The same active device can consume the response
+once. Slots are bounded and expire after 120 seconds; nothing is written to a disk
+cache. This is response delivery, not event deduplication (`protocol.md §8.3.1`).
+
+If delivery is lost, the operation may already have completed. The browser asks you to
+check before submitting again. It does not automatically repeat the form.
+
 ## 3b. Relays, discovery, and what leaks
 
 Three pieces of infrastructure sit outside your machines. None can read your data; each
@@ -162,49 +173,28 @@ rely on DNS discovery.
 
 ## 4. Property 1: the honest gap
 
-This section is about **property 1 only**. Properties 2 and 3 hold on this path.
+Every load over plain HTTP is exposed to client replacement, including the stored
+device keys. An active on-path attacker can replace the bootstrap page and JavaScript
+on any visit. The replacement runs under the same origin and can read the keys the
+browser kept in localStorage, impersonate the paired device and read its data. Pairing
+does not have to be open, and the attacker need not have been present at first pairing.
 
-A browser loading `http://192.168.1.14:8420` receives its JavaScript over plaintext. An
-attacker who can modify traffic on that first load can substitute their own client, learn
-the pairing code as you type it, complete the handshake themselves, and proxy everything.
+The bootstrap's integrity hashes arrive over the same HTTP connection. An attacker can
+replace those too. Pinning a cluster key protects a genuine client from a substituted
+node; it cannot make a replaced client check that key. This differs from SSH, where the
+installed client executable is already trusted.
 
-No amount of in-page cryptography fixes this. You cannot bootstrap trust over an untrusted
-channel without an out-of-band anchor, and the browser has nowhere to keep one before the
-code runs.
+With genuine client code, the encrypted channel protects application data from passive
+listeners. Scripts and stylesheets recreated by that client receive integrity hashes
+from authenticated channel bytes for same-origin resources. A permitted remote
+resource needs a canonical integrity hash of the declared digest length in the
+authenticated HTML; malformed hashes are refused before the resource is loaded. Imported JavaScript
+modules, including framework modules, have no per-import integrity. Neither protection authenticates the next bootstrap.
 
-This is exactly the model you accept every time you type `yes` at:
-
-```
-The authenticity of host 'server (10.0.0.4)' can't be established.
-ED25519 key fingerprint is SHA256:...
-Are you sure you want to continue connecting (yes/no)?
-```
-
-Every system administrator on earth relies on it. It is a defensible position, not a
-compromise — but it must be stated, not buried.
-
-**What narrows the window:**
-
-- The attacker must be *actively* on-path — ARP spoofing, a rogue AP, a compromised
-  router or IoT device. Passive sniffing does not suffice.
-- They must be present during the specific 120-second pairing window.
-- Pairing mode is off by default and requires a deliberate action to open.
-- Every pairing writes a permanent, replicated `sys_audit` event. A surprise pairing is
-  visible on every device you own, forever.
-- After first pairing the cluster key is pinned; a later arrival presenting another key is
-  refused. Every page, fragment and API call then travels inside the encrypted channel
-  (`spec/protocol.md §8.3`), and each script and stylesheet a page names is pinned by
-  integrity to the copy the channel delivered, so a substituted file does not run.
-
-**What stays open after pairing, on plain HTTP.** A module that an app's own script
-imports carries no integrity — the browser has no attribute for it on an `import` — so
-an active on-path attacker can still substitute a Tier 2 app's imported modules. That is
-the whole of the residual gap: narrower than first contact, and stated here rather than
-implied away. An import map with integrity would close it in place once every target
-browser supports one; until then it closes the same way first contact does.
-
-**What closes it entirely:** pair over a native client, or over Tailscale, or over Tor —
-any transport with independent authentication. The settings page should say so.
+The plain-HTTP path still needs no domain, account or certificate setup. Its bootstrap
+discloses the risk for every visit; the planned M19 pairing screen uses the same wording. A signed native client or an
+independently authenticated transport on every visit closes this gap; protecting only
+initial pairing does not protect later HTTP loads.
 
 ## 5. Why there is no verification screen
 

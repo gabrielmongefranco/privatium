@@ -1,8 +1,8 @@
 // Project:  Privatium™  |  File: crates/privatium/tests/adapter.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
-// Summary:  The axum adapter against ADR 0003 and docs/plans/phase-1.md §2.1: it binds
-//           loopback only, it adds nothing the core does not answer, it forwards the core's
+// Created:  2026-09-03  |  Modified: 2026-09-05
+// Summary:  The axum adapter against ADR 0003 and spec/cli.md §2: it binds
+//           every interface, it adds nothing the core does not answer, it forwards the core's
 //           streamed body frames verbatim, and it never buffers a request body the core did
 //           not ask for. Raw TCP on the client side, so nothing here depends on an HTTP client.
 
@@ -50,7 +50,7 @@ fn handler(root: &tempfile::TempDir) -> Arc<Handler> {
 /// Bind port 0, serve on a task, and hand back where.
 async fn serve(handler: Arc<Handler>) -> (SocketAddr, tokio::task::JoinHandle<()>) {
     let listener = adapter::bind(0).await.unwrap();
-    let addr = listener.local_addr().unwrap();
+    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, listener.local_addr().unwrap().port()));
     let task = tokio::spawn(async move {
         let _ = adapter::serve(listener, handler).await;
     });
@@ -101,26 +101,34 @@ fn header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
         .map(|(_, v)| v.as_str())
 }
 
-/// `docs/plans/phase-1.md §2.1` — the listener is `127.0.0.1` and nothing else, with no
-/// flag to say otherwise.
+/// `spec/cli.md §2` — both address families bind every interface on the same port.
 #[tokio::test]
-async fn test_binds_loopback_only() {
-    assert_eq!(adapter::BIND_IP, Ipv4Addr::LOCALHOST);
+async fn test_adapter_binds_every_interface() {
+    assert_eq!(adapter::BIND_IP, Ipv4Addr::UNSPECIFIED);
     let listener = adapter::bind(0).await.unwrap();
     let addr = listener.local_addr().unwrap();
-    assert!(addr.ip().is_loopback(), "{addr}");
-    assert_eq!(addr.ip(), Ipv4Addr::LOCALHOST);
+    assert!(addr.ip().is_unspecified(), "{addr}");
+    assert_eq!(addr.ip(), Ipv4Addr::UNSPECIFIED);
     let announced = adapter::announce(addr);
     assert!(
-        announced.contains(&format!("http://{addr}/")),
+        announced.contains(&format!(":{}/", addr.port())),
         "{announced}"
     );
     assert!(
-        announced.contains("LAN access arrives with pairing"),
+        announced.contains("local browser at http://127.0.0.1:"),
         "{announced}"
     );
     // The port is the OS's here; a real start takes it from config and never from a --bind.
     assert_ne!(addr.port(), 0);
+    if let Some(v6) = listener.ipv6_addr().unwrap() {
+        assert!(v6.ip().is_unspecified());
+        assert_eq!(v6.port(), addr.port());
+        assert!(
+            TcpStream::connect((std::net::Ipv6Addr::LOCALHOST, v6.port()))
+                .await
+                .is_ok()
+        );
+    }
 }
 
 /// ADR 0003 — the adapter adds no route and rewrites no path: for every path, known or

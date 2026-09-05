@@ -613,8 +613,9 @@ Coverage by client:
 | Browser or PWA over TLS | ✔ CA chain | ✔ | ✔ TLS + session |
 | **Browser over plain HTTP on LAN** | **✘ — see §7.7** | ✔ | ✔ session key |
 
-Only property 1 is missing on the plain-HTTP path, and only against an attacker who is
-*actively tampering with traffic at first load*. Properties 2 and 3 hold on every path.
+On plain HTTP, program authenticity is absent on every load, including after pairing
+(§7.7). Device authentication and transport encryption protect a genuine client; a
+replacement client can steal its stored keys and act as that device.
 
 #### Property 2 is not a separate login step
 
@@ -823,33 +824,35 @@ argument for exposing one resolvable name across every path (§10.8).
 
 ### 7.7 Program authenticity on the plain-HTTP path
 
-A browser loading the client over plain HTTP has no way to verify that what it received is
-genuine. An attacker able to modify traffic on that first load can substitute their own
-client, observe the code as the owner enters it, complete the handshake themselves, and
-proxy everything afterwards.
+Every load over plain HTTP can expose the client to replacement by an active on-path
+attacker, including after pairing. The bootstrap document, its integrity metadata and
+the JavaScript that checks the pinned keys all arrive over that same unauthenticated
+transport. Replacement JavaScript runs under the page origin and can read the stored
+device keys, impersonate the device and read its data. Pairing need not be open.
+Implementations MUST state this exposure and MUST NOT limit it to first pairing.
 
-No amount of in-page cryptography closes this. Trust cannot be bootstrapped over an
-untrusted channel without an out-of-band anchor, and a browser has nowhere to keep one before
-the code runs. Implementations MUST NOT claim otherwise.
+With genuine client code running, the PAKE authenticates pairing, the pinned keys
+authenticate subsequent sessions, and the encrypted channel protects application data
+from passive interception. A substituted node is refused (§8.1). This does not establish
+the authenticity of the code performing those checks. An integrity hash delivered in a
+replaceable bootstrap document cannot authenticate that document or its client.
 
-This is trust-on-first-use, identical to accepting an unknown SSH host key. What narrows it:
+Every page, fragment and API call travels inside the channel (§8.3). The genuine client
+pins scripts and stylesheets it re-creates to bytes obtained through that channel.
+A module imported by a script carries no such integrity; this applies to framework
+modules as well as app modules. These protections do not close bootstrap replacement
+on any visit. Implementations MUST NOT claim the plain-HTTP client is equivalent to an
+installed SSH client whose executable is already trusted.
 
-- The attacker must be *active* on-path, not merely listening.
-- They must be present during the specific 120-second window the owner opened.
-- Pairing is permanently recorded in replicated `sys_audit` events.
-- After first pairing the cluster key is pinned, so a later substitution of the *node*
-  is refused (§8.1); every page, fragment and API call travels inside the channel
-  (§8.3), and a script or stylesheet the page names is pinned by integrity to the copy
-  the channel delivered.
+The no-domain, no-account plain-HTTP path remains supported. Independently authenticated
+client delivery, such as a signed native client or an authenticated transport on every
+visit, closes the bootstrap gap; using it only for initial pairing does not protect a
+later plain-HTTP visit.
 
-**What stays open after pairing** is narrower than first contact and MUST be stated
-rather than implied: a module that an app's own script imports carries no integrity, so
-on plain HTTP a Tier 2 app's import graph can still be substituted by an active on-path
-attacker. It closes when the origin is one §8.2 exempts, or the client is a native shell.
-
-**What closes it:** pair over a native client, or over any transport with independent
-authentication — a valid CA-issued certificate, a mesh VPN, or an onion service. An
-implementation SHOULD say so on the pairing screen when it is serving over plain HTTP.
+An implementation SHOULD show this sentence on its plain-HTTP pairing screen and
+bootstrap document: **“On every visit over plain HTTP, someone who can change network
+traffic can replace this client and read your data and stored device keys. Encryption
+protects against listening, but cannot verify the downloaded client.”**
 
 ### 7.8 No verification string
 
@@ -950,10 +953,55 @@ applies the token rule of `spec/lua-api.md §4.1` unchanged, and does not apply 
 cross-site refusal of `spec/data-api.md §2.1`, which no channel request can carry.
 
 **Integrity.** A document the node sends through the channel MUST carry `integrity` on
-every script and stylesheet the framework itself names, and a client MUST set
-`integrity` on every script and stylesheet element it re-creates, computed from bytes it
-received through the channel — so what the browser then fetches in the clear runs only
-if it is what the channel delivered.
+every external script and stylesheet the framework itself names. A client MUST set
+`integrity` on every same-origin external script and stylesheet element it re-creates,
+computed from bytes it received through the channel. An explicitly permitted remote
+resource MUST instead have an integrity value supplied by the authenticated document;
+without one the client MUST refuse to render it. Inline scripts remain subject to the
+app's declared CSP permissions (`spec/app-contract.md §5.4`). Imported modules retain
+the limitation of §7.7.
+
+#### 8.3.1 Full-page response handoff
+
+A browser MUST create a fresh bootstrap document for full-page navigation, using the
+destination app's declared CSP. Ordinary GET navigation then fetches the requested page
+through a fresh channel. HTMX fragments and data API calls do not replace the document.
+Replacing HTML in the previous document cannot reset its CSP or module map.
+
+For an already-produced full-page response, a client MAY request a handoff:
+
+| Frame | Additional fields | Meaning |
+|---|---|---|
+| `req` | `navigation: true` | A non-GET, non-HEAD request whose full-page response may need a fresh document |
+| `res` | `handoff: "<ULID>"` | Original status and headers; body retained on this node, followed by `end` on this request id |
+| `resume` | `handoff: "<ULID>"` | A new request id; attach to the retained response and receive ordinary `res`, `chunk`, `end` frames |
+| `release` | `handoff: "<ULID>"` | A new request id; discard a retained response and receive 204 `res`, `end` |
+
+`resume` and `release` carry no payload or other optional fields. A handoff reference is
+a canonical ULID, not an authentication credential. It MUST travel only inside the
+encrypted channel or per-tab browser storage, never in a URL, log or error. The browser
+MUST NOT store the form body or rendered response for this handoff. It MUST remove the
+reference before attachment and MUST NOT repeat the original request automatically.
+
+The node MUST reserve capacity before dispatching a navigation request. Capacity is
+32 retained or reserved responses per node and 4 per authenticated device; exhaustion
+answers 429 without dispatching the request. The original request goes through `handle`
+exactly once. A redirect needs no handoff: the client follows it as ordinary navigation.
+Other responses are retained as streaming bodies in RAM, without polling or copying
+the body into a disk cache or a growing buffer. They expire 120 seconds after the
+response becomes available. Expiry, release and node shutdown MUST drop the body.
+
+Attachment MUST require a newly authenticated, active device with the same device ID,
+static key and node identity as the originating session. It MUST consume the reference
+atomically and MUST NOT execute `handle` again. A wrong caller MUST NOT consume another
+device's response. Missing, expired or consumed references answer 409, explaining that
+the original operation may have completed and must be checked before resubmission.
+Losing a response MUST NOT roll back or remove an appended event. No event deduplication
+table or acknowledgement log is introduced.
+
+The destination bootstrap's CSP MUST use the app's existing permissions, without
+widening the framework default. The authenticated response policy may further restrict
+it. The response's scripts and styles follow §8.3's integrity rules before execution.
 
 ### 8.4 What plain HTTP serves
 

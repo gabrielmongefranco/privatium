@@ -76,7 +76,7 @@ impl Default for ApiSettings {
 
 impl ApiSettings {
     /// Read the five keys, keeping the default for one that is unset or not a number.
-    fn read(node: &Node) -> Self {
+    pub(super) fn read(node: &Node) -> Self {
         let read = |key: &str| -> Option<u64> {
             let text = node.setting_value(key).ok().flatten()?;
             let value: Value = serde_json::from_str(&text).ok()?;
@@ -102,8 +102,9 @@ impl ApiSettings {
 
 /// What the handler keeps for the API between requests: the SQL rate buckets and the
 /// open streams, both per device, and the ping cadence.
+#[derive(Clone)]
 pub struct ApiState {
-    sql: Mutex<HashMap<String, Bucket>>,
+    sql: Arc<Mutex<HashMap<String, Bucket>>>,
     streams: Arc<Mutex<HashMap<String, usize>>>,
     ping: Duration,
 }
@@ -119,7 +120,7 @@ impl std::fmt::Debug for ApiState {
 impl Default for ApiState {
     fn default() -> Self {
         Self {
-            sql: Mutex::new(HashMap::new()),
+            sql: Arc::new(Mutex::new(HashMap::new())),
             streams: Arc::new(Mutex::new(HashMap::new())),
             ping: PING,
         }

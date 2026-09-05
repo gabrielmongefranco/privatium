@@ -6,7 +6,9 @@ description: Write Tier 2 Privatium apps with your own HTML, CSS, JavaScript, or
 # Privatium Tier 2 — Custom Web UI
 
 You write the front end; the framework serves it and handles storage, sync, auth, and
-encryption. `web/index.html` is served at the app's mount point. Nothing is injected.
+encryption. `web/index.html` is served at the app's mount point. You supply the whole UI.
+On the LAN, the bootstrap loads it through the encrypted channel and pins external
+scripts and stylesheets with integrity hashes (`spec/protocol.md §8.3`).
 
 ```
 apps/<slug>/
@@ -51,6 +53,18 @@ every origin. It is under 12 KB, unminified and meant to be read — open it. A 
 not read is refused, and elsewhere the placeholder is NULL. `sys.v_app_nav` and the other
 `sys.v_*` views are readable through `pv.sql`.
 
+Full-page transitions create fresh documents with the destination app's declared CSP
+and fresh module initialization. A full-page form's response can wait in node memory
+while that document reconnects; the framework carries only a response reference in
+per-tab storage and never resubmits the form automatically (`protocol.md §8.3.1`).
+Keep that mechanism in the framework. It is not an app outbox or a deduplication table.
+
+Same-origin external scripts and stylesheets are hashed through the channel. If an app
+has an approved remote resource permission, its HTML must supply the resource's
+integrity hash; the channel cannot proxy another origin. Imported modules still lack
+per-import integrity, and every plain-HTTP load exposes client code and stored device
+keys to active replacement (`protocol.md §7.7`). Prefer vendored resources.
+
 ## MUST
 
 - Use `pv.url()` for internal links — hardcoded `/a/<slug>/` breaks solo mode
@@ -63,7 +77,7 @@ not read is refused, and elsewhere the placeholder is NULL. `sys.v_app_nav` and 
 - Send the API JSON if you `fetch` it yourself — a POST is read only as `application/json`
 - Write the whole document: `<html lang>`, a `<title>`, one `<h1>`, a `<main>`, a labelled
   `<nav>`, a zoomable viewport (never `user-scalable=no`), your own
-  `prefers-reduced-motion` guard. Nothing is injected, so nothing is supplied.
+  `prefers-reduced-motion` guard. The channel supplies transport, not your UI.
 - Size a `<canvas>` in CSS and match its backing store to
   `clientWidth × devicePixelRatio` in a resize handler, with `ctx.setTransform(r, 0, 0,
   r, 0, 0)` — sizing from `innerWidth` draws past the viewport on every HiDPI display,

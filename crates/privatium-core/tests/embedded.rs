@@ -433,7 +433,7 @@ async fn test_spec_app_contract_6_auth_layer_wraps_an_embedders_router() {
     let elsewhere: SocketAddr = ([10, 0, 0, 7], 40000).into();
     let (status, body) = call(Some(elsewhere), None, None).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
-    assert!(body.contains("loopback only"), "{body}");
+    assert!(body.contains("pair this device"), "{body}");
     assert!(
         !body.contains(&id),
         "the refusal names nothing about the node"

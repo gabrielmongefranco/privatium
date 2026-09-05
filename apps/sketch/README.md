@@ -1,8 +1,9 @@
 # sketch — the Tier 2 reference app
 
-A shared canvas. Draw in one browser window, it shows up in another; once pairing lands
-(Phase 2 of `docs/roadmap.md`), on the phone. Works offline; queued strokes replay on
-reconnect. Draw with a pointer, or from the keyboard: focus the canvas, move the pen with
+A shared canvas. Draw in one browser window and it shows up in another. A page already
+open can queue strokes while disconnected and replay them on reconnect. A plain-HTTP
+LAN page cannot load anew while the node is offline. The encrypted channel is available
+in Phase 2 M17; the pairing screen for phones remains planned for M19. Draw with a pointer, or from the keyboard: focus the canvas, move the pen with
 the arrow keys, put it down with Space.
 
 It exists to prove one thing: **the framework does not impose an application model.**
@@ -21,18 +22,17 @@ JavaScript. That is the entire app.
 
 ## What the framework still gives it
 
-Everything that matters, and none of it is in this folder. What a Phase 1 node gives it
-today:
+The framework provides:
 
 - **Storage** — every stroke is an append-only event in `data/sketch/log/<device>.jsonl`
 - **Backup** — copy `data/`, and every stroke you ever drew comes back
 - **Offline** — writes queue in an outbox, replay on reconnect
 - **Live updates** — a stroke drawn in one window reaches every other open window
+- **Authentication and encryption** — `pv.js` uses the paired browser's encrypted
+  channel on the LAN; no credential code belongs in this app
 
 What arrives with the later phases of `docs/roadmap.md`, with nothing to change here:
 
-- **Auth** (Phase 2) — the canvas behind the node's pairing; the app implements nothing
-- **Encryption** (Phase 2) — session crypto already applied by the time `fetch` returns
 - **Discovery** (Phase 2) — the phone finds the node with no URL typed
 - **Sync** (Phase 3) — strokes reach every paired device over LAN, iroh, or a synced folder
 

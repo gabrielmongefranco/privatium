@@ -89,7 +89,7 @@ toml        = { workspace = true }
 # Still no router and no `serve` here; the feature's own additions — hyper-util and
 # tokio's `net` — are already in the release graph through the binary crate, and any
 # program that calls `axum::serve` has them regardless.
-axum        = { workspace = true, features = ["tokio"] }
+axum        = { workspace = true, features = ["tokio", "ws"] }
 tower       = { workspace = true, features = ["util"] }
 tower-http  = { workspace = true, features = ["fs"] }
 # M9 — `sync` is the per-app broadcast every append goes out on and the channel an SSE
@@ -98,6 +98,7 @@ tower-http  = { workspace = true, features = ["fs"] }
 # binary crate. `futures-core` is the `Stream` trait `Body::from_stream` takes.
 tokio        = { workspace = true, features = ["fs", "rt", "sync", "time", "macros"] }
 futures-core = { workspace = true }
+futures-util = { workspace = true }
 hmac        = { workspace = true }
 hkdf        = { workspace = true }
 include_dir = { workspace = true }
@@ -109,7 +110,7 @@ tempfile = { workspace = true }
 # (`signal`), and `axum::serve` over its own router (`http1`, `tokio`). Features on crates
 # already here, for the example and the tests alone; the library takes none of them, and
 # the workspace's release graph already carries all four through the binary crate.
-tokio    = { workspace = true, features = ["macros", "rt-multi-thread", "net", "signal"] }
+tokio    = { workspace = true, features = ["macros", "rt-multi-thread", "net", "signal", "test-util"] }
 axum     = { workspace = true, features = ["http1", "tokio"] }
 
 [lints.rust]

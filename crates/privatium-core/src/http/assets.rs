@@ -4,7 +4,28 @@
 // Summary:  /static/* (spec/protocol.md §9.1): the shell's own assets, embedded from
 //           assets/shell/ — stylesheet, htmx, pv.js, and browser session modules.
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use include_dir::{Dir, include_dir};
+use sha2::{Digest as _, Sha256};
+use std::collections::BTreeMap;
+use std::sync::LazyLock;
+
+/// SHA-256 metadata for an embedded asset, computed once per process (§8.3).
+#[must_use]
+pub fn integrity(name: &str) -> &str {
+    static HASHES: LazyLock<BTreeMap<String, String>> = LazyLock::new(|| {
+        SHELL
+            .files()
+            .map(|f| {
+                (
+                    f.path().to_string_lossy().into_owned(),
+                    format!("sha256-{}", STANDARD.encode(Sha256::digest(f.contents()))),
+                )
+            })
+            .collect()
+    });
+    HASHES.get(name).map_or("", String::as_str)
+}
 
 /// Shell scripts, stylesheets and the Noble import closure. Provenance is not served.
 static SHELL: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/assets/shell");

@@ -105,21 +105,31 @@ origin; `pv.js` routes through the channel and is the way, which §3 row 7 write
 **The browser side** is `client.js`, an ES module served from `/static/`, with
 `@noble/curves`, `@noble/ciphers` and `@noble/hashes` vendored beside it as ES modules
 (`AGENTS.md`, browser crypto). It holds the device keys, runs the handshake, fetches the
-real page through the channel and puts it in place of the bootstrap page, and then keeps
-htmx on the channel with an extension in the shape of htmx's own `ws` extension. Plain
-links and forms that htmx does not own are intercepted at the document and sent the same
-way, with `history.pushState`. `pv.js` uses the channel when one exists and plain `fetch`
-otherwise — on loopback, in a native shell, on an HTTPS origin — and apps see no
-difference, as `spec/data-api.md §5` promises.
+real page through the channel and parses it in the fresh bootstrap document. HTMX
+requests and the data API stay on the channel. Full-page navigation creates a new
+bootstrap document with the destination app's declared CSP and a fresh module map.
+`pv.js` uses the channel when present and ordinary `fetch` on loopback or an exempt
+transport, as `spec/data-api.md §5` promises.
 
-**Scripts and stylesheets stay plaintext, and are pinned.** A page delivered through the
+For a full-page form response, the node reserves capacity before dispatch, calls
+`handle` once and retains the unpolled response stream in RAM. Only an opaque reference
+and destination metadata cross the document transition in per-tab storage. A newly
+authenticated channel for the same active device consumes the response once; it never
+executes the request again. Capacity is 32 responses per node and 4 per device; a ready
+response expires after 120 seconds. There is no form-body storage, response disk cache,
+event acknowledgement or deduplication table. Loss of the response leaves any committed
+write intact and requires checking the result before resubmission. The owner approved
+this correction; `protocol.md §8.3.1` is normative.
+
+**Scripts and stylesheets stay plaintext, and a genuine client pins them.** A page delivered through the
 channel names its scripts with `<script src>`; the browser fetches those over plain HTTP,
-which is where an active attacker after pairing could substitute code. The client closes
-that with Subresource Integrity: for every script and stylesheet element it re-creates, it
-fetches the file through the channel first, hashes it, and sets `integrity` on the plain
-element, so the browser refuses bytes that differ from what the authenticated channel
-delivered. No CSP change, no `blob:` scripts. What SRI cannot reach is a Tier 2 module's
-own `import` graph; §2.10 says what is claimed and what is not.
+which permits substitution on the network. A genuine client uses Subresource Integrity:
+for every same-origin external script and stylesheet element it re-creates, it
+hashes the file through the channel and sets `integrity` on the plain element. A remote
+resource allowed by the app's existing permissions requires a hash in the authenticated
+HTML; the channel does not become a remote proxy. The browser refuses differing bytes. No CSP change, no `blob:` scripts. This does not authenticate the downloaded
+client or its bootstrap on any visit, and does not protect imported framework or app
+modules; §2.10 states the exposure, including stored device keys.
 
 The rejected alternatives, so they are not re-litigated: a service worker (unavailable on
 a LAN IP, ADR 0003); encrypting bodies over plain HTTP requests without a WebSocket (the
@@ -284,20 +294,19 @@ path holds on loopback exactly as before, since loopback never sees the channel.
 
 *Decided: `protocol.md §7.6` and `§8.4`.*
 
-### 2.10 What is claimed about program authenticity after pairing
+### 2.10 What is claimed about program authenticity — DECIDED, corrected
 
-`§7.7` and `docs/security.md §1` say an active attacker arriving after pairing is
-*detected*. With §2.1 that is true of every page, fragment, API call and stream (they
-never leave the channel), and of every script and stylesheet the page names (SRI, hashed
-over the channel). It is not true of a module a Tier 2 app's own script imports, because
-a static `import` carries no integrity: on a plain-HTTP origin those files can still be
-substituted. M17 states this in `docs/security.md §4` as the residual gap, closed by the
-native shell (Phase 4) and by an HTTPS origin (Phase 5); an import map with integrity is
-noted there as the browser feature that would close it in place, once every target
-browser has it. `docs/roadmap.md` Phase 4's stub carries the pointer.
+The owner confirmed that M17 keeps §2.1's channel design and corrects its security claim.
+Every load over plain HTTP permits active replacement of the bootstrap and client,
+including access to stored device keys after pairing. The bootstrap's integrity hashes
+can be replaced with it. A genuine client refuses a substituted node and protects
+application data from passive listeners; this is conditional on genuine client code.
+No blanket detection claim applies to an active attacker on the plain-HTTP path.
 
-*Follows from §2.1 and is written: `protocol.md §7.7` and `docs/security.md §4` say what
-is pinned after pairing and what is not.*
+`protocol.md §7.7`, `docs/security.md §4` and the security skill state this exposure.
+The disclosure is worded for every visit and appears in the bootstrap and, with M19,
+the pairing screen. Imported framework and app modules also lack per-import integrity.
+No TLS requirement, new origin, recovery path or architecture change is introduced.
 
 ### 2.11 Two small shapes: `peers`, and what `--version` claims — DECIDED
 
@@ -316,12 +325,15 @@ rule applied.*
 
 ## 3. Spec gaps found
 
-Rows 1–25 are fixed. As in
+Rows 1–28 are fixed. As in
 Phase 1, this records what changed and why;
 `cargo xtask gen-skill-reference` ran with the edits.
 
 | # | Was | Proposed | Files | Milestone |
 |---|---|---|---|---|
+| 28 | The integrity rule assumed every resource could be fetched by an origin-local channel | Hash same-origin external resources through the channel; require an existing integrity hash in authenticated HTML for permitted remote resources; keep inline script CSP and imported-module limits explicit | `protocol.md §8.3`, this plan §2.1, security and Tier 2 skills | **Fixed**; M17 |
+| 27 | Full-document replacement and `pushState` retain the previous CSP and module map | Fresh bootstrap documents use destination app permissions. A bounded, unpolled response stream stays in node RAM across a form transition; only a reference crosses in per-tab storage. Same-device attachment consumes it once without re-executing the request | `protocol.md §8.3.1`, this plan §2.1; `app-contract.md §5.4` remains binding | **Fixed**, owner approved; M17 |
+| 26 | The active-attacker gap was described as first pairing and Tier 2 imports only | State that every plain-HTTP load can replace the bootstrap and client, exposing stored device keys; keep the channel design and word the disclosure for every visit | `protocol.md §7.0, §7.7`, `docs/security.md §1, §4`, this plan §2.10, security skill | **Fixed**, owner confirmed; M17 |
 | 25 | `§7.3` row 10 gave the flamingo's codepoint as U+1FAB0, which is 🪰; the glyph and the label in the same row were right | U+1F9A9, which both implementations already emit; the conformance test now reads the table's glyph, codepoints and label and holds all three to the code | `protocol.md §7.3` | **Fixed**; M16; `test_spec_7_3_glyph_table_is_normative_and_keeps_variation_selectors` |
 | 24 | `§7.4.2` never said when an attempt is counted. Counting at `cA` lets a client guess for free: the node's answer to `pA` already tells it whether the code matched, and it need never send `cA` | An attempt is counted when `pA` is accepted; an exhausted code is replaced before the 4429; a refusal before `pA` — closed, rate-limited, malformed — is no attempt and writes no audit row; a peer that leaves after `pA` is a failed attempt the transport reports; a registered device key is refused with 4403 | `protocol.md §7.4.2, §7.5` | **Fixed**; M16; `test_spec_7_5_code_expires_at_120s_and_five_attempts_issue_a_new_one` |
 | 23 | `§3.3` had the node drop the code's bytes once `w` existed, but `§9.2`'s `GET /api/v1/pair` answers the code again on request, and `w` is a function of sixteen bits, so dropping the code hides nothing | The window holds the code beside `w`; `generation` counts replaced codes so a surface can notice a new one | `data-dictionary.md §3.3` | **Fixed**; M16 |
@@ -421,6 +433,9 @@ request does.
 | KDF, MAC, hash | `hkdf`, `hmac`, `sha2` | already here | The salt of `§8`, the confirmation MACs of RFC 9382 |
 | WebSocket in the core | `axum` feature `ws` | pulls `tokio-tungstenite` 0.29.0, MIT, plus `sha1` and `base64` | `/ws` and `/ws/pair` are routes of the core (`§9.2`); the upgrade is answered where `handle` is |
 | WebSocket client, tests | `tokio-tungstenite` | 0.29.0 | A dev-dependency of `crates/privatium` for the socket tests only |
+| Stream and sink helpers | `futures-util` | 0.3.34, MIT OR Apache-2.0 | Existing graph dependency, now direct for WebSocket and response streams |
+| Separate IPv6 socket | `socket2` | 0.6.5, MIT OR Apache-2.0 | Existing graph dependency, now direct to set IPv6-only before binding; avoids platform-dependent dual-stack defaults |
+| Verbose interface list | `if-addrs` | 0.15.0, MIT OR BSD-3-Clause | The standard-library UDP probe finds the default route but cannot enumerate every interface; the maintained cross-platform crate supplies that list |
 | mDNS | `mdns-sd` | 0.21.1, Apache-2.0 OR MIT | Registers with TXT and sub types, browses, runs its own thread — no runtime dependency, so an embedder without tokio can call `serve_discovery` |
 | QR | `qrcode` | 0.14.1, MIT OR Apache-2.0 | Renders to text for the terminal and SVG for the page; last released 2024-07 — check `cargo deny` and its issue tracker at M19 |
 | Browser crypto | `@noble/curves`, `@noble/ciphers`, `@noble/hashes` | 2.4.0, MIT | ES modules vendored at `assets/shell/vendor/noble/`, including their import dependencies; only bare imports become relative URLs (§3 row 21). Original and vendored hashes, licences, `VENDOR.md` and a `NOTICE` entry accompany them. Loaded under `script-src 'self'`; no bundle is built here |
@@ -428,7 +443,16 @@ request does.
 **Not taken, and why:** `spake2` (one group, the draft's constants, no JavaScript
 counterpart — §2.4); `cpace` (0.1.0 from 2020); `argon2` (§2.7); `notify` (Phase 3
 decides it does not need one either); a JavaScript QR library (the QR is rendered by the
-node); `local-ip-address` or similar (the UDP-connect trick needs no crate).
+node); `local-ip-address` for default-route selection (the UDP-connect trick needs no
+crate). `if-addrs` is used only for the separate verbose enumeration requirement.
+
+M17 enables the planned axum WebSocket feature and takes the stream and socket helpers
+above directly. The [if-addrs package record](https://docs.rs/crate/if-addrs/0.15.0)
+records the 2026-02-08 release and maintained cross-platform implementation. Its
+`libc` and `windows-sys` dependencies already exist in the graph. `cargo deny check`
+passes advisories, bans, licences and sources; the WebSocket dependency tree introduces
+duplicate-version warnings alongside the existing `syn` warning. SHA-1 is used by the
+standard WebSocket upgrade, never for Privatium's identity or session cryptography.
 
 M14 adds only `x25519-dalek`, for the static session identity required by `protocol.md
 §8`, with `static_secrets` and `zeroize`. The [3.0.0 package record](https://docs.rs/crate/x25519-dalek/3.0.0)
@@ -888,12 +912,46 @@ message types; the row's every column checked; `replica` false),
 
 ### M17 — The LAN bind, the auth policy, and the channel
 
+**Implementation status, 2026-09-05, branch `m17-channel-lan`:** the LAN listeners,
+bootstrap policy, live pairing and encrypted channel are implemented. Browser modules
+drive HTMX, the data API and full-page response handoffs. Section 3 rows 26–28 record the
+security disclosure, approved navigation correction and resource-integrity clarification.
+Discovery and the pairing screen remain M18 and M19 respectively.
+
+The browser parses each authenticated full page in a fresh bootstrap document. That
+document already carries the destination app's CSP, and browser navigation resets its
+module map. HTMX's `beforeRequest` hook replaces that request's send operation while
+preserving HTMX's parameter encoding, indicators, response handling and completion
+callbacks. Its history cache is disabled on channel pages so it does not persist
+decrypted page content. Forms outside HTMX use §8.3.1's response handoff.
+
+Response slots are reserved before dispatch. Their bodies remain unpolled, are consumed
+atomically by the same active device, and are dropped on expiry or release. Timer tasks
+are cancelled when a response is consumed. Disconnects do not roll back writes or
+re-execute a handler. Browser storage carries no form body or rendered response.
+
+`tests/channel.rs` in the binary crate runs real WebSocket pairing and sessions through
+a capturing loopback proxy with a TEST-NET peer. Its live JavaScript test runs the actual
+browser modules against that core. Node.js must be on PATH for this test; the test-only
+`PRIVATIUM_TEST_NODE` environment variable may name a portable executable.
+
+Final verification results are recorded with the commit and PR. Three-platform
+completion boxes remain open until those CI results are available.
+
+The full workspace run exposed a probabilistic assertion in
+`test_spec_7_0_the_code_never_crosses_the_wire`: random base64 could contain a short
+word or hex rendering of the code. The test now validates the exact message fields,
+canonical encodings and lengths, rejects an injected code field, and still checks
+that the password scalar is absent. Pairing tests also separate their synthetic
+window clock from certificates issued by `Node::open` on the real clock. Neither
+correction changes pairing cryptography.
+
 - `crates/privatium/src/lib.rs`: `bind(port)` opens `0.0.0.0:<port>` and `[::]:<port>`
   (the second best-effort), `announce` prints the default route's URL and the rest under
   `--verbose` (§2.2, §3 row 14), and the adapter still inserts `Peer` and nothing else.
 - `http::auth`: the policy of §2.1. `AuthLayer` learns three things a request may carry:
-  a `Peer` (as now), a `Session` (inserted by the channel decoder — the device, its kind,
-  when it last wrote `last_seen_at`), and the route class from `Router`. Loopback with a
+  a `Peer`, an unforgeable `Session` (the authenticated device, node and static key),
+  and the route class from `Router`. Hourly `last_seen_at` writes remain M19. Loopback with a
   loopback `Host`: this node, every route. Non-loopback without a session: the bootstrap
   set; the answer for a page path is the bootstrap page, for anything else 403 with a
   sentence naming pairing. A session: `Device(session.device)`, every route, with the
@@ -912,7 +970,7 @@ message types; the row's every column checked; `replica` false),
   `req`, `method`, `path`, `headers` and, for `res`, `status`, `headers`. A `req` carries
   its whole body in one frame, bounded by `api.max_body`; `chunk` for a request is
   reserved for Phase 3's uploads and refused here.
-- The bootstrap page (`http::pairing::bootstrap`): a document with the node's title, the
+- The bootstrap page (`http::pairing::bootstrap`): a document with the public node ID, the
   requested path in a `data-path` attribute, `<script type="module"
   src="/static/client.js">` with `integrity`, the `<noscript>` of §2.9, and no app data —
   `test_spec_9_2_unauthenticated_leaks_nothing` extends to it.
@@ -922,12 +980,10 @@ message types; the row's every column checked; `replica` false),
   full-screen refusal with the two fingerprints and no way past it but *forget this node
   and pair again*, which wipes `pv:device` — then fetch the requested path through the
   channel and put it in place of the bootstrap document. Scripts and stylesheets are
-  re-created with `integrity` computed from the channel's copy (§2.1). Then the htmx
-  extension: `htmx:beforeRequest` cancelled and the request sent through the channel,
-  the response swapped with the internal `api.swap` exactly as htmx's `sse` extension
-  does; and a document-level `click`/`submit` handler for what htmx does not own, with
-  `pushState`. `pv.js` learns `window.__pv_channel`: `call` and the stream go through it
-  when present, the stream parsed from `chunk` frames by the same SSE line parser.
+  re-created with integrity hashes under §2.1. HTMX keeps its lifecycle and swaps;
+  its send operation uses the channel. Other forms use the response handoff, while
+  ordinary links open fresh bootstrap documents. `pv.js` uses `window.__pv_channel`
+  for calls and SSE, with no API surface change.
 - `Route::Ws`, `Route::WsPair` in `wire::router` with `/ws` in `FRAMEWORK_PREFIXES` (§3
   row 9); the auth layer's route class comes from there.
 - The page frame carries `integrity` on the framework's own script and stylesheet tags
@@ -959,6 +1015,27 @@ text nor a column name — the roadmap's Wireshark bullet, automated;
 `test_spec_10_4_browser_client_holds_exactly_one_endpoint` (`client.test.mjs`: every URL
 the client builds is on its own origin). `client.test.mjs` also drives the extension
 against the `pv.test.mjs` harness with a fake channel.
+
+**Acceptance checklist** — Windows runs are green; check after the named tests pass
+on all three platforms:
+
+- [ ] LAN policy, owner loopback and IPv4/IPv6 bind:
+  `test_spec_8_4_plain_http_on_the_lan_serves_only_the_bootstrap_set`,
+  `test_loopback_keeps_phase_1_semantics`, `test_adapter_binds_every_interface`.
+- [ ] Live encrypted routing and streaming:
+  `test_spec_8_2_lan_socket_carries_no_plaintext_app_data`,
+  `test_channel_streams_a_response_body_frame_by_frame`,
+  `test_spec_8_3_browser_client_against_live_core`.
+- [ ] Response ownership, capacity and expiry:
+  `test_spec_8_3_1_handoff_survives_disconnect_without_repeating_a_write`,
+  `test_spec_8_3_1_wrong_device_cannot_consume_or_release_a_response`,
+  `test_spec_8_3_1_capacity_refuses_before_dispatch_and_release_frees_it`,
+  `test_spec_8_3_1_idle_expiry_releases_body_without_another_request` (unit).
+- [ ] Destination policy and client integration:
+  `test_spec_8_3_1_bootstrap_uses_destination_app_permissions`,
+  `test_spec_8_3_integrity_uses_authenticated_bytes_and_refuses_unpinned_remote_code`,
+  `test_spec_8_3_pv_uses_the_channel_for_requests_and_subscriptions`,
+  `test_spec_8_3_htmx_keeps_its_lifecycle_and_never_sends_plaintext` (JavaScript).
 
 **Documentation:** `protocol.md §7.7, §8, §8.3, §8.4, §9.1, §13`, `cli.md §2`,
 `data-api.md`, `docs/security.md §3, §4`, `docs/architecture.md §2.6` and the security and
