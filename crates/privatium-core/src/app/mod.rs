@@ -784,6 +784,19 @@ impl Node {
         })
     }
 
+    /// `ui.date_format` as the typed writes read it (`spec/lua-api.md §3.3`): whether a
+    /// `3/9` is March or September. What [`append_batch`](Self::append_batch) normalizes
+    /// with, and what the data API normalizes with when it compares a replayed event
+    /// against the log (`spec/data-api.md §2`).
+    pub fn date_order(&self) -> Result<store::normalize::DateOrder> {
+        Ok(store::normalize::DateOrder::from_setting(
+            self.setting_value("ui.date_format")?
+                .and_then(|text| serde_json::from_str::<String>(&text).ok())
+                .as_deref()
+                .unwrap_or("iso"),
+        ))
+    }
+
     /// Append one event to a loaded app (`spec/app-contract.md §6`, `append`): a batch of
     /// one, so everything [`append_batch`](Self::append_batch) says holds here.
     pub fn append(&mut self, slug: &str, event: Event) -> Result<Appended> {
@@ -814,12 +827,7 @@ impl Node {
     /// Once written, each line goes out on the app's stream ([`App::stream`]).
     pub fn append_batch(&mut self, slug: &str, events: Vec<Event>) -> Result<Appended> {
         let mut changes = events;
-        let order = store::normalize::DateOrder::from_setting(
-            self.setting_value("ui.date_format")?
-                .and_then(|text| serde_json::from_str::<String>(&text).ok())
-                .as_deref()
-                .unwrap_or("iso"),
-        );
+        let order = self.date_order()?;
         let app = self.apps.get_mut(slug).ok_or_else(|| Error::AppNotLoaded {
             slug: slug.to_owned(),
         })?;

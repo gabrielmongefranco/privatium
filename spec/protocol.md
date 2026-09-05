@@ -1007,15 +1007,19 @@ may or may not have landed carries the same `(app, tbl, id)` on retry, and row-g
 last-write-wins (§4.5) converges to one row either way — never two. Implementations MUST
 NOT add a dedupe mechanism; doing so indicates a misunderstanding of §4.5.
 
-Whether a write *did* land is decided by reading the log, never by remembering. A queued
-entry carries the Lamport high-water mark the client held when it queued it; before
-replaying, the client reads each of its rows' events past that mark
-(`spec/data-api.md §1`, `/api/events?tbl&id&after`). An exact copy of its event means it
-landed — the node wrote it and the response was lost — and the entry is dropped rather
-than sent again. Another event on one of its rows means a newer change the client did not
-see, and the whole entry is refused and reported to the app, never written over that
-change. No event on any row means it is sent. That read is the whole of the bookkeeping,
-and it is not remembered either.
+Whether a write *did* land is decided by reading the log, never by remembering — and the
+node reads it, under the lock in which it appends, immediately before appending. A queued
+entry carries the Lamport high-water mark the client held when it queued it and, for each
+row the client had read or written, the rank `(lam, ts, dev)` of that row's winning event
+as the client last saw it; the replay carries both (`spec/data-api.md §2`, `since` and
+`base`). For each event the node reads the row's events ranked past its `base`, or past
+the mark where the client never saw the row. An exact copy of the client's event means it
+landed — the node wrote it and the response was lost — and nothing is appended. Another
+event on one of its rows means a newer change the client did not see, and the whole entry
+is refused and reported to the app, never written over that change — a row the client
+read is judged by what it read, so an unrelated read that moved the mark hides nothing.
+No event on any row means it is appended. That read is the whole of the bookkeeping, and
+it is not remembered either: the client remembers what it read, never what landed.
 
 A browser client is not a device (§10.7): it holds no log and stamps nothing, so what it
 does send is stamped by the node as it arrives, and what it cannot do is overwrite what

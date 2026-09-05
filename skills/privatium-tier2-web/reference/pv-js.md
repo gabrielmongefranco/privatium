@@ -55,6 +55,11 @@ this design exists to prevent. Use a decimal library or integer cents in your ow
   outbox; a put with no `id` is minted one client-side before it is sent or queued, so a
   replay carries the same id. `pv.flush()` replays the outbox now and resolves when the
   pass is over.
+- The helper keeps the rank of every row it handed the app — through `pv.get`, `pv.events`
+  and `pv.subscribe` — and of every row it wrote, and a queued edit of such a row carries
+  it as the event's `base` (§2, §6). A row the app saw only through a view has no rank the
+  helper can know, and an edit of it carries the mark alone; an app that wants the
+  guarantee for such a row reads it with `pv.get` first.
 - The mount is read from the page's path — `/a/<slug>/` or, in solo mode, `/` — and
   exposed as `pv.mount`. `pv.url()` is the only URL construction point (`§6`).
 
@@ -69,9 +74,9 @@ exposes `pv.online` and a `pv.on('online' | 'offline')` event. The outbox is one
 the page's memory, mirrored to `localStorage` while storage is available — a page without
 it still queues for its own lifetime — as one key per entry beneath the mount, so two
 pages over one storage never write over each other's entries and either page replays
-both. Each entry is keyed by a ULID and holds the events exactly as they will be sent, the
-mark `pv.lam` held when it was queued, and the `app` and the node `id` that `/api/node`
-named (§4). A fetch that fails to reach the node marks the helper offline; the browser's
+both. Each entry is keyed by a ULID and holds the events exactly as they will be sent —
+each with the `base` the helper knew for its row (§5) — the mark `pv.lam` held when it was
+queued, and the `app` and the node `id` that `/api/node` named (§4). A fetch that fails to reach the node marks the helper offline; the browser's
 own `online` event, or any request that succeeds, marks it back and replays the queue in
 order, one entry at a time — after asking `/api/node` again, so the replay knows which
 node and which app the origin serves now, not what it served when the page loaded.
@@ -79,13 +84,13 @@ node and which app the origin serves now, not what it served when the page loade
 **Replay is idempotent and needs no bookkeeping.** A queued write carries its ULID, so
 resending one that may already have landed converges to the same row under
 `spec/protocol.md §4.5`. Where an entry stands is read, not remembered
-(`spec/protocol.md §10.6`): before it is sent, the helper reads each of its rows' events
-past the entry's mark (`/api/events`, §1). Every event already there — compared as it was
-sent; a typed app's normalized value can differ, and the entry then lands as the same row
-again, which `§4.5` makes harmless — and the entry is dropped. Another event on one of its
-rows, and the whole entry is refused and reported: the row moved since the write was
-queued, and a browser never writes over what it did not see. No event on any row, and it
-is sent. Apps MUST NOT implement their own deduplication, transaction identifiers, or
+(`spec/protocol.md §10.6`), and the node reads it: the replay carries the entry's mark as
+`since` and each event's `base` (§2). Every event already there, and the node appends
+nothing. Another event on one of its rows, and the node refuses the whole entry with 409
+and the row, which the helper reports: the row moved since the write was queued, and a
+browser never writes over what it did not see — a row the page read is judged by what it
+read, so an unrelated read that moved the mark hides nothing. No event on any row, and it
+is appended. Apps MUST NOT implement their own deduplication, transaction identifiers, or
 acknowledgement protocol — all three indicate a misreading of the merge rule, and all three
 can introduce the divergence they were meant to prevent.
 

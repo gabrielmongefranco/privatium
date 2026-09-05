@@ -502,6 +502,169 @@ async fn test_spec_data_2_post_naming_another_node_or_app_is_refused() {
     assert_eq!(raw_lines(&handler, "sketch").len(), 2);
 }
 
+/// `spec/protocol.md §10.6`, `spec/data-api.md §2` — a POST that carries the mark an entry
+/// was queued at (`since`) and, per event, the rank of the row's winner as the page saw it
+/// (`base`) is judged by the node under the lock in which it appends: every event already
+/// there, nothing appended; another event on one of its rows, 409 naming the row and
+/// nothing appended; otherwise appended. A body with neither is unconditional, and the
+/// response names the batch's instant and device so a page knows the rank of what it wrote.
+#[tokio::test]
+async fn test_spec_10_6_conditional_append_lands_conflicts_or_appends() {
+    let root = tempfile::tempdir().unwrap();
+    let handler = handler(&root);
+    let dev = handler.node().lock().unwrap().id().as_str().to_owned();
+    let post = |body: Value| post_json("/a/sketch/api/events", &body);
+    let put = |id: &str, d: &Value| json!({ "op": "put", "tbl": "stroke", "id": id, "d": d });
+    let d1 = json!({ "points": [[0, 0]], "color": "#00274C" });
+    let d2 = json!({ "points": [[1, 1]], "color": "#FFCB05" });
+    let d3 = json!({ "points": [[2, 2]], "color": "#333333" });
+
+    let x = ulid();
+    let (status, first) = json_of(
+        handler
+            .handle(post(json!({ "events": [put(&x, &d1)] })))
+            .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    assert_eq!(first["appended"], 1);
+    let l1 = first["lam"].as_u64().unwrap();
+    assert!(first["ts"].as_str().unwrap().ends_with('Z'), "{first}");
+    assert_eq!(first["dev"], json!(dev));
+
+    // Landed: the same write, replayed with the mark it was queued at, finds its own copy.
+    let (status, body) = json_of(
+        handler
+            .handle(post(json!({ "events": [put(&x, &d1)], "since": l1 - 1 })))
+            .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["appended"], 0, "{body}");
+    assert_eq!(body["ids"], json!([x]));
+    assert_eq!(body["lam"], json!(l1));
+    assert_eq!(
+        raw_lines(&handler, "sketch").len(),
+        1,
+        "a landed entry appends nothing"
+    );
+
+    // Conflict: another write moved the row after the mark.
+    let (status, second) = json_of(
+        handler
+            .handle(post(json!({ "events": [put(&x, &d2)] })))
+            .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, body) = json_of(
+        handler
+            .handle(post(json!({ "events": [put(&x, &d1)], "since": l1 })))
+            .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["index"], 0);
+    assert_eq!(body["conflict"], json!({ "tbl": "stroke", "id": x }));
+    assert!(body["error"].as_str().unwrap().contains("§10.6"), "{body}");
+    assert_eq!(
+        raw_lines(&handler, "sketch").len(),
+        2,
+        "a conflict appends nothing"
+    );
+
+    // Base: the rank of the winner the page saw decides its row, whatever the mark says —
+    // a mark that an unrelated read pushed past an unseen edit does not hide the edit.
+    let mut stale = put(&x, &d3);
+    stale["base"] = json!({ "lam": l1, "ts": first["ts"], "dev": first["dev"] });
+    let (status, body) = json_of(
+        handler
+            .handle(post(json!({ "events": [stale], "since": second["lam"] })))
+            .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert_eq!(body["conflict"], json!({ "tbl": "stroke", "id": x }));
+    let mut current = put(&x, &d3);
+    current["base"] = json!({ "lam": second["lam"], "ts": second["ts"], "dev": second["dev"] });
+    let (status, body) = json_of(handler.handle(post(json!({ "events": [current] }))).await).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["appended"], 1);
+    let third = body;
+
+    // A mixed batch — one event landed, one fresh — is appended whole; §4.5 folds the repeat.
+    let y = ulid();
+    let (status, body) = json_of(
+        handler
+            .handle(post(
+                json!({ "events": [put(&x, &d3), put(&y, &d1)], "since": second["lam"] }),
+            ))
+            .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["appended"], 2);
+    assert!(body["lam"].as_u64().unwrap() > third["lam"].as_u64().unwrap());
+    let lines = raw_lines(&handler, "sketch");
+    assert_eq!(lines.len(), 5);
+    assert!(
+        lines.iter().all(|line| !line.contains("\"base\"")),
+        "base never reaches the log"
+    );
+
+    // A base that is not a rank is 400, like any other malformed field.
+    let mut bad = put(&ulid(), &d1);
+    bad["base"] = json!("yesterday");
+    let (status, body) = json_of(handler.handle(post(json!({ "events": [bad] }))).await).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["index"], 0);
+    let (status, body) = json_of(
+        handler
+            .handle(post(
+                json!({ "events": [put(&ulid(), &d1)], "since": "eight" }),
+            ))
+            .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+}
+
+/// `§10.6` with `spec/lua-api.md §3.3` — a typed app normalizes what it stores, so the
+/// node compares a replayed event against the log as the value it would store: a write
+/// that landed as `"12.50"` is landed, not a conflict, when replayed as `12.5`.
+#[tokio::test]
+async fn test_spec_10_6_a_landed_write_is_landed_after_normalization() {
+    let root = tempfile::tempdir().unwrap();
+    let handler = with_meds(&root);
+    let ev = json!({
+        "op": "put", "tbl": "fill", "id": ulid(),
+        "d": { "drug": "Example", "copay_amount": 12.5, "count": "3", "ok": true }
+    });
+    let (status, first) = json_of(
+        handler
+            .handle(post_json(
+                "/a/meds/api/events",
+                &json!({ "events": [ev.clone()] }),
+            ))
+            .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{first}");
+    let since = first["lam"].as_u64().unwrap() - 1;
+    let (status, body) = json_of(
+        handler
+            .handle(post_json(
+                "/a/meds/api/events",
+                &json!({ "events": [ev], "since": since }),
+            ))
+            .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["appended"], 0, "landed, not a conflict: {body}");
+    assert_eq!(raw_lines(&handler, "meds").len(), 1);
+}
+
 /// `spec/lua-api.md §3.4` — an API append is this node's own, so a Tier 1 app's
 /// `pv.on('append')` fires for it, after the response is decided.
 #[tokio::test]

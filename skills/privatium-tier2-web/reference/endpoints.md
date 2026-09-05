@@ -131,18 +131,19 @@ line carrying the count, so a crash that lands it short leaves lines every reade
 }
 ```
 
-The client supplies only `op`, `tbl`, `id`, and `d`. The framework stamps `seq`, `lam`,
-`ts`, `dev`, and `app` — a client MUST NOT set these and the server MUST reject a request
-that does (`PV304`), as it rejects any other field.
+The client supplies only `op`, `tbl`, `id`, and `d` — and, on a replay, `base` (below).
+The framework stamps `seq`, `lam`, `ts`, `dev`, and `app` — a client MUST NOT set these
+and the server MUST reject a request that does (`PV304`), as it rejects any other field.
 
 Response:
 
 ```json
-{ "appended": 2, "lam": 8832, "ids": ["01J9YQ...", "01J9YP..."] }
+{ "appended": 2, "lam": 8832, "ts": "2026-09-03T14:03:11.412Z", "dev": "k7m2q9xf", "ids": ["01J9YQ...", "01J9YP..."] }
 ```
 
 `lam` is the last event's — the app's high-water mark now. The batch is one batch of the
-log (`spec/lua-api.md §3.3`): one `ts`, contiguous `seq` and `lam`.
+log (`spec/lua-api.md §3.3`): one `ts`, contiguous `seq` and `lam`; `ts` and `dev` are the
+batch's, so a client knows the rank (`spec/protocol.md §4.5`) of what it wrote.
 
 Constraints, each refusing the whole batch and naming the event's `index` from 0:
 
@@ -170,6 +171,20 @@ this mount's, is 409 and nothing is appended. `pv.js` sends both with every writ
 entry queued against one node or one app is never written into another (§6), and the
 check is the node's own, made as it appends, rather than a read the client made a moment
 earlier.
+
+A replay MAY also carry `since` — the mark `pv.lam` held when the entry was queued — and,
+per event, a `base`: `{"lam", "ts", "dev"}`, the rank of the row's winning event as the
+page last saw it, from `/api/row`, `/api/events`, the stream, or this response. With
+either present the node decides, under the lock in which it appends, what
+`spec/protocol.md §10.6` says. For each event it reads the row's events ranked past
+`base`, or past `since` where the event has none. One equal to the event — compared as the
+node would store it, so a typed app's normalization does not tell them apart — means it
+landed; any other means the row moved, and the whole batch is 409 with the event's
+`index` and `conflict: {tbl, id}`, nothing appended; none means it is fresh. A batch every
+event of which landed answers 200 with `appended: 0`; otherwise the batch is appended
+whole, and `§4.5` folds an event that had already landed into the same row. `base` is
+stripped before the append and never reaches the log. With neither `since` nor `base` the
+write is unconditional: last write wins by arrival.
 
 A Tier 1 app's `pv.on('append')` fires for an API append as for any other of this node's
 (`spec/lua-api.md §3.4`), after the response is decided.

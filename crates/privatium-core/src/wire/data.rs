@@ -32,6 +32,7 @@ use crate::http::{self, Device, headers};
 use crate::log::{Reader, batch};
 use crate::store::Schema;
 use crate::store::materialize::quote_ident;
+use crate::store::normalize::DateOrder;
 use crate::store::query::{self, ColumnType};
 use crate::wire::{Handler, Request, Response, node_facts};
 use crate::{Error, Node};
@@ -42,8 +43,9 @@ pub const PING: Duration = Duration::from_secs(30);
 /// The envelope fields a client MUST NOT set (`spec/data-api.md §2`, `PV304`).
 const STAMPED: [&str; 5] = ["seq", "lam", "ts", "dev", "app"];
 
-/// The fields a client supplies.
-const SUPPLIED: [&str; 4] = ["op", "tbl", "id", "d"];
+/// The fields a client supplies — `base` on a replay only (`§2`), and it never reaches
+/// the log.
+const SUPPLIED: [&str; 5] = ["op", "tbl", "id", "d", "base"];
 
 /// The limits of `spec/data-api.md §7`, from `sys_setting` with the table's defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -383,6 +385,33 @@ impl RawLine {
     fn rank(&self) -> (u64, Option<&str>, &str, u64) {
         (self.lam, self.ts.as_deref(), &self.dev, self.seq)
     }
+
+    /// Whether this line is a copy of a client's event — the same `op`, and for a put the
+    /// same `d` as the node stores it (`§2`, `spec/protocol.md §10.6`: "an exact copy").
+    fn is_copy_of(&self, put: bool, stored: Option<&Value>) -> bool {
+        if self.put != put {
+            return false;
+        }
+        if !put {
+            return true;
+        }
+        serde_json::from_slice::<Value>(&self.line)
+            .ok()
+            .and_then(|line| line.get("d").cloned())
+            .as_ref()
+            == stored
+    }
+}
+
+/// `d` as the node would store it — normalized against the declared table, as the append
+/// will normalize it — so a replay of a typed app compares like with like.
+fn stored_d(schema: &Schema, tbl: &str, d: Option<&Value>, order: DateOrder) -> Option<Value> {
+    let mut value = d?.clone();
+    if let (Some(table), Value::Object(object)) = (schema.table(tbl), &mut value) {
+        // A value that is not its type is what the append refuses; compared as sent.
+        let _ = crate::store::normalize::normalize_row(table, object, order);
+    }
+    Some(value)
 }
 
 /// The envelope fields the API reads; everything else stays in the bytes.
@@ -462,15 +491,33 @@ fn read_lines(log_dir: &std::path::Path, app: &str) -> Vec<RawLine> {
     lines
 }
 
+/// `§2`'s `base`: the rank (`spec/protocol.md §4.5`) of a row's winning event as the
+/// client last saw it. What a replay of that row is judged against.
+struct Base {
+    lam: u64,
+    ts: Option<String>,
+    dev: String,
+}
+
+impl Base {
+    /// Whether `line` ranks after this base — a change the client did not see.
+    fn precedes(&self, line: &RawLine) -> bool {
+        (line.lam, line.ts.as_deref(), line.dev.as_str())
+            > (self.lam, self.ts.as_deref(), self.dev.as_str())
+    }
+}
+
 /// Everything the write path takes from one client event.
 struct Parsed {
     change: Event,
     /// Whether the client chose the id (a minted one is never a reuse).
     client_id: bool,
+    /// The rank the client last saw for the row, on a replay.
+    base: Option<Base>,
 }
 
-/// One client event as a [`Event`] (`spec/data-api.md §2`): `op`, `tbl`, `id`, `d`
-/// and nothing else, the id a ULID or minted here.
+/// One client event as a [`Event`] (`spec/data-api.md §2`): `op`, `tbl`, `id`, `d`, an
+/// optional `base` and nothing else, the id a ULID or minted here.
 fn parse_event(index: usize, value: &Value) -> Result<Parsed, Response> {
     let bad = |error: String| {
         let mut detail = Map::new();
@@ -523,9 +570,34 @@ fn parse_event(index: usize, value: &Value) -> Result<Parsed, Response> {
         (false, None | Some(Value::Null)) => None,
         (false, Some(_)) => return Err(bad("a del carries no `d`".to_owned())),
     };
+    let base = match object.get("base") {
+        None | Some(Value::Null) => None,
+        Some(Value::Object(rank)) => match rank.get("lam").and_then(Value::as_u64) {
+            Some(lam) => Some(Base {
+                lam,
+                ts: rank.get("ts").and_then(Value::as_str).map(str::to_owned),
+                dev: rank
+                    .get("dev")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
+            }),
+            None => {
+                return Err(bad(
+                    "`base` is a rank: {\"lam\", \"ts\", \"dev\"}".to_owned()
+                ));
+            }
+        },
+        Some(_) => {
+            return Err(bad(
+                "`base` is a rank: {\"lam\", \"ts\", \"dev\"}".to_owned()
+            ));
+        }
+    };
     Ok(Parsed {
         change: Event { tbl, id, d },
         client_id,
+        base,
     })
 }
 
@@ -951,6 +1023,19 @@ impl Handler {
             );
         }
         let claimed_node = body.get("node").and_then(Value::as_str).map(str::to_owned);
+        // `§2`: the mark a replayed entry was queued at.
+        let since = match body.get("since") {
+            None | Some(Value::Null) => None,
+            Some(value) => match value.as_u64() {
+                Some(since) => Some(since),
+                None => {
+                    return refuse(
+                        StatusCode::BAD_REQUEST,
+                        format!("400 Bad Request: since must be a lam, not {value}"),
+                    );
+                }
+            },
+        };
         if events.len() > settings.max_batch {
             return refuse(
                 StatusCode::BAD_REQUEST,
@@ -985,6 +1070,68 @@ impl Handler {
                         node.id().as_str()
                     ),
                 );
+            }
+            // `§2`'s replay preconditions, judged here under the lock (`spec/protocol.md
+            // §10.6`): an event's row is read past the rank the client saw for it, or
+            // past the mark where it saw none. A copy of the event there means it landed;
+            // anything else there is a change the client did not see, and the whole batch
+            // is refused; nothing there is fresh. A batch every event of which landed
+            // appends nothing.
+            if since.is_some() || parsed.iter().any(|item| item.base.is_some()) {
+                let lines = read_lines(app.log().log_dir(), slug);
+                let order = match node.date_order() {
+                    Ok(order) => order,
+                    Err(error) => {
+                        return refuse(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("500 Internal Server Error: {error}"),
+                        );
+                    }
+                };
+                let schema = app.store().schema();
+                let mut landed = 0;
+                for (index, item) in parsed.iter().enumerate() {
+                    let Event { tbl, id, d } = &item.change;
+                    let unseen: Vec<&RawLine> = lines
+                        .iter()
+                        .filter(|line| line.tbl == *tbl && line.id == *id)
+                        .filter(|line| match &item.base {
+                            Some(base) => base.precedes(line),
+                            None => since.is_some_and(|since| line.lam > since),
+                        })
+                        .collect();
+                    if unseen.is_empty() {
+                        continue;
+                    }
+                    let stored = stored_d(schema, tbl, d.as_ref(), order);
+                    if unseen
+                        .iter()
+                        .any(|line| line.is_copy_of(d.is_some(), stored.as_ref()))
+                    {
+                        landed += 1;
+                        continue;
+                    }
+                    let mut detail = Map::new();
+                    detail.insert("index".to_owned(), Value::from(index));
+                    detail.insert("conflict".to_owned(), json!({ "tbl": tbl, "id": id }));
+                    return refuse_with(
+                        StatusCode::CONFLICT,
+                        detail,
+                        format!(
+                            "409 Conflict: events[{index}]: {tbl}/{id} changed after this write \
+                             was queued, and a browser never writes over what it did not see \
+                             (spec/protocol.md §10.6)"
+                        ),
+                    );
+                }
+                if landed == parsed.len() {
+                    let ids: Vec<&str> =
+                        parsed.iter().map(|item| item.change.id.as_str()).collect();
+                    return headers::json(
+                        StatusCode::OK,
+                        &json!({ "appended": 0, "lam": app.log().lam(), "ids": ids }),
+                    );
+                }
             }
             // `§4.6`: a minted id that belonged to a deleted row must not key another —
             // in the cache's tombstone set, or deleted earlier in this very batch.
@@ -1062,7 +1209,13 @@ impl Handler {
         let lam = appended.lam.saturating_add(count as u64).saturating_sub(1);
         let response = headers::json(
             StatusCode::OK,
-            &json!({ "appended": count, "lam": lam, "ids": ids }),
+            &json!({
+                "appended": count,
+                "lam": lam,
+                "ts": appended.ts,
+                "dev": appended.dev,
+                "ids": ids,
+            }),
         );
         // This node's own append, so a Tier 1 app's `pv.on('append')` sees it
         // (`spec/lua-api.md §3.4`) — after the lock is released, since a handler may

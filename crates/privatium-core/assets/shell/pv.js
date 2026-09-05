@@ -6,9 +6,9 @@
  *           ES module with no dependencies and no build step: query, sql, get, events,
  *           append, put, del, subscribe, ulid, node, url, online, on. Writes queue in an
  *           outbox while the node is unreachable and replay exactly as they were: an entry
- *           carries the high-water mark, the app and the node it was queued under; before
- *           a replay the node is asked who it is now and each row's events past the mark
- *           are read — landed, dropped; moved since, refused and reported; nothing, sent
+ *           carries the high-water mark, the rank of each row the page had seen, the app
+ *           and the node it was queued under; the node judges the replay under its lock —
+ *           landed, dropped; moved since, refused and reported; nothing, appended
  *           (spec/protocol.md §10.6). DECIMAL stays a string.
  */
 const MOUNT = (() => {
@@ -63,9 +63,21 @@ async function call(method, path, body) {
     try { detail = await res.json(); } catch { /* not JSON */ }
     const err = new Error((detail && detail.error) || res.status + ' ' + res.statusText);
     err.status = res.status; err.detail = detail;
+    if (detail && detail.conflict) err.conflict = detail.conflict;   // the node refused a replay: the row moved (§6)
     throw err;
   }
   return res;
+}
+
+// ---- what the page has seen: the rank of every row it read or wrote (§5) -----------------
+const seen = new Map();
+function saw(ev) { if (ev && ev.tbl && ev.id && typeof ev.lam === 'number') seen.set(ev.tbl + '/' + ev.id, { lam: ev.lam, ts: ev.ts, dev: ev.dev }); }
+// A batch the node appended has contiguous lams from the response's, one ts, this node; one it
+// found already landed leaves the page knowing no rank for those rows until it reads them again.
+function wrote(events, out) {
+  if (!out || typeof out.lam !== 'number') return;
+  const first = out.lam - events.length + 1;
+  events.forEach((ev, i) => (out.appended ? saw({ tbl: ev.tbl, id: ev.id, lam: first + i, ts: out.ts, dev: out.dev }) : seen.delete(ev.tbl + '/' + ev.id)));
 }
 
 // ---- the outbox: one queue in memory, the truth for this page, one storage key per entry --
@@ -93,27 +105,7 @@ function adopt() {
 adopt();
 // The POST body: the events, and the node and the app they are for when known (§2).
 function body(events, node, app) { const b = { events }; if (node) b.node = node; if (app) b.app = app; return b; }
-function refuse(message, conflict) { const err = new Error(message); err.status = 409; if (conflict) err.conflict = conflict; throw err; }
-function same(a, b) {
-  if (a === b) return true;
-  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
-  if (Array.isArray(a) !== Array.isArray(b)) return false;
-  const ka = Object.keys(a);
-  return ka.length === Object.keys(b).length && ka.every(k => Object.hasOwn(b, k) && same(a[k], b[k]));
-}
-// Where the entry stands, read from the log past the mark it was queued at — never remembered
-// (spec/protocol.md §10.6): every event already there is 'landed'; another event on one of its
-// rows is a conflict, named; nothing on any row is 'fresh'.
-async function stand(entry) {
-  let landed = 0;
-  for (const ev of entry.events) {
-    const text = await (await call('GET', 'events' + qs({ tbl: ev.tbl, id: ev.id, after: entry.lam }))).text();
-    const lines = text.split('\n').filter(l => l.trim()).map(l => JSON.parse(l));
-    if (lines.some(line => line.op === ev.op && (ev.op === 'del' || same(line.d, ev.d)))) landed++;
-    else if (lines.length) return { conflict: { tbl: ev.tbl, id: ev.id } };
-  }
-  return landed === entry.events.length ? 'landed' : 'fresh';
-}
+function refuse(message) { const err = new Error(message); err.status = 409; throw err; }
 let flushing = null;
 function flush() {
   if (flushing) return flushing;
@@ -127,9 +119,10 @@ function flush() {
         if (!entry.app) refuse('queued before the app at this mount was known; not replayed');
         if (entry.app !== state.app) refuse('queued for app ' + entry.app + '; this origin now serves ' + state.app);
         if (entry.node && entry.node !== state.nodeId) refuse('queued for node ' + entry.node + '; this origin now serves ' + state.nodeId);
-        const where = await stand(entry);
-        if (where.conflict) refuse('a newer change to ' + where.conflict.tbl + '/' + where.conflict.id + ' landed after this was queued', where.conflict);
-        if (where !== 'landed') noteLam((await (await call('POST', 'events', body(entry.events, entry.node, entry.app))).json()).lam);
+        // The node judges it against the log, under its lock (spec/protocol.md §10.6): the mark
+        // the entry was queued at, and each row's rank as the page saw it, go with the events.
+        const out = await (await call('POST', 'events', { ...body(entry.events, entry.node, entry.app), since: entry.lam })).json();
+        noteLam(out.lam); wrote(entry.events, out);
       } catch (e) {
         // Unreachable, or the node's trouble rather than the entry's: keep it for next time.
         if (e instanceof PvOffline || e.status >= 500 || e.status === 429 || e.status === 408) break;
@@ -153,10 +146,12 @@ async function append(events) {
   });
   const ids = list.map(ev => ev.id);
   if (state.online && !queue.length) {
-    try { const out = await (await call('POST', 'events', body(list, state.nodeId, state.app))).json(); noteLam(out.lam); return out; }
+    try { const out = await (await call('POST', 'events', body(list, state.nodeId, state.app))).json(); noteLam(out.lam); wrote(list, out); return out; }
     catch (e) { if (!(e instanceof PvOffline)) throw e; }
   }
-  const entry = { id: ulid(), lam: state.lam, app: state.app, node: state.nodeId, events: list };
+  // Queued as it will be sent, each row with the rank the page saw for it, if any (§5).
+  const carried = list.map(ev => { const base = seen.get(ev.tbl + '/' + ev.id); return base ? { ...ev, base } : ev; });
+  const entry = { id: ulid(), lam: state.lam, app: state.app, node: state.nodeId, events: carried };
   queue.push(entry); persist(entry);
   if (state.online) flush();
   return { queued: true, appended: 0, ids };
@@ -171,7 +166,7 @@ async function sql(text, params) {
   noteLam(out.lam); return out.rows;
 }
 async function get(tbl, id) {
-  try { const ev = await (await call('GET', 'row/' + encodeURIComponent(tbl) + '/' + encodeURIComponent(id))).json(); noteLam(ev.lam); return ev; }
+  try { const ev = await (await call('GET', 'row/' + encodeURIComponent(tbl) + '/' + encodeURIComponent(id))).json(); noteLam(ev.lam); saw(ev); return ev; }
   catch (e) { if (e.status === 404) return null; throw e; }
 }
 async function* events(filter) {
@@ -184,11 +179,11 @@ async function* events(filter) {
     let at;
     while ((at = buffer.indexOf('\n')) >= 0) {
       const line = buffer.slice(0, at); buffer = buffer.slice(at + 1);
-      if (line.trim()) { const ev = JSON.parse(line); noteLam(ev.lam); yield ev; }
+      if (line.trim()) { const ev = JSON.parse(line); noteLam(ev.lam); saw(ev); yield ev; }
     }
     if (done) break;
   }
-  if (buffer.trim()) { const ev = JSON.parse(buffer); noteLam(ev.lam); yield ev; }
+  if (buffer.trim()) { const ev = JSON.parse(buffer); noteLam(ev.lam); saw(ev); yield ev; }
 }
 // /api/node, asked now: the app and the node this origin serves, remembered for an unreachable load.
 async function learn() {
@@ -204,7 +199,7 @@ function connect() {
   if (state.es || !subscribers.size) return;
   const es = new EventSource(url('api/stream' + (state.lam ? '?after=' + state.lam : '')));
   state.es = es;
-  es.addEventListener('append', e => { const ev = JSON.parse(e.data); noteLam(ev.lam); for (const fn of subscribers) fn(ev); });
+  es.addEventListener('append', e => { const ev = JSON.parse(e.data); noteLam(ev.lam); saw(ev); for (const fn of subscribers) fn(ev); });
   es.addEventListener('resync', e => { const d = JSON.parse(e.data); noteLam(d.lam); emit('resync', d); });
   es.addEventListener('ping', e => noteLam(JSON.parse(e.data).lam));
   es.onopen = () => { state.delay = 1000; setOnline(true); };

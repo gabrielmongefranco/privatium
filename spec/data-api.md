@@ -162,18 +162,19 @@ line carrying the count, so a crash that lands it short leaves lines every reade
 }
 ```
 
-The client supplies only `op`, `tbl`, `id`, and `d`. The framework stamps `seq`, `lam`,
-`ts`, `dev`, and `app` — a client MUST NOT set these and the server MUST reject a request
-that does (`PV304`), as it rejects any other field.
+The client supplies only `op`, `tbl`, `id`, and `d` — and, on a replay, `base` (below).
+The framework stamps `seq`, `lam`, `ts`, `dev`, and `app` — a client MUST NOT set these
+and the server MUST reject a request that does (`PV304`), as it rejects any other field.
 
 Response:
 
 ```json
-{ "appended": 2, "lam": 8832, "ids": ["01J9YQ...", "01J9YP..."] }
+{ "appended": 2, "lam": 8832, "ts": "2026-09-03T14:03:11.412Z", "dev": "k7m2q9xf", "ids": ["01J9YQ...", "01J9YP..."] }
 ```
 
 `lam` is the last event's — the app's high-water mark now. The batch is one batch of the
-log (`spec/lua-api.md §3.3`): one `ts`, contiguous `seq` and `lam`.
+log (`spec/lua-api.md §3.3`): one `ts`, contiguous `seq` and `lam`; `ts` and `dev` are the
+batch's, so a client knows the rank (`spec/protocol.md §4.5`) of what it wrote.
 
 Constraints, each refusing the whole batch and naming the event's `index` from 0:
 
@@ -201,6 +202,20 @@ this mount's, is 409 and nothing is appended. `pv.js` sends both with every writ
 entry queued against one node or one app is never written into another (§6), and the
 check is the node's own, made as it appends, rather than a read the client made a moment
 earlier.
+
+A replay MAY also carry `since` — the mark `pv.lam` held when the entry was queued — and,
+per event, a `base`: `{"lam", "ts", "dev"}`, the rank of the row's winning event as the
+page last saw it, from `/api/row`, `/api/events`, the stream, or this response. With
+either present the node decides, under the lock in which it appends, what
+`spec/protocol.md §10.6` says. For each event it reads the row's events ranked past
+`base`, or past `since` where the event has none. One equal to the event — compared as the
+node would store it, so a typed app's normalization does not tell them apart — means it
+landed; any other means the row moved, and the whole batch is 409 with the event's
+`index` and `conflict: {tbl, id}`, nothing appended; none means it is fresh. A batch every
+event of which landed answers 200 with `appended: 0`; otherwise the batch is appended
+whole, and `§4.5` folds an event that had already landed into the same row. `base` is
+stripped before the append and never reaches the log. With neither `since` nor `base` the
+write is unconditional: last write wins by arrival.
 
 A Tier 1 app's `pv.on('append')` fires for an API append as for any other of this node's
 (`spec/lua-api.md §3.4`), after the response is decided.
@@ -373,6 +388,11 @@ this design exists to prevent. Use a decimal library or integer cents in your ow
   outbox; a put with no `id` is minted one client-side before it is sent or queued, so a
   replay carries the same id. `pv.flush()` replays the outbox now and resolves when the
   pass is over.
+- The helper keeps the rank of every row it handed the app — through `pv.get`, `pv.events`
+  and `pv.subscribe` — and of every row it wrote, and a queued edit of such a row carries
+  it as the event's `base` (§2, §6). A row the app saw only through a view has no rank the
+  helper can know, and an edit of it carries the mark alone; an app that wants the
+  guarantee for such a row reads it with `pv.get` first.
 - The mount is read from the page's path — `/a/<slug>/` or, in solo mode, `/` — and
   exposed as `pv.mount`. `pv.url()` is the only URL construction point (`§6`).
 
@@ -389,9 +409,9 @@ exposes `pv.online` and a `pv.on('online' | 'offline')` event. The outbox is one
 the page's memory, mirrored to `localStorage` while storage is available — a page without
 it still queues for its own lifetime — as one key per entry beneath the mount, so two
 pages over one storage never write over each other's entries and either page replays
-both. Each entry is keyed by a ULID and holds the events exactly as they will be sent, the
-mark `pv.lam` held when it was queued, and the `app` and the node `id` that `/api/node`
-named (§4). A fetch that fails to reach the node marks the helper offline; the browser's
+both. Each entry is keyed by a ULID and holds the events exactly as they will be sent —
+each with the `base` the helper knew for its row (§5) — the mark `pv.lam` held when it was
+queued, and the `app` and the node `id` that `/api/node` named (§4). A fetch that fails to reach the node marks the helper offline; the browser's
 own `online` event, or any request that succeeds, marks it back and replays the queue in
 order, one entry at a time — after asking `/api/node` again, so the replay knows which
 node and which app the origin serves now, not what it served when the page loaded.
@@ -399,13 +419,13 @@ node and which app the origin serves now, not what it served when the page loade
 **Replay is idempotent and needs no bookkeeping.** A queued write carries its ULID, so
 resending one that may already have landed converges to the same row under
 `spec/protocol.md §4.5`. Where an entry stands is read, not remembered
-(`spec/protocol.md §10.6`): before it is sent, the helper reads each of its rows' events
-past the entry's mark (`/api/events`, §1). Every event already there — compared as it was
-sent; a typed app's normalized value can differ, and the entry then lands as the same row
-again, which `§4.5` makes harmless — and the entry is dropped. Another event on one of its
-rows, and the whole entry is refused and reported: the row moved since the write was
-queued, and a browser never writes over what it did not see. No event on any row, and it
-is sent. Apps MUST NOT implement their own deduplication, transaction identifiers, or
+(`spec/protocol.md §10.6`), and the node reads it: the replay carries the entry's mark as
+`since` and each event's `base` (§2). Every event already there, and the node appends
+nothing. Another event on one of its rows, and the node refuses the whole entry with 409
+and the row, which the helper reports: the row moved since the write was queued, and a
+browser never writes over what it did not see — a row the page read is judged by what it
+read, so an unrelated read that moved the mark hides nothing. No event on any row, and it
+is appended. Apps MUST NOT implement their own deduplication, transaction identifiers, or
 acknowledgement protocol — all three indicate a misreading of the merge rule, and all three
 can introduce the divergence they were meant to prevent.
 
