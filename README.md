@@ -91,6 +91,7 @@ disagree, the specification wins and the code is wrong.
 | [docs/decisions/](docs/decisions/) | Decision records: Barracuda declined (0001); Rust core, pkarr, peer transport (0002); one core interface behind three transports (0003); Gun, RxDB, libp2p, SharkTrustX and BAS-in-Rust declined (0004); what a phone is in the cluster (0005); SQLite as the query engine (0006) |
 | [docs/plans/](docs/plans/) | The per-phase work breakdowns: Phase 1 as built, Phases 2 and 3 as planned, later phases as stubs to be written from the roadmap |
 | [docs/naming.md](docs/naming.md) | Name, taglines, and the rename checklist |
+| [docs/phase-prompt-template.md](docs/phase-prompt-template.md) | The copy-and-paste prompt for starting a phase, milestone or change in a new AI chat |
 
 ## Example Applications
 
