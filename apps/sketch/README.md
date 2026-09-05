@@ -2,7 +2,8 @@
 
 A shared canvas. Draw in one browser window, it shows up in another; once pairing lands
 (Phase 2 of `docs/roadmap.md`), on the phone. Works offline; queued strokes replay on
-reconnect.
+reconnect. Draw with a pointer, or from the keyboard: focus the canvas, move the pen with
+the arrow keys, put it down with Space.
 
 It exists to prove one thing: **the framework does not impose an application model.**
 

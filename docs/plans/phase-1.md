@@ -1122,8 +1122,11 @@ node and app and the node refuses a mismatch itself, `pv.get` moves the mark so 
 a row the page read is not a false conflict, and a ULID minted in the same millisecond as
 the last sorts after it (rows 111–112; fourteen tests under `node --test`,
 `test_spec_data_2_post_naming_another_node_or_app_is_refused`). The sketch canvas
-captures the pointer for a stroke, so a release off the canvas saves it. The documents say
-what is so (row 113).
+captures the pointer for a stroke, so a release off the canvas saves it; on the branch that
+followed, the keyboard draws too — a focusable canvas, a crosshair pen the arrow keys move,
+Space to put it down and lift it — and a live summary says how many strokes the canvas
+holds in which colours, so the reference Tier 2 app is no longer pointer-only or
+sight-only. The documents say what is so (row 113).
 
 ---
 
