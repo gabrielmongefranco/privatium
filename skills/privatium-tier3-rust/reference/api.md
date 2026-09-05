@@ -73,7 +73,7 @@ would believe it was syncing.
 
 ## `Node`'s public methods at this version
 
-From every `impl Node` block under `crates/privatium-core/src/`. `serve_discovery`, `pair`, `start_sync` and `sync_now` are present with their signatures and return `Error::Unimplemented` naming the phase they arrive in — discovery and pairing are Phase 2, sync Phase 3 (`docs/roadmap.md`) — never `Ok`.
+From every `impl Node` block under `crates/privatium-core/src/`. `pair(ttl)` opens a pairing window (`spec/protocol.md §7`). `serve_discovery`, `start_sync` and `sync_now` are present with their signatures and return `Error::Unimplemented` naming the phase they arrive in — discovery is Phase 2, sync Phase 3 (`docs/roadmap.md`) — never `Ok`.
 
 ```rust
 pub fn open(data_dir: impl Into<PathBuf>) -> Result<Self>
@@ -99,7 +99,6 @@ pub fn auth_layer(&self) -> AuthLayer
 pub fn query(&self, app: &str, sql: &str, params: &[Value]) -> Result<Vec<Map<String, Value>>>
 pub fn close(mut self) -> Result<()>
 pub fn serve_discovery(&mut self) -> Result<()>
-pub fn pair(&mut self) -> Result<()>
 pub fn start_sync(&mut self) -> Result<()>
 pub fn sync_now(&mut self) -> Result<()>
 pub fn paths(&self) -> &Paths
@@ -126,4 +125,17 @@ pub fn subscribe(&self, slug: &str) -> Result<broadcast::Receiver<StreamEvent>>
 pub fn setting_value(&self, key: &str) -> Result<Option<String>>
 pub fn audit_lua_limit(&mut self, slug: &str, detail: &str) -> Result<()>
 pub fn refresh_app(&mut self, slug: &str) -> Result<bool>
+pub fn pair(&mut self, ttl: Duration) -> Result<PairingSnapshot>
+pub fn pair_at(&mut self, ttl: Duration, now: jiff::Timestamp) -> Result<PairingSnapshot>
+pub fn pairing(&self) -> Option<&Pairing>
+pub fn pairing_open(&self, now: jiff::Timestamp) -> bool
+pub fn refresh_pairing(&mut self, now: jiff::Timestamp) -> Result<Option<PairingSnapshot>>
+pub fn close_pairing(&mut self, now: jiff::Timestamp) -> Result<bool>
+pub fn pairing_hello(&self, now: jiff::Timestamp) -> String
+pub fn pairing_begin( &mut self, source: IpAddr, now: jiff::Timestamp, text: &str, ) -> Result<(Exchange, String)>
+pub fn pairing_begin_with( &mut self, source: IpAddr, now: jiff::Timestamp, text: &str, secret: &[u8; 64], ) -> Result<(Exchange, String)>
+pub fn pairing_confirm(&mut self, exchange: Exchange, text: &str) -> Result<(Sealed, Vec<u8>)>
+pub fn pairing_finish( &mut self, sealed: Sealed, ciphertext: &[u8], now: jiff::Timestamp, ) -> Result<Paired>
+pub fn pairing_abandon(&mut self, device: &str, source: IpAddr) -> Result<()>
+pub fn listen_url(&self) -> String
 ```

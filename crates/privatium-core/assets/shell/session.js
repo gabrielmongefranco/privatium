@@ -24,11 +24,16 @@ function keyBytes(value) {
   return value;
 }
 
-function base64(value) {
+/** Standard padded base64 of a byte array, as every key travels on the wire. */
+export function base64(value) {
   return btoa(Array.from(value, b => String.fromCharCode(b)).join(''));
 }
 
-function decode64(value, length) {
+/**
+ * Decode standard padded base64, refusing any string that is not the one encoding of its
+ * bytes; with `length`, refusing any other byte count. Throws without echoing the input.
+ */
+export function decode64(value, length) {
   if (typeof value !== 'string' || value.length > MAX_HELLO_BYTES ||
       (length !== undefined && value.length !== Math.ceil(length / 3) * 4)) throw error('invalid encoding');
   const bytes = Uint8Array.from(atob(value), c => c.charCodeAt(0));
@@ -107,7 +112,12 @@ export class Frame {
   get closed() { return this.#closed; }
 }
 
-function nodeId(publicKey) {
+/**
+ * The Node ID of an Ed25519 public key (spec/protocol.md §2.1, §2.2): the first 40 bits of
+ * SHA-256 over the key as eight lowercase Crockford Base32 characters. A device's own ID
+ * and a node's are derived the same way.
+ */
+export function nodeId(publicKey) {
   const alphabet = '0123456789abcdefghjkmnpqrstvwxyz';
   let bits = 0n;
   for (const byte of sha256(publicKey).slice(0, 5)) bits = (bits << 8n) | BigInt(byte);
@@ -116,7 +126,12 @@ function nodeId(publicKey) {
   return id;
 }
 
-function verifyCertificate(encoded, pins, id, now) {
+/**
+ * Verify a base64 node certificate (spec/protocol.md §2.3.1) against `pins.cluster`, the
+ * pinned cluster public key, for the node `id` that `pins.id` names, at `now` in UTC
+ * milliseconds. Throws the pinned-identity error on any failure and returns nothing.
+ */
+export function verifyCertificate(encoded, pins, id, now) {
   try {
     if (!Number.isFinite(now) || !validId(id) || pins.id !== id) throw pinned();
     const raw = decode64(encoded);

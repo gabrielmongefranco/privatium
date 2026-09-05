@@ -37,6 +37,7 @@ pub mod local;
 pub mod lock;
 pub mod log;
 pub mod lua;
+pub mod pair;
 pub mod session;
 pub mod store;
 pub mod sys;
@@ -51,6 +52,7 @@ pub use http::{AuthLayer, Device, Peer};
 pub use identity::{Identity, NodeId};
 pub use lock::DataLock;
 pub use log::{AppLog, Durability, Op};
+pub use pair::{Pairing, PairingSnapshot};
 pub use store::{Restored, Schema, Snapshot, SnapshotId, SnapshotJob, Store, StoreError, Tier};
 pub use wire::{Body, Handler, Request, Response, url};
 
@@ -78,6 +80,10 @@ pub enum Error {
     /// Certificate validation or issuance failed without exposing its input.
     #[error(transparent)]
     Certificate(#[from] identity::CertificateError),
+    /// A step of pairing was refused (`spec/protocol.md §7`); the variant carries the
+    /// WebSocket close code the channel answers with.
+    #[error(transparent)]
+    Pair(#[from] pair::PairError),
     /// The platform has no data directory and none was given.
     #[error("no platform data directory is available; pass an explicit data directory")]
     NoDataDir,
@@ -282,8 +288,8 @@ pub enum Error {
         problem: String,
     },
 
-    /// An area of `spec/app-contract.md §6` this build does not implement — discovery,
-    /// pairing and sync, which `docs/roadmap.md` places in Phases 2 and 3. The method is
+    /// An area of `spec/app-contract.md §6` this build does not implement — discovery
+    /// and sync, which `docs/roadmap.md` places in Phases 2 and 3. The method is
     /// present with its signature and answers with this rather than succeeding at
     /// nothing, which an embedder would build on; `privatium --version` says `partial`
     /// for the same reason (`spec/cli.md §1`).
@@ -367,6 +373,9 @@ pub struct Node {
     /// Every loaded app, by slug (`app::App`). Owned here so the node-level snapshot,
     /// restore and maintenance reach every store through one map.
     apps: BTreeMap<String, App>,
+    /// The one open pairing window (`spec/data-dictionary.md §3.3`), in memory and never
+    /// written; `None` while pairing is closed (`spec/protocol.md §7.1`).
+    pairing: Option<Pairing>,
     /// The root's lock (`spec/protocol.md §3.1`). Last, so it is released after every
     /// log and store above it has closed.
     lock: DataLock,
@@ -468,6 +477,7 @@ impl Node {
             store,
             state,
             apps: BTreeMap::new(),
+            pairing: None,
             lock,
         })
     }
@@ -767,23 +777,15 @@ impl Node {
     // spec/app-contract.md §6 — the areas later phases fill. Present, never Ok.
     // -----------------------------------------------------------------------------------
 
-    /// mDNS, UDP and pairing (`spec/protocol.md §6`, `§7`) — Phase 2 of `docs/roadmap.md`.
+    /// mDNS and UDP discovery (`spec/protocol.md §6`) — Phase 2 of `docs/roadmap.md`.
     /// This build has none and says so ([`Error::Unimplemented`]) rather than returning
-    /// from a no-op, which an embedder would build on.
+    /// from a no-op, which an embedder would build on. Pairing (`§7`) is
+    /// [`pair`](Self::pair).
     pub fn serve_discovery(&mut self) -> Result<()> {
         Err(Error::Unimplemented {
             feature: "serve_discovery",
             phase: "2",
-            spec: "spec/protocol.md §6, §7",
-        })
-    }
-
-    /// Pair a device by PAKE (`spec/protocol.md §7`) — Phase 2. Never `Ok` here.
-    pub fn pair(&mut self) -> Result<()> {
-        Err(Error::Unimplemented {
-            feature: "pair",
-            phase: "2",
-            spec: "spec/protocol.md §7",
+            spec: "spec/protocol.md §6",
         })
     }
 

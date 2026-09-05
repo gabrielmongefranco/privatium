@@ -208,13 +208,16 @@ was paired MUST survive.
 | `attempts` | `INTEGER` | Max 5 |
 | `consumed_by` | `VARCHAR` | Device ID, nullable |
 | `consumed_at` | `TIMESTAMPTZ` | Nullable |
+| `generation` | `INTEGER` | Codes issued after the first, when five attempts exhausted one (`spec/protocol.md §7.5`); a surface showing the code compares it to notice a new one |
 
 Never written — neither to `data/` nor to `local/`, which keeps its two files
-(`spec/protocol.md §3`). The node holds the one open window in memory beside the PAKE
-secret `w` (`spec/protocol.md §7.4.1`) and drops the code's bytes the moment `w` is
-derived. A hash of a sixteen-bit code kept next to the secret that answers the handshake
-would protect nothing, so there is none. The protections are the 120-second TTL, the
-5-attempt cap, the per-source rate limit, and the PAKE.
+(`spec/protocol.md §3`). The node holds the one open window in memory: the code, which
+`GET /api/v1/pair` and the settings page show again on request (`spec/protocol.md
+§9.2`), and the PAKE secret `w` derived from it (`§7.4.1`). A hash of a sixteen-bit code
+kept next to the secret that answers the handshake would protect nothing, so there is
+none; dropping the code while keeping `w`, which is a function of it, would hide nothing
+either. The protections are the 120-second TTL, the 5-attempt cap, the per-source rate
+limit, and the PAKE.
 
 ### 3.4 `sys_app` — the app index
 

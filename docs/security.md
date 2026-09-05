@@ -11,10 +11,12 @@ Summary:  Threat model, protections, and honest statements of what is not protec
 
 Non-normative narrative. Normative requirements live in `spec/protocol.md §7–9`.
 
-**Current build:** Phase 2 has cluster identity and transport-independent session
-cryptography in Rust and JavaScript. The node still binds loopback. Pairing and the
-encrypted LAN channel remain planned for Phase 2; the network protections described
-below become available when that channel is connected to the request handler.
+**Current build:** Phase 2 has cluster identity, transport-independent session
+cryptography, and pairing — the code, the PAKE, the six messages and the device
+registry write — in Rust and JavaScript, as data a test drives. The node still binds
+loopback, and nothing listens at `/ws/pair` or `/ws` yet. The encrypted LAN channel and
+the pairing screen remain planned for Phase 2; the network protections described below
+become available when that channel is connected to the request handler.
 
 The session helpers reject invalid keys, expired or mismatched certificates, altered
 handshake transcripts, and unauthentic frames. A failed frame permanently closes its
@@ -229,7 +231,10 @@ one attempt per two seconds.
 An online attacker gets 5 guesses out of 65,536 — a 0.008% success rate — and must be
 attacking during a window the owner deliberately opened. Because the code goes through a
 PAKE rather than being sent as a bearer token, there is no offline dictionary attack: each
-guess costs a full network round trip.
+guess costs a full network round trip. A guess is counted the moment the node answers a
+device's first message, because that answer already reveals whether the code matched; a
+device that never sends its confirmation has still spent one, and five spent guesses
+replace the code inside the same window.
 
 For comparison, a 6-digit banking OTP is roughly 20 bits with far worse ergonomics and
 frequently a 5-minute window.

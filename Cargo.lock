@@ -991,6 +991,7 @@ dependencies = [
  "axum",
  "base64",
  "chacha20poly1305",
+ "curve25519-dalek",
  "directories",
  "ed25519-dalek",
  "full_moon",

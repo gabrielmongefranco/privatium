@@ -80,4 +80,17 @@ run privatium-core session \
   test_spec_8_1_a_static_key_that_is_not_the_pinned_one_fails_the_confirm \
   test_spec_8_3_unknown_revoked_and_missing_device_keys_are_refused
 
-echo "conformance: Phase 1, cluster identity, and session primitive items hold by name"
+# Pairing (§7): owner action, the node-generated 16-bit code with its two renderings and
+# the glyphs' variation selectors, the 120 s TTL and five attempts, no bearer code on the
+# wire, and the device row a success writes — replica declared, public key only.
+run privatium-core pair \
+  test_spec_7_1_pairing_is_closed_until_opened_and_closes_on_first_success \
+  test_spec_7_2_code_is_16_bits_rendered_as_four_glyphs_and_two_words \
+  test_spec_7_2_word_input_is_case_and_punctuation_insensitive \
+  test_spec_7_2_glyph_labels_are_accepted_as_input \
+  test_spec_7_3_glyph_table_is_normative_and_keeps_variation_selectors \
+  test_spec_7_5_code_expires_at_120s_and_five_attempts_issue_a_new_one \
+  test_spec_7_0_the_code_never_crosses_the_wire \
+  test_spec_7_4_pairing_completes_and_writes_the_device_row
+
+echo "conformance: Phase 1, cluster identity, session primitive, and pairing items hold by name"

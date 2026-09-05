@@ -331,17 +331,16 @@ fn test_spec_app_contract_6_snapshot_and_restore_reach_an_embedded_app() {
     assert_eq!(rows[0]["points"], json!("3"));
 }
 
-/// `§6` — `serve_discovery`, `pair`, `start_sync` and `sync_now` are present with their
+/// `§6` — `serve_discovery`, `start_sync` and `sync_now` are present with their
 /// signatures and answer with a typed error naming the phase they arrive in. Never
 /// `Ok`: a no-op that succeeded is what an embedder would build on
-/// (`docs/plans/phase-1.md`, M13).
+/// (`docs/plans/phase-1.md`, M13). `pair` is real and is held by `tests/pair.rs`.
 #[test]
 fn test_spec_app_contract_6_phase_2_methods_never_ok() {
     let root = tempfile::tempdir().unwrap();
     let mut node = open(root.path());
-    let outcomes: [(&str, privatium_core::Result<()>); 4] = [
+    let outcomes: [(&str, privatium_core::Result<()>); 3] = [
         ("serve_discovery", node.serve_discovery()),
-        ("pair", node.pair()),
         ("start_sync", node.start_sync()),
         ("sync_now", node.sync_now()),
     ];
