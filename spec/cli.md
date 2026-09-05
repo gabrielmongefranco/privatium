@@ -62,7 +62,13 @@ privatium [--port 8420] [--solo <slug>] [--no-discovery] [--open]
 ```
 
 Starts the node, mounts every enabled app, begins discovery (`spec/protocol.md §6`), and
-prints the LAN URL. `--open` additionally prints a QR code for pairing.
+prints the LAN URL — the address of the interface the default route uses; every other
+interface under `--verbose`. The node binds every interface on `[node] port`, and there
+is no flag to choose one; a loopback request stays the owner's own, with no pairing
+(`spec/protocol.md §8.4`). `--open` opens a browser on the node and prints a QR code of
+the LAN URL beside the URL in text; on a node with no paired device it also opens one
+pairing window as the node starts and prints the code beneath the QR code
+(`spec/protocol.md §7.1`), and once any device is paired it does that no more.
 
 A Phase 1 build — `pv/1 (partial: phase 1)`, `§1` — has no discovery and no pairing yet:
 it listens on loopback, prints that URL, and `--open` opens it in a browser. The LAN URL
@@ -359,10 +365,18 @@ is ordinarily "copy the folder back" (`docs/backup-and-restore.md`).
 privatium pair [--open] [--timeout 120]
 ```
 
-Opens pairing mode and prints the code as four emoji, two words, and a QR code. Closes
+Opens pairing mode and prints the code as four emoji with their labels, two words, and a
+QR code of the node's URL — never of the code — with the URL in text beside it. Closes
 after the timeout or the first success (`spec/protocol.md §7`).
 
-Pairing mode MUST NOT open without this command or its equivalent in the settings UI.
+`pair` opens no node of its own: a data directory is one process's (§1). It asks the
+running node over loopback — `POST /api/v1/pair` to open the window, `GET /api/v1/pair`
+to follow it (`spec/protocol.md §9.2`) — reports the device that paired and exits 0, or
+the expiry and exits 1; with no node running it is a runtime error saying to start one.
+`--open` opens the devices page in a browser.
+
+Pairing mode MUST NOT open without this command, its equivalent in the settings UI, or
+the first-run window of `§2` (`spec/protocol.md §7.1`).
 
 ---
 

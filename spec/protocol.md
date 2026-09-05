@@ -78,6 +78,14 @@ pair separately with every node — tedious with two machines and unworkable wit
   Base32. Distinct from any Node ID.
 - Every node holds the cluster private key. See §2.3.3 for the trade-off.
 
+A node generates its cluster keypair **on its first start**, before anything can pair
+with it, so that the first device to pair pins a cluster key (§2.3.2) and a second node
+admitted later needs no re-pairing. A node that is afterwards admitted to another cluster
+(§2.3.1) discards the one it founded — permitted only while it has paired nothing and
+admitted nobody, which is what makes a founded-and-empty cluster disposable — and
+tombstones its own `sys_cluster` row, so that exactly one remains
+(`spec/data-dictionary.md §3.1b`).
+
 #### 2.3.1 Admitting a node
 
 A new node joins by pairing with an existing node using the ordinary §7 flow. The owner
@@ -93,6 +101,14 @@ On success the admitting node sends:
 `expires_at` MUST be `issued_at + 180 days`. Certificates renew automatically whenever two
 nodes complete a sync, so an in-use node never expires. A node offline longer than 180 days
 MUST be re-admitted.
+
+The signed message is the JSON object `{"node_id","node_pub","cluster_id","issued_at",
+"expires_at"}` with the keys in that order, no whitespace, UTF-8 — `node_pub` in base64,
+the two instants spelled as §4.1 spells `ts`. `sig` is the base64 Ed25519 signature over
+those bytes, and the certificate is that object with `sig` added; `sys_node.cert` holds it
+base64-encoded (`spec/data-dictionary.md §3.1`). Every node holds the cluster key, so a
+node renews its own certificate whenever fewer than ninety days remain — at start, and
+after every completed sync.
 
 #### 2.3.2 What devices pin
 
@@ -429,8 +445,9 @@ A node MUST advertise the parent type and SHOULD advertise one subtype per enabl
 whose slug is ≤ 15 characters. Slugs longer than 15 characters MUST NOT be advertised as
 subtypes (DNS label constraint) and this MUST be surfaced as a warning at app load.
 
-**Instance name:** the owner-set display name, ≤ 63 bytes UTF-8. Collision handling is the
-mDNS stack's responsibility; implementations MUST NOT invent their own suffixing.
+**Instance name:** the owner-set display name — `sys_node.display_name`, set on the node's
+settings page, the Node ID while none is set (§9.2) — ≤ 63 bytes UTF-8. Collision handling
+is the mDNS stack's responsibility; implementations MUST NOT invent their own suffixing.
 
 **TXT record keys:**
 
@@ -533,7 +550,8 @@ For networks with multicast filtered or AP client isolation enabled.
 - Response: unicast UDP to the source, payload `PVDISCO1` + the same nonce + a JSON object
   with the same key set as the TXT record.
 - Nodes MUST rate-limit responses to 1 per source IP per second.
-- Nodes MUST NOT respond to a probe arriving from outside RFC 1918 / RFC 4193 space.
+- Nodes MUST NOT respond to a probe arriving from outside RFC 1918 / RFC 4193 space,
+  link-local space, or loopback.
 
 ### 6.5 Running discovery services concurrently
 
@@ -623,6 +641,12 @@ Property 2 is what excludes them, and it does so on every path including plain H
 Pairing MUST NOT be possible unless the owner has explicitly opened pairing mode on the
 node (a button press, a CLI flag, or first-run). Physical presence is the authorization.
 
+*First-run* means a node whose `sys_device` holds no row but its own. `privatium --open`
+on such a node opens one window as it starts and prints the code beside the QR code, and
+never does so again once any device is paired (`spec/cli.md §2`); after that, pairing
+opens only through `privatium pair` or the settings page. A QR code encodes the node's
+URL and never the code: the code is on the screen, for the person standing there.
+
 ### 7.2 The code
 
 The pairing secret is **16 bits** of CSPRNG output. It is rendered two ways, both of which
@@ -635,6 +659,14 @@ MUST be displayed simultaneously and both of which MUST be accepted as input:
 
 Both encode the identical 16-bit integer. Word input MUST be case-insensitive and MUST
 ignore spaces, hyphens, and punctuation.
+
+The 256-word list is `spec/pairing-words.txt`, one word per line, index order normative;
+changing it is a breaking protocol change, exactly as for the glyph set (§7.3). It was
+drawn once from the EFF Short Wordlist 2.0 (CC BY 3.0 US, attributed in `NOTICE`): the
+words of four to six letters, in alphabetical order, the first 256 — three words unsuited
+to saying aloud skipped on review, the next taking their places. Every word is distinct in its
+first three letters and at edit distance three from every other, so a screen-reader user
+can abbreviate and a typo is caught rather than mis-decoded.
 
 Implementations MUST NOT allow the owner to choose the code. It is always node-generated.
 
@@ -756,7 +788,8 @@ After a successful pairing a client stores its own long-term keypair and the pin
 public key, and uses them on every subsequent connection with no code and no prompt. This is
 the smart-television model: pair once, trusted thereafter.
 
-- Browsers MUST store these under the page origin (IndexedDB or equivalent, §2.2).
+- Browsers MUST store these under the page origin — `localStorage` or IndexedDB (§2.2);
+  the reference client keeps them in `localStorage`, under one key.
 - Native clients MUST use platform secure storage — Keychain, Keystore, or the OS keyring.
 - A client that loses this material MUST re-pair. Implementations MUST NOT provide a recovery
   path that bypasses pairing.
@@ -828,6 +861,12 @@ AEAD   = ChaCha20-Poly1305, 96-bit nonce = 32-bit direction tag || 64-bit counte
 - Browser clients MUST use audited pure-JS implementations. `crypto.subtle` is unavailable
   on plain-HTTP origins and MUST NOT be depended upon.
 - `crypto.getRandomValues` IS available on insecure origins and MUST be the CSPRNG source.
+
+A node's X25519 static key is derived from its node key and never stored:
+`HKDF-SHA256(ikm = node private key, salt = none, info = "privatium/x25519/v1")` — the
+derivation its CSRF key already uses, with its own `info` string, so `identity/` holds no
+file for it (§3). A device generates an X25519 keypair beside its Ed25519 one and stores
+both (§7.6).
 
 ### 8.1 Pinned key mismatch
 
@@ -965,11 +1004,16 @@ internal link MUST go through `url()` or `pv.url()` rather than a literal path.
 |---|---|---|---|
 | GET | `/api/v1/health` | none | Liveness. Returns `{"v":1,"id":"..."}` only. |
 | GET | `/api/v1/manifest` | none | Node ID, display name, app index, `pair` flag (below). No data. |
+| POST | `/api/v1/pair` | owner | Open a pairing window: `{"ttl": seconds}` in; the code in both renderings, the URL and `expires_at` out (§7.1, `spec/cli.md §8`) |
+| GET | `/api/v1/pair` | owner | The open window, the same object — or `null` |
 | GET | `/ws/pair` | code | Pairing handshake |
 | GET | `/ws` | session | Encrypted application channel |
 | GET | `/api/v1/sync/heads?app=` | session | `{dev: hi_lam}` per device |
 | GET | `/api/v1/sync/pull?app=&dev=&after=` | session | NDJSON stream of raw event lines |
 | POST | `/api/v1/sync/push` | session | NDJSON body of raw event lines |
+
+`owner` is the node's own standing of §8.4 — a loopback request or an in-process call —
+the only caller that may open pairing; a session is refused whatever its device.
 
 Unauthenticated endpoints MUST expose no application data of any kind. `/api/v1/manifest`
 returns app slugs and titles because discovery requires them; it MUST NOT return row

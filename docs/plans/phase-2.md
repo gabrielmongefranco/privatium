@@ -29,13 +29,12 @@ numbering. A milestone is done when its checklist passes and its named tests are
 all three platforms, not when it compiles. Write the named tests first; the milestone's
 shape is in them. Do not start M(n+1) before M(n) merges.
 
-Section 2 lists the decisions this plan makes that the spec did not. Two of them — the
-channel (§2.1) and the PAKE (§2.4) — are **decided**, by the owner, and the spec now
-carries them; §2.10 follows from the first. The rest change the wire or the security
-posture, which `AGENTS.md` says is asked first. **Confirm them before M14.** Section 3
-lists the spec gaps found while writing this plan: the rows the two decisions settled are
-fixed and say so; each of the others is fixed in the milestone that meets it, in that
-milestone's PR, with `skills/` regenerated in the same change (`docs/skills.md §7`).
+Section 2 lists the decisions this plan makes that the spec did not. **All eleven are
+decided**, by the owner, and the spec carries every one; each section ends with where.
+Section 3 is the record of the spec gaps found while writing this plan — all fixed, as
+Phase 1's §3 was, so an implementer is not handed a specification they have been told is
+wrong. A milestone edits those sections only where the code proves them wrong, in the PR
+that finds it, with `skills/` regenerated in the same change (`docs/skills.md §7`).
 
 The Phase 1 rule stands: do not invent CLI flags, `sys_*` column values, routes, or config
 keys. Every one of those surfaces is specified. Where Phase 2 needs a new one, §3 names the
@@ -72,9 +71,9 @@ If a Phase 2 change lets a second *node* hold this node's data, it is Phase 3's.
 
 ## 2. Decisions this plan makes — confirm before M14
 
-Eleven. §2.1 and §2.4 are decided and in the spec; §2.10 follows from §2.1. Of the
-rest, §2.2, §2.3, §2.5 and §2.8 change the wire or the posture, and §2.6, §2.7, §2.9 and
-§2.11 are shape.
+Eleven, all decided. §2.1, §2.2, §2.3, §2.4, §2.5 and §2.8 change the wire or the
+posture; §2.6, §2.7, §2.9 and §2.11 are shape; §2.10 follows from §2.1. Each ends with
+the sections that now carry it.
 
 ### 2.1 The encrypted channel is an adapter over `core::handle`, and it carries everything a browser does on the LAN except the bootstrap set — DECIDED
 
@@ -133,7 +132,7 @@ the request and response kinds, the integrity rule — and `§8.4` is the bootst
 `docs/security.md §3–§4` and `docs/architecture.md §2.6` describe it. M15 and M17 hold
 the code to those sections and edit them only where implementation proves them wrong.*
 
-### 2.2 The node binds every interface, and adds no flag to say so
+### 2.2 The node binds every interface, and adds no flag to say so — DECIDED
 
 Phase 1 bound loopback because it had no session layer; Phase 2 has one, so the bind is
 `0.0.0.0` and `[::]` on `[node] port`, with the IPv6 listener skipped where the platform
@@ -153,7 +152,9 @@ The first non-loopback bind is where Windows Defender prompts (`docs/deployment.
 the helper that opens the port is Phase 6, and the prompt is documented rather than
 worked around.
 
-### 2.3 The cluster is founded now, and devices pin the cluster key from the first pairing
+*Decided: `cli.md §2` and `protocol.md §8.4`.*
+
+### 2.3 The cluster is founded now, and devices pin the cluster key from the first pairing — DECIDED
 
 `protocol.md §2.3.2` has devices pin the *cluster* public key, and `docs/roadmap.md` Phase
 3's first bullet — a second node admitted with one pairing, the phone reaching it
@@ -167,6 +168,13 @@ first Phase 2 run, not a migration.
 The certificate's signed bytes are the canonical form of §3 row 4. The founding node
 renews its own certificate whenever fewer than ninety days remain, at start; renewal on
 sync (`§2.3.1`) is Phase 3's, since a sync is.
+
+A node that founded a cluster alone can still be admitted to another one later: while it
+has paired nothing and admitted nobody its cluster is empty and disposable, and joining
+discards it and tombstones its `sys_cluster` row, so one row remains. That is what keeps
+"found at first start" from making every node the first node.
+
+*Decided: `protocol.md §2.3` and `§2.3.1`, `data-dictionary.md §3.1b`.*
 
 ### 2.4 The PAKE is SPAKE2 as RFC 9382 specifies it, over edwards25519, written on both sides from vetted primitives — DECIDED
 
@@ -194,19 +202,23 @@ ciphersuite, the identities, `w`, the transcript encodings and the key schedule;
 is the message sequence M16 implements. R9 stands: the vector file is what holds the two
 implementations to one another.*
 
-### 2.5 The word list is 256 words from the EFF short wordlist, checked in as normative
+### 2.5 The word list is 256 words from the EFF short wordlist, checked in as normative — DECIDED
 
-`§7.2` names "the 256-word list" and no list exists anywhere. The list is wire meaning —
+`§7.2` named "the 256-word list" and no list existed anywhere. The list is wire meaning —
 `amber otter` must decode to the same sixteen bits on every implementation — so it is a
 spec artefact, `spec/pairing-words.txt`, one word per line, index order normative, and
 changing it is a breaking protocol change exactly as `§7.3` says of the glyphs. The words
-come from the EFF short wordlist #2 (1,296 words of at most five letters, every word
-distinct in its first three letters and at edit distance three from every other, which is
-what lets a screen-reader user abbreviate and lets a typo be caught rather than
-mis-decoded): the first 256 in alphabetical order that are four or five letters long. The
-licence is confirmed and attributed in `NOTICE` at M16.
+come from the EFF Short Wordlist 2.0 (1,296 words, every one distinct in its first three
+letters and at edit distance three from every other, which is what lets a screen-reader
+user abbreviate and lets a typo be caught rather than mis-decoded): the words of four to
+six letters, in alphabetical order, the first 256, with three words unsuited to saying
+aloud skipped on review. The first draft of the rule said four or five letters and yields
+only 193, which is why the rule says six.
 
-### 2.6 The node's X25519 static key is derived from the node key, as the CSRF key is
+*Decided, and the file is written — `spec/pairing-words.txt`, `abyss` first.
+`protocol.md §7.2` names it and `NOTICE` attributes it (CC BY 3.0 US).*
+
+### 2.6 The node's X25519 static key is derived from the node key, as the CSRF key is — DECIDED
 
 `§7.4` and `§8` use an X25519 static key; `§3`'s layout has no file for one. Rather than
 add a file the spec does not show, M14 derives it: `HKDF-SHA256(ikm = node private key,
@@ -215,7 +227,9 @@ key, with a new `info` string because one purpose is one string. Deterministic, 
 stored, wiped on drop. A browser device generates a real X25519 keypair beside its
 Ed25519 one, since it has storage to keep both in.
 
-### 2.7 Pairing state lives in memory, and there is no Argon2
+*Decided: `protocol.md §8`.*
+
+### 2.7 Pairing state lives in memory, and there is no Argon2 — DECIDED
 
 `data-dictionary.md §3.3` gives `sys_pairing` a `code_hash` "so that a crash dump or stray
 log does not contain a live code". The node has to hold the PAKE secret `w` for the whole
@@ -225,7 +239,9 @@ M16 keeps one pairing at a time in memory — `w`, `created_at`, `expires_at`, `
 disk: `local/` keeps its two files (`§3`), and a code that never touched a file needs no
 hash. §3 row 6 amends `§3.3` to say so. No `argon2` crate.
 
-### 2.8 `privatium pair` asks the running node over loopback, and `--open` on a node with no paired device opens pairing once
+*Decided: `data-dictionary.md §3.3`.*
+
+### 2.8 `privatium pair` asks the running node over loopback, and `--open` on a node with no paired device opens pairing once — DECIDED
 
 A data root is one process's (`§3.1`), so `privatium pair` cannot open the node the
 daemon holds; `spec/cli.md §1` already lists it among the commands that take no lock. It
@@ -246,7 +262,9 @@ and opens nothing else.
 The QR code encodes the node's LAN URL and nothing more — never the code. The code is on
 the screen for the person standing there, which is `§7.1`'s authorization.
 
-### 2.9 Browser keys live in `localStorage` under the origin, and a browser without JavaScript cannot pair
+*Decided: `protocol.md §7.1` and `§9.2`, `cli.md §2` and `§8`.*
+
+### 2.9 Browser keys live in `localStorage` under the origin, and a browser without JavaScript cannot pair — DECIDED
 
 `§2.2` allows `localStorage` or IndexedDB. `pv.js` already keeps the outbox in
 `localStorage`; the device keys, the pinned cluster public key and the node's identity go
@@ -254,6 +272,8 @@ beside it under one key, `pv:device`, and loss means re-pairing with no other pa
 (`§7.6`). The bootstrap page carries a `<noscript>` block saying that pairing needs
 JavaScript and that the node at the keyboard needs none — every Phase 1 no-JavaScript
 path holds on loopback exactly as before, since loopback never sees the channel.
+
+*Decided: `protocol.md §7.6` and `§8.4`.*
 
 ### 2.10 What is claimed about program authenticity after pairing
 
@@ -270,7 +290,7 @@ browser has it. `docs/roadmap.md` Phase 4's stub carries the pointer.
 *Follows from §2.1 and is written: `protocol.md §7.7` and `docs/security.md §4` say what
 is pinned after pairing and what is not.*
 
-### 2.11 Two small shapes: `peers`, and what `--version` claims
+### 2.11 Two small shapes: `peers`, and what `--version` claims — DECIDED
 
 `spec/lua-api.md §3.4` calls `pv.node().peers` "the number of paired peers" and
 `spec/data-api.md §4` calls `/api/node`'s the "sync peer count". Both mean **paired
@@ -280,39 +300,41 @@ nodes** — active `sys_device` rows with `kind = 'node'` other than this one �
 `privatium --version` prints `pv/1 (partial: phase 2)` from M19: the `§13` items Phase 2
 cannot claim are all sync's and the remote transports' (§7).
 
+*Decided: `lua-api.md §3.4` and `data-api.md §4`; the version string is `cli.md §1`'s
+rule applied.*
+
 ---
 
-## 3. Spec gaps found — fixed in the milestone that meets them
+## 3. Spec gaps found — all fixed, none deferred
 
-Rows marked **fixed** were made when §2.1 and §2.4 were decided, and the milestone named
-holds the code to them. Each other row waits for its decision and is then made in the
-named milestone's PR; `cargo xtask gen-skill-reference` runs in the same change either
-way.
+Every row is fixed, and the milestone named is the one that holds the code to it. As in
+Phase 1, this is the record of what changed and why, not a to-do list;
+`cargo xtask gen-skill-reference` ran with the edits.
 
 | # | Was | Proposed | Files | Milestone |
 |---|---|---|---|---|
 | 1 | `§7.4` gives the handshake's six steps and no message shapes, encodings or close codes | The messages of M16 spelled out: the node's hello, the client's `pA` with its identity, the node's `pB` and `cB`, the client's `cA`, the two key exchanges over `K_pair`, and the WebSocket close codes for *closed*, *wrong code* and *exhausted* | `protocol.md §7.4.1, §7.4.2` | **Fixed**; M16 |
 | 2 | `§8` gives the key schedule and says nothing about how a session starts on `/ws`, what a frame is, or what a request or response looks like inside one | The handshake messages, the frame — `nonce = direction ‖ counter`, one AEAD ciphertext per WebSocket binary message, no associated data — the request and response frames of §2.1 with their `id` and `kind`, the confirm frame, and the rule that a side closes at 2³² frames rather than rekeying | `protocol.md §8.3` | **Fixed**; M15, M17 |
-| 3 | `§7.2` says "the 256-word list" and no list exists | `spec/pairing-words.txt`, index order normative, produced by the rule in §2.5; `§7.2` names it and says a change is a breaking protocol change | `protocol.md §7.2`, `spec/pairing-words.txt` | M16 |
-| 4 | `§2.3.1` signs "the other fields" of the certificate and never says which bytes | The signed message is the JSON object `{"node_id","node_pub","cluster_id","issued_at","expires_at"}` in that key order, no whitespace, UTF-8; `sig` is base64 of the Ed25519 signature; the certificate is that object plus `sig`, and `sys_node.cert` holds it base64-encoded | `protocol.md §2.3.1` | M14 |
-| 5 | `§9.2` has no route that opens pairing; `cli.md §8` does not say how `pair` reaches a running node, or what happens without one | `POST /api/v1/pair` (`{"ttl": seconds}`, answers the code, the URL and `expires_at`) and `GET /api/v1/pair` (the open window or `null`), this node's own device only; `pair` uses them and is a runtime error with no node running; `--open`'s first-run window per §2.8 | `protocol.md §9.2`, `cli.md §2, §8` | M16, M19 |
-| 6 | `§3.3` `sys_pairing` holds an Argon2id `code_hash` and a `salt` | The row is held in memory by the node for the window and never written; it holds the PAKE secret rather than the code; the hash and salt columns go | `data-dictionary.md §3.3` | M16 |
+| 3 | `§7.2` says "the 256-word list" and no list exists | `spec/pairing-words.txt`, index order normative, produced by the rule in §2.5; `§7.2` names it and says a change is a breaking protocol change | `protocol.md §7.2`, `spec/pairing-words.txt`, `NOTICE` | **Fixed**; M16 |
+| 4 | `§2.3.1` signs "the other fields" of the certificate and never says which bytes | The signed message is the JSON object `{"node_id","node_pub","cluster_id","issued_at","expires_at"}` in that key order, no whitespace, UTF-8; `sig` is base64 of the Ed25519 signature; the certificate is that object plus `sig`, and `sys_node.cert` holds it base64-encoded | `protocol.md §2.3, §2.3.1`, `data-dictionary.md §3.1b` | **Fixed**; M14 |
+| 5 | `§9.2` has no route that opens pairing; `cli.md §8` does not say how `pair` reaches a running node, or what happens without one | `POST /api/v1/pair` (`{"ttl": seconds}`, answers the code, the URL and `expires_at`) and `GET /api/v1/pair` (the open window or `null`), this node's own device only; `pair` uses them and is a runtime error with no node running; `--open`'s first-run window per §2.8 | `protocol.md §9.2`, `cli.md §2, §8` | **Fixed**; M16, M19 |
+| 6 | `§3.3` `sys_pairing` holds an Argon2id `code_hash` and a `salt` | The row is held in memory by the node for the window and never written; it holds the PAKE secret rather than the code; the hash and salt columns go | `data-dictionary.md §3.3` | **Fixed**; M16 |
 | 7 | `data-api.md` says "Cookies carry [the session]" and `§5` says "`fetch` works fine" | On a plain-HTTP origin from a non-loopback address the session is the channel and nothing else: no cookie, and a plain `fetch` of the API is refused, naming `pv.js`; on loopback, in a native shell and on an origin `§8.2` exempts, `fetch` works as written | `data-api.md` preamble, `§5` | **Fixed**; M17 |
 | 8 | `§7.7` says "any later substitution is refused (§8.1)"; `§8.1` is about keys, and a script on plain HTTP is not a key | `§7.7` says what is pinned after pairing — the session, and every file the page names, by integrity — and what is not, per §2.10; `docs/security.md §4` carries the same | `protocol.md §7.7`, `docs/security.md §4` | **Fixed**; M17 |
 | 9 | `§9.1` reserves five prefixes; `/ws` and `/ws/pair` are routes of `§9.2` and `ws` a reserved slug of `§1.1`, but `/ws` is in no prefix table and the router does not know it | `/ws` joins the table as the framework's; the reserved slug already covers the mount | `protocol.md §9.1` | **Fixed**; M17 |
 | 17 | `§13` had no line for what plain HTTP may serve, or for the integrity rule | Two items, `§8.4` and `§8.3` | `protocol.md §13` | **Fixed**; M17 |
 | 18 | `§7.4` step 5 had the client pin "the node's key" while `§2.3.2` and `§7.6` pin the cluster's | Step 5 says the cluster public key and the node's certificate | `protocol.md §7.4` | **Fixed**; M16 |
-| 10 | `lua-api.md §3.4` `peers` "paired peers"; `data-api.md §4` "sync peer count" | Both are the paired nodes, per §2.11 | `lua-api.md §3.4`, `data-api.md §4` | M19 |
-| 11 | `§6.4` refuses a probe "from outside RFC 1918 / RFC 4193 space"; loopback is neither, and the responder's test has nowhere else to probe from | Loopback and link-local are accepted too | `protocol.md §6.4` | M18 |
-| 12 | `§7.1` allows pairing to open on "first-run" and says nothing about what that is | §2.8's definition | `protocol.md §7.1`, `cli.md §2` | M19 |
-| 13 | `app-contract.md §6` lists `pair` and the Phase 1 signature is `pair(&mut self) -> Result<()>`, which cannot hand back a code | `pair(&mut self, ttl: Duration) -> Result<Pairing>`; `serve_discovery(&mut self) -> Result<()>` stays | `app-contract.md §6` | M16 |
-| 14 | `cli.md §2` "prints the LAN URL" — a machine has several | The default route's, and the rest under `--verbose` (§2.2) | `cli.md §2` | M17 |
-| 15 | `§3.2` `sys_device.replica` for a browser is defined; `last_seen_at` "at most hourly" names no writer | The channel handshake writes it, and a session older than an hour writes it again on its next request | `data-dictionary.md §3.2` | M19 |
-| 16 | `§6.1` instance name is "the owner-set display name" and no surface sets one | The node settings page sets `sys_node.display_name`; while unset the Node ID stands in, as `§9.2` already says | `protocol.md §6.1` | M19 |
+| 10 | `lua-api.md §3.4` `peers` "paired peers"; `data-api.md §4` "sync peer count" | Both are the paired nodes, per §2.11 | `lua-api.md §3.4`, `data-api.md §4` | **Fixed**; M19 |
+| 11 | `§6.4` refuses a probe "from outside RFC 1918 / RFC 4193 space"; loopback is neither, and the responder's test has nowhere else to probe from | Loopback and link-local are accepted too | `protocol.md §6.4` | **Fixed**; M18 |
+| 12 | `§7.1` allows pairing to open on "first-run" and says nothing about what that is | §2.8's definition | `protocol.md §7.1`, `cli.md §2` | **Fixed**; M19 |
+| 13 | `app-contract.md §6` lists `pair` and the Phase 1 signature is `pair(&mut self) -> Result<()>`, which cannot hand back a code | `pair(&mut self, ttl: Duration) -> Result<Pairing>`; `serve_discovery(&mut self) -> Result<()>` stays | `app-contract.md §6` | **Fixed**; M16 |
+| 14 | `cli.md §2` "prints the LAN URL" — a machine has several | The default route's, and the rest under `--verbose` (§2.2) | `cli.md §2` | **Fixed**; M17 |
+| 15 | `§3.2` `sys_device.replica` for a browser is defined; `last_seen_at` "at most hourly" names no writer | The channel handshake writes it, and a session older than an hour writes it again on its next request | `data-dictionary.md §3.2` | **Fixed**; M19 |
+| 16 | `§6.1` instance name is "the owner-set display name" and no surface sets one | The node settings page sets `sys_node.display_name`; while unset the Node ID stands in, as `§9.2` already says | `protocol.md §6.1` | **Fixed**; M19 |
 
 Two are additions rather than corrections and deserve to be called out: **`/api/v1/pair`**
-widens `§9.2`, and **`spec/pairing-words.txt`** is a new normative file. Reject either and
-§2.8 or §2.5 needs rewriting rather than quietly proceeding.
+widens `§9.2`, and **`spec/pairing-words.txt`** is a new normative file. Both were the
+owner's call (§2.8, §2.5).
 
 **The rule from Phase 1 stands:** when implementation reveals a further gap, fix the spec
 in the PR that found it. Do not accumulate a list and do not code around it.
@@ -434,8 +456,8 @@ copy), `test_spec_2_1_x25519_static_is_derived_and_stable`,
 `test_identity_second_run_keeps_the_cluster_and_the_node_id`. Unix only:
 `test_spec_2_3_cluster_key_mode_0600`.
 
-**Documentation:** `protocol.md §2.3.1` (row 4); `docs/backup-and-restore.md §1` names
-`cluster.key` beside `node.key`.
+**Documentation:** `protocol.md §2.3, §2.3.1` and `data-dictionary.md §3.1b` are written
+(row 4); `docs/backup-and-restore.md §1` names `cluster.key` beside `node.key`.
 
 ---
 
@@ -561,9 +583,9 @@ message types; the row's every column checked; `replica` false),
 `pake.test.mjs` (the vectors; a full exchange against the Rust vectors' `B` side),
 `client.test.mjs` gains the device ID derivation against a Rust vector.
 
-**Documentation:** `protocol.md §7.2` (row 3) — `§7.4.1` and `§7.4.2` are written (rows
-1, 18) and are edited only where the code proves them wrong; `data-dictionary.md §3.3`
-(row 6); `app-contract.md §6` (row 13); `NOTICE` for the word list.
+**Documentation:** `protocol.md §7.2, §7.4.1, §7.4.2`, `data-dictionary.md §3.3`,
+`app-contract.md §6`, `spec/pairing-words.txt` and `NOTICE` are written (rows 1, 3, 6, 13,
+18) and are edited only where the code proves them wrong.
 
 ---
 
@@ -641,10 +663,10 @@ text nor a column name — the roadmap's Wireshark bullet, automated;
 the client builds is on its own origin). `client.test.mjs` also drives the extension
 against the `pv.test.mjs` harness with a fake channel.
 
-**Documentation:** `protocol.md §7.7, §8.3, §8.4, §9.1, §13`, `data-api.md`,
-`docs/security.md §3, §4`, `docs/architecture.md §2.6` and the security and Tier 2 skills
-are written (rows 2, 7, 8, 9, 17) and are edited only where the code proves them wrong;
-`cli.md §2` (row 14); `docs/deployment.md §4` says the Windows prompt now happens;
+**Documentation:** `protocol.md §7.7, §8, §8.3, §8.4, §9.1, §13`, `cli.md §2`,
+`data-api.md`, `docs/security.md §3, §4`, `docs/architecture.md §2.6` and the security and
+Tier 2 skills are written (rows 2, 7, 8, 9, 14, 17) and are edited only where the code
+proves them wrong; `docs/deployment.md §4` says the Windows prompt now happens;
 `apps/sketch/README.md`.
 
 ---
@@ -698,9 +720,9 @@ multicast, it is gated by `PRIVATIUM_TEST_MDNS=1` in the same PR and stays in th
 pass, with the CI log as the evidence (risk R10). In `crates/privatium/tests/cli.rs`:
 `test_cli_no_discovery_starts_nothing`.
 
-**Documentation:** `protocol.md §6.4` (row 11); `docs/deployment.md §4.1` (UDP 5353 and
-52525 both named); `docs/connectivity.md §1` (the browser row's "owner types the IP"
-becomes "scans the QR").
+**Documentation:** `protocol.md §6.4` is written (row 11); `docs/deployment.md §4.1` (UDP
+5353 and 52525 both named); `docs/connectivity.md §1` (the browser row's "owner types the
+IP" becomes "scans the QR").
 
 ---
 
@@ -765,9 +787,10 @@ twenty seconds; the word path with VoiceOver or TalkBack and images disabled; ke
 through the devices page and the code page; 200 % zoom; Wireshark beside the automated
 proxy test.
 
-**Documentation:** `protocol.md §6.1, §7.1` (rows 12, 16); `cli.md §2, §8`;
-`data-dictionary.md §3.2`; `lua-api.md §3.1, §3.4` and `data-api.md §4` (row 10);
-`README.md` quick start step 2 and the status paragraph; `docs/security.md §2.2`;
+**Documentation:** `protocol.md §6.1, §7.1, §9.2`, `cli.md §2, §8`, `data-dictionary.md
+§3.2`, `lua-api.md §3.4` and `data-api.md §4` are written (rows 5, 10, 12, 15, 16);
+`lua-api.md §3.1`'s sentence on `device` drops its Phase 1 clause; `README.md` quick start
+step 2 and the status paragraph; `docs/security.md §2.2`;
 `skills/privatium-overview`, `-tier1-lua`, `-tier2-web`, `-tier3-rust`, `-security`,
 `-accessibility` (the pairing screen's two paths, now real); `apps/*/README.md` where
 they name Phase 2; `spec/protocol.md`'s status line.
@@ -864,12 +887,12 @@ test only finds the strings it was told to look for.
 
 | # | Branch | Depends on | Spec edits |
 |---|---|---|---|
-| 16 | `m14-cluster-identity` | Phase 1 | §3 row 4 |
-| 17 | `m15-session` | M14 | row 2 (the frame) |
-| 18 | `m16-pairing` | M15 | rows 1, 3, 6, 13 |
-| 19 | `m17-channel-lan` | M16 | rows 2 (the handshake), 7, 8, 9, 14 |
-| 20 | `m18-discovery` | M17 | row 11 |
-| 21 | `m19-devices-shell` | M18 | rows 5, 10, 12, 15, 16; roadmap: tick Phase 2 |
+| 16 | `m14-cluster-identity` | Phase 1 | as found — §3 is written |
+| 17 | `m15-session` | M14 | as found |
+| 18 | `m16-pairing` | M15 | as found |
+| 19 | `m17-channel-lan` | M16 | as found |
+| 20 | `m18-discovery` | M17 | as found |
+| 21 | `m19-devices-shell` | M18 | as found; roadmap: tick Phase 2 |
 | 22 | `phase2-hardening` | M19 | as found |
 
 ---

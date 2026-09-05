@@ -144,9 +144,12 @@ signs for the joiner — plus the cluster public key and ID. The joiner writes
 `identity/cluster.key` (`0600`, `create_new`), `cluster.pub`, `node.cert`, amends its own
 `sys_node` with `cluster_id`, `cert`, `cert_expires_at`, and records the admitting node's
 URL as its first endpoint (§2.7). It writes no `sys_cluster` row — the founder's arrives by
-sync, keyed by the same ID, and two writers of one row is `§4.1`'s silent merge. A node
-that already belongs to a cluster refuses to join another; re-founding is the documented
-procedure. §3 row 4.
+sync, keyed by the same ID, and two writers of one row is `§4.1`'s silent merge — and
+tombstones the row of the cluster it founded at its own first start (`protocol.md §2.3`),
+so one row remains. The rule for who may join: a node that has paired a device or
+admitted a node refuses to join another cluster; a lone node, its founding cluster empty,
+joins and discards the `identity/cluster.*` it founded. Re-founding is the documented
+procedure for everything else. §3 row 4.
 
 ### 2.6 Certificates renew after any sync, by the node itself, under ninety days
 

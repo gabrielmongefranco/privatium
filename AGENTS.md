@@ -9,9 +9,10 @@ example applications that double as the reference templates. Phase 1 of `docs/ro
 is implemented — docs/plans/phase-1.md is its plan of record, M0 through M13, and the git
 history names the milestones landed; every Phase 1 acceptance bullet names the test that
 holds it. `docs/plans/phase-2.md` and `docs/plans/phase-3.md` are the plans for the next
-two phases; each opens with decisions the owner confirms before its first milestone, and
-its §3 lists the spec edits those milestones make. `docs/plans/phase-4.md` onward are
-stubs to be written from `docs/roadmap.md` when their turn comes.
+two phases. Phase 2's decisions are made and written into `spec/`; Phase 3's are
+confirmed before M20, and its §3 lists the spec edits those milestones make.
+`docs/plans/phase-4.md` onward are stubs to be written from `docs/roadmap.md` when their
+turn comes.
 
 **If you are asked to write code, read `spec/protocol.md` and `spec/app-contract.md`
 first, in full.** They are the contract. Deviating from them silently is the single worst

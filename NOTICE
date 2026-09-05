@@ -31,3 +31,7 @@ OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 Change Log
 See the full change log under this repository's releases page.
+EFF Short Wordlist 2.0 (https://www.eff.org/dice), from which the 256 pairing words of
+spec/pairing-words.txt are drawn by the rule spec/protocol.md §7.2 states. Copyright (c)
+Electronic Frontier Foundation. Licensed under the Creative Commons Attribution 3.0 United
+States License (CC BY 3.0 US).

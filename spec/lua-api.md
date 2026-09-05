@@ -235,7 +235,9 @@ pv.on('append', function(ev) ... end)   -- server-side reaction to any event
 
 `pv.node()`: `id` is the Node ID; `name` is `sys_node.display_name`, or the Node ID while
 the owner has set none (as `spec/protocol.md §9.2`'s manifest does); `solo` is whether the
-node runs in solo mode; `peers` is the number of paired peers, `0` until pairing exists;
+node runs in solo mode; `peers` is the number of paired **nodes** — active `sys_device`
+rows with `kind = 'node'` other than this one, so a paired phone or browser does not
+count — and is `0` until a second node is admitted;
 `restore_tier` is `1`, `2` or `3` for the tier that built this app's cache
 (`spec/protocol.md §5.3`), or `nil` for an app this node has not materialized.
 

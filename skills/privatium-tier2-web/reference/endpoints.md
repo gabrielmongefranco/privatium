@@ -291,8 +291,9 @@ An app with no `schema.sql` has empty `tables` and `views`.
 
 ### `GET /a/<slug>/api/node`
 
-Node ID, device ID, display name, the app's slug, `solo` flag, sync peer count, restore
-tier in use. No application data.
+Node ID, device ID, display name, the app's slug, `solo` flag, the number of paired nodes
+(`peers`, counted as `spec/lua-api.md §3.4` counts them), restore tier in use. No
+application data.
 
 ```json
 { "id": "k7m2q9xf", "dev": "k7m2q9xf", "name": "Study", "app": "medtracker", "solo": false, "peers": 0, "restore_tier": 3 }

@@ -130,7 +130,9 @@ its `replica` flag.
 
 ### 3.1b `sys_cluster`
 
-The set of nodes belonging to one owner (`spec/protocol.md §2.3`). Exactly one row.
+The set of nodes belonging to one owner (`spec/protocol.md §2.3`). Exactly one row: a
+node founds a cluster at its first start, and a node admitted to another cluster
+tombstones the row of the one it founded.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -170,7 +172,7 @@ Every paired device, including browsers and other nodes.
 | `x25519_pub` | `VARCHAR` | base64 |
 | `paired_at` | `TIMESTAMPTZ` | |
 | `paired_via` | `VARCHAR` | `lan` \| `iroh` \| `onion` \| `tunnel` |
-| `last_seen_at` | `TIMESTAMPTZ` | Updated at most hourly — do not write an event per request |
+| `last_seen_at` | `TIMESTAMPTZ` | Written at the channel handshake (`spec/protocol.md §8.3`) and by the first request of a session older than an hour — at most hourly, never per request |
 | `user_agent` | `VARCHAR` | Nullable; browsers only |
 | `revoked_at` | `TIMESTAMPTZ` | Nullable. Set = access denied immediately. |
 | `revoked_reason` | `VARCHAR` | Nullable |
@@ -183,22 +185,23 @@ may not have synced `sys_device` recently.
 Revocation is a `put` with `revoked_at` set, never a `del`. The historical record of what
 was paired MUST survive.
 
-### 3.3 `sys_pairing` — **local store only**
+### 3.3 `sys_pairing` — **in memory only**
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | `VARCHAR` | ULID |
-| `code_hash` | `VARCHAR` | Argon2id of the 16-bit code + salt. **Never the code itself.** |
-| `salt` | `VARCHAR` | base64 |
 | `created_at` | `TIMESTAMPTZ` | |
 | `expires_at` | `TIMESTAMPTZ` | `created_at` + 120s |
 | `attempts` | `INTEGER` | Max 5 |
 | `consumed_by` | `VARCHAR` | Device ID, nullable |
 | `consumed_at` | `TIMESTAMPTZ` | Nullable |
 
-Hashing a 16-bit value is not meaningfully preimage-resistant; the hash exists so that a
-crash dump or stray log does not contain a live code, not as a security boundary. The real
-protections are the 120-second TTL, the 5-attempt cap, and the PAKE.
+Never written — neither to `data/` nor to `local/`, which keeps its two files
+(`spec/protocol.md §3`). The node holds the one open window in memory beside the PAKE
+secret `w` (`spec/protocol.md §7.4.1`) and drops the code's bytes the moment `w` is
+derived. A hash of a sixteen-bit code kept next to the secret that answers the handshake
+would protect nothing, so there is none. The protections are the 120-second TTL, the
+5-attempt cap, the per-source rate limit, and the PAKE.
 
 ### 3.4 `sys_app` — the app index
 
