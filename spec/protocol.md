@@ -9,8 +9,8 @@ Summary:  NORMATIVE. Wire formats, event log, discovery, pairing, session crypto
 
 # Privatium Protocol Specification — `pv/1`
 
-**Status:** Draft 0.1 — Phase 1 complete (`docs/plans/phase-1.md`), the later phases of
-`docs/roadmap.md` not yet begun; a build that does not yet satisfy every item of §13
+**Status:** Draft 0.1 — Phase 1 complete (`docs/plans/phase-1.md`), Phase 2 in progress
+(`docs/plans/phase-2.md`); a build that does not yet satisfy every item of §13
 identifies itself as `pv/1 (partial: phase 1)` (`spec/cli.md §1`)
 **Protocol identifier:** `pv/1`
 
@@ -83,8 +83,17 @@ with it, so that the first device to pair pins a cluster key (§2.3.2) and a sec
 admitted later needs no re-pairing. A node that is afterwards admitted to another cluster
 (§2.3.1) discards the one it founded — permitted only while it has paired nothing and
 admitted nobody, which is what makes a founded-and-empty cluster disposable — and
-tombstones its own `sys_cluster` row, so that exactly one remains
+tombstones only that empty cluster's own `sys_cluster` row
 (`spec/data-dictionary.md §3.1b`).
+
+A node has exactly one current cluster, selected by its verified `identity/` keys and
+node certificate. The replicated registry can contain records of other clusters after a
+restore or sync. Implementations MUST preserve those records and MUST NOT tombstone a
+cluster merely because its private key is absent locally. A restored registry row MUST
+NOT select this node's identity or establish cluster trust; the keys, certificate,
+pairing and admission rules still apply. Startup MUST append any corrections needed to
+this node's public identity fields and its current cluster's `pubkey` and `pkarr_name`
+from the verified identity, preserving owner-set and unknown fields (§4.2).
 
 #### 2.3.1 Admitting a node
 
@@ -107,8 +116,9 @@ The signed message is the JSON object `{"node_id","node_pub","cluster_id","issue
 the two instants spelled as §4.1 spells `ts`. `sig` is the base64 Ed25519 signature over
 those bytes, and the certificate is that object with `sig` added; `sys_node.cert` holds it
 base64-encoded (`spec/data-dictionary.md §3.1`). Every node holds the cluster key, so a
-node renews its own certificate whenever fewer than ninety days remain — at start, and
-after every completed sync.
+node renews its own **unexpired** certificate whenever fewer than ninety days remain —
+at start, and after every completed sync. At or after `expires_at`, it MUST refuse
+self-renewal and require re-admission instead.
 
 #### 2.3.2 What devices pin
 

@@ -1,8 +1,7 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/bootstrap.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-01  |  Modified: 2026-09-05
-// Summary:  First run: the §3 directory tree, and the two _sys rows a node writes about
-//           itself before any app exists (docs/plans/phase-1.md §2.6, steps 1 to 3).
+// Summary:  First run: the storage tree and public identity rows written before apps load.
 
 // AGENTS.md, Style: unwrap() is permitted in tests.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -106,6 +105,9 @@ fn test_spec_3_layout_created() {
         "identity/".to_owned(),
         "identity/node.key".to_owned(),
         "identity/node.pub".to_owned(),
+        "identity/cluster.key".to_owned(),
+        "identity/cluster.pub".to_owned(),
+        "identity/node.cert".to_owned(),
         "local/".to_owned(),
         // The root's lock, held while the node is open (`§3.1`).
         "local/lock".to_owned(),
@@ -115,26 +117,6 @@ fn test_spec_3_layout_created() {
     .collect();
 
     assert_eq!(tree(root.path()), expected);
-}
-
-/// `docs/plans/phase-1.md §1` — cluster identity is out of scope, and absent is a valid
-/// state rather than an unfinished one.
-///
-/// Written down as a test because "we did not build it" and "we built it wrong" look
-/// identical from outside, and because the next reader's instinct on seeing a node with no
-/// certificate will be to generate one.
-#[test]
-fn test_no_cluster_identity_in_phase_1() {
-    let root = tempfile::tempdir().unwrap();
-    let node = Node::open(root.path()).unwrap();
-    let identity = node.paths().identity_dir();
-
-    for absent in ["cluster.key", "cluster.pub", "node.cert"] {
-        assert!(
-            !identity.join(absent).exists(),
-            "identity/{absent} should not exist in Phase 1"
-        );
-    }
 }
 
 /// `spec/data-dictionary.md §3.2` and `docs/plans/phase-1.md §2.2` — the node is the
@@ -161,13 +143,7 @@ fn test_sys_device_self_row_kind_is_node() {
 
     // §3.2's pairing columns. This node paired with nobody, and `lan | iroh | onion |
     // tunnel` are four wrong answers rather than four candidates.
-    for null in [
-        "paired_at",
-        "paired_via",
-        "ed25519_pub",
-        "x25519_pub",
-        "user_agent",
-    ] {
+    for null in ["paired_at", "paired_via", "user_agent"] {
         assert!(
             device["d"].get(null).is_none(),
             "{null} was populated; it must be NULL for a node that paired with nobody"
@@ -200,23 +176,28 @@ fn test_sys_node_row_describes_this_installation() {
     assert_eq!(row["d"]["build"], "custom");
     assert_eq!(row["d"]["pubkey"], node.identity().public_key_base64());
 
-    // Phase 1 has no cluster, so §3.1's three certificate columns stay NULL.
-    for null in ["cluster_id", "cert", "cert_expires_at", "display_name"] {
-        assert!(
-            row["d"].get(null).is_none(),
-            "{null} should be NULL in Phase 1"
-        );
-    }
+    assert_eq!(
+        row["d"]["cluster_id"],
+        node.identity().cluster_id().as_str()
+    );
+    assert_eq!(
+        row["d"]["cert"],
+        node.identity().certificate().to_base64().unwrap()
+    );
+    assert_eq!(
+        row["d"]["cert_expires_at"],
+        node.identity().certificate().expires_at
+    );
+    assert!(row["d"].get("display_name").is_none());
 }
 
-/// `spec/protocol.md §2.6` order and `§4.1` envelope invariants, on the only two events
-/// Phase 1's bootstrap writes.
+/// `spec/protocol.md §4.1` envelope invariants over the identity rows and founding audit.
 ///
 /// `seq` starts at 1 and is gapless, `lam` follows `§4.3` from a counter that has seen
 /// nothing, and `dev` equals the log filename — which is the invariant that makes
 /// `AGENTS.md` 2 checkable at all.
 #[test]
-fn test_bootstrap_writes_two_events_in_order() {
+fn test_bootstrap_writes_identity_events_in_order() {
     let root = tempfile::tempdir().unwrap();
     let node = Node::open(root.path()).unwrap();
     let dev = node.id().as_str();
@@ -224,8 +205,8 @@ fn test_bootstrap_writes_two_events_in_order() {
     let events = sys_events(&node);
     assert_eq!(
         events.len(),
-        2,
-        "bootstrap wrote {} events, not 2",
+        4,
+        "bootstrap wrote {} events, not 4",
         events.len()
     );
 
@@ -272,7 +253,7 @@ fn test_spec_4_1_lines_are_lf_terminated() {
         Some(&b'\n'),
         "the log does not end with a newline"
     );
-    assert_eq!(raw.iter().filter(|byte| **byte == b'\n').count(), 2);
+    assert_eq!(raw.iter().filter(|byte| **byte == b'\n').count(), 4);
 }
 
 /// The event envelope emits keys in the order `spec/protocol.md §4.1` asks for.
@@ -323,8 +304,8 @@ fn test_bootstrap_runs_once_and_recovers_from_an_empty_log() {
     let _ = Node::open(root.path()).unwrap();
     let node = Node::open(root.path()).unwrap();
 
-    assert_eq!(sys_events(&node).len(), 2);
-    assert_eq!(fs::read_to_string(&log).unwrap().lines().count(), 2);
+    assert_eq!(sys_events(&node).len(), 4);
+    assert_eq!(fs::read_to_string(&log).unwrap().lines().count(), 4);
     drop(node);
 
     // The zero-byte log a crash between `create` and the first append would leave. The
@@ -333,7 +314,7 @@ fn test_bootstrap_runs_once_and_recovers_from_an_empty_log() {
     let recovered = Node::open(root.path()).unwrap();
     assert_eq!(
         sys_events(&recovered).len(),
-        2,
+        4,
         "a zero-byte _sys log left the node without its own rows"
     );
 }

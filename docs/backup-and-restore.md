@@ -22,7 +22,7 @@ Everything else in this document is elaboration.
 | Folder | Back it up? | Why |
 |---|---|---|
 | `data/` | **Yes** | Every event. This is your information. |
-| `identity/` | Yes, separately and privately | Your node's key. Losing it means re-pairing devices; leaking it is worse than losing it. |
+| `identity/` | Yes, separately and privately | Your node key (`node.key`), cluster key (`cluster.key`), and node certificate (`node.cert`). Losing the keys means re-pairing devices; leaking them exposes the cluster. |
 | `apps/` | Optional | Re-downloadable. Back it up if you customized one. |
 | `config.toml` | Optional | Two minutes to recreate. |
 | `local/` | **No** | Node-specific. Copying it to another machine causes confusion, not recovery. |
@@ -31,6 +31,16 @@ Everything else in this document is elaboration.
 Everything in `data/` is a text file. You can open one in Notepad and read your own
 information. This is on purpose. If a backup format needs special software to inspect, it
 is not a backup, it is a hostage situation.
+
+The first start creates both keys, including when you upgrade a Phase 1 folder. Each
+start renews the node certificate if it is still valid and fewer than ninety days remain.
+At expiry, startup refuses renewal and requires node re-admission. Admission is planned
+for Phase 3; this build cannot perform it. Ordinary data backups never include either
+private key.
+
+Restoring `data/` preserves records of the original nodes and clusters. Your keys in
+`identity/` determine which node and cluster this installation uses. Other records can
+remain in the backup without making this installation a member of those clusters.
 
 ## 2. Choosing a method
 
@@ -60,6 +70,11 @@ because Privatium keeps nothing important in a database file.
 4. Copy `identity/` back if you have it. If you do not, that is survivable — you get a new
    node identity and re-pair your devices. **Your information is not in `identity/`.**
 5. Start Privatium.
+
+With a valid copy of `identity/`, you keep your original node and cluster identity.
+Without it, you get a new node and cluster; the original cluster may still be running
+elsewhere. Restore leaves its records intact. Joining a surviving node's cluster is
+planned for Phase 3 and requires admission; restoring its records does not perform it.
 
 It rebuilds everything — database, snapshots, views — from the text files. Depending on
 history size this takes seconds.

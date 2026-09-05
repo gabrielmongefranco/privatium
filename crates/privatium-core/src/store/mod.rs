@@ -20,7 +20,7 @@ use crate::config::Paths;
 
 mod csv;
 pub mod decimal;
-mod events;
+pub(crate) mod events;
 pub mod materialize;
 pub mod normalize;
 pub mod params;

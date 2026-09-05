@@ -795,15 +795,15 @@ fn test_reference_apps_load_and_index_rows_match() {
         "nav_order, then title"
     );
 
-    // The bootstrap pair, then one row and one `app.installed` per app, and nothing more
+    // The identity rows and founding audit, then one row and one `app.installed` per app, and nothing more
     // on a second load: the upsert is idempotent.
-    assert_eq!(sys_lines(&node).len(), 2 + 3 * 2);
+    assert_eq!(sys_lines(&node).len(), 4 + 3 * 2);
     assert_eq!(audit_rows(&node, "app.installed").len(), 3);
     let again = node
         .load_apps(&[AppRoot::bundled(repo_apps_dir())])
         .unwrap();
     assert_eq!(again.loaded, report.loaded);
-    assert_eq!(sys_lines(&node).len(), 8, "a second load appended to _sys");
+    assert_eq!(sys_lines(&node).len(), 10, "a second load appended to _sys");
     assert!(audit_rows(&node, "app.load_failed").is_empty());
 }
 
@@ -837,7 +837,7 @@ fn test_underscore_folders_are_skipped() {
     assert_eq!(report, privatium_core::LoadReport::default(), "{report:?}");
     assert_eq!(node.apps().count(), 0);
     assert!(audit_rows(&node, "app.load_failed").is_empty());
-    assert_eq!(sys_lines(&node).len(), 2, "something was indexed");
+    assert_eq!(sys_lines(&node).len(), 4, "something was indexed");
 }
 
 /// `spec/protocol.md §3` — loading one app adds exactly its four paths to the tree, and
@@ -886,8 +886,8 @@ fn test_sys_app_upsert_is_an_event() {
     node.load_apps(&[local(&node)]).unwrap();
 
     let lines = sys_lines(&node);
-    assert_eq!(lines.len(), 4);
-    let row = &lines[2];
+    assert_eq!(lines.len(), 6);
+    let row = &lines[4];
     assert_eq!(row["tbl"], "sys_app");
     assert_eq!(row["id"], APP, "keyed by slug, not a ULID");
     assert_eq!(row["op"], "put");
@@ -920,10 +920,10 @@ fn test_sys_app_upsert_is_an_event() {
     assert_eq!(row["d"]["api"], 1);
     assert_eq!(row["d"]["source"], "local");
     assert_eq!(row["d"]["schema_hash"], sha256_hex(""), "no schema.sql");
-    assert_eq!(lines[3]["tbl"], "sys_audit");
-    assert_eq!(lines[3]["d"]["kind"], "app.installed");
-    assert_eq!(lines[3]["d"]["subject"], APP);
-    assert_eq!(lines[2]["ts"], lines[3]["ts"], "one batch");
+    assert_eq!(lines[5]["tbl"], "sys_audit");
+    assert_eq!(lines[5]["d"]["kind"], "app.installed");
+    assert_eq!(lines[5]["d"]["subject"], APP);
+    assert_eq!(lines[4]["ts"], lines[5]["ts"], "one batch");
 }
 
 /// `spec/data-dictionary.md §3.4` — removing a folder MUST NOT delete the row or the

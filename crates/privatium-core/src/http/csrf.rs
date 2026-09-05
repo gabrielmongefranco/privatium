@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/csrf.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-05
 // Summary:  The csrf() of docs/plans/phase-1.md §2.2: HMAC-SHA256 over node_id ‖ nonce ‖ path
 //           under a key HKDF-derived from the node key by Identity::csrf_key. Nothing is
 //           written to disk; the nonce lives for the process, so a restart invalidates
@@ -171,6 +171,15 @@ mod tests {
             .collect();
         // `read_dir` order is the filesystem's — macOS returned `node.pub` first.
         files.sort();
-        assert_eq!(files, ["node.key", "node.pub"]);
+        assert_eq!(
+            files,
+            [
+                "cluster.key",
+                "cluster.pub",
+                "node.cert",
+                "node.key",
+                "node.pub"
+            ]
+        );
     }
 }

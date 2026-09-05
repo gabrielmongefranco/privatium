@@ -1,11 +1,9 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/sys.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-01  |  Modified: 2026-09-05
-// Summary:  The framework's own tables (spec/data-dictionary.md §3), written through the
-//           same event log apps use. M1 writes two rows: this node's sys_device entry and
-//           its sys_node singleton. M2 adds sys_audit; M4 adds sys_snapshot and the
-//           snapshot and restore audit kinds; M5 adds sys_app and the app.* kinds; M7 adds
-//           lua.limit_exceeded.
+// Summary:  Public node and cluster records, device and app registries, snapshot facts,
+//           and audit kinds, written through the same event log apps use
+//           (spec/data-dictionary.md §3).
 
 use serde::Serialize;
 
@@ -21,6 +19,28 @@ pub const DEVICE: &str = "sys_device";
 
 /// `sys_node` (`spec/data-dictionary.md §3.1`).
 pub const NODE: &str = "sys_node";
+
+/// `sys_cluster`, one public cluster identity (`spec/data-dictionary.md §3.1b`).
+pub const CLUSTER: &str = "sys_cluster";
+
+/// A node founded a cluster (`spec/data-dictionary.md §3.10`).
+pub const KIND_CLUSTER_CREATED: &str = "cluster.created";
+
+/// An unexpired node certificate was renewed (`spec/protocol.md §2.3.1`).
+pub const KIND_CERT_RENEWED: &str = "cert.renewed";
+
+/// Public facts about a founded cluster (`spec/data-dictionary.md §3.1b`).
+#[derive(Debug, Serialize)]
+pub(crate) struct ClusterRow<'a> {
+    /// Base64 Ed25519 public key; never the private key.
+    pub pubkey: String,
+    /// z-base32 of the public key, without padding.
+    pub pkarr_name: String,
+    /// UTC founding timestamp.
+    pub created_at: &'a str,
+    /// Founding node ID.
+    pub created_by: &'a str,
+}
 
 /// `sys_audit` (`spec/data-dictionary.md §3.10`).
 pub const AUDIT: &str = "sys_audit";
@@ -127,13 +147,8 @@ impl DeviceRow<'_> {
     /// always. There is no console device and no second keypair: the node is the device
     /// (`docs/plans/phase-1.md §2.2`).
     ///
-    /// Everything else is NULL, and deliberately. `paired_at`, `paired_via`,
-    /// `ed25519_pub`, `x25519_pub`, and `user_agent` all describe a pairing, and this node
-    /// paired with nobody — `lan | iroh | onion | tunnel` are four wrong answers rather
-    /// than four candidates, and no X25519 key exists in Phase 1 at all. `label` is
-    /// owner-set and there is no surface to set it on yet. `last_seen_at` is written by
-    /// the request path (`§3.2`: at most hourly, never per request), which is M6; a value
-    /// stamped here would be permanently stale, because this row is written once.
+    /// Pairing metadata is absent because this node paired with nobody. Startup fills
+    /// both public keys and preserves owner-set fields (spec/data-dictionary.md §3.2).
     pub(crate) fn this_node() -> Self {
         Self {
             label: None,
@@ -151,7 +166,7 @@ impl DeviceRow<'_> {
     }
 }
 
-/// The `d` of the `sys_node` singleton (`spec/data-dictionary.md §3.1`).
+/// The `d` of one node's public identity record (`spec/data-dictionary.md §3.1`).
 ///
 /// As with [`DeviceRow`], `id` is the envelope's and is this node's ID.
 #[derive(Debug, Serialize)]
@@ -181,12 +196,8 @@ impl<'a> NodeRow<'a> {
     /// binary cannot assert `official`, and there is nothing here that could tell it
     /// apart from one.
     ///
-    /// `display_name` is owner-set and used as the mDNS instance name; there is no owner
-    /// input surface until M6 and no discovery until Phase 2, so it stays NULL rather
-    /// than becoming a hostname nobody chose. `cluster_id`, `cert`, and `cert_expires_at`
-    /// are NULL because Phase 1 has no cluster identity — `identity/cluster.*` and
-    /// `identity/node.cert` are absent and `sys_cluster` has zero rows
-    /// (`docs/plans/phase-1.md §1`).
+    /// `display_name` stays NULL until the owner chooses one. Startup fills membership
+    /// fields from verified identity files (spec/data-dictionary.md §3.1).
     pub(crate) fn this_installation(pubkey: &'a str, created_at: &'a str) -> Self {
         Self {
             display_name: None,

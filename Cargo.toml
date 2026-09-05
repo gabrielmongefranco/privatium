@@ -1,6 +1,6 @@
 # Project:  Privatium™  |  File: Cargo.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-08-31  |  Modified: 2026-09-03
+# Created:  2026-08-31  |  Modified: 2026-09-05
 # Summary:  Workspace root. Three crates per docs/plans/phase-1.md §4, one pinned
 #           dependency table, and the MSRV every member inherits.
 
@@ -48,6 +48,8 @@ rusqlite = { version = "0.40.2", default-features = false }
 
 # Crypto — M1 node identity, M6 CSRF. No session crypto in Phase 1.
 ed25519-dalek = "3.0.0"
+# Static session identity, derived from the node key (spec/protocol.md §8).
+x25519-dalek = { version = "3.0.0", default-features = false, features = ["static_secrets", "zeroize"] }
 sha2          = "0.11.0"
 hmac          = "0.13.0"
 hkdf          = "0.13.0"

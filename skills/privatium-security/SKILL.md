@@ -144,6 +144,19 @@ Closing it entirely means pairing over a native client, Tailscale, or Tor.
 
 ## Cluster keys
 
+The keys and verified certificate in `identity/` select this installation's node and
+cluster (`spec/protocol.md §2.3`, `spec/data-dictionary.md §3.1, §3.1b`). Restore can bring
+other nodes' and clusters' public records. Preserve them; never tombstone a cluster just
+because this installation lacks its key. Query the local node or cluster by its ID,
+never by the first row or an assumption that the whole registry has one row. A public
+record alone grants no cluster trust and cannot replace pairing, admission or pinned-key
+verification.
+
+A node renews its own certificate at startup only while it is unexpired and fewer than
+ninety days remain (`spec/protocol.md §2.3.1`). An expired certificate requires
+re-admission; do not bypass expiry by signing a replacement. Node admission arrives in
+Phase 3, so the current build refuses an expired certificate.
+
 The cluster private key lives in `identity/cluster.key` on nodes only. It MUST NOT be sent to
 a phone, tablet, or browser, and MUST NOT appear in any event, log, snapshot, or backup
 export. Devices receive the cluster *public* key and pin it.

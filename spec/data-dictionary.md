@@ -109,12 +109,17 @@ All are event-sourced into `cache/_sys.sqlite`. `id` is a ULID unless stated oth
 
 ### 3.1 `sys_node`
 
-Singleton describing **this installation**. Exactly one row; `id` is the Node ID.
+One row per node whose public identity record has reached this store; `id` is the Node
+ID. Exactly one describes **this installation**: the row selected by the Node ID derived
+from `identity/node.key`. Restore and sync can bring other nodes' rows. Readers asking
+"who am I" MUST select by that local ID, never by row order or table cardinality.
 
 Every node also appears in `sys_device` with `kind = 'node'`, including this one. The two
-tables answer different questions: `sys_node` is "who am I," `sys_device` is "who may talk to
-this cluster." A node's `sys_device` row is what makes it revocable (§3.1c) and what carries
-its `replica` flag.
+tables answer different questions: `sys_node` holds public installation facts, while
+`sys_device` records paired devices. The local `sys_node` row answers "who am I."
+A node's `sys_device` row is what makes it revocable (§3.1c) and what carries its
+`replica` flag. Registry presence alone does not establish cluster trust
+(`spec/protocol.md §2.3`).
 
 | Column | Type | Notes |
 |---|---|---|
@@ -130,9 +135,17 @@ its `replica` flag.
 
 ### 3.1b `sys_cluster`
 
-The set of nodes belonging to one owner (`spec/protocol.md §2.3`). Exactly one row: a
-node founds a cluster at its first start, and a node admitted to another cluster
-tombstones the row of the one it founded.
+One row per cluster whose public identity record has reached this store
+(`spec/protocol.md §2.3`). Exactly one is current for this installation: the row selected
+by the Cluster ID derived from its verified `identity/cluster.key` and bound by its node
+certificate. Readers asking for the current cluster MUST select by that local identity,
+never by row order or table cardinality. The full public key, rather than the short ID
+alone, establishes cryptographic identity.
+
+Restore and sync can bring other cluster records; their presence does not make this
+node a member. Startup preserves them. A node admitted to another cluster tombstones
+only its own empty founding cluster, under `spec/protocol.md §2.3`'s conditions. Losing
+local keys is not evidence that another cluster has ceased to exist.
 
 | Column | Type | Notes |
 |---|---|---|

@@ -146,7 +146,8 @@ signs for the joiner — plus the cluster public key and ID. The joiner writes
 URL as its first endpoint (§2.7). It writes no `sys_cluster` row — the founder's arrives by
 sync, keyed by the same ID, and two writers of one row is `§4.1`'s silent merge — and
 tombstones the row of the cluster it founded at its own first start (`protocol.md §2.3`),
-so one row remains. The rule for who may join: a node that has paired a device or
+so its current cluster changes while other restored cluster records remain
+(`data-dictionary.md §3.1b`). The rule for who may join: a node that has paired a device or
 admitted a node refuses to join another cluster; a lone node, its founding cluster empty,
 joins and discards the `identity/cluster.*` it founded. Re-founding is the documented
 procedure for everything else. §3 row 4.
