@@ -314,12 +314,13 @@ rule applied.*
 
 ## 3. Spec gaps found
 
-Rows 1–20 are fixed. As in
+Rows 1–21 are fixed. As in
 Phase 1, this records what changed and why;
 `cargo xtask gen-skill-reference` ran with the edits.
 
 | # | Was | Proposed | Files | Milestone |
 |---|---|---|---|---|
+| 21 | The plan requires unmodified Noble modules, but their bare `@noble/hashes/...` imports cannot resolve in a browser without a build step or import map | Permit import-path-only edits to relative URLs. Keep cryptographic code unchanged and record upstream and vendored SHA-256 hashes, archive integrity, and original licences | This plan §5; `assets/shell/vendor/noble/VENDOR.md` | **Fixed**, owner confirmed; M15; protocol and CSP unchanged |
 | 20 | The global singleton wording for `sys_node` and `sys_cluster` conflicts with restored and replicated identity records | Preserve all restored records. Verified local keys and certificate select this installation's current node and cluster; startup appends corrections to their public identity fields without retiring other clusters. Registry presence alone establishes no cluster trust | `data-dictionary.md §3.1, §3.1b`, `protocol.md §2.3` | **Fixed**, owner confirmed; M14; `test_spec_3_1b_data_only_restore_preserves_records_and_selects_local_identity`, `test_spec_3_1b_restored_keys_select_the_original_cluster`, `test_spec_3_1b_replayed_rows_cannot_change_local_cluster_identity` |
 | 19 | `§2.3.1` requires re-admission after expiry but startup renewal has no expiry exception | Startup renewal applies only to unexpired certificates; at or after expiry the node refuses self-renewal and requires re-admission | `protocol.md §2.3.1` | **Fixed**, owner confirmed; M14 |
 | 1 | `§7.4` gives the handshake's six steps and no message shapes, encodings or close codes | The messages of M16 spelled out: the node's hello, the client's `pA` with its identity, the node's `pB` and `cB`, the client's `cA`, the two key exchanges over `K_pair`, and the WebSocket close codes for *closed*, *wrong code* and *exhausted* | `protocol.md §7.4.1, §7.4.2` | **Fixed**; M16 |
@@ -412,7 +413,7 @@ request does.
 | WebSocket client, tests | `tokio-tungstenite` | 0.29.0 | A dev-dependency of `crates/privatium` for the socket tests only |
 | mDNS | `mdns-sd` | 0.21.1, Apache-2.0 OR MIT | Registers with TXT and sub types, browses, runs its own thread — no runtime dependency, so an embedder without tokio can call `serve_discovery` |
 | QR | `qrcode` | 0.14.1, MIT OR Apache-2.0 | Renders to text for the terminal and SVG for the page; last released 2024-07 — check `cargo deny` and its issue tracker at M19 |
-| Browser crypto | `@noble/curves`, `@noble/ciphers`, `@noble/hashes` | 2.4.0, MIT | ES modules vendored at `assets/shell/vendor/noble/`, the files `client.js` imports and their imports, unmodified, with `VENDOR.md` and a `NOTICE` entry; loaded as `<script type="module">` under `script-src 'self'` — no bundle exists upstream and none is built here |
+| Browser crypto | `@noble/curves`, `@noble/ciphers`, `@noble/hashes` | 2.4.0, MIT | ES modules vendored at `assets/shell/vendor/noble/`, including their import dependencies; only bare imports become relative URLs (§3 row 21). Original and vendored hashes, licences, `VENDOR.md` and a `NOTICE` entry accompany them. Loaded under `script-src 'self'`; no bundle is built here |
 
 **Not taken, and why:** `spake2` (one group, the draft's constants, no JavaScript
 counterpart — §2.4); `cpace` (0.1.0 from 2020); `argon2` (§2.7); `notify` (Phase 3
@@ -529,10 +530,116 @@ Node admission and sync remain Phase 3 work; this change provides no successful 
 
 ### M15 — The session layer, in Rust and in JavaScript
 
+**Implementation status, 2026-09-05:** implemented on `m15-session`; Windows gates pass
+and three-platform PR CI is pending. Session helpers do no network or storage I/O.
+The node handshake takes
+active pairing facts from its caller; wiring that lookup to the registry and enforcing
+revocation on channel requests remain M17 work. The bind remains loopback until M17.
+
+The only plan exception is the owner-approved import-path edit in §3 row 21. No
+normative spec or CSP changes were needed. Frame sealing returns `Result` because an
+exhausted or closed sender must refuse. A completed handshake carries owned send and
+receive frames, preserving the counter consumed by the confirm; it does not return raw
+keys from which a caller could restart that counter. A client has peer proof when its
+first inbound frame authenticates.
+
+Hello text is bounded to 8192 UTF-8 bytes before parsing; certificates retain M14's
+4096-byte bound. Invalid keys, IDs, versions, pins and confirmations fail closed, with
+errors that contain no input. Frame failure is terminal. Callers must close both
+directions and the connection on error, and check `Frame::is_closed()` or the JavaScript
+`closed` getter after successful frames to close at the budget boundary.
+JavaScript explicitly wipes owned byte arrays,
+but garbage collection and runtime copies prevent a claim of guaranteed memory erasure.
+
+The only new direct Rust dependency is `chacha20poly1305` 0.11.0, required for §8's
+authenticated encryption, with `alloc` and `zeroize`; randomness stays with `rand`.
+Its [package record](https://crates.io/crates/chacha20poly1305/0.11.0) records a
+2026-06-28 release in the maintained RustCrypto family. Noble's
+[curves](https://github.com/paulmillr/noble-curves),
+[ciphers](https://github.com/paulmillr/noble-ciphers), and
+[hashes](https://github.com/paulmillr/noble-hashes) packages are 2.4.0, as planned.
+Their npm archives were checked against registry SHA-512 integrity before vendoring.
+The browser tests verify every vendored file's hash and its relative import closure.
+`cargo deny check` passes advisories, bans, licences and sources, with the existing
+duplicate-`syn` warning. The OSV query for all three npm packages at 2.4.0 returned no
+listed vulnerabilities on 2026-09-05.
+
+Regenerate synthetic vectors only with:
+
+```sh
+cargo test -p privatium-core --locked --test session generate_session_vectors -- --ignored --exact
+```
+
+Normal tests read the committed fixture and never rewrite it. It includes fixed
+synthetic statics and ephemerals, ten frames in each direction, and a certificate-bound
+handshake using the existing synthetic identity fixture.
+
+**Verification on Windows:**
+
+| Command | Outcome |
+|---|---|
+| `cargo test -p privatium-core --locked --test session` | 11 passed; fixture generator ignored by default |
+| `cargo test -p privatium-core --locked --lib test_spec_8` | 2 passed: counter limit and asset path controls |
+| `cargo test --workspace --locked` | 511 passed, 0 failed; 1 intentional fixture-generator ignore |
+| `cargo fmt --all --check` | Passed |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | Passed |
+| `cargo xtask header-check` | 305 files passed |
+| `cargo xtask gen-skill-reference` | Regenerated 21 files; no reference content changed |
+| `cargo xtask gen-skill-reference --check` | 21 files match |
+| `cargo xtask lint-spec-refs` | 37 rules resolve |
+| `target/m15-tools/node.exe --test crates/privatium-core/tests/js/*.test.mjs` | 25 passed; portable Node 24.20.0, upstream checksum verified |
+| `cargo deny check` | Passed; existing duplicate-`syn` warning |
+| `bash .github/scripts/conformance.sh` | Every named Phase 1, identity and session test passed using Git Bash |
+
+Node.js was absent from PATH. The portable test executable stays in ignored `target/`;
+no system package or PATH setting changed. CI runs the same JavaScript test glob through
+Bash on all three platforms. No app folder changed, so no targeted app lint is needed;
+the existing reference-app tests and CI lint still run.
+
+The staged whitespace check reports 25 upstream trailing-whitespace lines in vendored
+Noble modules. These bytes are preserved under the import-path-only exception; the
+check excluding that vendor directory passes.
+
+Security review covered input bounds, certificate and pin validation, rejection of
+noncontributory keys, nonce ownership, terminal authentication failures, dependency
+integrity, and errors free of peer input. No application data or real key material is
+in the fixtures. The new asset path accepts only safe components under the embedded
+Noble directory; it reads no filesystem path from a request.
+
+Documentation received a source review for heading order, descriptive links, table
+headers, and plain language. No rendered page, control, CSS, or application flow changed.
+Rendered documentation checks with keyboard, visible focus, 200% zoom, and a screen
+reader remain a human check. Phone pairing, refusal screens and live-channel checks
+remain with M17–M19, where those flows are implemented.
+
+**Acceptance checklist** — check only after the named tests pass on all three platforms:
+
+- [ ] Key schedule and cross-language frames:
+  `test_spec_8_key_schedule_matches_the_checked_in_vectors`,
+  `test_spec_8_key_schedule_and_bidirectional_frames_match_rust_vectors` (JavaScript).
+- [ ] Counters, empty frames, tampering, replay and exhaustion:
+  `test_spec_8_frames_round_trip_and_the_counter_never_repeats`,
+  `test_spec_8_a_tampered_frame_is_refused`,
+  `test_spec_8_a_session_closes_at_the_counter_limit` (Rust unit),
+  `test_spec_8_counter_limit_cannot_be_raised_and_key_input_is_copied` (JavaScript).
+- [ ] Handshake agreement, exact transcript and pin/certificate refusal:
+  `test_spec_8_handshake_derives_the_same_keys_on_both_sides`,
+  `test_spec_8_3_confirm_binds_the_exact_hello_bytes`,
+  `test_spec_8_1_a_static_key_that_is_not_the_pinned_one_fails_the_confirm`,
+  `test_spec_8_1_certificate_mismatch_and_expiry_are_refused_before_confirm`,
+  `test_spec_8_client_handshake_matches_rust_without_crypto_subtle` (JavaScript).
+- [ ] Unknown/revoked devices, missing/invalid keys and malformed hellos:
+  `test_spec_8_3_unknown_revoked_and_missing_device_keys_are_refused`,
+  `test_spec_8_3_malformed_hello_and_wrong_version_are_refused`,
+  `test_spec_8_noncontributory_keys_and_invalid_ids_are_refused`.
+- [ ] Browser modules load from the embedded asset set with preserved provenance:
+  `test_spec_8_browser_crypto_modules_are_served_without_path_traversal` (Rust unit),
+  `test_spec_8_noble_hashes_and_relative_import_closure_match_provenance` (JavaScript).
+
 - `session::Keys::derive(role, my_static, their_static, my_eph, their_eph, node_id,
   device_id)` — `§8` verbatim: `ss`, `salt = SHA-256(sorted(node_id, device_id) ‖ "pv/1
   session")`, `prk = HKDF-Extract(salt, ss ‖ ee)`, `k_c2s`, `k_s2c`.
-- `session::Frame`: `seal(&mut self, plaintext) -> Vec<u8>` and `open(&mut self,
+- `session::Frame`: `seal(&mut self, plaintext) -> Result<Vec<u8>>` and `open(&mut self,
   ciphertext) -> Result<Vec<u8>>` per direction, `nonce = direction tag (4 bytes, big
   endian: 1 for c2s, 2 for s2c) ‖ counter (8 bytes, big endian)`, counter from 0, no
   associated data, one ciphertext per WebSocket binary message. A counter that reaches
@@ -542,8 +649,8 @@ Node admission and sync remain Phase 3 work; this change provides no successful 
   the same code is driven by a test, by the channel and, in Phase 3, by the sync client:
   `ClientHello { v, dev, e }`, `NodeHello { v, id, e, cert }`, then `Confirm { transcript
   }` as the first sealed c2s frame, transcript = `SHA-256(client hello bytes ‖ node hello
-  bytes)`. `Handshake::node(identity, lookup: impl Fn(&str) -> Option<DevicePins>)`
-  answers a hello and, on the confirm, yields `Session { device, keys }`; the lookup is
+  bytes)`. `Handshake::node(identity, lookup, hello)`
+  answers a hello and, on the confirm, yields `Session { device, send, receive }`; the lookup is
   `sys_device` — active, not revoked, with an `x25519_pub`.
 - Vendor `@noble/*` (§5) with `VENDOR.md` (versions, SHA-256 per file, licence) and the
   `NOTICE` entry. `assets/shell/session.js`: the same schedule and frame over

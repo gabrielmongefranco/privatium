@@ -37,6 +37,7 @@ pub mod local;
 pub mod lock;
 pub mod log;
 pub mod lua;
+pub mod session;
 pub mod store;
 pub mod sys;
 pub mod wire;

@@ -9,7 +9,8 @@
 | Licence | Zero-Clause BSD (0BSD) — reproduced in the repository `NOTICE` |
 | Vendored | 2026-09-03 |
 
-`htmx.min.js` is the only third-party file here; `shell.css` is the framework's own and
+`htmx.min.js` is the third-party file covered by this notice. Noble cryptography modules
+under `vendor/noble/` have their own `VENDOR.md` and licences. `shell.css` is the framework's own and
 carries the repository header. htmx is served at `/static/htmx.min.js` and loaded by the
 shell under the default Content-Security-Policy of `spec/protocol.md §9.3` — no inline
 script, and the shell's `htmx-config` turns `allowEval` and `allowScriptTags` off, so the

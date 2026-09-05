@@ -29,6 +29,13 @@ CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA
 PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING
 OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
+Noble curves, ciphers, and hashes (https://github.com/paulmillr/noble-curves,
+https://github.com/paulmillr/noble-ciphers, https://github.com/paulmillr/noble-hashes),
+version 2.4.0, vendored at crates/privatium-core/assets/shell/vendor/noble/.
+Licensed under the MIT License; each package's complete copyright and licence notice
+is preserved in its LICENSE file. Only bare package import paths become relative URLs;
+upstream and vendored SHA-256 hashes are recorded in that directory's VENDOR.md.
+
 Change Log
 See the full change log under this repository's releases page.
 EFF Short Wordlist 2.0 (https://www.eff.org/dice), from which the 256 pairing words of
