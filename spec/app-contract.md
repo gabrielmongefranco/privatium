@@ -98,7 +98,7 @@ node.append("myapp", Event::put("score", new_ulid(), json!({"points": 42})))?;
 // your own reads — the materialized SQLite connection, sandboxed, parameters bound
 let rows = node.query("myapp", "SELECT * FROM score WHERE points > ?", &[json!(10)])?;
 
-// your own server — the peer comes from axum's ConnectInfo
+// your own server — the peer comes from axum's ConnectInfo; without it the layer refuses everyone
 let service = my_router.layer(node.auth_layer()).into_make_service_with_connect_info::<SocketAddr>();
 axum::serve(listener, service).await?;
 node.close()?;
@@ -240,6 +240,14 @@ pragma — rows arrive by append, and the linter refuses the rest (`spec/cli.md 
 `PV107`), judging each statement by the actions the engine reports for it rather than by
 its first word.
 
+A declared `CREATE INDEX` is honoured: the cache recreates every index the file declares
+whenever it rebuilds a table, so a query planned against `schema.sql` runs against the
+same indexes on the node. `UNIQUE` — as a column constraint, a table constraint or a
+unique index — is refused at load and by the linter (`PV108`): two devices' logs may both
+claim a value, `spec/protocol.md §4.5` keeps both rows, and a cache cannot enforce what
+the log does not guarantee. The primary key on `id` is the one uniqueness the log keeps; a
+value that must be unique is part of the `id`, the way `apps/animals` keys its `cursor`.
+
 `migrations/` is **reserved and not implemented in `pv/1`** (`spec/data-dictionary.md §3.11`).
 It would be needed only when the *meaning* of stored data changes — a unit conversion, a
 re-encoding — and no such case exists yet. A migration will transform events at replay time;
@@ -352,7 +360,7 @@ await pv.append([
 pv.subscribe(ev => redraw(ev));
 ```
 
-`pv` is a script of under 10 KB, unminified, served by the framework at `/static/pv.js`.
+`pv` is a script of under 12 KB, unminified, served by the framework at `/static/pv.js`.
 It is optional — the endpoints are plain HTTP and you can `fetch` them yourself.
 
 ### 5.3 Storage without SQL
@@ -436,7 +444,7 @@ express: a serial port, a scheduled job, a filesystem watcher, a non-HTTP protoc
 | `query` / `subscribe` | Sandboxed SQLite reads with bound parameters, rows typed as `spec/data-api.md §1` types them; the app's event stream |
 | `serve_discovery` / `pair` | mDNS, UDP, PAKE pairing, device registry |
 | `start_sync` / `sync_now` | iroh + LAN peers |
-| `auth_layer` | Tower middleware enforcing session and grants. `core::handle` applies it itself, so every adapter gets it without doing anything (`docs/decisions/0003`); an embedder wraps their own router with it, as §2.3 shows, and the layer reads the peer from axum's `ConnectInfo` |
+| `auth_layer` | Tower middleware enforcing session and grants. `core::handle` applies it itself, so every adapter gets it without doing anything (`docs/decisions/0003`); an embedder wraps their own router with it, as §2.3 shows, and the layer reads the peer from axum's `ConnectInfo`. A request whose peer it cannot see is refused, naming the missing call, so a router served without `into_make_service_with_connect_info` admits nobody rather than everybody; a call an embedder makes in-process inserts the `Peer` extension the framework's own adapter inserts |
 | `snapshot` / `restore` | Manual snapshot and three-tier restore |
 
 A build that does not implement an area — one that says so in `--version`

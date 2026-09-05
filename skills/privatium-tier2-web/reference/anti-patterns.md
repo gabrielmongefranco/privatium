@@ -132,6 +132,30 @@ api     = 1
 tier    = "lua"
 ```
 
+## `PV108` — No UNIQUE constraint or index beyond id's primary key
+
+error · `spec/app-contract.md §4.5`
+
+**Wrong** (`apps/_lint/fail/PV108/pv108bad/app.lua`):
+
+```lua
+local pv = require 'privatium'
+
+pv.get('/', function()
+  return pv.render('index', {})
+end)
+```
+
+**Right** (`apps/_lint/pass/PV108/pv108ok/app.lua`):
+
+```lua
+local pv = require 'privatium'
+
+pv.get('/', function()
+  return pv.render('index', {})
+end)
+```
+
 ## `PV205` — Declared [permissions] beyond the defaults carry a justifying comment
 
 warn · `spec/app-contract.md §5.4`

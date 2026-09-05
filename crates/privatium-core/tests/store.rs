@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/store.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-03
+// Created:  2026-09-01  |  Modified: 2026-09-05
 // Summary:  Materialization against spec/protocol.md §4.5 and §4.6 — last-write-wins at row
 //           granularity, tombstones, the §4.4 horizon, the §2.1 encodings, a cache that can
 //           be deleted, a log anyone may append to by hand, and the §2.5 property that the
@@ -12,13 +12,16 @@
 
 mod common;
 
+use std::collections::BTreeSet;
 use std::fs;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use common::{APP, Fixture, HELLO_DDL, TYPED_DDL, event, flip_byte, hand_append, ts_offset_secs};
 use privatium_core::Node;
 use privatium_core::local::State;
 use privatium_core::log::{AppLog, Durability};
-use privatium_core::store::{self, Store, Tier};
+use privatium_core::store::{self, Schema, Store, Tier};
 
 // ---------------------------------------------------------------------------------------
 // §4.5 — replay and merge
@@ -883,6 +886,8 @@ fn incremental_matches_full_replay(seed: u64) {
     };
 
     let mut snapshot = None;
+    // Events reach the cache in batches of one to four, as `append_batch` applies them.
+    let mut pending: Vec<(&str, String, Option<serde_json::Value>)> = Vec::new();
     for n in 1..200u64 {
         if n == 100 {
             snapshot = Some(fixture.snapshot(now));
@@ -918,16 +923,28 @@ fn incremental_matches_full_replay(seed: u64) {
         let d = serde_json::to_string(&d).unwrap();
 
         fixture.append(&event(n, n, &ts, &dev, tbl, &id, put.then_some(d.as_str())));
-        if put {
-            let value: serde_json::Value = serde_json::from_str(&d).unwrap();
-            fixture.store.apply(tbl, &id, Some(&value)).unwrap();
-        } else {
+        let value = put.then(|| serde_json::from_str::<serde_json::Value>(&d).unwrap());
+        pending.push((tbl, id, value));
+        if pending.len() as u64 > roll % 4 {
             fixture
                 .store
-                .apply::<serde_json::Value>(tbl, &id, None)
+                .apply_batch(
+                    pending
+                        .iter()
+                        .map(|(tbl, id, d)| (*tbl, id.as_str(), d.as_ref())),
+                )
                 .unwrap();
+            pending.clear();
         }
     }
+    fixture
+        .store
+        .apply_batch(
+            pending
+                .iter()
+                .map(|(tbl, id, d)| (*tbl, id.as_str(), d.as_ref())),
+        )
+        .unwrap();
     let snapshot = snapshot.unwrap();
     assert_eq!(snapshot.manifest.hi_lam, 99, "seed {seed:#x}");
 
@@ -996,6 +1013,225 @@ fn incremental_matches_full_replay(seed: u64) {
         ghost_tables, 0,
         "seed {seed:#x}: an undeclared table was created"
     );
+}
+
+/// `docs/plans/phase-1.md §2.3`, `spec/protocol.md §4.5` — the incremental apply of a batch
+/// is one transaction. When a later event of the batch cannot be applied, nothing of the
+/// earlier events is left in the cache, and the store knows its tables no longer match
+/// the log: the watermark is stale, so the next read rebuilds rather than trusting a
+/// cache the log has moved past.
+#[test]
+fn test_spec_4_5_failed_apply_leaves_no_half_batch_and_a_stale_watermark() {
+    let mut fixture = Fixture::open(TYPED_DDL);
+    let dev = fixture.dev.clone();
+    let ts = ts_offset_secs(-60);
+    // The log holds the batch before the cache is touched, as it does on every append.
+    fixture.append(&event(1, 1, &ts, &dev, "ghost", "g1", None));
+    fixture.append(&event(
+        2,
+        2,
+        &ts,
+        &dev,
+        "thing",
+        "t1",
+        Some(r#"{"name":"n"}"#),
+    ));
+    // The cache table is gone underneath the store, so the second event's INSERT fails.
+    fixture
+        .store
+        .conn()
+        .execute_batch("DROP TABLE main.\"thing\"")
+        .unwrap();
+    let d = serde_json::json!({ "name": "n" });
+    let error = fixture
+        .store
+        .apply_batch([("ghost", "g1", None), ("thing", "t1", Some(&d))])
+        .unwrap_err();
+    assert!(error.to_string().contains("thing"), "{error}");
+
+    let ghost_tombstones = |store: &Store| -> i64 {
+        store
+            .conn()
+            .query_row(
+                "SELECT count(*) FROM pv_tombstone WHERE tbl = 'ghost'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap()
+    };
+    assert_eq!(
+        ghost_tombstones(&fixture.store),
+        0,
+        "the first event of a failed batch is in the cache: half a batch"
+    );
+    assert!(
+        fixture.store.is_stale().unwrap(),
+        "a failed apply left the watermark claiming the tables match the log"
+    );
+
+    // The next read rebuilds, and the rebuild is the replay of the whole log.
+    assert!(fixture.store.refresh(&store::cutoff_now()).unwrap());
+    assert!(!fixture.store.is_stale().unwrap());
+    assert_eq!(fixture.count("thing"), 1);
+    assert_eq!(fixture.cell("thing", "t1", "name"), "n");
+    assert_eq!(ghost_tombstones(&fixture.store), 1);
+}
+
+/// `spec/protocol.md §4.5` with `spec/app-contract.md §7` — a reader on the sandboxed
+/// connection, which runs off the node lock, sees a batch before or after, never in the
+/// middle: neither a row missing between its DELETE and its INSERT nor part of a batch.
+#[test]
+fn test_spec_4_5_a_reader_sees_a_batch_whole_or_not_at_all() {
+    let mut fixture = Fixture::open(TYPED_DDL);
+    let reader = fixture.store.app_conn().unwrap();
+    let stop = Arc::new(AtomicBool::new(false));
+    let seen: Arc<Mutex<BTreeSet<i64>>> = Arc::new(Mutex::new(BTreeSet::new()));
+    let polling = {
+        let stop = Arc::clone(&stop);
+        let seen = Arc::clone(&seen);
+        std::thread::spawn(move || {
+            while !stop.load(Ordering::Relaxed) {
+                let count: i64 = reader
+                    .query_row("SELECT count(*) FROM thing", [], |row| row.get(0))
+                    .unwrap();
+                seen.lock().unwrap().insert(count);
+            }
+        })
+    };
+
+    let d = serde_json::json!({ "name": "n" });
+    let ids: Vec<String> = (0..200).map(|n| format!("t{n}")).collect();
+    let changes: Vec<(&str, &str, Option<&serde_json::Value>)> = ids
+        .iter()
+        .map(|id| ("thing", id.as_str(), Some(&d)))
+        .collect();
+    fixture.store.apply_batch(changes).unwrap();
+
+    stop.store(true, Ordering::Relaxed);
+    polling.join().unwrap();
+    let seen = seen.lock().unwrap();
+    assert!(
+        seen.iter().all(|count| *count == 0 || *count == 200),
+        "a reader saw a half-applied batch: counts {seen:?}"
+    );
+    assert!(
+        seen.contains(&200),
+        "the reader never saw the applied batch"
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// spec/app-contract.md §4.5 — what schema.sql declares reaches the cache
+// ---------------------------------------------------------------------------------------
+
+/// `spec/app-contract.md §4.5` — a `CREATE INDEX` in `schema.sql` is a declaration the
+/// cache honours: the index exists in `cache/<slug>.sqlite` after the replay, is used by
+/// a query, survives an incremental apply, and is recreated by every restore tier.
+#[test]
+fn test_spec_app_contract_4_5_declared_indexes_exist_in_the_cache() {
+    const INDEXED_DDL: &str =
+        "CREATE TABLE thing (id VARCHAR PRIMARY KEY, name VARCHAR, made_on DATE);
+         CREATE INDEX thing_made_on ON thing (made_on);
+         CREATE INDEX thing_name_made_on ON thing (name, made_on);";
+    let mut fixture = Fixture::open(INDEXED_DDL);
+    let indexes = |store: &Store| -> Vec<String> {
+        let mut statement = store
+            .conn()
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'thing' \
+                 AND sql IS NOT NULL ORDER BY name",
+            )
+            .unwrap();
+        statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    };
+    let expected = vec!["thing_made_on".to_owned(), "thing_name_made_on".to_owned()];
+    assert_eq!(indexes(&fixture.store), expected, "after the replay");
+
+    let dev = fixture.dev.clone();
+    let ts = ts_offset_secs(-60);
+    fixture.append(&event(
+        1,
+        1,
+        &ts,
+        &dev,
+        "thing",
+        "t1",
+        Some(r#"{"name":"n","made_on":"2026-09-01"}"#),
+    ));
+    let d = serde_json::json!({ "name": "n", "made_on": "2026-09-01" });
+    fixture
+        .store
+        .apply_batch([("thing", "t1", Some(&d))])
+        .unwrap();
+    assert_eq!(
+        indexes(&fixture.store),
+        expected,
+        "after an incremental apply"
+    );
+    // Present and used: the planner picks it for the column it covers.
+    let plan: String = fixture
+        .store
+        .conn()
+        .query_row(
+            "EXPLAIN QUERY PLAN SELECT id FROM thing WHERE made_on = '2026-09-01'",
+            [],
+            |row| row.get::<_, String>(3),
+        )
+        .unwrap();
+    assert!(plan.contains("thing_made_on"), "{plan}");
+
+    let now = jiff::Timestamp::now();
+    let cutoff = store::cutoff_from(now);
+    let snapshot = fixture.snapshot(now);
+    let restored = fixture.store.restore(&cutoff).unwrap();
+    assert_eq!(restored.tier, Tier::Sqlite, "{restored:?}");
+    assert_eq!(indexes(&fixture.store), expected, "after a tier-1 restore");
+    flip_byte(&snapshot.dir.join("thing.sqlite"));
+    let restored = fixture.store.restore(&cutoff).unwrap();
+    assert_eq!(restored.tier, Tier::Csv, "{restored:?}");
+    assert_eq!(indexes(&fixture.store), expected, "after a tier-2 restore");
+    assert_eq!(fixture.count("thing"), 1);
+}
+
+/// `spec/app-contract.md §4.5` — `UNIQUE`, as a column constraint, a table constraint or
+/// an index, is refused when the schema is read: the cache cannot enforce it, since two
+/// devices' logs may both claim a value and `spec/protocol.md §4.5` keeps both rows, and a
+/// check that held only within one batch would be a promise half kept. `id`'s primary
+/// key and a plain index are not that.
+#[test]
+fn test_spec_app_contract_4_5_unique_is_refused_at_load() {
+    for (ddl, names) in [
+        (
+            "CREATE TABLE t (id VARCHAR PRIMARY KEY, code VARCHAR UNIQUE);",
+            "code",
+        ),
+        (
+            "CREATE TABLE t (id VARCHAR PRIMARY KEY, a VARCHAR, b VARCHAR, UNIQUE (a, b));",
+            "a, b",
+        ),
+        (
+            "CREATE TABLE t (id VARCHAR PRIMARY KEY, code VARCHAR);
+             CREATE UNIQUE INDEX t_code ON t (code);",
+            "t_code",
+        ),
+    ] {
+        let error = Schema::parse(ddl).unwrap_err().to_string();
+        assert!(error.contains("UNIQUE"), "{ddl}: {error}");
+        assert!(error.contains(names), "{ddl}: {error}");
+        assert!(error.contains("§4.5"), "{ddl}: {error}");
+    }
+    let plain = Schema::parse(
+        "CREATE TABLE t (id VARCHAR PRIMARY KEY, code VARCHAR);
+         CREATE INDEX t_code ON t (code);",
+    )
+    .unwrap();
+    assert_eq!(plain.indexes.len(), 1);
+    assert_eq!(plain.indexes[0].name, "t_code");
+    assert_eq!(plain.indexes[0].table, "t");
 }
 
 /// `spec/protocol.md §4.6` with `spec/data-api.md §2` — a `del` in an app with no

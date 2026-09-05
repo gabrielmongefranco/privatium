@@ -20,8 +20,8 @@ use crate::store::{Schema, decimal, params};
 
 const SCHEMA_FILE: &str = "schema.sql";
 
-/// `schema.sql`, if present: parse it as the loader would, then `PV106`, `PV107`,
-/// `PV308` over its views and `PV208`.
+/// `schema.sql`, if present: parse it as the loader would — which is where `PV108`'s
+/// `UNIQUE` is refused — then `PV106`, `PV107`, `PV308` over its views and `PV208`.
 pub(crate) fn check_schema(ctx: &mut Ctx<'_>) {
     let Some(text) = ctx.read(SCHEMA_FILE) else {
         return;
@@ -62,6 +62,14 @@ pub(crate) fn check_schema(ctx: &mut Ctx<'_>) {
             if message.contains("has no `id") {
                 ctx.push(RuleId::PV106, SCHEMA_FILE, 0, message).fix =
                     Some("declare `id VARCHAR PRIMARY KEY` on every table".into());
+            } else if message.contains("declares UNIQUE") {
+                let line = text
+                    .to_ascii_uppercase()
+                    .find("UNIQUE")
+                    .map_or(0, |at| line_of(&text, at));
+                ctx.push(RuleId::PV108, SCHEMA_FILE, line, message).fix = Some(
+                    "drop the UNIQUE: key the row by `id`, or make the value part of the id".into(),
+                );
             } else {
                 ctx.push(
                     RuleId::PV107,

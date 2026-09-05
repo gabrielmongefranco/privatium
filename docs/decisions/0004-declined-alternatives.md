@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/decisions/0004-declined-alternatives.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-31
-Modified: 2026-09-03
+Modified: 2026-09-05
 Summary:  Decision record. Sync and p2p stacks evaluated and declined —
           Gun, RxDB, libp2p, SharkTrustX, and BAS embedded in Rust — with
           the reasoning kept so the questions are not re-litigated.
@@ -155,12 +155,13 @@ holder*. It does not resolve it for anyone forking Privatium, and a GPLv3 projec
 ship a GPLv2-only dependency regardless. The choice is between an openly forkable framework
 and a personally licensed one — a product decision, made deliberately here.
 
-**Correction and open item.** It has been suggested that Android is an officially supported
-BAS target. RealTimeLogic's published platform lists (embedded Linux, Zephyr, FreeRTOS,
-lwIP, VxWorks, QNX, INTEGRITY, Windows/WinCE, ThreadX, Azure RTOS, Nucleus, embOS, Mac, and
-other POSIX systems; Mako Server on Linux, Windows, macOS, QNX) do **not** name Android or
-iOS. Android via the NDK is very plausible — it is Linux with bionic — but plausible is not
-ported. **This claim is unverified and this ADR should be updated if a source is found.**
+**Correction.** It has been suggested that Android is an officially supported BAS target.
+RealTimeLogic's published platform lists (embedded Linux, Zephyr, FreeRTOS, lwIP, VxWorks,
+QNX, INTEGRITY, Windows/WinCE, ThreadX, Azure RTOS, Nucleus, embOS, Mac, and other POSIX
+systems; Mako Server on Linux, Windows, macOS, QNX) do **not** name Android or iOS, and a
+reading of the vendor's product and documentation pages in September 2026 found neither
+named anywhere. Android via the NDK is very plausible — it is Linux with bionic — but
+plausible is not ported, so this record treats the claim as unverified and leaves it there.
 It does not change the outcome, because the event-loop argument above is independent of it.
 
 **Would reopen if** the project's scope narrows to desktop, browser, and Android, under a

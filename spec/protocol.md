@@ -9,9 +9,9 @@ Summary:  NORMATIVE. Wire formats, event log, discovery, pairing, session crypto
 
 # Privatium Protocol Specification — `pv/1`
 
-**Status:** Draft 0.1 — Phase 1 implementation in progress (`docs/plans/phase-1.md`); a
-build that does not yet satisfy every item of §13 identifies itself as
-`pv/1 (partial: phase 1)` (`spec/cli.md §1`)
+**Status:** Draft 0.1 — Phase 1 complete (`docs/plans/phase-1.md`), the later phases of
+`docs/roadmap.md` not yet begun; a build that does not yet satisfy every item of §13
+identifies itself as `pv/1 (partial: phase 1)` (`spec/cli.md §1`)
 **Protocol identifier:** `pv/1`
 
 The key words MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, RECOMMENDED,

@@ -34,7 +34,7 @@ pub mod validate;
 pub use decimal::Decimal;
 pub use params::Params;
 pub use restore::{Restored, SkipReason, Skipped, Tier};
-pub use schema::{Column, Kind, Schema, Table, View};
+pub use schema::{Column, Index, Kind, Schema, Table, View};
 pub use snapshot::{
     LogRetention, Manifest, ManifestTable, Pruned, Retention, Snapshot, SnapshotError, SnapshotId,
     SnapshotJob, SnapshotPolicy, TableCheck, Verification,
@@ -242,6 +242,7 @@ impl Store {
             .map_err(StoreError::Sql)?;
         let built = materialize::replay(&self.conn, &self.schema.tables, events)
             .and_then(|()| materialize::rebuild_tombstones(&self.conn, events))
+            .and_then(|()| self.create_indexes())
             .and_then(|()| self.create_views());
         match built {
             Ok(()) => self.conn.execute_batch("COMMIT").map_err(StoreError::Sql)?,
@@ -290,22 +291,61 @@ impl Store {
         id: &str,
         d: Option<&D>,
     ) -> Result<(), StoreError> {
-        let text = match d {
-            Some(value) => {
-                Some(
-                    serde_json::to_string(value).map_err(|source| StoreError::Schema {
-                        problem: source.to_string(),
-                    })?,
-                )
-            }
-            None => None,
-        };
-        materialize::apply(&self.conn, self.schema.table(tbl), tbl, id, text.as_deref())?;
+        self.apply_batch([(tbl, id, d)])
+    }
 
-        // The inputs move; how the tables were originally built does not.
-        let inputs = self.take_inputs()?;
-        self.watermark.schema_hash = inputs.schema_hash;
-        self.watermark.segments = inputs.segments;
+    /// Apply a batch this node just appended — `(tbl, id, d)` per event — without
+    /// replaying the log, in one transaction: a reader on the sandboxed connection sees
+    /// the batch whole or not at all, never a row between its `DELETE` and its `INSERT`
+    /// and never half a batch.
+    ///
+    /// When the transaction fails, the log already holds the batch and the tables no
+    /// longer match it. The watermark is cleared, so [`is_stale`](Self::is_stale) says so
+    /// and the next [`refresh`](Self::refresh) rebuilds from the log; nothing is left to
+    /// describe a cache that is wrong as one that is current.
+    pub fn apply_batch<'a, D, I>(&mut self, changes: I) -> Result<(), StoreError>
+    where
+        D: Serialize + 'a,
+        I: IntoIterator<Item = (&'a str, &'a str, Option<&'a D>)>,
+    {
+        self.conn
+            .execute_batch("BEGIN IMMEDIATE")
+            .map_err(StoreError::Sql)?;
+        let applied = self
+            .apply_each(changes)
+            .and_then(|()| self.conn.execute_batch("COMMIT").map_err(StoreError::Sql));
+        match applied {
+            Ok(()) => {
+                // The inputs move; how the tables were originally built does not.
+                let inputs = self.take_inputs()?;
+                self.watermark.schema_hash = inputs.schema_hash;
+                self.watermark.segments = inputs.segments;
+                Ok(())
+            }
+            Err(error) => {
+                let _ = self.conn.execute_batch("ROLLBACK");
+                self.watermark = Materialized::default();
+                Err(error)
+            }
+        }
+    }
+
+    /// Every event of a batch through [`materialize::apply`], inside the caller's
+    /// transaction.
+    fn apply_each<'a, D, I>(&self, changes: I) -> Result<(), StoreError>
+    where
+        D: Serialize + 'a,
+        I: IntoIterator<Item = (&'a str, &'a str, Option<&'a D>)>,
+    {
+        for (tbl, id, d) in changes {
+            let text =
+                d.map(serde_json::to_string)
+                    .transpose()
+                    .map_err(|source| StoreError::Schema {
+                        problem: source.to_string(),
+                    })?;
+            materialize::apply(&self.conn, self.schema.table(tbl), tbl, id, text.as_deref())?;
+        }
         Ok(())
     }
 
@@ -443,6 +483,24 @@ impl Store {
             }),
         };
         self.fresh = false;
+    }
+
+    /// Every index `schema.sql` declared, recreated from the author's own statement
+    /// (`spec/app-contract.md §4.5`). After the tables: a rebuild drops and recreates
+    /// them, and their indexes go with them. Not inside a tier-1 load, whose snapshot
+    /// files are still attached — an unqualified name in the author's statement has to
+    /// mean `main`.
+    pub(crate) fn create_indexes(&self) -> Result<(), StoreError> {
+        for index in &self.schema.indexes {
+            self.conn
+                .execute_batch(&format!(
+                    "DROP INDEX IF EXISTS main.{};\n{};",
+                    materialize::quote_ident(&index.name),
+                    index.sql.trim_end_matches(';')
+                ))
+                .map_err(StoreError::Sql)?;
+        }
+        Ok(())
     }
 
     /// Every view `schema.sql` declared, recreated from the author's own statement, plus

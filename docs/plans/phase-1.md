@@ -333,6 +333,11 @@ why, not a to-do list.
 | 106 | `§6` listed discovery, pairing and sync and said nothing about a build without them; a method returning `Ok` from a no-op is what this plan's M13 forbids, and an absent one is what a reader writes their own of | A build without an area keeps the method and answers with a typed error naming the phase — `Error::Unimplemented` — and MUST NOT return success | `app-contract.md §6` (found in M13) |
 | 107 | `§2.3` had an embedder wrap their own router in `auth_layer`, and the layer read a `Peer` extension only the framework's own adapter inserts — so on an embedder's router every caller read as "this process" and nothing was ever refused | The layer reads axum's `ConnectInfo<SocketAddr>` too, which `into_make_service_with_connect_info` attaches; `§2.3`'s example shows that call | `app-contract.md §2.3, §6` (found in M13) |
 | 108 | `skills/privatium-tier3-rust/reference/api.md` called itself `Node`'s public methods at this version and listed one file's `impl` block, so `load_apps`, `append` and their neighbours in `app/mod.rs` were absent from the pinned reference; and it said the Phase 2 methods were absent | Every `impl Node` block under `src/`, and what the four methods do | `skills/privatium-tier3-rust/reference/api.md`, `crates/xtask` (found in M13) |
+| 109 | `app-contract.md §2.3` and `§6` had `auth_layer` read the peer from `ConnectInfo` and said nothing about a request with none. The layer allowed it, as the one over `handle` must for its in-process callers, so an embedder's router served without `into_make_service_with_connect_info` admitted every caller | The layer an embedder wraps their router with refuses a request whose peer it cannot see, naming the missing call; an in-process caller inserts `Peer`; `Handler` applies its own permissive copy to `handle` | `app-contract.md §2.3, §6` (hardening, third round) |
+| 110 | `app-contract.md §4.5` and `PV107` permitted `CREATE INDEX`, and nothing created one in the cache — the schema kept tables and views only — while a `UNIQUE` constraint or index was enforced by `validate` within one batch and nowhere else | Declared indexes are recreated on every rebuild; `UNIQUE` beyond `id`'s primary key is refused at load and by `PV108`, because two devices' logs may both claim a value and `protocol.md §4.5` keeps both rows | `app-contract.md §4.5`, `cli.md §5.1` (hardening, third round) |
+| 111 | `data-api.md §6` keyed an outbox entry by its app alone and kept the queue as one list under one key: a solo `/` that changed apps, or another data root on the same port, was replayed into; two offline pages replaced each other's list; and `pv.get` never moved the mark, so an edit of a row the page had read was refused as a conflict | An entry carries the node's `id` too, storage holds one key per entry, a replay asks `/api/node` again before it sends, every POST names its `node` and `app` and the node refuses a mismatch itself (`§2`), and `pv.get` moves the mark | `data-api.md §2, §6` (hardening, third round) |
+| 112 | Rows 69 and 96 set the helper's cap at 8 then 10 KB; the node binding, the per-entry storage and a ULID that stays monotonic within a millisecond are 1.9 KB more | Under 12 KB | `data-api.md §5`, `app-contract.md §5.2` (hardening, third round) |
+| 113 | `protocol.md`'s status line still said Phase 1 was in progress; `apps/README.md` and `README.md` had the reference apps shipping inside the binary, which M13 decided against; the README credited the later phases' libraries as in use; `apps/sketch`, `skills/privatium-games` and `crates/privatium/src/run.rs` described a sync, and a snapshot read under the lock, that the code does not have; ADR 0004 carried an open task over a claim no source supports | Each says what is so | `protocol.md`, `README.md`, `apps/`, `skills/`, `run.rs`, `docs/decisions/0004` (hardening, third round) |
 
 Defect 11 was found during M1 rather than while writing this plan, which is the rule in
 the last paragraph of this section working as intended. It could not be coded around: the
@@ -1065,7 +1070,9 @@ Fixed as one PR between M12 and M13, with `§3` rows 90–98 for the spec each o
   the review's wording here: serving the last valid generation silently is what
   `§3` row 53 rejected.* `test_hot_reload_template_next_request` holds the generation.
 - **Snapshots off the lock.** `Store::snapshot_job` reads the log (fast, under the lock)
-  and `SnapshotJob::write` writes the files (slow, with no lock); `Node::snapshot_due`,
+  and `SnapshotJob::write` writes the files (slow, with no lock) — *second round:* the
+  read moved off the lock too; the job takes each segment's length under the lock and
+  reads that prefix without it; `Node::snapshot_due`,
   `record_snapshot`, `snapshot_retention`, `record_pruned` are the pieces the run loop
   uses, and `Node::maintain` composes them for a caller nobody waits on.
   `test_spec_5_snapshot_job_describes_the_moment_it_was_read`.
@@ -1090,6 +1097,33 @@ queued before the app at a solo mount was known, and refuses a conflict — the 
 since the write was queued — rather than writing over the newer change, which is the
 owner's decision (rows 100–101; eleven tests under `node --test`). The last Phase 2
 claims in `cli.md §2`, `lua-api.md §7` and sketch's README name their phase (row 102).
+
+*Third round, after an outside review of the finished phase:* the incremental apply is one
+transaction — `Store::apply_batch`, `BEGIN IMMEDIATE` to `COMMIT`, the watermark moved once
+— so a reader on the sandboxed connection sees a batch whole or not at all, and a batch
+the cache cannot take clears the watermark, is rebuilt from the log under the lock
+`append_batch` already holds, and reaches the stream as a `resync`. Before, each event was
+two to four autocommit statements, and a failure part-way left the watermark describing a
+cache that did not match the log
+(`test_spec_4_5_failed_apply_leaves_no_half_batch_and_a_stale_watermark`,
+`test_spec_4_5_a_reader_sees_a_batch_whole_or_not_at_all`,
+`test_spec_4_5_append_heals_a_cache_the_apply_could_not_update`). The layer
+`Node::auth_layer` hands an embedder refuses a request whose peer it cannot see, naming the
+missing `into_make_service_with_connect_info`, while `Handler` keeps a permissive copy for
+`handle`'s in-process callers — a router served without connect info admitted everyone
+before (row 109). `CREATE INDEX` reaches the cache: the schema keeps the author's indexes
+and every rebuild recreates them, and `UNIQUE` is refused at load and by `PV108`, since the
+log cannot keep the promise and `validate` had been half-keeping it within a batch (row
+110; `test_spec_app_contract_4_5_declared_indexes_exist_in_the_cache`,
+`test_spec_app_contract_4_5_unique_is_refused_at_load`). An outbox entry carries the node
+it was queued against, storage holds one key per entry so two pages never write over each
+other, a replay asks `/api/node` again before it sends anything, every POST names its
+node and app and the node refuses a mismatch itself, `pv.get` moves the mark so an edit of
+a row the page read is not a false conflict, and a ULID minted in the same millisecond as
+the last sorts after it (rows 111–112; fourteen tests under `node --test`,
+`test_spec_data_2_post_naming_another_node_or_app_is_refused`). The sketch canvas
+captures the pointer for a stroke, so a release off the canvas saves it. The documents say
+what is so (row 113).
 
 ---
 
@@ -1265,6 +1299,7 @@ whole spec sections, so an edit to a section a skill cites is drift by construct
 | 12b | `phase1-hardening` | M12 | as found (§3 rows 90–98) |
 | 12c | `phase1-hardening-2` | 12b | as found (§3 rows 99–102) |
 | 13 | `m13-embedded-release` | M12 | roadmap: tick Phase 1 |
+| 14 | `phase1-hardening-3` | 13 | as found (§3 rows 109–113) |
 
 ---
 

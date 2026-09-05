@@ -164,6 +164,13 @@ Constraints, each refusing the whole batch and naming the event's `index` from 0
   same holds for `pv.append` and the seed: there is one write path.
 - If the app has no `schema.sql`, `d` is stored as-is with no validation.
 
+The body MAY also carry `node` and `app`: the `id` and the `app` of `/api/node` (§4) as
+the client last learned them. A `node` that is not this node's ID, or an `app` that is not
+this mount's, is 409 and nothing is appended. `pv.js` sends both with every write, so an
+entry queued against one node or one app is never written into another (§6), and the
+check is the node's own, made as it appends, rather than a read the client made a moment
+earlier.
+
 A Tier 1 app's `pv.on('append')` fires for an API append as for any other of this node's
 (`spec/lua-api.md §3.4`), after the response is decided.
 

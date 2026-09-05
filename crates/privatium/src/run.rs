@@ -151,9 +151,9 @@ fn flush(handler: &Arc<Handler>) {
 
 /// The scheduled maintenance of `spec/protocol.md §5`: a snapshot when one is due under
 /// the policy, then retention — for `_sys` and every loaded app, now and once a day. On
-/// a blocking thread, and under the node lock only to decide and to record: the log is
-/// read while the lock is held, which keeps it still, and the files are written with it
-/// released, so a request never waits on a checksum.
+/// a blocking thread, and under the node lock only to decide and to record: the job takes
+/// each log segment's length under the lock, then reads that bounded prefix and writes the
+/// files with it released, so a request never waits on a read or a checksum.
 async fn maintain_daily(handler: Arc<Handler>, slugs: Vec<String>, verbose: bool) {
     let mut ticker = tokio::time::interval(MAINTENANCE_EVERY);
     loop {
@@ -176,7 +176,7 @@ fn maintain_once(handler: &Arc<Handler>, slugs: &[String], verbose: bool) {
     };
     let now = jiff::Timestamp::now();
     for slug in std::iter::once(privatium_core::sys::SLUG).chain(slugs.iter().map(String::as_str)) {
-        // Decide and read under the lock; write with it released; record under it again.
+        // Decide under the lock; read and write with it released; record under it again.
         let job = lock().snapshot_due(slug, now);
         match job {
             Ok(Some(job)) => match job.write() {

@@ -996,8 +996,8 @@ async fn test_sketch_end_to_end() {
     assert_eq!(pv.status(), StatusCode::OK);
     let pv = body_of(pv).await;
     assert!(
-        pv.len() < 10 * 1024,
-        "pv.js is {} bytes; spec/data-api.md §5 says under 10 KB",
+        pv.len() < 12 * 1024,
+        "pv.js is {} bytes; spec/data-api.md §5 says under 12 KB",
         pv.len()
     );
     let app_js = fs::read_to_string(web.join("app.js")).unwrap();

@@ -23,7 +23,7 @@ use axum::extract::{ConnectInfo, Request};
 use axum::http::{StatusCode, header::HOST};
 use axum::routing::get;
 use privatium_core::app::StreamEvent;
-use privatium_core::{AppRoot, Device, Error, Event, Node, new_ulid};
+use privatium_core::{AppRoot, Device, Error, Event, Node, Peer, new_ulid};
 use serde_json::{Value, json};
 use tower::ServiceExt as _;
 
@@ -365,11 +365,13 @@ fn test_spec_app_contract_6_phase_2_methods_never_ok() {
     }
 }
 
-/// `§6` `auth_layer` around an embedder's own router (`§2.3`): a request from inside the
-/// process is this node's device; one from loopback, as
-/// `into_make_service_with_connect_info` reports it, is too; one from anywhere else, or
-/// with a `Host` that does not name this machine, is 403 before the route runs
-/// (`docs/plans/phase-1.md §2.2`).
+/// `§6` `auth_layer` around an embedder's own router (`§2.3`): a request from loopback, as
+/// `into_make_service_with_connect_info` reports it, is this node's device; one from
+/// anywhere else, or with a `Host` that does not name this machine, is 403 before the
+/// route runs (`docs/plans/phase-1.md §2.2`). A request whose peer the layer cannot see —
+/// a router served without `into_make_service_with_connect_info` — is refused too, naming
+/// the missing call: the layer fails closed, never open. An embedder calling their router
+/// in-process says so by inserting `Peer` themselves.
 #[tokio::test]
 async fn test_spec_app_contract_6_auth_layer_wraps_an_embedders_router() {
     let root = tempfile::tempdir().unwrap();
@@ -387,13 +389,16 @@ async fn test_spec_app_contract_6_auth_layer_wraps_an_embedders_router() {
         )
         .layer(node.auth_layer());
 
-    let call = |peer: Option<SocketAddr>, host: Option<&str>| {
+    let call = |peer: Option<SocketAddr>, marked: Option<Peer>, host: Option<&str>| {
         let router = router.clone();
         let host = host.map(str::to_owned);
         async move {
             let mut request = axum::http::Request::get("/").body(Body::empty()).unwrap();
             if let Some(peer) = peer {
                 request.extensions_mut().insert(ConnectInfo(peer));
+            }
+            if let Some(marked) = marked {
+                request.extensions_mut().insert(marked);
             }
             if let Some(host) = host {
                 request.headers_mut().insert(HOST, host.parse().unwrap());
@@ -405,17 +410,29 @@ async fn test_spec_app_contract_6_auth_layer_wraps_an_embedders_router() {
         }
     };
 
-    let (status, body) = call(None, None).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body, id, "in-process: this node's device");
+    // No peer at all: the router was served without connect info. Refused, and the
+    // refusal says which call is missing — an embedder who forgot it gets a router that
+    // admits nobody, never one that admits everybody.
+    let (status, body) = call(None, None, None).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+    assert!(
+        body.contains("into_make_service_with_connect_info"),
+        "{body}"
+    );
+    assert!(body.contains("Peer"), "{body}");
 
     let loopback: SocketAddr = ([127, 0, 0, 1], 40000).into();
-    let (status, body) = call(Some(loopback), Some("localhost:8421")).await;
+    let (status, body) = call(Some(loopback), None, Some("localhost:8421")).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, id);
 
+    // In-process, said so: the embedder inserted the peer the framework's adapter would.
+    let (status, body) = call(None, Some(Peer(loopback)), None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body, id, "in-process: this node's device");
+
     let elsewhere: SocketAddr = ([10, 0, 0, 7], 40000).into();
-    let (status, body) = call(Some(elsewhere), None).await;
+    let (status, body) = call(Some(elsewhere), None, None).await;
     assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
     assert!(body.contains("loopback only"), "{body}");
     assert!(
@@ -423,7 +440,7 @@ async fn test_spec_app_contract_6_auth_layer_wraps_an_embedders_router() {
         "the refusal names nothing about the node"
     );
 
-    let (status, _) = call(Some(loopback), Some("evil.example:8421")).await;
+    let (status, _) = call(Some(loopback), None, Some("evil.example:8421")).await;
     assert_eq!(
         status,
         StatusCode::FORBIDDEN,

@@ -98,7 +98,9 @@ impl Handler {
     #[must_use]
     pub fn new(node: Node, report: LoadReport) -> Self {
         let csrf = Csrf::new(node.identity());
-        let auth = node.auth_layer();
+        // The adapter's layer, not the embedder's: `handle`'s in-process callers carry no
+        // peer, and the framework's own socket adapter always inserts one.
+        let auth = AuthLayer::for_adapter(node.id().clone());
         let mode = node.config().node.mode;
         let default_origin = format!("http://{}:{}", Ipv4Addr::LOCALHOST, node.config().node.port);
         Self {

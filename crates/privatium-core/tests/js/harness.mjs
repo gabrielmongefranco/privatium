@@ -22,6 +22,8 @@ export function storage(broken = false) {
     getItem(k) { fail(); return map.has(k) ? map.get(k) : null; },
     setItem(k, v) { fail(); map.set(k, String(v)); },
     removeItem(k) { fail(); map.delete(k); },
+    key(i) { fail(); return [...map.keys()][i] ?? null; },
+    get length() { fail(); return map.size; },
     get map() { return map; },
   };
 }

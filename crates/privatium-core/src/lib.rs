@@ -712,8 +712,11 @@ impl Node {
 
     /// `auth_layer` (`spec/app-contract.md §6`): the tower middleware that decides who a
     /// request is from. Phase 1: a loopback caller is this node's own device row, anything
-    /// else is 403 (`docs/plans/phase-1.md §2.2`). [`Handler::handle`] applies it itself, so
-    /// every adapter gets it; an embedder wraps their own router with it (`§2.3`).
+    /// else is 403 (`docs/plans/phase-1.md §2.2`). [`Handler::handle`] applies its own
+    /// copy itself, so every adapter gets it; this one is for an embedder to wrap their
+    /// own router with (`§2.3`), and it refuses a request whose peer it cannot see — serve
+    /// the router with `into_make_service_with_connect_info`, or insert [`Peer`] for a
+    /// call made in-process.
     #[must_use]
     pub fn auth_layer(&self) -> AuthLayer {
         AuthLayer::new(self.identity.id().clone())
