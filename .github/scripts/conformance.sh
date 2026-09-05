@@ -71,4 +71,13 @@ run privatium-core identity \
   test_spec_3_1b_restored_keys_select_the_original_cluster \
   test_spec_3_1b_replayed_rows_cannot_change_local_cluster_identity
 
-echo "conformance: Phase 1 items and implemented cluster identity items hold by name"
+# Session primitives and handshake refusals; the live channel has its own acceptance.
+run privatium-core session \
+  test_spec_8_key_schedule_matches_the_checked_in_vectors \
+  test_spec_8_frames_round_trip_and_the_counter_never_repeats \
+  test_spec_8_a_tampered_frame_is_refused \
+  test_spec_8_handshake_derives_the_same_keys_on_both_sides \
+  test_spec_8_1_a_static_key_that_is_not_the_pinned_one_fails_the_confirm \
+  test_spec_8_3_unknown_revoked_and_missing_device_keys_are_refused
+
+echo "conformance: Phase 1, cluster identity, and session primitive items hold by name"

@@ -50,6 +50,8 @@ rusqlite = { version = "0.40.2", default-features = false }
 ed25519-dalek = "3.0.0"
 # Static session identity, derived from the node key (spec/protocol.md §8).
 x25519-dalek = { version = "3.0.0", default-features = false, features = ["static_secrets", "zeroize"] }
+# Authenticated session frames (spec/protocol.md §8); random keys come from rand.
+chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["alloc", "zeroize"] }
 sha2          = "0.11.0"
 hmac          = "0.13.0"
 hkdf          = "0.13.0"

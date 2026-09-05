@@ -104,6 +104,13 @@ everything. Treat it like a script a stranger emailed you.
 
 ## Three properties — do not conflate them
 
+Current Phase 2 work provides cluster identity and session cryptography helpers in Rust
+and JavaScript. Pairing and the live LAN channel are still planned for Phase 2; the
+binary remains loopback-only. Do not describe these helpers as working LAN access.
+Session transports must use fresh ephemerals on reconnect and close the connection on
+every frame error. Never reconstruct a frame counter under an existing key
+(`spec/protocol.md §8, §8.3`).
+
 | # | Property | Mechanism | Missing anywhere? |
 |---|---|---|---|
 | 1 | Program authenticity | Signature / notarization / CA chain | **Yes** — browser on plain-HTTP LAN |

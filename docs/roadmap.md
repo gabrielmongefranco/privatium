@@ -87,8 +87,10 @@ device registry, mDNS + UDP discovery, key pinning.
 Plan: `docs/plans/phase-2.md`.
 
 M14 implements cluster identity, node certificates and the derived X25519 static key.
-Its tests and verification record are in the plan. Pairing, sessions and discovery remain
-planned for M15–M19; the Phase 2 acceptance bullets below remain open.
+M15 adds session key agreement, encrypted frames and handshake helpers in Rust and
+JavaScript. Tests and verification records are in the plan. Pairing, the live encrypted
+channel and discovery remain planned for M16–M19; the Phase 2 acceptance bullets below
+remain open.
 
 **Done when:**
 - [ ] Pairing completes on a phone in under 20 seconds, without a keyboard

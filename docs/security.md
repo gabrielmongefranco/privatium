@@ -11,6 +11,17 @@ Summary:  Threat model, protections, and honest statements of what is not protec
 
 Non-normative narrative. Normative requirements live in `spec/protocol.md §7–9`.
 
+**Current build:** Phase 2 has cluster identity and transport-independent session
+cryptography in Rust and JavaScript. The node still binds loopback. Pairing and the
+encrypted LAN channel remain planned for Phase 2; the network protections described
+below become available when that channel is connected to the request handler.
+
+The session helpers reject invalid keys, expired or mismatched certificates, altered
+handshake transcripts, and unauthentic frames. A failed frame permanently closes its
+direction; the transport must close the whole connection. Fresh ephemeral keys are
+required on reconnect, and counters stop at 2³² frames per direction. Browser helpers
+use vendored Noble cryptography and `crypto.getRandomValues`, without `crypto.subtle`.
+
 ## 1. Who this protects against, and who it does not
 
 | Adversary | Outcome |
