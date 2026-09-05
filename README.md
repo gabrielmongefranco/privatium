@@ -13,6 +13,8 @@ Software license: GPL-3.0-or-later.
 See the License and Credits sections below for the full notices and attribution.
 -->
 
+<img src="assets/branding/privatium-banner.svg" alt="" width="1800">
+
 # Privatium™
 
 ***The private element of personal software.***
