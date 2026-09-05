@@ -588,7 +588,10 @@ fn test_spec_7_5_code_expires_at_120s_and_five_attempts_issue_a_new_one() {
     run(&mut node, renewed, source(21), later(214)).unwrap();
 
     // Attempts that never send cA count too: five silent peers exhaust a code.
-    let mut node = open(&tempfile::tempdir().unwrap());
+    // Bound to a name: a directory dropped here would vanish under the open node on
+    // Linux and macOS, which delete a directory whose files are still open.
+    let silent = tempfile::tempdir().unwrap();
+    let mut node = open(&silent);
     node.pair_at(Duration::from_secs(120), now()).unwrap();
     let code = code_of(&node);
     for n in 1..=5u8 {
