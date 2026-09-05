@@ -29,6 +29,22 @@ pub const KIND_CLUSTER_CREATED: &str = "cluster.created";
 /// An unexpired node certificate was renewed (`spec/protocol.md §2.3.1`).
 pub const KIND_CERT_RENEWED: &str = "cert.renewed";
 
+/// The owner opened a pairing window (`spec/protocol.md §7.1`).
+pub const KIND_PAIR_OPENED: &str = "pair.opened";
+
+/// A device's `pA` was accepted and counted against the code (`§7.5`).
+pub const KIND_PAIR_ATTEMPT: &str = "pair.attempt";
+
+/// A device paired and its `sys_device` row was written (`§7.4`).
+pub const KIND_PAIR_SUCCESS: &str = "pair.success";
+
+/// A counted attempt failed: a wrong code, an abandoned handshake, an exhausted code or a
+/// refused registration (`§7.5`).
+pub const KIND_PAIR_FAILED: &str = "pair.failed";
+
+/// A window closed without a pairing — its TTL passed, or the owner closed it (`§7.5`).
+pub const KIND_PAIR_EXPIRED: &str = "pair.expired";
+
 /// Public facts about a founded cluster (`spec/data-dictionary.md §3.1b`).
 #[derive(Debug, Serialize)]
 pub(crate) struct ClusterRow<'a> {

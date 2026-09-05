@@ -6,7 +6,7 @@ Upstream: [curves](https://github.com/paulmillr/noble-curves), [ciphers](https:/
 
 Files come from the versioned npm archives. Each archive is verified against its npm SHA-512 integrity value. Each package retains its complete `LICENSE`.
 
-Only bare `@noble/hashes/...` import specifiers become relative paths into the sibling `hashes/` directory, so browsers resolve the modules without a bundler or import map. Cryptographic code is unchanged. This exception is approved in `docs/plans/phase-2.md §3`.
+Only bare `@noble/<package>/...` import specifiers — in `import` statements and in the doc-comment examples upstream ships beside them — become relative paths into the sibling package directory, so browsers resolve the modules without a bundler or import map. Every other byte is upstream's: reverting those specifiers reproduces each upstream hash below. Cryptographic code is unchanged. This exception is approved in `docs/plans/phase-2.md §3`.
 
 Upstream whitespace is preserved. Git's whitespace check reports 25 trailing-whitespace lines in these modules; trimming them would exceed the import-path-only exception.
 

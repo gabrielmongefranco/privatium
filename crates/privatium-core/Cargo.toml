@@ -48,6 +48,10 @@ thiserror = { workspace = true }
 ed25519-dalek = { workspace = true, features = ["rand_core", "zeroize"] }
 x25519-dalek = { workspace = true }
 chacha20poly1305 = { workspace = true }
+# RFC 9382 SPAKE2 over edwards25519 for pairing (spec/protocol.md §7.4.1), written over
+# the curve crate ed25519-dalek already brings in; no PAKE crate carries the RFC's
+# constants on both sides of the wire (docs/plans/phase-2.md §2.4).
+curve25519-dalek = { workspace = true }
 rand          = { workspace = true }
 sha2          = { workspace = true }
 base64        = { workspace = true }

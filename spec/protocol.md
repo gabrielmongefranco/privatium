@@ -696,7 +696,7 @@ Index order is normative. Changing it changes the wire meaning of a code.
 | 7 | 🦊 | U+1F98A | Fox |
 | 8 | ⚡️ | U+26A1 U+FE0F | Lightning |
 | 9 | 🌶️ | U+1F336 U+FE0F | Hot Pepper |
-| 10 | 🦩 | U+1FAB0 | Flamingo |
+| 10 | 🦩 | U+1F9A9 | Flamingo |
 | 11 | 🎨 | U+1F3A8 | Artist Palette |
 | 12 | 🍍 | U+1F34D | Pineapple |
 | 13 | 🍁 | U+1F341 | Maple Leaf |
@@ -742,9 +742,9 @@ following RFC 9382 §3 with the choices below. Every one of them is wire meaning
   by the node's Ed25519 public key in base64. Both static keys are in the transcript,
   which is how step 4's binding is met.
 - `w` is `HKDF-SHA256(ikm = the code as two bytes, big-endian; salt = empty; info =
-  "pv/1 pake w")`, 64 bytes of output reduced modulo the order of the prime-order
-  subgroup. A memory-hard function adds nothing to sixteen bits
-  (`spec/data-dictionary.md §3.3`).
+  "pv/1 pake w")`, 64 bytes of output read as a little-endian integer — as RFC 8032
+  reads a scalar — and reduced modulo the order of the prime-order subgroup. A
+  memory-hard function adds nothing to sixteen bits (`spec/data-dictionary.md §3.3`).
 - `pA = w·M + x·G` and `pB = w·N + y·G`, with `x` and `y` fresh CSPRNG scalars; `K` is
   computed with the cofactor, as RFC 9382 §3.2 computes it.
 - In the transcript `TT` (RFC 9382 §3.3, eight-byte little-endian lengths), `pA`, `pB`
@@ -775,12 +775,22 @@ client → sealed {"x25519":"<base64>","label":"Pixel 9","ua":"<user agent, or a
   phase it arrives in.
 - `dev` MUST be the Node ID §2.1 derives from `pub`; a mismatch is close code 4400.
 - The client verifies `cB` before sending `cA`; a `cB` that does not verify is the
-  wrong code, and the client says so. The node verifies `cA` before it sends anything
-  sealed; a `cA` that does not verify is one attempt (§7.5), audited, and close code
-  4401, and an exhausted code is 4429.
+  wrong code, and the client says so and closes without sending `cA`. The node verifies
+  `cA` before it sends anything sealed; a `cA` that does not verify is audited as a
+  failure and closed with 4401.
+- An attempt (§7.5) is counted when the node accepts a `pA`, before it answers: the
+  answer already tells the client whether its code matched, so a client that never sends
+  `cA` has still spent a guess. A code whose five attempts are spent is replaced before
+  the refusal, so 4429 names a code that no longer exists. A connection refused before
+  its `pA` is accepted — pairing closed, the two-second rule, a malformed message — is
+  not an attempt and writes no `sys_audit` row, which keeps a stranger's connections out
+  of a replicated table; a client that goes away after `pA` without a `cA` is a failed
+  attempt, and the transport reports it as one.
 - The node writes the `sys_device` row from the client's sealed message — `kind`,
   `replica` (`false` for a browser), both public keys, `paired_at`, `paired_via`,
-  `user_agent`, `label` — then marks the code consumed and closes the window.
+  `user_agent`, `label` — then marks the code consumed and closes the window. A device
+  key already in `sys_device`, active or revoked, is refused with 4403: a key is never
+  registered twice, and a device that lost its pairing generates a new one (§7.6).
 
 The code, either rendering of it, and `w` appear in no message. An implementation MUST
 be able to show that from a transcript.
@@ -790,7 +800,8 @@ be able to show that from a transcript.
 - Code TTL: 120 seconds. MUST be enforced node-side.
 - Maximum attempts per code: 5. On exhaustion the code is destroyed and a new one issued.
 - Failed attempts MUST be rate-limited to no more than 1 per 2 seconds per source.
-- Every pairing attempt, success or failure, MUST produce a `sys_audit` event.
+- Every pairing attempt, success or failure, MUST produce a `sys_audit` event. An
+  attempt is a `pA` the node accepted (§7.4.2).
 
 ### 7.6 Persistence and re-pairing
 

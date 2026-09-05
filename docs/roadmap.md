@@ -88,9 +88,12 @@ Plan: `docs/plans/phase-2.md`.
 
 M14 implements cluster identity, node certificates and the derived X25519 static key.
 M15 adds session key agreement, encrypted frames and handshake helpers in Rust and
-JavaScript. Tests and verification records are in the plan. Pairing, the live encrypted
-channel and discovery remain planned for M16–M19; the Phase 2 acceptance bullets below
-remain open.
+JavaScript. M16 adds pairing — the 16-bit code in both renderings, SPAKE2 as RFC 9382
+specifies it, the six messages of `/ws/pair`, the in-memory window with its limits and
+audit rows, and the device row a success writes — in Rust and JavaScript, as data a
+test drives; nothing listens on a socket for it yet. Tests and verification records are
+in the plan. The live encrypted channel, discovery and the pairing screen remain
+planned for M17–M19; the Phase 2 acceptance bullets below remain open.
 
 **Done when:**
 - [ ] Pairing completes on a phone in under 20 seconds, without a keyboard

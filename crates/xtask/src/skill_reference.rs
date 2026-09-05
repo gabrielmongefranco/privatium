@@ -572,10 +572,10 @@ fn rust_api(root: &Path) -> Result<String> {
         .collect();
     Ok(format!(
         "# `privatium-core` as a library\n\n{}\n{}\n## `Node`'s public methods at this version\n\n\
-         From every `impl Node` block under `crates/privatium-core/src/`. `serve_discovery`, `pair`, \
-         `start_sync` and `sync_now` are present with their signatures and return \
-         `Error::Unimplemented` naming the phase they arrive in — discovery and pairing are Phase 2, \
-         sync Phase 3 (`docs/roadmap.md`) — never `Ok`.\n\n```rust\n{list}```\n",
+         From every `impl Node` block under `crates/privatium-core/src/`. `pair(ttl)` opens a \
+         pairing window (`spec/protocol.md §7`). `serve_discovery`, `start_sync` and `sync_now` \
+         are present with their signatures and return `Error::Unimplemented` naming the phase \
+         they arrive in — discovery is Phase 2, sync Phase 3 (`docs/roadmap.md`) — never `Ok`.\n\n```rust\n{list}```\n",
         section(root, "spec/app-contract.md", "2.3")?,
         section(root, "spec/app-contract.md", "6")?
     ))

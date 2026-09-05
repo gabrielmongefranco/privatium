@@ -82,6 +82,7 @@ mod tests {
     fn test_spec_8_browser_crypto_modules_are_served_without_path_traversal() {
         for path in [
             "session.js",
+            "pair.js",
             "vendor/noble/curves/ed25519.js",
             "vendor/noble/hashes/sha2.js",
             "vendor/noble/ciphers/chacha.js",

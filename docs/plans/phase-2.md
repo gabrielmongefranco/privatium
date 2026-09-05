@@ -241,10 +241,12 @@ Ed25519 one, since it has storage to keep both in.
 `data-dictionary.md §3.3` gives `sys_pairing` a `code_hash` "so that a crash dump or stray
 log does not contain a live code". The node has to hold the PAKE secret `w` for the whole
 window to answer the handshake at all, so hashing the code beside it protects nothing.
-M16 keeps one pairing at a time in memory — `w`, `created_at`, `expires_at`, `attempts`,
-`consumed_by` — drops the code bytes the moment `w` is derived, and writes nothing to
-disk: `local/` keeps its two files (`§3`), and a code that never touched a file needs no
-hash. §3 row 6 amends `§3.3` to say so. No `argon2` crate.
+M16 keeps one pairing at a time in memory — the code, `w`, `created_at`, `expires_at`,
+`attempts`, `consumed_by` — and writes nothing to disk: `local/` keeps its two files
+(`§3`), and a code that never touched a file needs no hash. §3 row 6 amends `§3.3` to
+say so. No `argon2` crate. The first draft of this section had the node drop the code's
+bytes once `w` existed; row 23 records why it does not — the window is shown again on
+request, and `w` is a function of the code.
 
 *Decided: `data-dictionary.md §3.3`.*
 
@@ -314,12 +316,16 @@ rule applied.*
 
 ## 3. Spec gaps found
 
-Rows 1–21 are fixed. As in
+Rows 1–25 are fixed. As in
 Phase 1, this records what changed and why;
 `cargo xtask gen-skill-reference` ran with the edits.
 
 | # | Was | Proposed | Files | Milestone |
 |---|---|---|---|---|
+| 25 | `§7.3` row 10 gave the flamingo's codepoint as U+1FAB0, which is 🪰; the glyph and the label in the same row were right | U+1F9A9, which both implementations already emit; the conformance test now reads the table's glyph, codepoints and label and holds all three to the code | `protocol.md §7.3` | **Fixed**; M16; `test_spec_7_3_glyph_table_is_normative_and_keeps_variation_selectors` |
+| 24 | `§7.4.2` never said when an attempt is counted. Counting at `cA` lets a client guess for free: the node's answer to `pA` already tells it whether the code matched, and it need never send `cA` | An attempt is counted when `pA` is accepted; an exhausted code is replaced before the 4429; a refusal before `pA` — closed, rate-limited, malformed — is no attempt and writes no audit row; a peer that leaves after `pA` is a failed attempt the transport reports; a registered device key is refused with 4403 | `protocol.md §7.4.2, §7.5` | **Fixed**; M16; `test_spec_7_5_code_expires_at_120s_and_five_attempts_issue_a_new_one` |
+| 23 | `§3.3` had the node drop the code's bytes once `w` existed, but `§9.2`'s `GET /api/v1/pair` answers the code again on request, and `w` is a function of sixteen bits, so dropping the code hides nothing | The window holds the code beside `w`; `generation` counts replaced codes so a surface can notice a new one | `data-dictionary.md §3.3` | **Fixed**; M16 |
+| 22 | `§7.4.1` reduced 64 HKDF bytes "modulo the order" with no byte order | Little-endian, as RFC 8032 reads a scalar and as both curve libraries do | `protocol.md §7.4.1` | **Fixed**; M16; `test_spec_7_4_spake2_matches_the_checked_in_vectors` |
 | 21 | The plan requires unmodified Noble modules, but their bare `@noble/hashes/...` imports cannot resolve in a browser without a build step or import map | Permit import-path-only edits to relative URLs. Keep cryptographic code unchanged and record upstream and vendored SHA-256 hashes, archive integrity, and original licences | This plan §5; `assets/shell/vendor/noble/VENDOR.md` | **Fixed**, owner confirmed; M15; protocol and CSP unchanged |
 | 20 | The global singleton wording for `sys_node` and `sys_cluster` conflicts with restored and replicated identity records | Preserve all restored records. Verified local keys and certificate select this installation's current node and cluster; startup appends corrections to their public identity fields without retiring other clusters. Registry presence alone establishes no cluster trust | `data-dictionary.md §3.1, §3.1b`, `protocol.md §2.3` | **Fixed**, owner confirmed; M14; `test_spec_3_1b_data_only_restore_preserves_records_and_selects_local_identity`, `test_spec_3_1b_restored_keys_select_the_original_cluster`, `test_spec_3_1b_replayed_rows_cannot_change_local_cluster_identity` |
 | 19 | `§2.3.1` requires re-admission after expiry but startup renewal has no expiry exception | Startup renewal applies only to unexpired certificates; at or after expiry the node refuses self-renewal and requires re-admission | `protocol.md §2.3.1` | **Fixed**, owner confirmed; M14 |
@@ -361,9 +367,11 @@ crates/privatium-core/
 │   │   ├── mod.rs            key schedule, frames, the nonce discipline (M15)
 │   │   └── handshake.rs      the /ws handshake, both roles (M15, M17)
 │   ├── pair/
-│   │   ├── mod.rs            the pairing window: state, TTL, attempts, audits (M16)
+│   │   ├── mod.rs            the pairing window: state, TTL, attempts, the refusals (M16)
 │   │   ├── code.rs           the 16-bit code, glyphs, words, parsing (M16)
-│   │   └── spake2.rs         RFC 9382 over edwards25519 (M16)
+│   │   ├── spake2.rs         RFC 9382 over edwards25519 (M16)
+│   │   ├── handshake.rs      the six messages of /ws/pair, both roles, as data (M16)
+│   │   └── node.rs           Node::pair and the handshake driven against the window, with the audits (M16)
 │   ├── discover/
 │   │   ├── mod.rs            serve_discovery: the two mechanisms started together (M18)
 │   │   ├── txt.rs            the TXT record and its budget (M18)
@@ -374,6 +382,8 @@ crates/privatium-core/
 │   ├── http/devices.rs       the devices page's actions (M19)
 │   └── http/pairing.rs       the code page, the QR, the bootstrap page (M16, M19)
 ├── assets/shell/
+│   ├── session.js            the key schedule, the frame and the client handshake (M15)
+│   ├── pair.js               the code, SPAKE2, the device's side of /ws/pair, pv:device (M16)
 │   ├── client.js             keys, handshake, channel, the htmx extension, pairing UI (M17, M19)
 │   ├── pair.css              the pad and the code page (M19)
 │   └── vendor/noble/         @noble/curves, ciphers, hashes as ES modules, with VENDOR.md (M15)
@@ -384,7 +394,7 @@ crates/privatium-core/
     ├── channel.rs            through handle, with a faked peer (M17)
     ├── discover.rs           (M18)
     ├── fixtures/session-vectors.json, pake-vectors.json   generated by Rust, read by both (M15, M16)
-    └── js/session.test.mjs, pake.test.mjs, client.test.mjs   under node --test (M15–M17)
+    └── js/session.test.mjs, pake.test.mjs, pair.test.mjs, client.test.mjs   under node --test (M15–M17)
 crates/privatium/
 ├── src/lib.rs                the bind of §2.2 (M17)
 ├── src/pair.rs               privatium pair (M19)
@@ -434,8 +444,10 @@ bytes it never parses; `§4.2` is unchanged by the channel.
 
 ### M14 — Cluster identity, the certificate, the X25519 static
 
-**Implementation status, 2026-09-05:** implemented on `m14-cluster-identity`.
-Section 3 rows 19 and 20 record the confirmed expiry and restore decisions. All 26
+**Implementation status, 2026-09-05:** implemented on `m14-cluster-identity` and merged
+as PR #27; the three-platform CI run on the merge passed, and the checklist below is
+ticked on that run. Section 3 rows 19 and 20 record the confirmed expiry and restore
+decisions. All 26
 identity tests pass on Windows, including preservation of restored registry records,
 selection with and without restored keys, and correction of forged public identity
 fields. The 498-test workspace suite, Clippy with warnings denied, formatting, header
@@ -496,27 +508,27 @@ copy), `test_spec_2_1_x25519_static_is_derived_and_stable`,
 
 **Acceptance checklist** — check only after the named tests pass on all three platforms:
 
-- [ ] First start and Phase 1 upgrade preserve node identity:
+- [x] First start and Phase 1 upgrade preserve node identity:
   `test_spec_2_3_first_start_founds_a_cluster`,
   `test_spec_2_3_a_phase_1_root_founds_a_cluster_on_its_next_start`,
   `test_identity_second_run_keeps_the_cluster_and_the_node_id`.
-- [ ] Canonical certificates, signature and lifetime validation, bounded input:
+- [x] Canonical certificates, signature and lifetime validation, bounded input:
   `test_spec_2_3_1_certificate_signed_bytes_are_canonical`,
   `test_spec_2_3_1_certificate_verifies_against_the_cluster_key_and_expires_at_180_days`,
   `test_spec_2_3_1_signed_invalid_certificate_fields_are_refused`,
   `test_spec_2_3_1_startup_refuses_another_nodes_certificate`.
-- [ ] Unexpired renewal under ninety days and one renewal audit:
+- [x] Unexpired renewal under ninety days and one renewal audit:
   `test_spec_2_3_1_certificate_renews_under_ninety_days`,
   `test_spec_2_3_1_startup_renewal_is_audited_once`.
-- [ ] Derived session identity and discovery name:
+- [x] Derived session identity and discovery name:
   `test_spec_2_1_x25519_static_is_derived_and_stable`,
   `test_spec_3_1b_pkarr_name_is_zbase32_of_the_cluster_public_key`.
-- [ ] Keys stay private and invalid identity material fails closed:
+- [x] Keys stay private and invalid identity material fails closed:
   `test_spec_2_3_3_cluster_private_key_is_absent_from_every_event_snapshot_and_backup`,
   `test_spec_2_3_invalid_cluster_material_is_refused_without_replacement`,
   `test_spec_2_3_missing_cluster_key_is_not_silently_replaced`,
   `test_spec_2_3_cluster_key_mode_0600` (Unix only).
-- [ ] Restore preserves records and verified local identity selects the current ones:
+- [x] Restore preserves records and verified local identity selects the current ones:
   `test_spec_3_1b_data_only_restore_preserves_records_and_selects_local_identity`,
   `test_spec_3_1b_restored_keys_select_the_original_cluster`,
   `test_spec_3_1b_replayed_rows_cannot_change_local_cluster_identity`,
@@ -530,8 +542,10 @@ Node admission and sync remain Phase 3 work; this change provides no successful 
 
 ### M15 — The session layer, in Rust and in JavaScript
 
-**Implementation status, 2026-09-05:** implemented on `m15-session`; Windows gates pass
-and three-platform PR CI is pending. Session helpers do no network or storage I/O.
+**Implementation status, 2026-09-05:** implemented on `m15-session` and merged as PR
+#28; the three-platform CI run on the merge passed, and the checklist below is ticked
+on that run. A later review confirmed that reverting the import specifiers of every
+vendored Noble file reproduces its upstream hash (row 21). Session helpers do no network or storage I/O.
 The node handshake takes
 active pairing facts from its caller; wiring that lookup to the registry and enforcing
 revocation on channel requests remain M17 work. The bind remains loopback until M17.
@@ -614,25 +628,25 @@ remain with M17–M19, where those flows are implemented.
 
 **Acceptance checklist** — check only after the named tests pass on all three platforms:
 
-- [ ] Key schedule and cross-language frames:
+- [x] Key schedule and cross-language frames:
   `test_spec_8_key_schedule_matches_the_checked_in_vectors`,
   `test_spec_8_key_schedule_and_bidirectional_frames_match_rust_vectors` (JavaScript).
-- [ ] Counters, empty frames, tampering, replay and exhaustion:
+- [x] Counters, empty frames, tampering, replay and exhaustion:
   `test_spec_8_frames_round_trip_and_the_counter_never_repeats`,
   `test_spec_8_a_tampered_frame_is_refused`,
   `test_spec_8_a_session_closes_at_the_counter_limit` (Rust unit),
   `test_spec_8_counter_limit_cannot_be_raised_and_key_input_is_copied` (JavaScript).
-- [ ] Handshake agreement, exact transcript and pin/certificate refusal:
+- [x] Handshake agreement, exact transcript and pin/certificate refusal:
   `test_spec_8_handshake_derives_the_same_keys_on_both_sides`,
   `test_spec_8_3_confirm_binds_the_exact_hello_bytes`,
   `test_spec_8_1_a_static_key_that_is_not_the_pinned_one_fails_the_confirm`,
   `test_spec_8_1_certificate_mismatch_and_expiry_are_refused_before_confirm`,
   `test_spec_8_client_handshake_matches_rust_without_crypto_subtle` (JavaScript).
-- [ ] Unknown/revoked devices, missing/invalid keys and malformed hellos:
+- [x] Unknown/revoked devices, missing/invalid keys and malformed hellos:
   `test_spec_8_3_unknown_revoked_and_missing_device_keys_are_refused`,
   `test_spec_8_3_malformed_hello_and_wrong_version_are_refused`,
   `test_spec_8_noncontributory_keys_and_invalid_ids_are_refused`.
-- [ ] Browser modules load from the embedded asset set with preserved provenance:
+- [x] Browser modules load from the embedded asset set with preserved provenance:
   `test_spec_8_browser_crypto_modules_are_served_without_path_traversal` (Rust unit),
   `test_spec_8_noble_hashes_and_relative_import_closure_match_provenance` (JavaScript).
 
@@ -683,6 +697,116 @@ where the code proves it wrong.
 ---
 
 ### M16 — Pairing
+
+**Implementation status, 2026-09-05:** implemented on `m16-pairing`; the Windows gates
+pass and the three-platform PR CI is pending. Section 3 rows 22–25 record the spec gaps
+the code found. Pairing is data: `Node::pair` opens the window; `Node::pairing_hello`,
+`pairing_begin`, `pairing_confirm`, `pairing_finish` and `pairing_abandon` drive the six
+messages against it under the node's lock and write every audit row of `§7.5`; the Rust
+`pair::handshake::Client` and `assets/shell/pair.js` are the device's side. Nothing
+listens at `/ws/pair` until M17 wires `wire::channel`, and the node still binds
+loopback, so the URL in the pairing object is the loopback URL until M17's bind replaces
+`Node::listen_url`.
+
+Three shapes differ from the sketch below, none of them wire meaning. `Node::pair(ttl)`
+returns a `PairingSnapshot` — both renderings of the code, the URL, the expiry, the
+attempts and the outcome, the object `POST /api/v1/pair` will answer with — while
+`Pairing` is the window itself, reached through `Node::pairing()`. An attempt is counted
+when `pA` is accepted rather than when `cA` arrives (row 24), so five silent peers
+exhaust a code exactly as five wrong guesses do, and a peer that leaves after `pA` is
+reported through `pairing_abandon`. `client.test.mjs` arrives with `client.js` in M17;
+the device-ID derivation test lives in `pair.test.mjs`. The vector file is written by
+`generate_pake_vectors` (ignored by default) from the identity fixture; `Pairing::open_with`,
+`Exchange::begin_with` and `Client::start_with` take the secrets the fixture fixes and
+are the only way to make a run reproducible. `spec/pairing-words.txt` and its `NOTICE`
+entry were already in the tree; the list is compiled into the crate as a `const`, so a
+malformed list is a build error rather than a runtime one.
+
+`curve25519-dalek` 5.0.0 is taken directly, as §5 planned: it was already in the
+lockfile beneath `ed25519-dalek`, so the graph gains no package. `cargo deny check`
+passes advisories, bans, licences and sources, with the existing duplicate-`syn`
+warning.
+
+Regenerate the vector file only with:
+
+```sh
+cargo test -p privatium-core --locked --test pair generate_pake_vectors -- --ignored --exact
+```
+
+**Verification on Windows:**
+
+| Command | Outcome |
+|---|---|
+| `cargo test -p privatium-core --locked --test pair` | 19 passed; the generator ignored by default |
+| `cargo test -p privatium-core --lib --locked pair::` | 7 passed |
+| `cargo test --workspace --locked` | 537 passed, 0 failed; 2 intentional fixture-generator ignores |
+| `cargo fmt --all --check` | Passed |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | Passed |
+| `cargo xtask header-check` | 311 files passed |
+| `cargo xtask gen-skill-reference` | Regenerated 21 files; the Tier 3 `api.md` gained the pairing methods |
+| `cargo xtask gen-skill-reference --check` | 21 files match |
+| `cargo xtask lint-spec-refs` | 37 rules resolve |
+| `node --test crates/privatium-core/tests/js/*.test.mjs` | 36 passed, 11 of them new; portable Node 24.20.0 |
+| `cargo deny check` | Passed; existing duplicate-`syn` warning |
+| `bash .github/scripts/conformance.sh` | Every named Phase 1, identity, session and pairing test passed using Git Bash |
+
+No app folder changed, so no targeted `privatium lint` run is needed; the reference-app
+lint test and CI's lint step still run.
+
+Security review: every message is bounded before it is parsed; a device ID is checked
+against its key; a point is refused unless it is the one canonical encoding of a point
+outside the small-order subgroup, and a shared point that is the identity is refused;
+`cB` is verified before `cA` is sent and `cA` before anything is sealed; the confirmation
+comparison is constant-time; a `kind` of `node` and a registered key are refused with
+4403; the rate limit and the attempt cap are enforced before the PAKE runs; a refusal
+carries none of the peer's bytes; no code, rendering or `w` appears in any message or any
+audit row, which `test_spec_7_0_the_code_never_crosses_the_wire` and
+`test_spec_7_5_every_attempt_writes_an_audit_row_without_the_code` hold; the browser
+checks storage before it sends anything, so a device the node registers is one that kept
+its keys. What remains open is `§7.7`'s first-load gap, as designed.
+
+No page, control or app folder changed; the accessibility pass belongs to M19's screen.
+Documentation received a source review for headings, tables and plain language; the
+rendered checks remain a human check.
+
+**Acceptance checklist** — check only after the named tests pass on all three platforms:
+
+- [ ] The code, both renderings and the parser:
+  `test_spec_7_2_code_is_16_bits_rendered_as_four_glyphs_and_two_words`,
+  `test_spec_7_2_word_input_is_case_and_punctuation_insensitive`,
+  `test_spec_7_2_glyph_labels_are_accepted_as_input`,
+  `test_spec_7_3_glyph_table_is_normative_and_keeps_variation_selectors`,
+  `test_spec_7_2_word_list_has_256_distinct_words_with_unique_three_letter_prefixes`,
+  `test_spec_7_2_parse_cases_and_renderings_match_rust` and
+  `test_spec_7_2_word_list_and_glyph_table_match_the_spec` (JavaScript).
+- [ ] SPAKE2 agrees across the two languages and refuses what it must:
+  `test_spec_7_4_spake2_matches_the_checked_in_vectors`,
+  `test_spec_7_4_a_wrong_code_derives_nothing`,
+  `test_spec_7_4_1_m_and_n_are_the_rfc_9382_edwards25519_points` (Rust unit), and in
+  JavaScript `test_spec_7_4_spake2_matches_the_checked_in_vectors`,
+  `test_spec_7_4_1_m_and_n_are_prime_order_points_distinct_from_g`,
+  `test_spec_7_4_a_wrong_code_derives_nothing`,
+  `test_spec_7_4_1_invalid_points_zero_scalars_and_bad_codes_are_refused`.
+- [ ] The six messages, what the device pins and the row the node writes:
+  `test_spec_7_4_pairing_completes_and_writes_the_device_row`,
+  `test_spec_7_4_the_client_pins_the_cluster_key_and_the_node_certificate`,
+  `test_spec_7_4_2_the_transcript_matches_the_checked_in_vectors`,
+  `test_spec_7_0_the_code_never_crosses_the_wire`, and in JavaScript
+  `test_spec_7_4_2_client_transcript_matches_rust`,
+  `test_spec_2_2_device_id_derivation_matches_rust`.
+- [ ] The window, its limits and its audit rows:
+  `test_spec_7_1_pairing_is_closed_until_opened_and_closes_on_first_success`,
+  `test_spec_7_5_code_expires_at_120s_and_five_attempts_issue_a_new_one`,
+  `test_spec_7_5_attempts_are_rate_limited_per_source`,
+  `test_spec_7_5_every_attempt_writes_an_audit_row_without_the_code`,
+  `test_spec_app_contract_6_pair_opens_a_window_and_returns_the_code`.
+- [ ] Every refusal fails closed with its close code and nothing derived:
+  `test_spec_7_4_a_node_kind_is_refused_naming_phase_3`,
+  `test_spec_7_4_2_malformed_messages_and_a_mismatched_device_id_are_refused`,
+  `test_spec_7_6_a_registered_device_key_cannot_pair_again`, and in JavaScript
+  `test_spec_7_1_a_closed_node_and_a_wrong_code_send_nothing_further`,
+  `test_spec_7_4_2_malformed_and_tampered_node_messages_are_refused_without_a_record`,
+  `test_spec_7_6_no_storage_means_no_pairing_and_a_bad_code_is_refused_first`.
 
 - `pair::code`: `Code(u16)` from the CSPRNG; `glyphs() -> [Glyph; 4]` from the normative
   table of `§7.3` stored as byte strings with their labels — index 8 and 9 keep U+FE0F
