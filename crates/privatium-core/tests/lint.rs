@@ -112,6 +112,7 @@ rule_tests! {
     PV105 => (test_lint_rule_pv105_passes, test_lint_rule_pv105_fails),
     PV106 => (test_lint_rule_pv106_passes, test_lint_rule_pv106_fails),
     PV107 => (test_lint_rule_pv107_passes, test_lint_rule_pv107_fails),
+    PV108 => (test_lint_rule_pv108_passes, test_lint_rule_pv108_fails),
     PV201 => (test_lint_rule_pv201_passes, test_lint_rule_pv201_fails),
     PV202 => (test_lint_rule_pv202_passes, test_lint_rule_pv202_fails),
     PV203 => (test_lint_rule_pv203_passes, test_lint_rule_pv203_fails),

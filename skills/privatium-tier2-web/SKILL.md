@@ -42,7 +42,7 @@ pv.ulid();  pv.url('/path');  pv.node();  pv.lam;  pv.online;
 ```
 
 `pv.js` is optional; every endpoint is plain HTTP under `/a/<slug>/api/` (`/api/` in solo
-mode). It is under 10 KB, unminified and meant to be read — open it. A view may read
+mode). It is under 12 KB, unminified and meant to be read — open it. A view may read
 `$name` placeholders, bound from the query string of `/api/q/<view>`; a key the view does
 not read is refused, and elsewhere the placeholder is NULL. `sys.v_app_nav` and the other
 `sys.v_*` views are readable through `pv.sql`.

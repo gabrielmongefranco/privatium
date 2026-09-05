@@ -10,7 +10,7 @@ From `crates/privatium-core/assets/shell/pv.js`, served at `/static/pv.js`; a na
 
 ## 5. The `pv.js` helper
 
-Served at `/static/pv.js`. Under 10 KB, unminified and meant to be read — there is no
+Served at `/static/pv.js`. Under 12 KB, unminified and meant to be read — there is no
 minifier in the runtime path — with no dependencies, no framework, no build step.
 **Optional** — every endpoint is plain HTTP and `fetch` works fine.
 
@@ -66,12 +66,15 @@ the same device, so it works with no network at all.
 When the node is remote and unreachable, `pv.append` queues to an outbox and replays on
 reconnect; `pv.query` throws `PvOffline` and the app decides what to show. The helper
 exposes `pv.online` and a `pv.on('online' | 'offline')` event. The outbox is one queue in
-the page's memory, mirrored to `localStorage` under the mount while storage is available
-— a page without it still queues for its own lifetime — as a list of entries, each keyed
-by a ULID and holding the events exactly as they will be sent, the mark `pv.lam` held
-when it was queued, and the app `/api/node` named (§4). A fetch that fails to reach the
-node marks the helper offline; the browser's own `online` event, or any request that
-succeeds, marks it back and replays the queue in order, one entry at a time.
+the page's memory, mirrored to `localStorage` while storage is available — a page without
+it still queues for its own lifetime — as one key per entry beneath the mount, so two
+pages over one storage never write over each other's entries and either page replays
+both. Each entry is keyed by a ULID and holds the events exactly as they will be sent, the
+mark `pv.lam` held when it was queued, and the `app` and the node `id` that `/api/node`
+named (§4). A fetch that fails to reach the node marks the helper offline; the browser's
+own `online` event, or any request that succeeds, marks it back and replays the queue in
+order, one entry at a time — after asking `/api/node` again, so the replay knows which
+node and which app the origin serves now, not what it served when the page loaded.
 
 **Replay is idempotent and needs no bookkeeping.** A queued write carries its ULID, so
 resending one that may already have landed converges to the same row under
@@ -89,7 +92,9 @@ can introduce the divergence they were meant to prevent.
 An entry the node refuses — a 4xx other than 429, such as `§4.6`'s reused id — is dropped
 and reported through `pv.on('rejected')`, as is one the helper refuses: a conflict, whose
 error carries `status` 409 and `conflict: { tbl, id }`; an entry queued while the mount
-served another app, which a solo node's `/` can across an `app.toml` change; and an entry
+served another app, which a solo node's `/` can across an `app.toml` change; an entry
+queued against another node — a different data root answering on the same port — which
+the node refuses itself from the `node` and `app` every POST carries (§2); and an entry
 queued before the helper knew which app the mount serves — a solo page loaded while the
 node was unreachable with nothing cached, since a host-mode mount names its app in the
 path. A 429, a 5xx or a node that cannot be reached keeps the entry for the next replay and

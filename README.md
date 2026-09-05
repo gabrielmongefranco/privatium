@@ -94,7 +94,8 @@ disagree, the specification wins and the code is wrong.
 
 ## Example Applications
 
-Example apps ship with the framework and serve as the normative templates:
+Three example apps live in this repository, are on the launcher from a checkout, and serve
+as the normative templates:
 
 - **[apps/hello](apps/hello)** — Tier 1. Three routes, one table, two templates, no
   JavaScript. Read this first to see how little a simple app needs.
@@ -131,16 +132,6 @@ Questions, bug reports, enhancement ideas and requests are welcome as GitHub iss
 - [SQLite](https://sqlite.org/) — the in-process SQL engine the event log is materialized
   into, via [rusqlite](https://github.com/rusqlite/rusqlite); public domain, on every
   platform the framework targets.
-- [iroh](https://github.com/n0-computer/iroh) — QUIC-based peer-to-peer transport with
-  hole punching, used for direct node-to-node sync.
-- [pkarr](https://github.com/pubky/pkarr) — signed DNS records on the BitTorrent mainline
-  DHT, which is how a public key becomes an address with no registrar.
-- [Arti](https://gitlab.torproject.org/tpo/core/arti) — the Tor Project's Rust
-  implementation of Tor; provides in-process onion service hosting with no external daemon.
-- [Noble cryptography](https://github.com/paulmillr/noble-curves) — audited, dependency-free
-  JavaScript implementations of X25519, Ed25519 and ChaCha20-Poly1305, required because
-  `crypto.subtle` is unavailable on plain-HTTP origins.
-- [Tauri](https://github.com/tauri-apps/tauri) — desktop and mobile application shells.
 - [HTMX](https://github.com/bigskysoftware/htmx) and [Alpine.js](https://github.com/alpinejs/alpine)
   — server-rendered interactivity and local reactivity, both without a build step.
 - [Lua](https://www.lua.org/) and [mlua](https://github.com/mlua-rs/mlua) — the Tier 1
@@ -150,10 +141,6 @@ Questions, bug reports, enhancement ideas and requests are welcome as GitHub iss
   developer-experience goal. No code from those projects was used. See [docs/decisions/0001](docs/decisions/0001-barracuda-evaluation.md).
 - [Bootstrap Icons](https://github.com/twbs/icons) — MIT-licensed SVG icon set, vendored
   and inlined server-side; the only icon source used anywhere in the project.
-- [SPAKE2 (RFC 9382)](https://www.rfc-editor.org/rfc/rfc9382.html) and CPace — the
-  password-authenticated key exchange protocols used for device pairing.
-- [Magic Wormhole](https://github.com/magic-wormhole/magic-wormhole) — inspiration for the
-  short human-readable pairing code experience. No code from that project was used.
 - [DataLaVista](https://github.com/DepressionCenter/datalavista) — its normalization
   pipeline informed the list of date, time and timestamp spellings the framework accepts
   on write (`spec/lua-api.md §3.3`): ISO, Excel-style `M/D/YYYY`, Oracle-style
@@ -166,6 +153,25 @@ Questions, bug reports, enhancement ideas and requests are welcome as GitHub iss
   copied: that project's Lua port is a console program with an in-memory tree,
   while this one stores the tree as an append-only event log so it can sync
   across devices.
+
+#### Chosen for the later phases of `docs/roadmap.md`, and not yet in the build:
+
+- [iroh](https://github.com/n0-computer/iroh) — QUIC-based peer-to-peer transport with
+  hole punching, for direct node-to-node sync (Phase 5).
+- [pkarr](https://github.com/pubky/pkarr) — signed DNS records on the BitTorrent mainline
+  DHT, which is how a public key will become an address with no registrar (Phase 5).
+- [Arti](https://gitlab.torproject.org/tpo/core/arti) — the Tor Project's Rust
+  implementation of Tor, for in-process onion service hosting with no external daemon
+  (Phase 5).
+- [Noble cryptography](https://github.com/paulmillr/noble-curves) — audited, dependency-free
+  JavaScript implementations of X25519, Ed25519 and ChaCha20-Poly1305, needed because
+  `crypto.subtle` is unavailable on plain-HTTP origins (Phase 2).
+- [Tauri](https://github.com/tauri-apps/tauri) — desktop and mobile application shells
+  (Phase 4).
+- [SPAKE2 (RFC 9382)](https://www.rfc-editor.org/rfc/rfc9382.html) and CPace — the
+  password-authenticated key exchange protocols for device pairing (Phase 2).
+- [Magic Wormhole](https://github.com/magic-wormhole/magic-wormhole) — inspiration for the
+  short human-readable pairing code experience. No code from that project will be used.
 
 ## License
 

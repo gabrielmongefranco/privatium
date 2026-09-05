@@ -123,7 +123,7 @@ macro_rules! rule_ids {
 }
 
 rule_ids! {
-    PV101, PV102, PV103, PV104, PV105, PV106, PV107,
+    PV101, PV102, PV103, PV104, PV105, PV106, PV107, PV108,
     PV201, PV202, PV203, PV204, PV205, PV206, PV207, PV208,
     PV301, PV302, PV303, PV304, PV305, PV306, PV307, PV308,
     PV401, PV402, PV403, PV404, PV405, PV406, PV407,
@@ -221,6 +221,15 @@ pub static RULES: &[Rule] = &[
         severity: Severity::Error,
         title: "schema.sql contains only CREATE TABLE, CREATE VIEW, CREATE INDEX and comments",
         reads: "schema.sql, one statement at a time under the engine's authorizer",
+        spec: "spec/app-contract.md §4.5",
+        criterion: None,
+    },
+    Rule {
+        id: RuleId::PV108,
+        class: Class::Contract,
+        severity: Severity::Error,
+        title: "No UNIQUE constraint or index beyond id's primary key",
+        reads: "schema.sql, through the engine's catalog",
         spec: "spec/app-contract.md §4.5",
         criterion: None,
     },

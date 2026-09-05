@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/schema.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-03
+// Created:  2026-09-01  |  Modified: 2026-09-05
 // Summary:  What a schema.sql declares, learned from SQLite's own catalog rather than from a
 //           parser we wrote: tables, the declared type of every column, NOT NULL, and views.
 //           The declared type decides how the materializer stores a column
@@ -127,6 +127,19 @@ pub struct View {
     pub params: Vec<String>,
 }
 
+/// One index of an app's schema (`spec/app-contract.md §4.5`): a declaration the cache
+/// recreates whenever its table is rebuilt. Never `UNIQUE` — [`Schema::parse`] refuses
+/// that, since the cache cannot keep the promise.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Index {
+    /// The index name.
+    pub name: String,
+    /// The table it is on.
+    pub table: String,
+    /// The `CREATE INDEX` statement as SQLite holds it.
+    pub sql: String,
+}
+
 /// Everything a `schema.sql` declares.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Schema {
@@ -134,6 +147,9 @@ pub struct Schema {
     pub tables: Vec<Table>,
     /// Views, in name order.
     pub views: Vec<View>,
+    /// Indexes the author declared, in name order. SQLite's own — the one behind every
+    /// `id` primary key — are not listed; the table carries them.
+    pub indexes: Vec<Index>,
     /// SHA-256 of the source text.
     ///
     /// This is `sys_app.schema_hash` (`spec/data-dictionary.md §3.4`), and a change to it
@@ -191,14 +207,18 @@ impl Schema {
         )
         .map_err(StoreError::Sql)?;
 
+        let tables = read_tables(&conn)?;
+        refuse_unique(&conn, &tables)?;
         let mut schema = Self {
-            tables: read_tables(&conn)?,
+            tables,
             views: read_views(&conn)?,
+            indexes: read_indexes(&conn)?,
             hash: hash_of(sql),
             ddl,
         };
         schema.tables.sort_by(|a, b| a.name.cmp(&b.name));
         schema.views.sort_by(|a, b| a.name.cmp(&b.name));
+        schema.indexes.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(schema)
     }
 
@@ -292,6 +312,82 @@ fn read_views(conn: &Connection) -> Result<Vec<View>, StoreError> {
         views.push(View { name, sql, params });
     }
     Ok(views)
+}
+
+/// `spec/app-contract.md §4.5`: no uniqueness beyond `id`'s primary key.
+///
+/// The cache cannot enforce a `UNIQUE`: two devices' logs may both claim a value, and
+/// `spec/protocol.md §4.5` keeps both rows. A check that held only inside one batch would
+/// be a promise half kept, so the whole schema is refused. SQLite reports every unique
+/// index a table has with its origin — `pk` for the primary key's, `u` for a `UNIQUE`
+/// clause's, `c` for a `CREATE UNIQUE INDEX` — and the first `u` or `c` is the refusal.
+fn refuse_unique(conn: &Connection, tables: &[Table]) -> Result<(), StoreError> {
+    for table in tables {
+        let mut list = conn
+            .prepare(
+                "SELECT name, origin FROM pragma_index_list(?) \
+                 WHERE \"unique\" = 1 AND origin IN ('u', 'c') ORDER BY seq",
+            )
+            .map_err(StoreError::Sql)?;
+        let mut rows = list
+            .query_map(rusqlite::params![table.name], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(StoreError::Sql)?;
+        let Some(first) = rows.next() else {
+            continue;
+        };
+        let (index, origin) = first.map_err(StoreError::Sql)?;
+        let mut info = conn
+            .prepare("SELECT name FROM pragma_index_info(?) ORDER BY seqno")
+            .map_err(StoreError::Sql)?;
+        let columns = info
+            .query_map(rusqlite::params![index], |row| row.get::<_, String>(0))
+            .map_err(StoreError::Sql)?
+            .collect::<Result<Vec<String>, _>>()
+            .map_err(StoreError::Sql)?
+            .join(", ");
+        let named = if origin == "c" {
+            format!(" as index `{index}`")
+        } else {
+            String::new()
+        };
+        return Err(StoreError::Schema {
+            problem: format!(
+                "table `{}` declares UNIQUE on ({columns}){named}: the cache cannot enforce \
+                 it — two devices' logs may both claim a value and spec/protocol.md §4.5 \
+                 keeps both rows; spec/app-contract.md §4.5 makes `id` the one key the log \
+                 guarantees",
+                table.name
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// The indexes the author wrote. An index SQLite made for itself — the one behind a
+/// `PRIMARY KEY` — has no `sql` in the catalog and is not one.
+fn read_indexes(conn: &Connection) -> Result<Vec<Index>, StoreError> {
+    let mut statement = conn
+        .prepare(
+            "SELECT name, tbl_name, sql FROM sqlite_master WHERE type = 'index' \
+             AND sql IS NOT NULL ORDER BY name",
+        )
+        .map_err(StoreError::Sql)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(Index {
+                name: row.get::<_, String>(0)?,
+                table: row.get::<_, String>(1)?,
+                sql: row.get::<_, String>(2)?,
+            })
+        })
+        .map_err(StoreError::Sql)?;
+    let mut indexes = Vec::new();
+    for row in rows {
+        indexes.push(row.map_err(StoreError::Sql)?);
+    }
+    Ok(indexes)
 }
 
 /// SHA-256, lowercase hex. `sys_app.schema_hash` (`spec/data-dictionary.md §3.4`).

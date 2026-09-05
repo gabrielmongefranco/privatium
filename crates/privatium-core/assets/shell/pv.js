@@ -6,17 +6,17 @@
  *           ES module with no dependencies and no build step: query, sql, get, events,
  *           append, put, del, subscribe, ulid, node, url, online, on. Writes queue in an
  *           outbox while the node is unreachable and replay exactly as they were: an entry
- *           carries the high-water mark and the app it was queued under, and before a
- *           replay the row's events past that mark are read — already there, it is
- *           dropped; moved since, it is refused and reported; nothing, it is sent
- *           (spec/protocol.md §10.6). Nothing else is remembered. DECIMAL stays a string.
+ *           carries the high-water mark, the app and the node it was queued under; before
+ *           a replay the node is asked who it is now and each row's events past the mark
+ *           are read — landed, dropped; moved since, refused and reported; nothing, sent
+ *           (spec/protocol.md §10.6). DECIMAL stays a string.
  */
 const MOUNT = (() => {
   const m = location.pathname.match(/^\/a\/[a-z][a-z0-9-]{1,30}\//);
   return m ? m[0] : '/';
 })();
 const MOUNT_APP = MOUNT === '/' ? null : MOUNT.slice(3, -1);   // host mode names the app in the path
-const OUTBOX = 'pv:outbox:' + MOUNT, APP = 'pv:app:' + MOUNT;
+const OUTBOX = 'pv:outbox:' + MOUNT, APP = 'pv:app:' + MOUNT, NODE = 'pv:node:' + MOUNT;
 const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
 export class PvOffline extends Error {
@@ -29,12 +29,9 @@ function write(key, value) {
   catch { /* no storage: the queue lives for the page */ }
 }
 
-const state = { online: navigator.onLine !== false, lam: 0, node: null, app: MOUNT_APP || read(APP), es: null, delay: 1000 };
+const state = { online: navigator.onLine !== false, lam: 0, node: null, app: MOUNT_APP || read(APP), nodeId: read(NODE), es: null, delay: 1000 };
 const handlers = {};
 const subscribers = new Set();
-// The outbox: one queue in memory — the truth for this page — mirrored to storage when it can be.
-let queue = read(OUTBOX);
-if (!Array.isArray(queue)) queue = [];
 
 function emit(event, data) {
   for (const fn of handlers[event] || []) { try { fn(data); } catch (e) { console.error(e); } }
@@ -71,8 +68,31 @@ async function call(method, path, body) {
   return res;
 }
 
-// ---- the outbox: entries keyed by a ULID, replayed as they are -------------------------
-function persist() { write(OUTBOX, queue.length ? queue : null); }
+// ---- the outbox: one queue in memory, the truth for this page, one storage key per entry --
+let queue = [];
+function persist(entry) { write(OUTBOX + ':' + entry.id, entry); }
+function forget(entry) { write(OUTBOX + ':' + entry.id, null); }
+function stored() {
+  const entries = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(OUTBOX + ':')) { const entry = read(key); if (entry && entry.id) entries.push(entry); }
+    }
+    const legacy = read(OUTBOX);                              // an earlier helper's one-list key
+    if (Array.isArray(legacy)) { for (const entry of legacy) if (entry && entry.id) { entries.push(entry); persist(entry); } write(OUTBOX, null); }
+  } catch { /* no storage */ }
+  return entries;
+}
+// Another page's entries join this one's, oldest first: the ids are ULIDs.
+function adopt() {
+  const known = new Set(queue.map(entry => entry.id));
+  for (const entry of stored()) if (!known.has(entry.id)) queue.push(entry);
+  queue.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+adopt();
+// The POST body: the events, and the node and the app they are for when known (§2).
+function body(events, node, app) { const b = { events }; if (node) b.node = node; if (app) b.app = app; return b; }
 function refuse(message, conflict) { const err = new Error(message); err.status = 409; if (conflict) err.conflict = conflict; throw err; }
 function same(a, b) {
   if (a === b) return true;
@@ -98,21 +118,24 @@ let flushing = null;
 function flush() {
   if (flushing) return flushing;
   const run = (async () => {
+    adopt();
+    let learned = false;
     while (queue.length) {
       const entry = queue[0];
       try {
-        if (!state.app) await node();                       // which app this origin serves now
+        if (!learned) { await learn(); learned = true; }   // who serves this origin now, not at load
         if (!entry.app) refuse('queued before the app at this mount was known; not replayed');
         if (entry.app !== state.app) refuse('queued for app ' + entry.app + '; this origin now serves ' + state.app);
+        if (entry.node && entry.node !== state.nodeId) refuse('queued for node ' + entry.node + '; this origin now serves ' + state.nodeId);
         const where = await stand(entry);
         if (where.conflict) refuse('a newer change to ' + where.conflict.tbl + '/' + where.conflict.id + ' landed after this was queued', where.conflict);
-        if (where !== 'landed') noteLam((await (await call('POST', 'events', { events: entry.events })).json()).lam);
+        if (where !== 'landed') noteLam((await (await call('POST', 'events', body(entry.events, entry.node, entry.app))).json()).lam);
       } catch (e) {
         // Unreachable, or the node's trouble rather than the entry's: keep it for next time.
         if (e instanceof PvOffline || e.status >= 500 || e.status === 429 || e.status === 408) break;
         emit('rejected', { id: entry.id, events: entry.events, error: e });   // refused: nothing to retry
       }
-      queue.shift(); persist();
+      forget(entry); queue.shift();
     }
   })();
   flushing = run;
@@ -130,10 +153,11 @@ async function append(events) {
   });
   const ids = list.map(ev => ev.id);
   if (state.online && !queue.length) {
-    try { const out = await (await call('POST', 'events', { events: list })).json(); noteLam(out.lam); return out; }
+    try { const out = await (await call('POST', 'events', body(list, state.nodeId, state.app))).json(); noteLam(out.lam); return out; }
     catch (e) { if (!(e instanceof PvOffline)) throw e; }
   }
-  queue.push({ id: ulid(), lam: state.lam, app: state.app, events: list }); persist();
+  const entry = { id: ulid(), lam: state.lam, app: state.app, node: state.nodeId, events: list };
+  queue.push(entry); persist(entry);
   if (state.online) flush();
   return { queued: true, appended: 0, ids };
 }
@@ -147,7 +171,7 @@ async function sql(text, params) {
   noteLam(out.lam); return out.rows;
 }
 async function get(tbl, id) {
-  try { return await (await call('GET', 'row/' + encodeURIComponent(tbl) + '/' + encodeURIComponent(id))).json(); }
+  try { const ev = await (await call('GET', 'row/' + encodeURIComponent(tbl) + '/' + encodeURIComponent(id))).json(); noteLam(ev.lam); return ev; }
   catch (e) { if (e.status === 404) return null; throw e; }
 }
 async function* events(filter) {
@@ -166,13 +190,14 @@ async function* events(filter) {
   }
   if (buffer.trim()) { const ev = JSON.parse(buffer); noteLam(ev.lam); yield ev; }
 }
-async function node() {
-  if (!state.node) {
-    state.node = await (await call('GET', 'node')).json();
-    if (state.node.app) { state.app = state.node.app; write(APP, state.app); }
-  }
+// /api/node, asked now: the app and the node this origin serves, remembered for an unreachable load.
+async function learn() {
+  state.node = await (await call('GET', 'node')).json();
+  if (state.node.app) { state.app = state.node.app; write(APP, state.app); }
+  if (state.node.id) { state.nodeId = state.node.id; write(NODE, state.nodeId); }
   return state.node;
 }
+async function node() { return state.node || learn(); }
 
 // ---- live updates: EventSource, reconnected by hand so after= carries the last lam ------
 function connect() {
@@ -193,17 +218,29 @@ function subscribe(fn) {
   return () => { subscribers.delete(fn); if (!subscribers.size && state.es) { state.es.close(); state.es = null; } };
 }
 
+// Monotonic within the page: a second ULID in the same millisecond increments the last one's
+// random tail, so ids minted in order sort in order — which is what the outbox replays by.
+let lastMs = 0, lastTail = null;
 function ulid() {
-  let t = Date.now(), out = '';
+  const now = Date.now();
+  let tail;
+  if (now === lastMs && lastTail) {
+    tail = lastTail;
+    for (let i = 15; i >= 0; i--) { if (tail[i] === 31) tail[i] = 0; else { tail[i]++; break; } }
+  } else {
+    const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);   // available on plain HTTP; crypto.subtle is not
+    tail = Array.from(bytes, b => b & 31);
+  }
+  lastMs = now; lastTail = tail;
+  let t = now, out = '';
   for (let i = 0; i < 10; i++) { out = ALPHABET[t % 32] + out; t = Math.floor(t / 32); }
-  const r = new Uint8Array(16); crypto.getRandomValues(r);   // available on plain HTTP; crypto.subtle is not
-  for (let i = 0; i < 16; i++) out += ALPHABET[r[i] & 31];
+  for (let i = 0; i < 16; i++) out += ALPHABET[tail[i]];
   return out;
 }
 
 addEventListener('online', () => setOnline(true));
 addEventListener('offline', () => setOnline(false));
-if (state.online) node().catch(() => {}).then(flush);   // learn the app, then replay what waited
+if (state.online) node().catch(() => {}).then(flush);   // learn the app and the node, then replay what waited
 
 export const pv = {
   query, sql, get, events, append, subscribe, ulid, node, url, flush,

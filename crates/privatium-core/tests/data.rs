@@ -449,6 +449,59 @@ async fn test_spec_4_6_tombstoned_minted_id_refused() {
     assert_eq!(raw_lines(&handler, "sketch").len(), 5);
 }
 
+/// `spec/data-api.md §2` — a POST may name the node and the app it is for, and one that
+/// names another node or another app is 409 before anything is appended. The right
+/// names land, and so does a body that names neither.
+#[tokio::test]
+async fn test_spec_data_2_post_naming_another_node_or_app_is_refused() {
+    let root = tempfile::tempdir().unwrap();
+    let handler = handler(&root);
+    let id = handler.node().lock().unwrap().id().as_str().to_owned();
+    let post = |extra: Value| {
+        let mut body = json!({ "events": [stroke(None)] });
+        for (key, value) in extra.as_object().unwrap() {
+            body[key] = value.clone();
+        }
+        post_json("/a/sketch/api/events", &body)
+    };
+
+    let (status, body) = json_of(
+        handler
+            .handle(post(json!({ "node": "someone", "app": "sketch" })))
+            .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert!(
+        body["error"].as_str().unwrap().contains("someone"),
+        "{body}"
+    );
+    let (status, body) = json_of(
+        handler
+            .handle(post(json!({ "node": id, "app": "other" })))
+            .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{body}");
+    assert!(body["error"].as_str().unwrap().contains("other"), "{body}");
+    assert_eq!(
+        raw_lines(&handler, "sketch").len(),
+        0,
+        "nothing was appended"
+    );
+
+    let (status, body) = json_of(
+        handler
+            .handle(post(json!({ "node": id, "app": "sketch" })))
+            .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let (status, body) = json_of(handler.handle(post(json!({}))).await).await;
+    assert_eq!(status, StatusCode::OK, "the names are optional: {body}");
+    assert_eq!(raw_lines(&handler, "sketch").len(), 2);
+}
+
 /// `spec/lua-api.md §3.4` — an API append is this node's own, so a Tier 1 app's
 /// `pv.on('append')` fires for it, after the response is decided.
 #[tokio::test]

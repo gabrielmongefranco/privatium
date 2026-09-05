@@ -936,6 +936,21 @@ impl Handler {
                 "400 Bad Request: the body is {\"events\": [{\"op\", \"tbl\", \"id\", \"d\"}, …]}",
             );
         };
+        // `§2`: the app and the node the client believes it is writing to. A page whose
+        // origin now serves another app or another data root is refused here, as the node
+        // appends, rather than by a read the page made a moment earlier (`§6`).
+        if let Some(claimed) = body.get("app").and_then(Value::as_str)
+            && claimed != slug
+        {
+            return refuse(
+                StatusCode::CONFLICT,
+                format!(
+                    "409 Conflict: this write is for app {claimed}; this mount serves {slug} \
+                     (spec/data-api.md §2)"
+                ),
+            );
+        }
+        let claimed_node = body.get("node").and_then(Value::as_str).map(str::to_owned);
         if events.len() > settings.max_batch {
             return refuse(
                 StatusCode::BAD_REQUEST,
@@ -959,6 +974,18 @@ impl Handler {
             let Some(app) = node.app(slug) else {
                 return not_found(&format!("no app is mounted as {slug}"));
             };
+            if let Some(claimed) = &claimed_node
+                && claimed != node.id().as_str()
+            {
+                return refuse(
+                    StatusCode::CONFLICT,
+                    format!(
+                        "409 Conflict: this write is for node {claimed}; this node is {} \
+                         (spec/data-api.md §2)",
+                        node.id().as_str()
+                    ),
+                );
+            }
             // `§4.6`: a minted id that belonged to a deleted row must not key another —
             // in the cache's tombstone set, or deleted earlier in this very batch.
             let mut deleted_here: Vec<&str> = Vec::new();

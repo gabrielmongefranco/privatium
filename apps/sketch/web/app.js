@@ -1,9 +1,11 @@
 /*
  * Project:  Privatium™  |  File: apps/sketch/web/app.js
  * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
- * Created:  2026-08-28  |  Modified: 2026-09-04
+ * Created:  2026-08-28  |  Modified: 2026-09-05
  * Summary:  The whole app. Plain ES modules — no build step, no framework,
- *           no SQL. The event log is used directly as a document store.
+ *           no SQL. The event log is used directly as a document store. A
+ *           stroke holds the pointer's capture from down to up, so ending
+ *           it off the canvas still saves it.
  */
 import { pv } from '/static/pv.js';
 
@@ -44,7 +46,13 @@ function redrawAll() {
 }
 
 // ---- input ---------------------------------------------------------------
+// The canvas captures the pointer for the stroke, so a release outside it still ends the
+// stroke here; a pointercancel or a lost capture ends it the same way. The stroke leaves
+// the in-progress slot before the append is awaited, so one begun meanwhile is not
+// cleared by this one's handler.
 pad.addEventListener('pointerdown', e => {
+  if (drawing) return;
+  pad.setPointerCapture(e.pointerId);
   drawing = { points: [[e.offsetX, e.offsetY]], color, width: e.pressure ? e.pressure * 8 : 3 };
 });
 
@@ -54,14 +62,17 @@ pad.addEventListener('pointermove', e => {
   paint({ ...drawing, points: drawing.points.slice(-2) });
 });
 
-pad.addEventListener('pointerup', async () => {
+async function finish() {
   if (!drawing) return;
-  const id = pv.ulid();
-  strokes.set(id, drawing);
-  // One append. It is now on every device you own, in a text file you can read.
-  await pv.put('stroke', id, drawing);
+  const stroke = drawing;
   drawing = null;
-});
+  const id = pv.ulid();
+  strokes.set(id, stroke);
+  // One append: a durable line in a text file you can read — and, from Phase 3, on every
+  // device you own.
+  await pv.put('stroke', id, stroke);
+}
+for (const end of ['pointerup', 'pointercancel', 'lostpointercapture']) pad.addEventListener(end, finish);
 
 // The current colour is state the page shows, not only a variable: aria-pressed on the
 // swatch is what a screen reader announces and what style.css draws the ring from.
@@ -79,9 +90,10 @@ document.getElementById('clear').onclick = async () => {
   await pv.append(ids.map(id => ({ op: 'del', tbl: 'stroke', id })));
 };
 
-// ---- sync ----------------------------------------------------------------
-// Every stroke drawn on any paired device arrives here, including strokes that
-// reached this node from another node over iroh while we were asleep.
+// ---- live updates --------------------------------------------------------
+// Every stroke drawn in another window arrives here now; from Phase 3, every stroke from
+// any paired device, including ones that reached this node from another node while this
+// tab was closed.
 pv.subscribe(ev => {
   if (ev.tbl !== 'stroke') return;
   if (ev.op === 'del') { strokes.delete(ev.id); redrawAll(); }

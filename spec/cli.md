@@ -174,6 +174,7 @@ Rule IDs are stable. Removing or renumbering one is a breaking change to the ski
 | `PV105` | Tier-required files present — `app.lua` for `lua`, `web/index.html` for `web` — and every `app.lua`, `lib/*.lua` and `views/*.lsp` parses |
 | `PV106` | Every table in `schema.sql` has `id VARCHAR PRIMARY KEY` |
 | `PV107` | `schema.sql` contains only `CREATE TABLE`, `CREATE VIEW`, `CREATE INDEX` and comments |
+| `PV108` | No `UNIQUE` constraint or index beyond `id`'s primary key (`spec/app-contract.md §4.5`) |
 
 **Security — `PV2xx`**
 
@@ -237,8 +238,8 @@ tags — is judged over a syntax tree, never by pattern-matching the text. A tem
 read through the same front end that compiles it, so a `<? if ?>` is a branch and each
 branch is a state of the page; the HTML between tags is parsed as it would render, with
 `icon()` and `csrf()` standing in for what they emit. `schema.sql` is judged by the
-engine: `PV106` asks the catalog, and `PV107` prepares each statement and classifies it by
-the actions SQLite reports, never by its first word. The SQL literals handed to
+engine: `PV106` and `PV108` ask the catalog, and `PV107` prepares each statement and
+classifies it by the actions SQLite reports, never by its first word. The SQL literals handed to
 `pv.query`, `pv.query1` and `pv.sql`, and the bodies of `CREATE VIEW`, are tokenized for
 `PV303` and `PV308`. A Tier 2 app's JavaScript is lexed — strings, template literals,
 comments, identifiers — not parsed, which is enough for the rules that read it and no more.

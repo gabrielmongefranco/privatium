@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/apps.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-02  |  Modified: 2026-09-03
+// Created:  2026-09-02  |  Modified: 2026-09-05
 // Summary:  The app loader against spec/app-contract.md §3, §3.1, §5.4, §8 and §9,
 //           spec/protocol.md §1.1 and §12, and spec/data-dictionary.md §3.4 — refusal per
 //           app and loud, the index as events, the sandboxed cache, the store the
@@ -20,10 +20,10 @@ use common::{
     lua_manifest, repo_apps_dir, sha256_hex, sys_app_row, sys_lines, tree, ts_offset_secs,
     write_app, write_lua_app,
 };
-use privatium_core::app::{RESERVED_SLUGS, SUPPORTED_API, Widening};
+use privatium_core::app::{RESERVED_SLUGS, SUPPORTED_API, StreamEvent, Widening};
 use privatium_core::local::State;
 use privatium_core::store::Tier;
-use privatium_core::{AppRoot, Csp, Error, Node, Permissions, Source, Stage, Warning};
+use privatium_core::{AppRoot, Csp, Error, Event, Node, Permissions, Source, Stage, Warning};
 
 /// `spec/protocol.md §9.3`, verbatim.
 const DEFAULT_CSP: &str = "default-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
@@ -640,6 +640,73 @@ fn test_seed_not_loaded_over_existing_events() {
         .query_row("SELECT count(*) FROM profile", [], |row| row.get(0))
         .unwrap();
     assert_eq!(rows, 1);
+}
+
+/// `docs/plans/phase-1.md §2.3` at the node: the batch is durable before the cache is
+/// touched, so when the incremental apply cannot update the cache the caller is not told
+/// a landed write failed. The cache is rebuilt from the log before the call returns, a
+/// reader sees the row, and the stream is told the tables changed underneath it rather
+/// than handed lines that were never applied.
+#[test]
+fn test_spec_4_5_append_heals_a_cache_the_apply_could_not_update() {
+    let root = tempfile::tempdir().unwrap();
+    let mut node = open(&root);
+    let apps = node.paths().apps_dir();
+    write_lua_app(&apps, APP, &[("schema.sql", HELLO_DDL)]);
+    node.load_apps(&[local(&node)]).unwrap();
+    let mut stream = node.subscribe(APP).unwrap();
+
+    // The cache table is gone underneath the store.
+    node.app(APP)
+        .unwrap()
+        .store()
+        .conn()
+        .execute_batch("DROP TABLE main.\"profile\"")
+        .unwrap();
+
+    let id = "01J9YQ2W7C8XKF3M0N5RTVB6ZP";
+    let appended = node
+        .append(
+            APP,
+            Event::put(
+                "profile",
+                id,
+                serde_json::json!({ "display_name": "Gabriel" }),
+            ),
+        )
+        .unwrap();
+    assert_eq!(appended.events.len(), 1);
+    assert_eq!(
+        log_lines(&node.paths().app_log(APP, node.id())).len(),
+        1,
+        "the write is durable whatever the cache did"
+    );
+
+    // Rebuilt before the call returned: a reader on the sandboxed connection sees the row.
+    let conn = node.app(APP).unwrap().store().app_conn().unwrap();
+    let name: String = conn
+        .query_row(
+            "SELECT display_name FROM profile WHERE id = ?",
+            [id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(name, "Gabriel");
+    drop(conn);
+    assert_eq!(
+        node.app(APP).unwrap().store().restore_tier(),
+        Some(Tier::Replay)
+    );
+
+    // The stream heard that the tables changed, not a line to apply to tables it has.
+    match stream.try_recv().unwrap() {
+        StreamEvent::Resync { reason, lam } => {
+            assert_eq!(reason, "rematerialized");
+            assert_eq!(lam, appended.lam);
+        }
+        other => panic!("expected a resync, got {other:?}"),
+    }
+    assert!(stream.try_recv().is_err(), "nothing else was broadcast");
 }
 
 // ---------------------------------------------------------------------------------------

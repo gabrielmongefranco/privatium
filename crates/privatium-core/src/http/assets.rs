@@ -63,8 +63,8 @@ mod tests {
                 .contains("export const pv")
         );
         assert!(
-            pv.bytes.len() < 10 * 1024,
-            "{} bytes: spec/data-api.md §5 says under 10 KB, unminified, no build",
+            pv.bytes.len() < 12 * 1024,
+            "{} bytes: spec/data-api.md §5 says under 12 KB, unminified, no build",
             pv.bytes.len()
         );
         assert!(get("VENDOR.md").is_none());

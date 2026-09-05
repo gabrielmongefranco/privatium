@@ -82,7 +82,7 @@ node.append("myapp", Event::put("score", new_ulid(), json!({"points": 42})))?;
 // your own reads — the materialized SQLite connection, sandboxed, parameters bound
 let rows = node.query("myapp", "SELECT * FROM score WHERE points > ?", &[json!(10)])?;
 
-// your own server — the peer comes from axum's ConnectInfo
+// your own server — the peer comes from axum's ConnectInfo; without it the layer refuses everyone
 let service = my_router.layer(node.auth_layer()).into_make_service_with_connect_info::<SocketAddr>();
 axum::serve(listener, service).await?;
 node.close()?;

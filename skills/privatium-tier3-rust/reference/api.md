@@ -27,7 +27,7 @@ node.append("myapp", Event::put("score", new_ulid(), json!({"points": 42})))?;
 // your own reads — the materialized SQLite connection, sandboxed, parameters bound
 let rows = node.query("myapp", "SELECT * FROM score WHERE points > ?", &[json!(10)])?;
 
-// your own server — the peer comes from axum's ConnectInfo
+// your own server — the peer comes from axum's ConnectInfo; without it the layer refuses everyone
 let service = my_router.layer(node.auth_layer()).into_make_service_with_connect_info::<SocketAddr>();
 axum::serve(listener, service).await?;
 node.close()?;
@@ -62,7 +62,7 @@ express: a serial port, a scheduled job, a filesystem watcher, a non-HTTP protoc
 | `query` / `subscribe` | Sandboxed SQLite reads with bound parameters, rows typed as `spec/data-api.md §1` types them; the app's event stream |
 | `serve_discovery` / `pair` | mDNS, UDP, PAKE pairing, device registry |
 | `start_sync` / `sync_now` | iroh + LAN peers |
-| `auth_layer` | Tower middleware enforcing session and grants. `core::handle` applies it itself, so every adapter gets it without doing anything (`docs/decisions/0003`); an embedder wraps their own router with it, as §2.3 shows, and the layer reads the peer from axum's `ConnectInfo` |
+| `auth_layer` | Tower middleware enforcing session and grants. `core::handle` applies it itself, so every adapter gets it without doing anything (`docs/decisions/0003`); an embedder wraps their own router with it, as §2.3 shows, and the layer reads the peer from axum's `ConnectInfo`. A request whose peer it cannot see is refused, naming the missing call, so a router served without `into_make_service_with_connect_info` admits nobody rather than everybody; a call an embedder makes in-process inserts the `Peer` extension the framework's own adapter inserts |
 | `snapshot` / `restore` | Manual snapshot and three-tier restore |
 
 A build that does not implement an area — one that says so in `--version`

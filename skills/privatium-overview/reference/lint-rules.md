@@ -15,6 +15,7 @@ The rule table of `privatium lint` as the crate holds it — `spec/cli.md §5.1`
 | `PV105` | error | Tier-required files present and every Lua file and template parses | app.lua, web/index.html, lib/, views/ | `spec/app-contract.md §8` |
 | `PV106` | error | Every table in schema.sql has id VARCHAR PRIMARY KEY | schema.sql, through the engine's catalog | `spec/app-contract.md §4.5` |
 | `PV107` | error | schema.sql contains only CREATE TABLE, CREATE VIEW, CREATE INDEX and comments | schema.sql, one statement at a time under the engine's authorizer | `spec/app-contract.md §4.5` |
+| `PV108` | error | No UNIQUE constraint or index beyond id's primary key | schema.sql, through the engine's catalog | `spec/app-contract.md §4.5` |
 
 ## Security
 

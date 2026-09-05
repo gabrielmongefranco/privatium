@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/restore.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-02  |  Modified: 2026-09-03
+// Created:  2026-09-02  |  Modified: 2026-09-05
 // Summary:  spec/protocol.md §5.3 — the three-tier read. The snapshot's SQLite files plus
 //           the log tail, then CSV plus schema.sql plus the tail, then the full replay;
 //           which tier succeeded, and why the ones before it did not.
@@ -504,10 +504,11 @@ impl Store {
             .map_err(|error| unreadable("", error.to_string()))
     }
 
-    /// After a tier loaded the tables: the tombstone set from the whole log, and the views
-    /// — the same tail `materialize` has.
+    /// After a tier loaded the tables: the tombstone set from the whole log, the declared
+    /// indexes, and the views — the same tail `materialize` has.
     fn finish(&self, events: &[Event]) -> Result<(), StoreError> {
         materialize::rebuild_tombstones(self.conn(), events)?;
+        self.create_indexes()?;
         self.create_views()
     }
 

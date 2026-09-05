@@ -790,9 +790,10 @@ impl Node {
         self.append_batch(slug, vec![event])
     }
 
-    /// Append `changes` to a loaded app as one batch of this node's events, and apply each
-    /// to the cache incrementally (`docs/plans/phase-1.md §2.3`; `spec/app-contract.md
-    /// §6`, `append_batch`).
+    /// Append `changes` to a loaded app as one batch of this node's events, and apply the
+    /// batch to the cache incrementally, in one transaction (`docs/plans/phase-1.md
+    /// §2.3`; `spec/app-contract.md §6`, `append_batch`). A cache the apply cannot update
+    /// is rebuilt from the log before this returns, and the stream hears `resync`.
     ///
     /// The one public write path: [`append`](Self::append), `pv.append`, `pv.delete` and
     /// `pv.batch` reach the log through here (`spec/lua-api.md §3.3`), and so does
@@ -873,11 +874,34 @@ impl Node {
             }
             Ok(())
         })?;
-        for change in &changes {
-            app.store
-                .apply(&change.tbl, &change.id, change.d.as_ref())
-                .map_err(boxed)?;
-        }
+        // The batch is durable; now the cache, in one transaction. This is the mutation of
+        // a derived table that `docs/plans/phase-1.md §2.3` describes, not a write to a
+        // log — no code here touches one.
+        let applied = app.store.apply_batch(
+            changes
+                .iter()
+                .map(|change| (change.tbl.as_str(), change.id.as_str(), change.d.as_ref())),
+        );
+        let rebuilt = match applied {
+            Ok(()) => false,
+            Err(apply) => {
+                // The log holds the batch and the tables no longer match it. Rebuild from
+                // the log now, under the lock the caller already holds, so no read sees
+                // the mismatch. A rebuild that fails too leaves the watermark stale for
+                // the next read to try again, and is the error the caller gets — the
+                // write itself is not in question.
+                app.store
+                    .restore(&store::cutoff_now())
+                    .map_err(|rebuild| store::StoreError::Schema {
+                        problem: format!(
+                            "the incremental apply failed ({apply}) and the rebuild that \
+                             followed failed too: {rebuild}"
+                        ),
+                    })
+                    .map_err(boxed)?;
+                true
+            }
+        };
         app.log.save_to(&mut self.state);
         app.store.save_to(&mut self.state);
         self.state.flush()?;
@@ -885,12 +909,21 @@ impl Node {
         let count = changes.len() as u64;
         let seq = app.log.seq().saturating_add(1).saturating_sub(count);
         let lam = app.log.lam().saturating_add(1).saturating_sub(count);
-        // Durable now, so the stream may say so. No subscriber is not an error.
-        for (offset, line) in lines.iter().enumerate() {
-            let _ = app.stream.send(StreamEvent::Append {
-                lam: lam.saturating_add(offset as u64),
-                line: Bytes::from(line.clone()),
+        // Durable now, so the stream may say so. No subscriber is not an error. A cache
+        // that had to be rebuilt says `resync` — the tables changed underneath every
+        // reader — rather than handing out lines the rebuild already reflects.
+        if rebuilt {
+            let _ = app.stream.send(StreamEvent::Resync {
+                reason: "rematerialized",
+                lam: app.log.lam(),
             });
+        } else {
+            for (offset, line) in lines.iter().enumerate() {
+                let _ = app.stream.send(StreamEvent::Append {
+                    lam: lam.saturating_add(offset as u64),
+                    line: Bytes::from(line.clone()),
+                });
+            }
         }
         Ok(Appended {
             ts,

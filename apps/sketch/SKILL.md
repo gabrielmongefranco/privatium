@@ -20,10 +20,15 @@ a drawing app.
 
 ## Conventions to preserve
 
-- **Save on stroke end, not on pointer move.** Every append is a durable line in a log file
-  that syncs to every device.
-- `pv.subscribe` handles strokes from *other* devices, including ones that arrived via sync
-  while this tab was closed. Do not assume local input is the only source.
+- **Save on stroke end, not on pointer move.** Every append is a durable line in a log
+  file — and, from Phase 3 of `docs/roadmap.md`, one that syncs to every device.
+- `pv.subscribe` handles strokes from *other* windows today and, from Phase 3, from other
+  devices, including ones that arrived via sync while this tab was closed. Do not assume
+  local input is the only source.
+- **The pointer is captured for the stroke.** Releasing it outside the canvas, a
+  `pointercancel`, or a lost capture all end the stroke and save it; the stroke is taken
+  off the in-progress slot before the append is awaited, so a stroke begun meanwhile is
+  not cleared by the last one's handler.
 - Boot reads the log in order through `pv.events({ tbl: 'stroke' })` — a `del` removes a
   stroke — and `pv.on('resync', load)` reads it again when the node rebuilt its cache.
 - No CDN. Nothing is vendored today; if something is, it goes in `web/vendor/`.

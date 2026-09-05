@@ -1,0 +1,11 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV108/pv108bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV108 fail: the schema promises a uniqueness the log cannot keep.
+
+[app]
+slug    = "pv108bad"
+title   = "Lint PV108"
+version = "1.0.0"
+api     = 1
+tier    = "lua"
