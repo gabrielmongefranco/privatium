@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Project: Privatium™ | File: assets/branding/privatium-mark-white.svg
+Authors: Gabriel Mongefranco (@gabrielmongefranco)
+Created: 2026-09-05 | Modified: 2026-09-05
+Summary: Privatium geometric Pv element symbol
+Copyright © 2026 Gabriel Mongefranco. Privatium™ is a trademark of Gabriel Mongefranco.
+See docs/branding.md and README.md for attribution and license notices. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc"><title id="title">Privatium geometric Pv element symbol</title><desc id="desc">Privatium geometric Pv element symbol</desc><g transform="translate(0,0) scale(5.12)" fill="#FFFFFF"><path d="M89 5H5V95H95V5H92" fill="none" stroke="#FFFFFF" stroke-width="3"/><path fill-rule="evenodd" d="M17 27H36C61 27 61 62 36 62H28V78H17ZM28 37V52H36C46 52 46 37 36 37Z"/><path d="M57 45H67L75 66L83 45H93L80 78H70Z" transform="translate(0,0)"/></g></svg>
