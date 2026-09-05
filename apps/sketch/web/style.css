@@ -1,11 +1,13 @@
 /* Project: Privatium™ | File: apps/sketch/web/style.css
    Authors: Gabriel Mongefranco (@gabrielmongefranco)
-   Created: 2026-08-28 | Modified: 2026-09-04
+   Created: 2026-08-28 | Modified: 2026-09-05
    Summary: The app's own styling. The framework injects no CSS into Tier 2. The
             swatch colours live here rather than in style= attributes, which the
             default CSP of spec/protocol.md §9.3 blocks. The canvas takes its size
             from here; app.js only matches the backing store to it. Focus and the
-            selected swatch are navy on white (about 15:1), never maize on white. */
+            selected swatch are navy on white (about 15:1), never maize on white;
+            the canvas's own focus ring is drawn inside its edge, since it fills
+            the viewport and a ring outside it would never be seen. */
 :root { --navy:#00274C; --maize:#FFCB05; --charcoal:#333333; --muted:#5b6270; --line:#5b6270; }
 * { box-sizing:border-box; margin:0; }
 body { font:16px/1.4 system-ui,sans-serif; overflow:hidden; background:#fff; color:#1d2129; }
@@ -21,9 +23,14 @@ body { font:16px/1.4 system-ui,sans-serif; overflow:hidden; background:#fff; col
 /* The current colour: a navy ring outside the white border, so it reads on all three. */
 .swatch[aria-pressed="true"] { box-shadow:0 0 0 3px var(--navy); }
 :focus-visible { outline:3px solid var(--navy); outline-offset:3px; }
+#pad:focus-visible { outline-offset:-3px; }
 button#clear { padding:.4rem .9rem; border:1px solid var(--navy); border-radius:6px;
                background:#fff; color:var(--navy); cursor:pointer; font:inherit; }
-#status { margin-left:auto; color:var(--muted); font-size:.875rem; }
+#summary { margin-left:auto; color:var(--muted); font-size:.875rem; }
+#status { color:var(--muted); font-size:.875rem; }
+/* Read by assistive technology, never drawn: the key hint the canvas is described by. */
+.visually-hidden { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0);
+                   clip-path:inset(50%); white-space:nowrap; }
 @media (prefers-reduced-motion: reduce) {
   * { transition-duration:.01ms !important; animation-duration:.01ms !important; }
 }

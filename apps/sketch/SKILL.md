@@ -34,16 +34,26 @@ a drawing app.
 - No CDN. Nothing is vendored today; if something is, it goes in `web/vendor/`.
 - No inline `<script>` — the CSP forbids it, and `[permissions]` is deliberately all false.
 
-## Accessibility gaps to fix, not replicate
+## Accessibility
 
-The canvas carries an `aria-label`, the swatches announce the current colour through
-`aria-pressed`, the viewport stays zoomable, and focus is navy on white. What is still
-missing is a keyboard way to draw and any text description of what has been drawn. That
-is a known deficiency in this reference app, not a pattern to copy. See
-`privatium-accessibility`.
+A drawing is not a pointer-only or a sight-only thing here, and a change must keep it so
+(`privatium-accessibility`):
+
+- **The keyboard draws.** The canvas is focusable (`tabindex="0"`). While it has focus a
+  dashed crosshair marks the pen; the arrow keys move it, Shift moves it farther, Space or
+  Enter puts it down and lifts it, Escape discards the stroke in progress. A stroke lifted
+  from the keyboard is saved exactly as a pointer's is, through `finish()`.
+- **What happens is said.** The `#status` region (`role="status"`) announces focus (with
+  the keys), pen down, pen up and saved, discarded, and the offline state.
+- **What is drawn is described.** `#summary` (`aria-live="polite"`) says how many strokes
+  the canvas holds in which colours, refreshed on load, on every stroke from any source,
+  and on clear; the canvas is `aria-describedby` it and the key hint.
+- The swatches announce the current colour through `aria-pressed`; the viewport stays
+  zoomable; focus is navy on white.
 
 Two things to keep when touching the canvas: size it in `style.css`, and let `fit()` in
 `app.js` match the backing store to `clientWidth`/`clientHeight` at `devicePixelRatio`.
-Sizing from `innerWidth` draws past the viewport on every HiDPI display.
+Sizing from `innerWidth` draws past the viewport on every HiDPI display. And never add a
+gesture — a drag, a swipe, a pinch — without a single-key or button way to do the same.
 
 Run `privatium lint apps/sketch` before finishing.

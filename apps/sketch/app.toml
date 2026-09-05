@@ -3,7 +3,7 @@
 # File:     apps/sketch/app.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-08-28
-# Modified: 2026-08-28
+# Modified: 2026-09-05
 # Summary:  Tier 2 reference app. Note what is absent: no app.lua, no views/,
 #           no schema.sql. This is the entire manifest.
 # ---------------------------------------------------------------------------
@@ -14,7 +14,7 @@ title       = "Sketch"
 version     = "1.0.0"
 api         = 1
 tier        = "web"
-description = "A shared canvas. Draw on the laptop, it appears on the phone."
+description = "A shared canvas. Draw in one window, it appears in the next; on the phone from Phase 2."
 icon        = "pencil-square"
 authors     = ["Gabriel Mongefranco"]
 license     = "GPL-3.0-or-later"

@@ -1,7 +1,7 @@
 <!--
   Project:  Privatium™  |  File: apps/sketch/web/index.html
   Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-  Created:  2026-08-28  |  Modified: 2026-09-04
+  Created:  2026-08-28  |  Modified: 2026-09-05
   Summary:  Tier 2 entry point. The framework serves this file verbatim at
             the app's mount point and injects nothing. No HTMX, no shell,
             no opinions. The swatches are classes, not style= attributes:
@@ -10,6 +10,9 @@
             The viewport stays zoomable — pinch-zoom is an accessibility
             feature, not a bug — and the canvas is sized by CSS, with app.js
             matching the backing store to it at the device's pixel ratio.
+            The canvas is focusable and drawn from the keyboard too, and a
+            live summary says what is on it, so a drawing is never a
+            pointer-only or a sight-only thing.
 -->
 <!doctype html>
 <html lang="en">
@@ -19,7 +22,8 @@
 <link rel="stylesheet" href="style.css">
 
 <main>
-  <canvas id="pad" aria-label="Shared drawing canvas"></canvas>
+  <canvas id="pad" aria-label="Shared drawing canvas" tabindex="0" aria-describedby="keys summary"></canvas>
+  <p id="keys" class="visually-hidden">Arrow keys move the pen, Shift moves it farther. Space or Enter puts the pen down and lifts it. Escape discards the stroke in progress.</p>
 </main>
 
 <nav id="tools" aria-label="Tools">
@@ -28,6 +32,7 @@
   <button data-color="#FFCB05" class="swatch swatch-maize" aria-label="Maize" aria-pressed="false"></button>
   <button data-color="#333333" class="swatch swatch-charcoal" aria-label="Charcoal" aria-pressed="false"></button>
   <button id="clear" aria-label="Clear the canvas">Clear</button>
+  <span id="summary" aria-live="polite"></span>
   <span id="status" role="status"></span>
 </nav>
 
