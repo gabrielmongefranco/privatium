@@ -118,6 +118,7 @@ pub fn app(&self, slug: &str) -> Option<&App>
 pub fn mounts(&self) -> impl Iterator<Item = (&str, &App)>
 pub fn seed_available(&self, slug: &str) -> Option<PathBuf>
 pub fn load_seed(&mut self, slug: &str) -> Result<Seeded>
+pub fn date_order(&self) -> Result<store::normalize::DateOrder>
 pub fn append(&mut self, slug: &str, event: Event) -> Result<Appended>
 pub fn append_batch(&mut self, slug: &str, events: Vec<Event>) -> Result<Appended>
 pub fn open_app(&mut self, slug: &str, schema: &str) -> Result<()>

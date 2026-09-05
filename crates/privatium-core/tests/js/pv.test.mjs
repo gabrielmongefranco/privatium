@@ -5,9 +5,11 @@
 //           `node --test`: the outbox queues while the node is unreachable and replays in
 //           order when it is back; an empty replay leaves the helper able to replay
 //           later; the node's own trouble keeps an entry and a refusal drops it; an
-//           append during a replay is not lost; no storage is still a queue; an entry
-//           already in the log is not sent again; an entry queued for another app is
-//           refused; and the file stays under the size the spec promises.
+//           append during a replay is not lost; no storage is still a queue; a replay
+//           carries its mark and each row's rank for the node to judge, and a landed or
+//           conflicting answer is honoured; an entry queued for another app or another
+//           node is refused; two pages share one storage without loss; and the file
+//           stays under the size the spec promises.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -124,7 +126,7 @@ test('spec/data-api.md §6: with no storage the queue lives for the page', async
   assert.equal(posts(p.requests).length, 1);
 });
 
-test('spec/protocol.md §10.6: an entry already in the log past its mark is not sent again', async () => {
+test('spec/protocol.md §10.6: a replay carries the mark it was queued at and is judged by the node — an entry already in the log is dropped, never sent again', async () => {
   const p = await page({ respond: upNode('sketch', { value: 7 }) });
   await p.settle();
   await p.pv.put('stroke', '01K4B0000000000000000000A0', { n: 0 });   // the mark is 8 now
@@ -133,23 +135,26 @@ test('spec/protocol.md §10.6: an entry already in the log past its mark is not 
   await p.pv.del('stroke', '01K4B0000000000000000000A0');
   const up = upNode('sketch', { value: 9 });
   p.respond((m, path, body) => {
-    if (m === 'GET' && path.includes('/api/events?')) {
-      const q = new URL('http://x' + path).searchParams;
-      assert.equal(q.get('after'), '8');
-      const id = q.get('id');
-      // The node has both: the put landed before the response was lost, with its keys in another order; the del too.
-      if (id === '01K4B0000000000000000000A1') return { text: JSON.stringify({ seq: 9, lam: 9, op: 'put', tbl: 'stroke', id, d: { color: '#00274C', points: [[1, 2]] } }) + '\n' };
-      if (id === '01K4B0000000000000000000A0') return { text: JSON.stringify({ seq: 10, lam: 10, op: 'del', tbl: 'stroke', id }) + '\n' };
-    }
+    // Both landed before their responses were lost: the node says so and appends nothing.
+    if (m === 'POST' && path.endsWith('/api/events')) return { json: { appended: 0, lam: 10, ids: body.events.map(e => e.id) } };
     return up(m, path, body);
   });
   p.fire('online');
   await p.pv.flush();
-  assert.equal(posts(p.requests).length, 1, 'only the first, online, put was ever posted');
+  const replayed = posts(p.requests).slice(1);
+  assert.equal(replayed.length, 2, 'each entry is sent once, with its mark, for the node to judge');
+  assert.deepEqual(replayed.map(r => r.body.since), [8, 8]);
+  assert.equal(replayed[1].body.events[0].base.lam, 8, 'the row the page wrote carries the rank it wrote');
+  assert.equal(p.requests.filter(r => r.method === 'GET' && r.path.includes('/api/events')).length, 0, 'the helper reads nothing itself');
+  assert.equal(p.pv.lam, 10);
   assert.equal(stored(p.store).length, 0);
+  // After a landed replay the helper knows no rank for the row; the next edit carries the mark alone.
+  p.respond(downNode());
+  await p.pv.put('stroke', '01K4B0000000000000000000A1', { n: 3 });
+  assert.equal(stored(p.store)[0].events[0].base, undefined);
 });
 
-test('spec/protocol.md §10.6: a row that moved since the entry was queued is a conflict — refused and reported, never written over', async () => {
+test('spec/protocol.md §10.6: a row that moved since the entry was queued is a conflict the node refuses — reported, never written over', async () => {
   const p = await page({ respond: downNode(), online: false });
   const rejected = [];
   p.pv.on('rejected', e => rejected.push(e));
@@ -158,10 +163,9 @@ test('spec/protocol.md §10.6: a row that moved since the entry was queued is a 
   await p.pv.put('stroke', '01K4B0000000000000000000B1', { n: 9 });
   const up = upNode();
   p.respond((m, path, body) => {
-    if (m === 'GET' && path.includes('/api/events?')) {
-      const id = new URL('http://x' + path).searchParams.get('id');
-      // Another device edited A after the mark; nobody has touched B.
-      if (id === '01K4B0000000000000000000A1') return { text: JSON.stringify({ op: 'put', tbl: 'stroke', id, d: { n: 1 } }) + '\n' };
+    // Another device edited A after the mark; nobody has touched B.
+    if (m === 'POST' && path.endsWith('/api/events') && body.events[0].id === '01K4B0000000000000000000A1') {
+      return { status: 409, json: { error: '409 Conflict: events[0]: stroke/01K4B0000000000000000000A1 changed after this write was queued', index: 0, conflict: { tbl: 'stroke', id: '01K4B0000000000000000000A1' } } };
     }
     return up(m, path, body);
   });
@@ -170,9 +174,60 @@ test('spec/protocol.md §10.6: a row that moved since the entry was queued is a 
   assert.equal(rejected.length, 1);
   assert.equal(rejected[0].error.status, 409);
   assert.deepEqual(rejected[0].error.conflict, { tbl: 'stroke', id: '01K4B0000000000000000000A1' });
-  assert.match(rejected[0].error.message, /newer change to stroke\/01K4B0000000000000000000A1/);
-  assert.deepEqual(posts(p.requests).map(r => r.body.events[0].id), ['01K4B0000000000000000000B1'], 'the fresh row went, the stale edit did not');
+  assert.match(rejected[0].error.message, /stroke\/01K4B0000000000000000000A1 changed after/);
+  const sent = posts(p.requests);
+  assert.deepEqual(sent.map(r => r.body.events[0].id), ['01K4B0000000000000000000A1', '01K4B0000000000000000000B1'], 'each entry was put to the node once');
+  assert.equal(sent[0].body.since, 0, 'queued before the page saw anything');
   assert.equal(stored(p.store).length, 0);
+});
+
+test('spec/data-api.md §5: a queued edit of a row the page read carries the rank it saw, and one of a row it never saw carries none', async () => {
+  const p = await page({ respond: upNode() });
+  await p.settle();
+  const up = upNode();
+  p.respond((m, path, body) => {
+    if (m === 'GET' && path.endsWith('/api/row/save/01K4B0000000000000000000A1')) return { text: JSON.stringify({ seq: 7, lam: 7, ts: '2026-09-05T11:00:00.000Z', dev: 'k7m2q9xf', op: 'put', tbl: 'save', id: '01K4B0000000000000000000A1', d: { level: 1 } }) };
+    return up(m, path, body);
+  });
+  await p.pv.get('save', '01K4B0000000000000000000A1');
+  p.respond(downNode());
+  await p.pv.put('save', '01K4B0000000000000000000A1', { level: 2 });
+  await p.pv.put('save', '01K4B0000000000000000000A2', { level: 9 });
+  const entries = stored(p.store);
+  assert.deepEqual(entries[0].events[0].base, { lam: 7, ts: '2026-09-05T11:00:00.000Z', dev: 'k7m2q9xf' });
+  assert.equal(entries[1].events[0].base, undefined);
+  // The replay carries them to the node as they are.
+  p.respond(upNode());
+  p.fire('online');
+  await p.pv.flush();
+  const sent = posts(p.requests);
+  assert.deepEqual(sent[0].body.events[0].base, { lam: 7, ts: '2026-09-05T11:00:00.000Z', dev: 'k7m2q9xf' });
+  assert.equal(sent[1].body.events[0].base, undefined);
+});
+
+test("spec/data-api.md §5: a page's own write, and a row it read through pv.events, are rows it saw", async () => {
+  const p = await page({ respond: upNode('sketch', { value: 40 }) });
+  await p.settle();
+  const out = await p.pv.append([
+    { op: 'put', tbl: 'stroke', id: '01K4B0000000000000000000A1', d: { n: 1 } },
+    { op: 'put', tbl: 'stroke', id: '01K4B0000000000000000000A2', d: { n: 2 } },
+  ]);
+  assert.equal(out.lam, 42);
+  const up = upNode('sketch', { value: 42 });
+  p.respond((m, path, body) => {
+    if (m === 'GET' && path.includes('/api/events')) return { text: JSON.stringify({ seq: 5, lam: 5, ts: '2026-09-05T10:00:00.000Z', dev: 'other000', op: 'put', tbl: 'stroke', id: '01K4B0000000000000000000B1', d: { n: 7 } }) + '\n' };
+    return up(m, path, body);
+  });
+  for await (const ev of p.pv.events({ tbl: 'stroke' })) assert.equal(ev.tbl, 'stroke');
+  p.respond(downNode());
+  await p.pv.put('stroke', '01K4B0000000000000000000A1', { n: 10 });
+  await p.pv.put('stroke', '01K4B0000000000000000000A2', { n: 20 });
+  await p.pv.put('stroke', '01K4B0000000000000000000B1', { n: 70 });
+  const entries = stored(p.store);
+  // The batch's ranks: contiguous lam from the response's, one ts, this node.
+  assert.deepEqual(entries[0].events[0].base, { lam: 41, ts: '2026-09-05T12:00:00.000Z', dev: 'k7m2q9xf' });
+  assert.deepEqual(entries[1].events[0].base, { lam: 42, ts: '2026-09-05T12:00:00.000Z', dev: 'k7m2q9xf' });
+  assert.deepEqual(entries[2].events[0].base, { lam: 5, ts: '2026-09-05T10:00:00.000Z', dev: 'other000' });
 });
 
 test('spec/data-api.md §6: in solo mode an entry queued before the app was known is refused; in host mode the mount names it', async () => {

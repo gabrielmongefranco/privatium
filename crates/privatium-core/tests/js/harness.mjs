@@ -73,7 +73,7 @@ export async function page({ pathname = '/a/sketch/', online = true, store = sto
 export function upNode(app = 'sketch', lam = { value: 10 }) {
   return (method, path, body) => {
     if (path.endsWith('/api/node')) return { json: { id: 'k7m2q9xf', dev: 'k7m2q9xf', name: 'Study', app, solo: false, peers: 0, restore_tier: 3 } };
-    if (method === 'POST' && path.endsWith('/api/events')) { lam.value += body.events.length; return { json: { appended: body.events.length, lam: lam.value, ids: body.events.map(e => e.id) } }; }
+    if (method === 'POST' && path.endsWith('/api/events')) { lam.value += body.events.length; return { json: { appended: body.events.length, lam: lam.value, ts: '2026-09-05T12:00:00.000Z', dev: 'k7m2q9xf', ids: body.events.map(e => e.id) } }; }
     if (method === 'GET' && path.includes('/api/events')) return { text: '' };
     return { status: 404, json: { error: '404 Not Found' } };
   };

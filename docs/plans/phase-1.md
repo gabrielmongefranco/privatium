@@ -338,6 +338,9 @@ why, not a to-do list.
 | 111 | `data-api.md §6` keyed an outbox entry by its app alone and kept the queue as one list under one key: a solo `/` that changed apps, or another data root on the same port, was replayed into; two offline pages replaced each other's list; and `pv.get` never moved the mark, so an edit of a row the page had read was refused as a conflict | An entry carries the node's `id` too, storage holds one key per entry, a replay asks `/api/node` again before it sends, every POST names its `node` and `app` and the node refuses a mismatch itself (`§2`), and `pv.get` moves the mark | `data-api.md §2, §6` (hardening, third round) |
 | 112 | Rows 69 and 96 set the helper's cap at 8 then 10 KB; the node binding, the per-entry storage and a ULID that stays monotonic within a millisecond are 1.9 KB more | Under 12 KB | `data-api.md §5`, `app-contract.md §5.2` (hardening, third round) |
 | 113 | `protocol.md`'s status line still said Phase 1 was in progress; `apps/README.md` and `README.md` had the reference apps shipping inside the binary, which M13 decided against; the README credited the later phases' libraries as in use; `apps/sketch`, `skills/privatium-games` and `crates/privatium/src/run.rs` described a sync, and a snapshot read under the lock, that the code does not have; ADR 0004 carried an open task over a claim no source supports | Each says what is so | `protocol.md`, `README.md`, `apps/`, `skills/`, `run.rs`, `docs/decisions/0004` (hardening, third round) |
+| 114 | `protocol.md §10.6` and `data-api.md §6` had the page read each row's events past its mark and then POST unconditionally, so a write from another page could land between the read and the POST; the mark meant "the node had this much", not "the page saw this much", so an unrelated `query` moved it past an edit to the very row being edited; and `pv.get` never moved it, so an edit of a row the page had read was refused as a conflict | The node judges a replay under the lock in which it appends: the POST carries `since`, the mark, and per event a `base` — the rank of the row's winner as the page saw it, kept for every row read through `get`, `events` or the stream and every row the page wrote. A copy past the rank is landed and appends nothing, anything else past it is 409 naming the row, nothing is fresh; a body with neither is unconditional | `protocol.md §10.6`, `data-api.md §2, §5, §6` (hardening, fourth round) |
+| 115 | `data-api.md §6` said a landed event is "compared as it was sent" and that a typed app's normalized value "lands as the same row again" — under row 101's rule it would have been a false conflict | The node compares the event as it would store it, so normalization tells nothing apart | `data-api.md §2` (hardening, fourth round) |
+| 116 | `data-api.md §2`'s response carried `lam` and `ids`, so a page knew the mark of what it wrote but not its rank | `ts` and `dev` too — one instant, this node | `data-api.md §2` (hardening, fourth round) |
 
 Defect 11 was found during M1 rather than while writing this plan, which is the rule in
 the last paragraph of this section working as intended. It could not be coded around: the
@@ -1125,6 +1128,22 @@ the last sorts after it (rows 111–112; fourteen tests under `node --test`,
 captures the pointer for a stroke, so a release off the canvas saves it. The documents say
 what is so (row 113).
 
+*Fourth round:* the replay's check moved to the node. A page had read each row's events
+past its mark and then POSTed unconditionally — a write from another page could land
+between the two — and the mark itself said what the node had, not what the page had seen:
+an unrelated `query` moved it past an edit to the very row being edited, and `pv.get`
+never moved it, so an edit of a row the page had read was refused as a conflict. The POST
+now carries `since`, the mark, and per event a `base` — the rank of the row's winner as
+the page saw it, kept for every row read through `get`, `events` or the stream and every
+row the page wrote — and `api_append` judges it under the lock in which it appends: a copy
+of the event past the rank means landed and nothing is appended, anything else past it
+means the row moved and the batch is 409 naming the row, nothing means fresh. A typed
+app's event is compared as the node stores it, and the response carries the batch's `ts`
+and `dev`, so the page knows the rank of what it wrote (rows 114–116;
+`test_spec_10_6_conditional_append_lands_conflicts_or_appends`,
+`test_spec_10_6_a_landed_write_is_landed_after_normalization`, sixteen tests under
+`node --test`). `pv.js` reads nothing before a replay any more.
+
 ---
 
 ### M13 — Embedded mode, packaging-lite, release
@@ -1300,6 +1319,7 @@ whole spec sections, so an edit to a section a skill cites is drift by construct
 | 12c | `phase1-hardening-2` | 12b | as found (§3 rows 99–102) |
 | 13 | `m13-embedded-release` | M12 | roadmap: tick Phase 1 |
 | 14 | `phase1-hardening-3` | 13 | as found (§3 rows 109–113) |
+| 15 | `phase1-hardening-4` | 14 | as found (§3 rows 114–116) |
 
 ---
 

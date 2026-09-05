@@ -76,11 +76,13 @@ not read is refused, and elsewhere the placeholder is NULL. `sys.v_app_nav` and 
 - Assume you are online; `pv.query` throws `PvOffline`
 - Implement your own outbox deduplication, transaction IDs, or acknowledgement protocol.
   ULIDs already make replay idempotent — adding these can create the divergence they were
-  meant to prevent. The helper decides a retry by reading the row's events past the mark it
-  queued at: already there, dropped; the row moved since, refused as a conflict rather than
-  written over the newer change; nothing, sent (`spec/data-api.md §6`). An entry the node
-  or the helper refuses reaches you as `pv.on('rejected')` — show it, since it is the
-  user's work.
+  meant to prevent. A replay carries the mark it was queued at and, for every row the page
+  read or wrote, the rank it last saw; the node judges it against the log as it appends:
+  already there, dropped; the row moved since, refused as a conflict rather than written
+  over the newer change; nothing, appended (`spec/data-api.md §2, §6`). A row the page saw
+  only through a view carries the mark alone — read it with `pv.get` first if the edit
+  must never overwrite an unseen change. An entry the node or the helper refuses reaches
+  you as `pv.on('rejected')` — show it, since it is the user's work.
 - Add a CSRF token, a CORS header or any other credential handling to the API. It is
   same-origin by construction (`spec/data-api.md §2.1`)
 - Construct absolute URLs to other endpoints. A browser client has exactly one origin.
