@@ -71,6 +71,12 @@ pub const PROTOCOL: &str = "pv/1";
 /// all want a single thing to match on.
 #[derive(Debug, Error)]
 pub enum Error {
+    /// A system identity row cannot be safely amended from its log representation.
+    #[error("cannot initialize node identity: invalid system row; restore a valid data backup")]
+    IdentityRow,
+    /// Certificate validation or issuance failed without exposing its input.
+    #[error(transparent)]
+    Certificate(#[from] identity::CertificateError),
     /// The platform has no data directory and none was given.
     #[error("no platform data directory is available; pass an explicit data directory")]
     NoDataDir,
@@ -413,17 +419,10 @@ impl Node {
         let (mut sys, recovered) =
             AppLog::open(&paths, sys::SLUG, identity.id(), Durability::Sync, &state)?;
 
-        // 4. First run: this node's two rows about itself, in one batch.
-        //
-        //    Guarded on the log having recovered no events, not on the file existing. A
-        //    crash between creating the file and writing the first line leaves a zero-byte
-        //    log, and a file-existence guard would see it, conclude this was not a first
-        //    run, and skip the bootstrap forever — a node with an identity and no
-        //    `sys_device` row, with nothing to notice it by.
+        // Reconcile public identity facts from the log, including roots created before
+        // cluster identity existed (spec/protocol.md §2.3). Caches carry no authority.
         let first_run = sys.seq() == 0;
-        if first_run {
-            bootstrap_sys(&mut sys, &identity)?;
-        }
+        bootstrap_sys(&mut sys, &identity)?;
 
         // 5. Anything step 3 found that the owner is entitled to hear about. After the
         //    bootstrap, because an audit row cannot be written to a log that has no node
@@ -978,30 +977,113 @@ fn note_health(sys_store: &Store, app_store: &Store, app: &str) -> Result<()> {
     Ok(())
 }
 
-/// Write this node's `sys_device` and `sys_node` rows, once, on first run.
-///
-/// One batch, not two appends. `docs/plans/phase-1.md §2.6` says both rows describe one
-/// event in the world — this node coming into existence — and a batch is how that is said
-/// in the log: one `ts`, contiguous `seq`, and one `write_all`, so there is no window in
-/// which a reader sees a device with no node behind it.
-///
-/// The order within is `sys_device` then `sys_node`, which is `§2.6`'s.
+/// Append changed public identity facts as one batch, preserving owner-set and unknown
+/// row fields. Original lines remain untouched (spec/protocol.md §4.2, §4.5).
 fn bootstrap_sys(sys_log: &mut AppLog, identity: &Identity) -> Result<()> {
+    use base64::Engine as _;
+    use serde_json::value::{RawValue, to_raw_value};
+    use store::events::{Op, read_log, winners};
+
+    type Row = BTreeMap<String, Box<RawValue>>;
+    fn row<T: serde::Serialize>(value: &T) -> Result<Row> {
+        Ok(serde_json::from_str(&serde_json::to_string(value)?)?)
+    }
+    fn changed(previous: Option<&Row>, next: &Row) -> bool {
+        previous.is_none_or(|previous| {
+            previous.len() != next.len()
+                || next.iter().any(|(key, value)| {
+                    previous.get(key).is_none_or(|old| old.get() != value.get())
+                })
+        })
+    }
+
     let id = identity.id().as_str().to_owned();
     let pubkey = identity.public_key_base64();
-
+    let events = read_log(sys_log.log_dir(), sys::SLUG, &store::cutoff_now()).map_err(boxed)?;
+    let winners = winners(&events);
+    let existing = |table: &str, key: &str| -> Result<Option<Row>> {
+        winners
+            .get(&(table, key))
+            .filter(|event| event.op == Op::Put)
+            .and_then(|event| event.d.as_deref())
+            .map(serde_json::from_str)
+            .transpose()
+            .map_err(|_| Error::IdentityRow)
+    };
+    let device = existing(sys::DEVICE, &id)?;
+    let node = existing(sys::NODE, &id)?;
+    let cluster = existing(sys::CLUSTER, identity.cluster_id().as_str())?;
+    let cert = identity.certificate().to_base64()?;
+    let renewed = identity.renewed()
+        || node.as_ref().is_some_and(|row| {
+            row.get("cert")
+                .and_then(|value| serde_json::from_str::<String>(value.get()).ok())
+                .is_some_and(|old| old != cert)
+        });
     sys_log.batch(|batch| {
-        batch.put(sys::DEVICE, &id, &sys::DeviceRow::this_node())?;
-        // `created_at` is the batch's own `ts`, so the row and the envelope agree about
-        // when this node came into existence.
         let created_at = batch.ts().to_owned();
-        batch.put(
-            sys::NODE,
-            &id,
-            &sys::NodeRow::this_installation(&pubkey, &created_at),
-        )
+        let mut next_device = device.clone().unwrap_or(row(&sys::DeviceRow::this_node())?);
+        next_device.insert("ed25519_pub".into(), to_raw_value(&pubkey)?);
+        next_device.insert(
+            "x25519_pub".into(),
+            to_raw_value(&identity.x25519_public_base64())?,
+        );
+        if changed(device.as_ref(), &next_device) {
+            batch.put(sys::DEVICE, &id, &next_device)?;
+        }
+        let mut next_node = node
+            .clone()
+            .unwrap_or(row(&sys::NodeRow::this_installation(&pubkey, &created_at))?);
+        next_node.insert("pubkey".into(), to_raw_value(&pubkey)?);
+        next_node.insert(
+            "cluster_id".into(),
+            to_raw_value(identity.cluster_id().as_str())?,
+        );
+        next_node.insert("cert".into(), to_raw_value(&cert)?);
+        next_node.insert(
+            "cert_expires_at".into(),
+            to_raw_value(&identity.certificate().expires_at)?,
+        );
+        if changed(node.as_ref(), &next_node) {
+            batch.put(sys::NODE, &id, &next_node)?;
+        }
+        let mut next_cluster = cluster.clone().unwrap_or(row(&sys::ClusterRow {
+            pubkey: base64::engine::general_purpose::STANDARD
+                .encode(identity.cluster_public().as_bytes()),
+            pkarr_name: identity::pkarr_name(&identity.cluster_public()),
+            created_at: &created_at,
+            created_by: &id,
+        })?);
+        next_cluster.insert(
+            "pubkey".into(),
+            to_raw_value(
+                &base64::engine::general_purpose::STANDARD
+                    .encode(identity.cluster_public().as_bytes()),
+            )?,
+        );
+        next_cluster.insert(
+            "pkarr_name".into(),
+            to_raw_value(&identity::pkarr_name(&identity.cluster_public()))?,
+        );
+        if changed(cluster.as_ref(), &next_cluster) {
+            batch.put(sys::CLUSTER, identity.cluster_id().as_str(), &next_cluster)?;
+        }
+        Ok(())
     })?;
-
+    let kind = if cluster.is_none() {
+        Some(sys::KIND_CLUSTER_CREATED)
+    } else if renewed {
+        Some(sys::KIND_CERT_RENEWED)
+    } else {
+        None
+    };
+    if let Some(kind) = kind {
+        sys_log.put(
+            sys::AUDIT,
+            &new_ulid(),
+            &sys::AuditRow::info(&log::now(), kind, Some(&id), "{}"),
+        )?;
+    }
     Ok(())
 }
 

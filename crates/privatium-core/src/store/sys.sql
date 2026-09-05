@@ -1,6 +1,6 @@
 -- Project:  Privatium™  |  File: crates/privatium-core/src/store/sys.sql
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
--- Created:  2026-09-01  |  Modified: 2026-09-03
+-- Created:  2026-09-01  |  Modified: 2026-09-05
 -- Summary:  The framework's own schema.sql (spec/data-dictionary.md §3). `_sys` is an app
 --           and is materialized by exactly the machinery any app gets; this is the file it
 --           would have shipped if it had a folder.
@@ -24,6 +24,7 @@
 -- The types are the dictionary's (§2); the materializer maps each to the storage SQLite
 -- keeps it in, so a TIMESTAMPTZ is the RFC 3339 text the event carried and a BOOLEAN is 1 or 0.
 
+-- One row per node whose public identity record has reached this store (§3.1).
 CREATE TABLE sys_node (
     id              VARCHAR PRIMARY KEY,   -- Node ID, not a ULID (§3.1)
     display_name    VARCHAR,
@@ -36,6 +37,7 @@ CREATE TABLE sys_node (
     cert_expires_at TIMESTAMPTZ
 );
 
+-- One row per recorded cluster; local verified identity selects the current one (§3.1b).
 CREATE TABLE sys_cluster (
     id         VARCHAR PRIMARY KEY,        -- Cluster ID (§3.1b)
     pubkey     VARCHAR,                    -- public key only; never the private key

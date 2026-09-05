@@ -867,7 +867,10 @@ fn test_rebuilt_from_scratch_is_alerted_once() {
     let root = tempfile::tempdir().unwrap();
     let node = Node::open(root.path()).unwrap();
     assert_eq!(
-        count(&node, "SELECT count(*) FROM sys_audit"),
+        count(
+            &node,
+            "SELECT count(*) FROM sys_audit WHERE severity = 'alert'"
+        ),
         0,
         "a first run alerts nothing"
     );
@@ -917,14 +920,14 @@ fn test_spec_3_9_snapshot_row_is_an_event() {
         .collect();
     assert_eq!(
         lines.len(),
-        4,
-        "bootstrap pair, then the index row and its audit"
+        6,
+        "identity founding, then the index row and its audit"
     );
-    let row = &lines[2];
+    let row = &lines[4];
     assert_eq!(row["tbl"], "sys_snapshot");
     assert_eq!(row["id"], snapshot.id.to_string());
     assert_eq!(row["d"]["app_id"], "_sys");
-    assert_eq!(row["d"]["hi_lam"], "2", "§2.1: BIGINT as a string");
+    assert_eq!(row["d"]["hi_lam"], "4", "§2.1: BIGINT as a string");
     assert_eq!(row["d"]["bytes"], snapshot.bytes.to_string());
     assert_eq!(row["d"]["created_by"], node.id().as_str());
     assert!(
@@ -934,10 +937,10 @@ fn test_spec_3_9_snapshot_row_is_an_event() {
             .contains("\"sys_device\":1")
     );
     assert!(row["d"].get("verified_at").is_none());
-    assert_eq!(lines[3]["tbl"], "sys_audit");
-    assert_eq!(lines[3]["d"]["kind"], "snapshot.created");
-    assert_eq!(lines[3]["d"]["subject"], snapshot.id.to_string());
-    assert_eq!(lines[2]["ts"], lines[3]["ts"], "one batch, one instant");
+    assert_eq!(lines[5]["tbl"], "sys_audit");
+    assert_eq!(lines[5]["d"]["kind"], "snapshot.created");
+    assert_eq!(lines[5]["d"]["subject"], snapshot.id.to_string());
+    assert_eq!(lines[4]["ts"], lines[5]["ts"], "one batch, one instant");
 
     assert!(node.refresh().unwrap());
     let (hi_lam, created_by): (i64, String) = node
@@ -947,7 +950,7 @@ fn test_spec_3_9_snapshot_row_is_an_event() {
             Ok((row.get(0)?, row.get(1)?))
         })
         .unwrap();
-    assert_eq!(hi_lam, 2);
+    assert_eq!(hi_lam, 4);
     assert_eq!(created_by, node.id().as_str());
 }
 

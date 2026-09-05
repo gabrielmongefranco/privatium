@@ -166,13 +166,20 @@ Phase 1 created has none of these and is founded on its next start; that is the 
 first Phase 2 run, not a migration.
 
 The certificate's signed bytes are the canonical form of §3 row 4. The founding node
-renews its own certificate whenever fewer than ninety days remain, at start; renewal on
+renews its own unexpired certificate whenever fewer than ninety days remain, at start;
+an expired certificate is refused and requires re-admission. Renewal on
 sync (`§2.3.1`) is Phase 3's, since a sync is.
 
 A node that founded a cluster alone can still be admitted to another one later: while it
 has paired nothing and admitted nobody its cluster is empty and disposable, and joining
-discards it and tombstones its `sys_cluster` row, so one row remains. That is what keeps
+discards it and tombstones only its own empty cluster's `sys_cluster` row. That keeps
 "found at first start" from making every node the first node.
+
+The public registry can contain other node and cluster records after restore or sync.
+Verified local identity selects this installation's current records; startup preserves
+the others. Missing local keys do not authorize retiring another cluster. Public records
+do not replace pairing, admission or certificate verification. Section 3 row 20 records
+this correction to the original singleton wording.
 
 *Decided: `protocol.md §2.3` and `§2.3.1`, `data-dictionary.md §3.1b`.*
 
@@ -305,14 +312,16 @@ rule applied.*
 
 ---
 
-## 3. Spec gaps found — all fixed, none deferred
+## 3. Spec gaps found
 
-Every row is fixed, and the milestone named is the one that holds the code to it. As in
-Phase 1, this is the record of what changed and why, not a to-do list;
+Rows 1–20 are fixed. As in
+Phase 1, this records what changed and why;
 `cargo xtask gen-skill-reference` ran with the edits.
 
 | # | Was | Proposed | Files | Milestone |
 |---|---|---|---|---|
+| 20 | The global singleton wording for `sys_node` and `sys_cluster` conflicts with restored and replicated identity records | Preserve all restored records. Verified local keys and certificate select this installation's current node and cluster; startup appends corrections to their public identity fields without retiring other clusters. Registry presence alone establishes no cluster trust | `data-dictionary.md §3.1, §3.1b`, `protocol.md §2.3` | **Fixed**, owner confirmed; M14; `test_spec_3_1b_data_only_restore_preserves_records_and_selects_local_identity`, `test_spec_3_1b_restored_keys_select_the_original_cluster`, `test_spec_3_1b_replayed_rows_cannot_change_local_cluster_identity` |
+| 19 | `§2.3.1` requires re-admission after expiry but startup renewal has no expiry exception | Startup renewal applies only to unexpired certificates; at or after expiry the node refuses self-renewal and requires re-admission | `protocol.md §2.3.1` | **Fixed**, owner confirmed; M14 |
 | 1 | `§7.4` gives the handshake's six steps and no message shapes, encodings or close codes | The messages of M16 spelled out: the node's hello, the client's `pA` with its identity, the node's `pB` and `cB`, the client's `cA`, the two key exchanges over `K_pair`, and the WebSocket close codes for *closed*, *wrong code* and *exhausted* | `protocol.md §7.4.1, §7.4.2` | **Fixed**; M16 |
 | 2 | `§8` gives the key schedule and says nothing about how a session starts on `/ws`, what a frame is, or what a request or response looks like inside one | The handshake messages, the frame — `nonce = direction ‖ counter`, one AEAD ciphertext per WebSocket binary message, no associated data — the request and response frames of §2.1 with their `id` and `kind`, the confirm frame, and the rule that a side closes at 2³² frames rather than rekeying | `protocol.md §8.3` | **Fixed**; M15, M17 |
 | 3 | `§7.2` says "the 256-word list" and no list exists | `spec/pairing-words.txt`, index order normative, produced by the rule in §2.5; `§7.2` names it and says a change is a breaking protocol change | `protocol.md §7.2`, `spec/pairing-words.txt`, `NOTICE` | **Fixed**; M16 |
@@ -410,6 +419,11 @@ counterpart — §2.4); `cpace` (0.1.0 from 2020); `argon2` (§2.7); `notify` (P
 decides it does not need one either); a JavaScript QR library (the QR is rendered by the
 node); `local-ip-address` or similar (the UDP-connect trick needs no crate).
 
+M14 adds only `x25519-dalek`, for the static session identity required by `protocol.md
+§8`, with `static_secrets` and `zeroize`. The [3.0.0 package record](https://docs.rs/crate/x25519-dalek/3.0.0)
+records its 2026-07-06 release and the maintained Dalek dependency family. The lockfile
+adds one package; `cargo deny check` reports advisories, bans, licences and sources OK.
+
 Raw event lines stay `String`/`&[u8]` end to end. A frame carries a request's body as
 bytes it never parses; `§4.2` is unchanged by the channel.
 
@@ -419,6 +433,24 @@ bytes it never parses; `§4.2` is unchanged by the channel.
 
 ### M14 — Cluster identity, the certificate, the X25519 static
 
+**Implementation status, 2026-09-05:** implemented on `m14-cluster-identity`.
+Section 3 rows 19 and 20 record the confirmed expiry and restore decisions. All 26
+identity tests pass on Windows, including preservation of restored registry records,
+selection with and without restored keys, and correction of forged public identity
+fields. The 498-test workspace suite, Clippy with warnings denied, formatting, header
+check, generated-reference check, spec-reference check and named conformance checks pass
+on Windows. `cargo deny check` passes advisories, bans, licences and sources, with the
+existing duplicate-`syn` warning. The three-platform CI run remains pending.
+
+The certificate fixture also verifies with OpenSSL 3, independently of the Rust
+implementation. Python's standard base32 encoder independently checks the z-base32
+fixture by alphabet translation.
+
+Documentation received a source review for headings,
+table structure, and plain language; rendered keyboard, zoom, and screen-reader checks
+remain a human check. No app folder, client script, or rendered template changed.
+Phase 2's roadmap acceptance bullets remain unchecked.
+
 - `Identity` gains the cluster: `load_or_create` founds one when `identity/cluster.key`
   is absent — keypair generated, `cluster.key` written `0600` with the same `create_new`
   discipline as `node.key`, `cluster.pub` beside it, the Cluster ID derived as a Node ID
@@ -427,7 +459,9 @@ bytes it never parses; `§4.2` is unchanged by the channel.
   issued_at, expires_at, sig }`, `issued_at + 180 days`, canonical JSON for the signed
   bytes, base64 in `sys_node.cert`. `Certificate::verify(&cluster_pub, now)` refuses a
   bad signature and an expired certificate as two distinct errors.
-- Renewal at start when fewer than ninety days remain; `cert.renewed` audit (info).
+- Renewal at start only while unexpired and fewer than ninety days remain;
+  `cert.renewed` audit (info). Expired certificates require re-admission, which arrives
+  in Phase 3; this build refuses them without changing the certificate.
 - `sys_cluster` row (`§3.1b`) on founding, keyed by the Cluster ID: `pubkey`,
   `pkarr_name` (z-base32 of the public key — a thirty-line encoder with a test vector,
   not a crate for one function), `created_at`, `created_by`. `sys_node` amended with
@@ -458,6 +492,38 @@ copy), `test_spec_2_1_x25519_static_is_derived_and_stable`,
 
 **Documentation:** `protocol.md §2.3, §2.3.1` and `data-dictionary.md §3.1b` are written
 (row 4); `docs/backup-and-restore.md §1` names `cluster.key` beside `node.key`.
+
+**Acceptance checklist** — check only after the named tests pass on all three platforms:
+
+- [ ] First start and Phase 1 upgrade preserve node identity:
+  `test_spec_2_3_first_start_founds_a_cluster`,
+  `test_spec_2_3_a_phase_1_root_founds_a_cluster_on_its_next_start`,
+  `test_identity_second_run_keeps_the_cluster_and_the_node_id`.
+- [ ] Canonical certificates, signature and lifetime validation, bounded input:
+  `test_spec_2_3_1_certificate_signed_bytes_are_canonical`,
+  `test_spec_2_3_1_certificate_verifies_against_the_cluster_key_and_expires_at_180_days`,
+  `test_spec_2_3_1_signed_invalid_certificate_fields_are_refused`,
+  `test_spec_2_3_1_startup_refuses_another_nodes_certificate`.
+- [ ] Unexpired renewal under ninety days and one renewal audit:
+  `test_spec_2_3_1_certificate_renews_under_ninety_days`,
+  `test_spec_2_3_1_startup_renewal_is_audited_once`.
+- [ ] Derived session identity and discovery name:
+  `test_spec_2_1_x25519_static_is_derived_and_stable`,
+  `test_spec_3_1b_pkarr_name_is_zbase32_of_the_cluster_public_key`.
+- [ ] Keys stay private and invalid identity material fails closed:
+  `test_spec_2_3_3_cluster_private_key_is_absent_from_every_event_snapshot_and_backup`,
+  `test_spec_2_3_invalid_cluster_material_is_refused_without_replacement`,
+  `test_spec_2_3_missing_cluster_key_is_not_silently_replaced`,
+  `test_spec_2_3_cluster_key_mode_0600` (Unix only).
+- [ ] Restore preserves records and verified local identity selects the current ones:
+  `test_spec_3_1b_data_only_restore_preserves_records_and_selects_local_identity`,
+  `test_spec_3_1b_restored_keys_select_the_original_cluster`,
+  `test_spec_3_1b_replayed_rows_cannot_change_local_cluster_identity`,
+  `test_spec_4_2_identity_amendment_preserves_unknown_json_bytes`.
+
+Restored-device pairing and channel authorization remain M16/M17 work: public registry
+records must not bypass pairing or pinned-key verification (`protocol.md §2.3, §7, §8`).
+Node admission and sync remain Phase 3 work; this change provides no successful stub.
 
 ---
 

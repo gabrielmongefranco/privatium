@@ -457,15 +457,15 @@ fn test_spec_4_4_future_ts_rejected() {
             node.id().as_str().to_owned(),
             node.paths().app_log("_sys", node.id()),
         );
-        // The bootstrap wrote two events; nothing has gone wrong yet.
-        assert_eq!(node.sys_log().lam(), 2);
+        // Identity founding wrote four events; nothing has gone wrong yet.
+        assert_eq!(node.sys_log().lam(), 4);
         pair
     };
 
     hand_append(
         &sys_log,
         &format!(
-            r#"{{"seq":3,"lam":9999,"ts":"{}","dev":"{dev}","app":"_sys","op":"put","tbl":"sys_setting","id":"x","d":{{}}}}"#,
+            r#"{{"seq":5,"lam":9999,"ts":"{}","dev":"{dev}","app":"_sys","op":"put","tbl":"sys_setting","id":"x","d":{{}}}}"#,
             ts_offset_secs(48 * 60 * 60)
         ),
     );
@@ -474,18 +474,18 @@ fn test_spec_4_4_future_ts_rejected() {
     let node = Node::open(root.path()).unwrap();
 
     // The bogus `lam` did not pull the counter forward. What did move it is the audit row
-    // this open wrote, which is event 4.
+    // this open wrote, which is event 6.
     assert!(
         node.sys_log().lam() < 9999,
         "a rejected event's `lam` was folded in: {}",
         node.sys_log().lam()
     );
-    assert_eq!(node.sys_log().lam(), 3);
+    assert_eq!(node.sys_log().lam(), 5);
 
     let events = sys_events(&node);
     let audits: Vec<&Value> = events
         .iter()
-        .filter(|event| event["tbl"] == "sys_audit")
+        .filter(|event| event["tbl"] == "sys_audit" && event["d"]["kind"] == "event.rejected")
         .collect();
     assert_eq!(audits.len(), 1, "§4.4 requires the rejection in sys_audit");
 
@@ -499,7 +499,7 @@ fn test_spec_4_4_future_ts_rejected() {
     // So it is a string containing JSON, not a nested object.
     let detail = row["detail"].as_str().expect("detail must be a string");
     let detail: Value = serde_json::from_str(detail).unwrap();
-    assert_eq!(detail["seq"], 3);
+    assert_eq!(detail["seq"], 5);
     assert!(detail["ahead_secs"].as_i64().unwrap() > 24 * 60 * 60);
     // The file name, never the data root: sys_audit is replicated (§3.10).
     assert_eq!(detail["segment"], format!("{dev}.jsonl"));
@@ -516,7 +516,7 @@ fn test_spec_4_4_future_ts_rejected() {
     let node = Node::open(root.path()).unwrap();
     let audits = sys_events(&node)
         .iter()
-        .filter(|event| event["tbl"] == "sys_audit")
+        .filter(|event| event["tbl"] == "sys_audit" && event["d"]["kind"] == "event.rejected")
         .count();
     assert_eq!(audits, 1, "the same rejection was audited twice");
 }
@@ -542,7 +542,7 @@ fn test_spec_4_4_backwards_clock_warns() {
     hand_append(
         &sys_log,
         &format!(
-            r#"{{"seq":3,"lam":3,"ts":"{}","dev":"{dev}","app":"_sys","op":"put","tbl":"sys_setting","id":"x","d":{{}}}}"#,
+            r#"{{"seq":5,"lam":5,"ts":"{}","dev":"{dev}","app":"_sys","op":"put","tbl":"sys_setting","id":"x","d":{{}}}}"#,
             ts_offset_secs(90)
         ),
     );
@@ -551,7 +551,7 @@ fn test_spec_4_4_backwards_clock_warns() {
     let events = sys_events(&node);
     let audit = events
         .iter()
-        .find(|event| event["tbl"] == "sys_audit")
+        .find(|event| event["tbl"] == "sys_audit" && event["d"]["kind"] == "clock.skew")
         .expect("no clock.skew row was written");
 
     assert_eq!(audit["d"]["kind"], "clock.skew");
@@ -565,7 +565,7 @@ fn test_spec_4_4_backwards_clock_warns() {
     // Unlike a rejection, the event itself is accepted: 90 seconds is not 24 hours.
     assert_eq!(
         node.sys_log().lam(),
-        4,
+        6,
         "the event was folded in, then audited"
     );
 }
@@ -818,13 +818,12 @@ fn test_spec_4_1_incomplete_batch_is_skipped_by_replay_and_audited_once() {
         node.paths().app_log("_sys", node.id())
     };
 
-    // The batch is lines 3..=5 (after the two bootstrap rows). Keep the first two of
-    // them whole: a crash that landed two lines of three.
+    // Preserve the first two events of a three-event batch, after identity founding.
     let whole = fs::read_to_string(&path).unwrap();
     let lines: Vec<&str> = whole.lines().collect();
-    assert_eq!(lines.len(), 5);
-    assert!(lines[2].contains("\"batch\":3"), "{}", lines[2]);
-    let kept = format!("{}\n{}\n{}\n{}\n", lines[0], lines[1], lines[2], lines[3]);
+    assert_eq!(lines.len(), 7);
+    assert!(lines[4].contains("\"batch\":3"), "{}", lines[4]);
+    let kept = format!("{}\n", lines[..6].join("\n"));
     fs::write(&path, &kept).unwrap();
 
     let setting = |node: &Node, id: &str| -> Option<String> {
@@ -861,8 +860,8 @@ fn test_spec_4_1_incomplete_batch_is_skipped_by_replay_and_audited_once() {
         )
         .unwrap();
     assert_eq!(
-        next, 6,
-        "seq 3 and 4 are positions in the file, so the next is past the audit row at 5"
+        next, 8,
+        "seq 5 and 6 are positions in the file, so the next is past the audit row at 7"
     );
     // A raw append to `_sys` is applied on the next refresh, as a request would.
     node.refresh().unwrap();

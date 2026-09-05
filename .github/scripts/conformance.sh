@@ -62,4 +62,13 @@ run privatium-core apps test_spec_12_higher_api_refused
 run privatium adapter \
   test_large_request_body_never_fully_buffered \
   test_response_body_streams_without_buffering
-echo "conformance: every Phase 1 item of spec/protocol.md §13 holds by name"
+# Cluster secret exclusion and the certificate lifetime; renewal on sync remains planned.
+run privatium-core identity \
+  test_spec_2_3_3_cluster_private_key_is_absent_from_every_event_snapshot_and_backup \
+  test_spec_2_3_1_certificate_verifies_against_the_cluster_key_and_expires_at_180_days \
+  test_spec_2_3_1_certificate_renews_under_ninety_days \
+  test_spec_3_1b_data_only_restore_preserves_records_and_selects_local_identity \
+  test_spec_3_1b_restored_keys_select_the_original_cluster \
+  test_spec_3_1b_replayed_rows_cannot_change_local_cluster_identity
+
+echo "conformance: Phase 1 items and implemented cluster identity items hold by name"

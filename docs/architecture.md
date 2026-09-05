@@ -213,6 +213,12 @@ with no third party and no certificate authority.** Tiers 2 and 3 are configurat
 
 ## 5. Clusters and the shape of "peer"
 
+Each installation uses the node and cluster identity verified from its local keys and
+certificate. The public registry keeps the records that restore and sync bring in, so it
+can describe more than one node or cluster. Readers select this installation's records
+by its identity. Losing local keys does not retire a cluster that another machine may
+still use (`spec/data-dictionary.md §3.1, §3.1b`). Network sync is planned for Phase 3.
+
 Nodes belonging to one owner form a **cluster** sharing a keypair (`spec/protocol.md §2.3`).
 A device pins the *cluster* key at pairing, not a node key, so pairing a phone once makes it
 trust the desktop, the laptop, and any node admitted later.
