@@ -2,14 +2,10 @@
  * Project:  Privatium™  |  File: crates/privatium-core/assets/shell/pv.js
  * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
  * Created:  2026-09-03  |  Modified: 2026-09-05
- * Summary:  The data API helper of spec/data-api.md §5, served at /static/pv.js. A plain
- *           ES module with no dependencies and no build step: query, sql, get, events,
- *           append, put, del, subscribe, ulid, node, url, online, on. Writes queue in an
- *           outbox while the node is unreachable and replay exactly as they were: an entry
- *           carries the high-water mark, the rank of each row the page had seen, the app
- *           and the node it was queued under; the node judges the replay under its lock —
- *           landed, dropped; moved since, refused and reported; nothing, appended
- *           (spec/protocol.md §10.6). DECIMAL stays a string.
+ * Summary:  The data API helper of spec/data-api.md §5, served at /static/pv.js. Uses
+ *           the encrypted channel when present. Queued writes carry their high-water
+ *           mark, observed row ranks, app and node; the node judges replay against
+ *           the log (spec/protocol.md §10.6). DECIMAL stays a string.
  */
 const MOUNT = (() => {
   const m = location.pathname.match(/^\/a\/[a-z][a-z0-9-]{1,30}\//);
@@ -55,7 +51,7 @@ async function call(method, path, body) {
   const init = { method, credentials: 'same-origin', headers: {} };
   if (body !== undefined) { init.headers['content-type'] = 'application/json'; init.body = JSON.stringify(body); }
   let res;
-  try { res = await fetch(url('api/' + path), init); }
+  try { res = await (globalThis.__pv_channel?.fetch || fetch)(url('api/' + path), init); }
   catch (e) { setOnline(false); throw new PvOffline(e.message); }
   setOnline(true);
   if (!res.ok) {
@@ -194,10 +190,11 @@ async function learn() {
 }
 async function node() { return state.node || learn(); }
 
-// ---- live updates: EventSource, reconnected by hand so after= carries the last lam ------
+// Reconnect live updates with after= carrying the last lam (§5).
 function connect() {
   if (state.es || !subscribers.size) return;
-  const es = new EventSource(url('api/stream' + (state.lam ? '?after=' + state.lam : '')));
+  const path = url('api/stream' + (state.lam ? '?after=' + state.lam : ''));
+  const es = globalThis.__pv_channel ? globalThis.__pv_channel.eventSource(path) : new EventSource(path);
   state.es = es;
   es.addEventListener('append', e => { const ev = JSON.parse(e.data); noteLam(ev.lam); saw(ev); for (const fn of subscribers) fn(ev); });
   es.addEventListener('resync', e => { const d = JSON.parse(e.data); noteLam(d.lam); emit('resync', d); });

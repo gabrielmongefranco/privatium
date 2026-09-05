@@ -27,8 +27,11 @@ stop() {
 }
 trap stop EXIT
 
+# The listener announces the LAN URL; local requests use the separate loopback URL
+# (spec/cli.md §2). Match that announcement before checking the rendered pages.
+local_announcement='privatium: local browser at http://127.0.0.1:8420/'
 for _ in $(seq 1 120); do
-  grep -q 'listening on http://127.0.0.1:8420/' "$log" && break
+  grep -Fq "$local_announcement" "$log" && break
   if ! kill -0 "$pid" 2>/dev/null; then
     echo "the node exited before listening:"
     cat "$log"
@@ -36,7 +39,7 @@ for _ in $(seq 1 120); do
   fi
   sleep 0.5
 done
-if ! grep -q 'listening on http://127.0.0.1:8420/' "$log"; then
+if ! grep -Fq "$local_announcement" "$log"; then
   echo "the node never announced http://127.0.0.1:8420/:"
   cat "$log"
   exit 1

@@ -222,14 +222,26 @@ async fn test_spec_9_2_unauthenticated_leaks_nothing() {
         assert!(!text.contains(forbidden), "{forbidden} in {text}");
     }
 
-    // Not this machine: 403 everywhere, and the body names the phase, not the node.
+    // Outside the bootstrap set, an unauthenticated peer sees a pairing refusal (§8.4).
     for (path, _) in HOST_ROUTES {
+        if path.starts_with("/static/")
+            || matches!(
+                *path,
+                "/api/v1/health"
+                    | "/api/v1/manifest"
+                    | "/a/sketch/"
+                    | "/a/sketch/style.css"
+                    | "/a/animals/static/animals.css"
+            )
+        {
+            continue;
+        }
         let response = handler
             .handle(with_peer(get(path), "192.168.1.5:40000"))
             .await;
         assert_eq!(response.status(), StatusCode::FORBIDDEN, "{path}");
         let text = body_of(response).await;
-        assert!(text.contains("loopback only"), "{path}: {text}");
+        assert!(text.contains("pair this device"), "{path}: {text}");
         assert!(!text.contains(&id), "{path}: {text}");
         assert!(!text.contains("Sketch"), "{path}: {text}");
     }

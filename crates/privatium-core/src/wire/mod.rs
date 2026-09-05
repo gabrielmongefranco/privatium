@@ -27,7 +27,9 @@ use crate::lua::{
 };
 use crate::{Error, Node};
 
+pub mod channel;
 mod data;
+mod handoff;
 pub mod router;
 
 pub use data::{ApiSettings, ApiState, PING as STREAM_PING};
@@ -71,10 +73,11 @@ pub use crate::http::auth::{Device, Peer};
 /// without machinery. The data API (M9, `api`) takes the same shape: a query runs on a
 /// blocking thread with a connection taken under the lock, an append takes the lock for
 /// the write, and a stream subscribes under the lock and is pumped by a task after it.
+#[derive(Clone)]
 pub struct Handler {
     node: Arc<Mutex<Node>>,
     report: LoadReport,
-    csrf: Csrf,
+    csrf: Arc<Csrf>,
     auth: AuthLayer,
     mode: Mode,
     /// `http://127.0.0.1:<port>` — what `App::csp().header_for` is rendered against when a
@@ -82,6 +85,7 @@ pub struct Handler {
     default_origin: String,
     /// The data API's per-device state: SQL rate buckets and open streams.
     api: ApiState,
+    handoffs: handoff::Handoffs,
 }
 
 impl std::fmt::Debug for Handler {
@@ -106,11 +110,12 @@ impl Handler {
         Self {
             node: Arc::new(Mutex::new(node)),
             report,
-            csrf,
+            csrf: Arc::new(csrf),
             auth,
             mode,
             default_origin,
             api: ApiState::default(),
+            handoffs: handoff::Handoffs::default(),
         }
     }
 
@@ -157,23 +162,101 @@ impl Handler {
     }
 
     /// `core::handle` (ADR 0003). Infallible: anything that goes wrong is a response.
-    pub async fn handle(&self, request: Request) -> Response {
-        let inner = tower::service_fn(|request: Request| async move {
-            Ok::<Response, std::convert::Infallible>(self.dispatch(request).await)
-        });
-        let mut response = match self.auth.layer(inner).oneshot(request).await {
-            Ok(response) => response,
-            Err(never) => match never {},
-        };
-        headers::secure(&mut response, headers::CSP_DEFAULT);
-        if self.isolated() {
-            headers::isolate(&mut response);
-        }
-        response
+    pub fn handle(
+        &self,
+        mut request: Request,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response> + Send + '_>> {
+        Box::pin(async move {
+            if !self.classify(&mut request) {
+                let mut response = headers::text(
+                    StatusCode::FORBIDDEN,
+                    "403 Forbidden — this session is no longer authorized; pair again.\n",
+                );
+                headers::secure(&mut response, headers::CSP_DEFAULT);
+                if self.isolated() {
+                    headers::isolate(&mut response);
+                }
+                return response;
+            }
+            let inner = tower::service_fn(|request: Request| async move {
+                Ok::<Response, std::convert::Infallible>(self.dispatch(request).await)
+            });
+            let mut response = match self.auth.layer(inner).oneshot(request).await {
+                Ok(response) => response,
+                Err(never) => match never {},
+            };
+            headers::secure(&mut response, headers::CSP_DEFAULT);
+            if self.isolated() {
+                headers::isolate(&mut response);
+            }
+            response
+        })
     }
 
     fn lock(&self) -> MutexGuard<'_, Node> {
         self.node.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn classify(&self, request: &mut Request) -> bool {
+        use http::auth::{Public, Session};
+        request.extensions_mut().remove::<Public>();
+        request.extensions_mut().remove::<http::auth::Bootstrap>();
+        let mut node = self.lock();
+        if let Some(session) = request.extensions().get::<Session>() {
+            if node.refresh().is_err()
+                || session.node != *node.id()
+                || !channel::active(&node, session)
+            {
+                return false;
+            }
+            return true;
+        }
+        let peer = request.extensions().get::<Peer>().map(|p| p.0).or_else(|| {
+            request
+                .extensions()
+                .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+                .map(|p| p.0)
+        });
+        if peer.is_none_or(|p| p.ip().is_loopback()) {
+            return true;
+        }
+        if request.method() != Method::GET && request.method() != Method::HEAD {
+            return true;
+        }
+        let route = Router::new(
+            self.mode,
+            node.mounts().map(|(mount, app)| (mount, app.slug())),
+        )
+        .resolve(request.uri().path());
+        let html = request
+            .headers()
+            .get("accept")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| {
+                v.split(',').any(|t| {
+                    t.split(';')
+                        .next()
+                        .is_some_and(|t| t.trim().eq_ignore_ascii_case("text/html"))
+                })
+            });
+        let public = match &route {
+            Route::Ws | Route::WsPair | Route::Health | Route::Manifest | Route::Static { .. } => {
+                Some(Public::Asset)
+            }
+            _ if html => Some(Public::Page),
+            Route::App { slug, rest, .. } if rest != "/api" && !rest.starts_with("/api/") => node
+                .app(slug)
+                .and_then(|app| match app.manifest().app.tier {
+                    Tier::Web => Some(Public::Asset),
+                    Tier::Lua if rest.starts_with("/static/") => Some(Public::Asset),
+                    _ => None,
+                }),
+            _ => None,
+        };
+        if let Some(public) = public {
+            request.extensions_mut().insert(public);
+        }
+        true
     }
 
     fn solo(&self) -> bool {
@@ -192,6 +275,36 @@ impl Handler {
     }
 
     async fn dispatch(&self, request: Request) -> Response {
+        if request
+            .extensions()
+            .get::<http::auth::Bootstrap>()
+            .is_some()
+        {
+            let origin = self.origin_of(&request);
+            let mut node = self.lock();
+            let route = Router::new(
+                self.mode,
+                node.mounts().map(|(mount, app)| (mount, app.slug())),
+            )
+            .resolve(request.uri().path());
+            let mut response = http::pairing::bootstrap(request.uri(), node.id().as_str());
+            if let Route::App { slug, .. } = route {
+                if node.refresh_app(&slug).is_err() {
+                    return headers::text(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "Cannot load this app. Ask the owner to check its configuration.",
+                    );
+                }
+                if let Some(app) = node.app(&slug) {
+                    headers::secure(&mut response, &app.csp().header_for(&origin));
+                }
+            }
+            return if request.method() == Method::HEAD {
+                headers::strip_body(response)
+            } else {
+                response
+            };
+        }
         let method = request.method().clone();
         let path = request.uri().path().to_owned();
         let head = method == Method::HEAD;
@@ -207,6 +320,9 @@ impl Handler {
         };
 
         let response = match route {
+            Route::Ws | Route::WsPair => {
+                return channel::upgrade(self.clone(), request, route == Route::WsPair).await;
+            }
             Route::Launcher => {
                 if !get {
                     return headers::method_not_allowed("GET, HEAD");

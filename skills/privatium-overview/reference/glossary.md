@@ -31,6 +31,6 @@ because they are framework route prefixes (§9.1), not because of the mount path
 | Protocol | `pv/1` |
 | App contract | `api = 1` |
 | Reserved slugs | `_sys`, `api`, `a`, `ws`, `static`, `health`, `pair`, `well-known`, `settings`, `skills` |
-| Framework route prefixes (shadow a solo app's routes) | `/settings`, `/api`, `/skills`, `/static` |
+| Framework route prefixes (shadow a solo app's routes) | `/settings`, `/api`, `/skills`, `/static`, `/ws` |
 | Bootstrap Icons | v1.13.1 (2078 icons) |
 | Tiers | `lua` (requires `app.lua`), `web` (requires `web/index.html`), `rust` |

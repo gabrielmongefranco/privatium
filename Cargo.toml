@@ -37,6 +37,12 @@ tokio      = "1.53.1"
 # already in the graph beneath axum, so no new compile unit — rather than `tokio-stream`
 # (a new crate for one wrapper) or the `futures` facade.
 futures-core = "0.3.34"
+# Stream/sink helpers for the encrypted channel (spec/protocol.md §8.3).
+futures-util = { version = "0.3.32", default-features = false, features = ["std", "sink"] }
+# The socket conformance tests use the same WebSocket engine as axum.
+tokio-tungstenite = "0.29.0"
+socket2 = "0.6.5"
+if-addrs = "0.15.0"
 
 # Lua — M7. lua54 (not LuaJIT, not Luau: AGENTS.md), vendored so no system Lua is needed.
 mlua = "0.12.1"

@@ -266,14 +266,12 @@ impl Node {
     }
 
     /// The URL a device opens to reach this node — what the pairing QR code encodes
-    /// (`spec/protocol.md §7.1`). This build listens on loopback alone, so that is the
-    /// URL it can honestly give; the LAN bind of `spec/cli.md §2` replaces it.
+    /// (`spec/protocol.md §7.1`), selected from the default route (spec/cli.md §2).
     #[must_use]
     pub fn listen_url(&self) -> String {
         format!(
-            "http://{}:{}",
-            std::net::Ipv4Addr::LOCALHOST,
-            self.config.node.port
+            "http://{}",
+            std::net::SocketAddr::new(crate::http::lan_address(), self.config.node.port)
         )
     }
 

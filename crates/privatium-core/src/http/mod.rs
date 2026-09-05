@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-05
 // Summary:  What sits behind core::handle (docs/plans/phase-1.md §4): the §9.3 headers, the
 //           auth layer and csrf() of §2.2, the shell's pages, the two API routes of §9.2,
 //           the skills routes of spec/cli.md §6, the shell's embedded assets, and the Tier 2
@@ -14,6 +14,26 @@ pub mod assets;
 pub mod auth;
 pub mod csrf;
 pub mod headers;
+pub mod pairing;
+
+/// Select the default route's local address without sending a packet (spec/cli.md §2).
+/// Falls back to loopback when neither address family has a usable route.
+#[must_use]
+pub fn lan_address() -> std::net::IpAddr {
+    for (bind, destination) in [
+        ("0.0.0.0:0", "192.0.2.1:80"),
+        ("[::]:0", "[2001:db8::1]:80"),
+    ] {
+        if let Ok(socket) = std::net::UdpSocket::bind(bind)
+            && socket.connect(destination).is_ok()
+            && let Ok(address) = socket.local_addr()
+            && !address.ip().is_unspecified()
+        {
+            return address.ip();
+        }
+    }
+    std::net::Ipv4Addr::LOCALHOST.into()
+}
 pub mod shell;
 pub mod skills;
 

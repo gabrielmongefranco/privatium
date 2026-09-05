@@ -2,8 +2,8 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-03  |  Modified: 2026-09-05
 // Summary:  auth_layer (spec/app-contract.md §6) with its real signature — a tower::Layer —
-//           and its Phase 1 body (docs/plans/phase-1.md §2.2): a loopback caller is this
-//           node's own device row, anything else is 403. core::handle applies it itself, so
+//           and the bootstrap policy of spec/protocol.md §8.4: loopback is this node,
+//           a channel is its paired device, and public routes carry no device. core::handle applies it, so
 //           every adapter gets it; an embedder wraps their own router with it (§2.3), where
 //           the peer is axum's ConnectInfo and a request with no peer at all is refused —
 //           the layer fails closed, never open.
@@ -33,10 +33,38 @@ use crate::wire::{Request, Response};
 pub struct Peer(pub SocketAddr);
 
 /// Who the request is from, as the layer established it — inserted as a request extension
-/// for everything downstream. In Phase 1 this is always this node's own `sys_device` row
-/// (`docs/plans/phase-1.md §2.2`: the node is the device).
+/// for everything downstream. A channel carries its paired device; a local owner call
+/// carries this node's own `sys_device` row (spec/protocol.md §8.4).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Device(pub NodeId);
+
+/// Standing established by a completed channel handshake. Only the channel can mint
+/// it; incoming headers and a `Device` extension confer no standing (§8.3).
+#[derive(Debug, Clone)]
+pub struct Session {
+    pub(crate) device: NodeId,
+    pub(crate) node: NodeId,
+    pub(crate) x25519: String,
+}
+
+impl Session {
+    /// The authenticated device; no key material is exposed.
+    #[must_use]
+    pub fn device(&self) -> &NodeId {
+        &self.device
+    }
+}
+
+/// The core router alone classifies the public bootstrap set (§8.4).
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum Public {
+    Asset,
+    Page,
+}
+
+/// A page request that dispatch must answer without application content.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Bootstrap;
 
 /// `node.auth_layer()`.
 #[derive(Debug, Clone)]
@@ -106,6 +134,29 @@ where
     }
 
     fn call(&mut self, mut request: Request) -> Self::Future {
+        request.extensions_mut().remove::<Device>();
+        if request.extensions().get::<Session>().is_none()
+            && request
+                .headers()
+                .get("sec-fetch-site")
+                .is_some_and(|v| v.as_bytes().eq_ignore_ascii_case(b"cross-site"))
+        {
+            return AuthFuture::Refused(Some(headers::text(StatusCode::FORBIDDEN, FORBIDDEN)));
+        }
+        if let Some(session) = request.extensions().get::<Session>() {
+            if session.node != self.device {
+                return AuthFuture::Refused(Some(headers::text(StatusCode::FORBIDDEN, FORBIDDEN)));
+            }
+            let device = session.device.clone();
+            request.extensions_mut().insert(Device(device));
+            return AuthFuture::Inner(Box::pin(self.inner.call(request)));
+        }
+        if request.extensions().get::<Public>().is_some() && !self.require_peer {
+            if matches!(request.extensions().get::<Public>(), Some(Public::Page)) {
+                request.extensions_mut().insert(Bootstrap);
+            }
+            return AuthFuture::Inner(Box::pin(self.inner.call(request)));
+        }
         match check(&request, self.require_peer) {
             Err(refusal) => AuthFuture::Refused(Some(*refusal)),
             Ok(()) => {
@@ -142,9 +193,9 @@ where
     }
 }
 
-/// What a refused caller reads. It names the phase, not the node.
-const FORBIDDEN: &str = "403 Forbidden — this build serves loopback only; LAN access arrives \
-                         with pairing (spec/protocol.md §7).\n";
+/// What a refused caller reads: how to use the authenticated channel, with no node data.
+const FORBIDDEN: &str = "403 Forbidden — pair this device and use the encrypted channel; \
+                         web apps use pv.js (spec/protocol.md §8.4).\n";
 
 /// What a caller with no peer reads from an embedder's layer: which call is missing.
 const NO_PEER: &str = "403 Forbidden — the request carries no peer address, so this layer \

@@ -161,14 +161,20 @@ software does. So:
   every page, fragment and API call then travels inside an encrypted WebSocket channel
   (`spec/protocol.md §8.3`); only code and a bootstrap page cross the wire in the clear,
   and the scripts a page names are pinned by integrity to what the channel delivered.
-  This defeats passive eavesdroppers completely and detects active attackers after first
-  pairing, with one narrow exception — a Tier 2 app's own imported modules, which carry
-  no integrity (`docs/security.md §4`). It cannot protect a first contact that is
-  already man-in-the-middled. That is the SSH trust model, stated honestly in
-  `docs/security.md`.
+  With genuine client code, this protects application data from passive listeners and
+  refuses a substituted node. Every plain-HTTP load can still replace the bootstrap and
+  client, exposing stored device keys even after pairing. Integrity does not authenticate
+  a bootstrap whose hashes an attacker can also replace; imported framework and app
+  modules have no per-import integrity. See `docs/security.md §4`.
 - **Browser clients that need a real certificate** get one from a configured tunnel
   (Tailscale Serve) or a real domain with a DNS-01 issued certificate (DuckDNS). Both are
   optional.
+
+A full-page transition opens a fresh bootstrap document with the destination app's
+permissions. An already-produced form response can wait briefly as a bounded stream
+in node memory while that document reconnects. Only a response reference crosses in
+per-tab storage; consuming it does not repeat the write (`spec/protocol.md §8.3.1`).
+HTMX fragments and the data API stay on the current channel.
 
 ## 3. Component map
 

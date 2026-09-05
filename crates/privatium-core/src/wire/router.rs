@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/wire/router.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-05
 // Summary:  The route namespaces of spec/protocol.md §9.1 as one function from a path to a
 //           Route. Framework prefixes win in both modes; everything else belongs to
 //           whichever app is mounted there, and the mount table is Node::mounts(). This is
@@ -17,7 +17,7 @@ use crate::config::Mode;
 /// `/api` rather than `/api/v1`: beneath an app's mount only `api/` is reserved, for the
 /// data API, and in solo mode the mount is `/`, so the whole of `/api/` is the framework's
 /// there too. `/a` is reserved in host mode only — in solo mode there is no prefix.
-pub const FRAMEWORK_PREFIXES: [&str; 4] = ["/settings", "/api", "/skills", "/static"];
+pub const FRAMEWORK_PREFIXES: [&str; 5] = ["/settings", "/api", "/skills", "/static", "/ws"];
 
 /// The host-mode app prefix.
 const APP_PREFIX: &str = "/a";
@@ -65,6 +65,10 @@ impl SettingsPage {
 /// Where a path leads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Route {
+    /// Encrypted application channel (spec/protocol.md §8.3).
+    Ws,
+    /// Pairing handshake (spec/protocol.md §7.4).
+    WsPair,
     /// `/` in host mode: the app launcher.
     Launcher,
     /// One of the settings pages.
@@ -140,6 +144,13 @@ impl Router {
     /// (`§9.1`: "Framework prefixes take precedence in both modes").
     #[must_use]
     pub fn resolve(&self, path: &str) -> Route {
+        if let Some(rest) = strip_prefix(path, "/ws") {
+            return match rest {
+                "" => Route::Ws,
+                "/pair" => Route::WsPair,
+                _ => Route::NotFound,
+            };
+        }
         if let Some(rest) = strip_prefix(path, "/settings") {
             return match rest {
                 "" | "/" => Route::Settings(SettingsPage::Node),

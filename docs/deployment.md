@@ -3,11 +3,20 @@ Project:  Privatium™
 File:     docs/deployment.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-28
+Modified: 2026-09-05
 Summary:  Topologies, the always-on node, and per-OS firewall behaviour.
 -->
 
 # Deployment
+
+Current build: one node serves paired browser clients over its encrypted LAN channel.
+It listens on `0.0.0.0` and, where available, `[::]`, using `[node] port` (8420 by
+default). Startup prints a LAN URL and a separate loopback URL for the owner; `--open`
+uses loopback. `--verbose` lists other interface addresses. No bind flag is needed.
+
+The pairing screen and CLI pairing flow are planned for Phase 2 M19; discovery is
+planned for M18. Multi-node sync is Phase 3. Remote transports, tunnels and certificates
+below describe later phases. See [the roadmap](roadmap.md).
 
 ## 1. Topologies
 
@@ -86,6 +95,11 @@ Adding a second node is one pairing, and it buys more than a second copy:
 Do not add nodes for performance. Add them for availability.
 
 ## 4. Firewalls
+
+The current LAN bind can trigger Windows Defender's incoming-connection prompt. The
+node does not change firewall rules or require elevation. Declining the prompt leaves
+loopback access available. The optional firewall helper remains planned; a successful
+bind alone does not prove another device can reach the port.
 
 **Only a node needs inbound connectivity.** Clients need none. Outbound is effectively never
 blocked on any supported platform, so certificate issuance and tunnels work regardless.

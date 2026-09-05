@@ -93,4 +93,18 @@ run privatium-core pair \
   test_spec_7_0_the_code_never_crosses_the_wire \
   test_spec_7_4_pairing_completes_and_writes_the_device_row
 
-echo "conformance: Phase 1, cluster identity, session primitive, and pairing items hold by name"
+# The bootstrap exposes no application content, and live sessions stream through handle.
+run privatium-core channel \
+  test_spec_8_4_plain_http_on_the_lan_serves_only_the_bootstrap_set \
+  test_spec_9_2_bootstrap_page_carries_no_app_data \
+  test_spec_8_3_page_frame_scripts_carry_integrity \
+  test_spec_8_3_1_bootstrap_uses_destination_app_permissions
+run privatium channel \
+  test_spec_8_2_lan_socket_carries_no_plaintext_app_data \
+  test_channel_streams_a_response_body_frame_by_frame \
+  test_spec_8_3_browser_client_against_live_core \
+  test_spec_8_3_1_handoff_survives_disconnect_without_repeating_a_write \
+  test_spec_8_3_1_wrong_device_cannot_consume_or_release_a_response \
+  test_spec_8_3_1_capacity_refuses_before_dispatch_and_release_frees_it
+
+echo "conformance: Phase 1, identity, pairing and encrypted-channel items hold by name"

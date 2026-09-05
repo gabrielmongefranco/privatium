@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/shell.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-04
+// Created:  2026-09-03  |  Modified: 2026-09-05
 // Summary:  The framework's own pages — launcher, settings, errors — as server-rendered HTML
 //           with HTMX and inlined Bootstrap Icons (docs/architecture.md §2.5, docs/icons.md).
 //           No client framework, no bundler, no inline script or style: every page renders
@@ -119,8 +119,16 @@ fn page(
          \"selfRequestsOnly\":true,\"includeIndicatorStyles\":false}'>\n",
     );
     let _ = writeln!(out, "<title>{} — Privatium</title>", escape(title));
-    out.push_str("<link rel=\"stylesheet\" href=\"/static/shell.css\">\n");
-    out.push_str("<script src=\"/static/htmx.min.js\" defer></script>\n");
+    let _ = writeln!(
+        out,
+        "<link rel=\"stylesheet\" href=\"/static/shell.css\" integrity=\"{}\">",
+        crate::http::assets::integrity("shell.css")
+    );
+    let _ = writeln!(
+        out,
+        "<script src=\"/static/htmx.min.js\" integrity=\"{}\" defer></script>",
+        crate::http::assets::integrity("htmx.min.js")
+    );
     let _ = writeln!(
         out,
         "</head>\n<body{body_attrs}>\n<a class=\"pv-skip\" href=\"#main\">Skip to content</a>"

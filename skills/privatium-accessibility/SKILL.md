@@ -41,7 +41,10 @@ of them are.
 - No keyboard trap. A modal returns focus where it came from.
 
 **JavaScript off**
-- Every write works without JavaScript. `hx-post` sits beside `method`/`action`; a
+- On loopback, Tier 1 forms retain their no-JavaScript path. A plain-HTTP LAN browser
+  needs JavaScript for the encrypted channel; its bootstrap explains that limit and
+  directs the owner to the browser on the node (`spec/protocol.md §8.4`).
+- Every Tier 1 write works without JavaScript on loopback. `hx-post` sits beside `method`/`action`; a
   handler answers a fragment to htmx and a redirect to a plain post.
 - What Alpine hides must still be reachable: link a stylesheet from `<noscript>` that
   reverts `x-cloak` and hides the buttons whose only job is toggling Alpine state
