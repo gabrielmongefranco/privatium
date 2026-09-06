@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/protocol.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-05
+Modified: 2026-09-06
 Summary:  NORMATIVE. Wire formats, event log, discovery, pairing, session crypto, sync.
 -->
 
@@ -171,8 +171,10 @@ re-initialized and re-admitted. Cluster rotation is §2.3.5.
 
 All paths are relative to the node's data root, which MUST be
 `$XDG_DATA_HOME/privatium` on Linux (falling back to `~/.local/share/privatium`), the
-platform equivalent elsewhere, or an owner-selected directory obtained through the
-platform's file-chooser portal.
+platform equivalent elsewhere, or an owner-selected directory — named on the command
+line, a `privatium-data` folder the owner created beside the executable, or one obtained
+through the platform's file-chooser portal (`spec/cli.md §1`). An implementation MUST NOT
+write beside its executable except into such a folder the owner made.
 
 ```
 <data-root>/

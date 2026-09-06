@@ -48,7 +48,7 @@ pub use app::{
     App, AppRoot, Appended, Csp, Event, LoadFailure, LoadReport, Manifest, Permissions, Seeded,
     Source, Stage, StreamEvent, Warning,
 };
-pub use config::{Config, LuaConfig, Mode, NodeConfig, Paths};
+pub use config::{Config, LuaConfig, Mode, NodeConfig, PORTABLE_DIR, Paths, RootSource};
 pub use discover::Discovered;
 pub use http::{AuthLayer, Device, Peer};
 pub use identity::{Identity, NodeId};

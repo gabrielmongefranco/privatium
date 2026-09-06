@@ -325,12 +325,13 @@ rule applied.*
 
 ## 3. Spec gaps found
 
-Rows 1–29 are fixed. As in
+Rows 1–30 are fixed. As in
 Phase 1, this records what changed and why;
 `cargo xtask gen-skill-reference` ran with the edits.
 
 | # | Was | Proposed | Files | Milestone |
 |---|---|---|---|---|
+| 30 | The data root was the platform directory or `--data-dir`, nothing else; on Windows that directory is hidden, so owners could not find their apps, and a zip download had no way to keep everything in one folder | Three sources, most explicit first: `--data-dir`; a `privatium-data` folder the owner created beside the executable (portable mode — the program never creates it, and one that cannot be written is a runtime error, never a fall-through); the platform directory. Every start prints the root and the rule that chose it; the data page shows the same. The Windows release gains `privatium-windows-portable.zip` carrying `privatium-data/apps/` with the three examples | `cli.md §1`, `protocol.md §3`, `AGENTS.md` invariant 7, `README.md`, `docs/backup-and-restore.md §1`, Tier 3 skill, `release_tools.py`, `release.yml` | **Fixed**, owner requested; between M18 and M19 |
 | 29 | `cli.md` had a release binary start with an empty launcher — the reference apps existed only in a checkout — and `new --from hello` failed without one | The binary carries the three example apps; a start whose `apps/` holds no app folder writes them there, whether the data directory is new or was used before the binary carried them, `new --examples` writes them on request, `--from` finds the embedded copy, and a checkout keeps mounting its own `apps/` as `bundled` and writes nothing | `cli.md §2, §4`, `data-dictionary.md §3.4`, `apps/README.md`, `README.md`, overview skill | **Fixed**, owner requested; M18 |
 | 28 | The integrity rule assumed every resource could be fetched by an origin-local channel | Hash same-origin external resources through the channel; require an existing integrity hash in authenticated HTML for permitted remote resources; keep inline script CSP and imported-module limits explicit | `protocol.md §8.3`, this plan §2.1, security and Tier 2 skills | **Fixed**; M17 |
 | 27 | Full-document replacement and `pushState` retain the previous CSP and module map | Fresh bootstrap documents use destination app permissions. A bounded, unpolled response stream stays in node RAM across a form transition; only a reference crosses in per-tab storage. Same-device attachment consumes it once without re-executing the request | `protocol.md §8.3.1`, this plan §2.1; `app-contract.md §5.4` remains binding | **Fixed**, owner approved; M17 |
