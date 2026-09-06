@@ -181,4 +181,4 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           ls -l dist
-          gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes
+          gh release create "$GITHUB_REF_NAME" dist/* --clobber --title "$GITHUB_REF_NAME" --generate-notes
