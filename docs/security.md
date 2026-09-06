@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/security.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-05
+Modified: 2026-09-06
 Summary:  Threat model, protections, and honest statements of what is not protected.
 -->
 
@@ -14,8 +14,10 @@ Non-normative narrative. Normative requirements live in `spec/protocol.md §7–
 **Current build:** Phase 2 provides live pairing at `/ws/pair` and the encrypted
 application channel at `/ws`. The node binds IPv4 on every interface and IPv6 where
 available. Unpaired LAN browsers receive only the bootstrap set; loopback keeps the
-owner's existing access. The pairing screen and CLI flow remain planned for M19, and
-discovery for M18. Tests open pairing through the core's `Node::pair` API.
+owner's existing access. The node advertises itself over mDNS and answers UDP probes
+(`spec/protocol.md §6`); what it advertises is its public identity and app slugs, never
+data. The pairing screen and CLI flow remain planned for Phase 2. Tests open pairing
+through the core's `Node::pair` API.
 
 The session helpers reject invalid keys, expired or mismatched certificates, altered
 handshake transcripts, and unauthentic frames. A failed frame permanently closes its

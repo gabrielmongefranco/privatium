@@ -68,7 +68,7 @@ method of `Node` at this version, generated from the source.
 | Write | `append` (one `Event`), `append_batch` (all or nothing) |
 | Read | `query(app, sql, params)` — sandboxed, `?` bound, rows as `serde_json::Map` typed as `spec/data-api.md §1` types them |
 | React | `subscribe(app)` — a `broadcast::Receiver<StreamEvent>` of every append and every resync; will carry events arriving by sync too |
-| Network | `pair(ttl)` opens a pairing window and hands back the code in both renderings, the URL and the expiry (`spec/protocol.md §7`); `serve_discovery`, `start_sync` and `sync_now` are present and return `Error::Unimplemented` naming the phase they arrive in; never `Ok` |
+| Network | `pair(ttl)` opens a pairing window and hands back the code in both renderings, the URL and the expiry (`spec/protocol.md §7`); `serve_discovery` starts mDNS and the UDP responder together and `discovered()` lists the nodes seen, by ID (`§6`); `start_sync` and `sync_now` are present and return `Error::Unimplemented` naming Phase 3; never `Ok` |
 | Auth | `auth_layer` — Tower middleware; `core::handle` applies it itself, so wrap your own router with it only in embedded mode, and give the router `into_make_service_with_connect_info::<SocketAddr>()` so the layer sees the peer |
 | Data | `snapshot`, `restore`, `restore_tier`, `maintain` |
 | Ids | `new_ulid()` — the row key, minted by whoever writes the row |

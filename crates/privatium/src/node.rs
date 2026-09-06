@@ -1,10 +1,11 @@
 // Project:  Privatium™  |  File: crates/privatium/src/node.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-05
+// Created:  2026-09-04  |  Modified: 2026-09-06
 // Summary:  What every subcommand that touches a node shares: opening it from the two
 //           global flags of spec/cli.md §1, the app roots it loads (the owner's apps/ and,
-//           in a checkout, the repository's reference apps as bundled), the load report
-//           printed the same way everywhere, and the browser opener `--open` uses.
+//           in a checkout, the repository's example apps as bundled), what a first run
+//           is, the load report printed the same way everywhere, and the browser opener
+//           `--open` uses.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -33,18 +34,36 @@ pub fn paths(global: &Global) -> Result<Paths> {
 
 /// The repository's `apps/`, when this binary runs from a checkout.
 ///
-/// A development start is the one situation in which the reference apps are on disk
-/// beside the binary's source. A bare binary — a CI artefact, a release download — has
-/// no bundled folder and starts with an empty launcher; a package that ships the folder
-/// at a path of its own is Phase 6 (`spec/data-dictionary.md §3.4`, `source = bundled`).
-/// The path is fixed at compile time and simply absent anywhere else.
+/// A development start is the one situation in which the example apps are on disk
+/// beside the binary's source, mounted as `bundled` so an edit to the repository's copy
+/// is what runs. A bare binary — a CI artefact, a release download — has no such folder:
+/// it carries the same apps embedded (`privatium_core::app::examples`) and writes them
+/// into the owner's `apps/` on a first run ([`first_run`], `spec/cli.md §2`). A package
+/// that ships the folder at a path of its own is Phase 6 (`spec/data-dictionary.md
+/// §3.4`, `source = bundled`). The path is fixed at compile time and simply absent
+/// anywhere else; the test suite, which always runs from a checkout, sets
+/// `PRIVATIUM_TEST_NO_CHECKOUT` to exercise the release binary's path.
 #[must_use]
 pub fn checkout_apps() -> Option<PathBuf> {
+    if std::env::var_os("PRIVATIUM_TEST_NO_CHECKOUT").is_some() {
+        return None;
+    }
     let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()?
         .parent()?
         .join("apps");
     dir.is_dir().then_some(dir)
+}
+
+/// Whether running a node on these paths is its first run (`spec/cli.md §2`): the data
+/// directory does not exist, or holds nothing at all. A directory with anything in it —
+/// an `identity/`, a `config.toml`, an `apps/` the owner emptied on purpose — is not.
+#[must_use]
+pub fn first_run(paths: &Paths) -> bool {
+    match std::fs::read_dir(paths.root()) {
+        Ok(mut entries) => entries.next().is_none(),
+        Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+    }
 }
 
 /// Every root in one call, or "folder missing" is wrong (`Node::load_apps`).

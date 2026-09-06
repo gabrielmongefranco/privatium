@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/sys.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-05
+// Created:  2026-09-01  |  Modified: 2026-09-06
 // Summary:  Public node and cluster records, device and app registries, snapshot facts,
 //           and audit kinds, written through the same event log apps use
 //           (spec/data-dictionary.md §3).
@@ -28,6 +28,10 @@ pub const KIND_CLUSTER_CREATED: &str = "cluster.created";
 
 /// An unexpired node certificate was renewed (`spec/protocol.md §2.3.1`).
 pub const KIND_CERT_RENEWED: &str = "cert.renewed";
+
+/// What `serve_discovery` started, per mechanism, and the port it advertises
+/// (`spec/protocol.md §6.5`, `spec/data-dictionary.md §3.10`). Info.
+pub const KIND_DISCOVERY_METHOD: &str = "discovery.method";
 
 /// The owner opened a pairing window (`spec/protocol.md §7.1`).
 pub const KIND_PAIR_OPENED: &str = "pair.opened";

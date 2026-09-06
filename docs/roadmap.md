@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/roadmap.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-05
+Modified: 2026-09-06
 Summary:  Build phases with explicit acceptance criteria. Non-normative. Phases 2 and 3
           have plans under docs/plans/; later phases have stubs there.
 -->
@@ -94,8 +94,11 @@ audit rows, and the device row a success writes — in Rust and JavaScript, as d
 test drives. M17 connects `/ws/pair` and `/ws` to the live core, binds the LAN interfaces,
 and routes browser pages, forms, HTMX and the data API through the encrypted channel.
 Full-page responses can cross document transitions without repeating a write. Named
-socket and browser-module tests are in the plan. Discovery and the pairing screen
-remain planned for M18–M19; the Phase 2 acceptance bullets below remain open.
+socket and browser-module tests are in the plan. M18 adds discovery: the TXT record of
+§6.1, mDNS advertisement and browsing, the UDP responder and probe of §6.4, both started
+together and stopped with the node, the `pair` flag from one source, and a real
+`--no-discovery`. The pairing screen remains planned for M19; the Phase 2 acceptance
+bullets below remain open.
 
 **Done when:**
 - [ ] Pairing completes on a phone in under 20 seconds, without a keyboard

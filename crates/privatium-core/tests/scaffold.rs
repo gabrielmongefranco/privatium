@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/scaffold.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-04
+// Created:  2026-09-04  |  Modified: 2026-09-06
 // Summary:  docs/plans/phase-1.md M11 — what `privatium new` writes, loaded and driven
 //           through core::handle: the CRUD screens `--scaffold` emits for a typed table
 //           (spec/cli.md §4, spec/app-contract.md §4.7) create, show, edit and tombstone a
@@ -359,4 +359,52 @@ async fn test_spec_cli_4_from_copy_rewrites_slug_and_title() {
     let html = page(&handler, "/a/greeter/").await;
     assert!(html.contains("We haven't met yet."), "{html}");
     assert!(html.contains("<title>Greeter"), "{html}");
+}
+
+/// `spec/cli.md §2`, `§4` — the example apps the binary carries are the repository's
+/// `apps/hello`, `apps/animals` and `apps/sketch`, every file byte for byte and nothing
+/// else, so a first run or `new --examples` writes exactly what a checkout mounts.
+#[test]
+fn test_spec_cli_4_embedded_examples_match_the_repository_apps() {
+    use privatium_core::app::examples;
+
+    assert_eq!(examples::SLUGS, ["hello", "animals", "sketch"]);
+    assert!(examples::files("_lint").is_none());
+    assert!(examples::files("nope").is_none());
+    for (slug, files) in examples::all() {
+        let dir = repo_apps_dir().join(slug);
+        let mut on_disk = Vec::new();
+        walk_relative(&dir, &dir, &mut on_disk);
+        on_disk.sort();
+        let embedded: Vec<&str> = files.iter().map(|f| f.path.as_str()).collect();
+        assert_eq!(embedded, on_disk, "{slug}: the embedded file set");
+        assert!(files.iter().any(|f| f.path == "app.toml"), "{slug}");
+        for file in &files {
+            let bytes = fs::read(dir.join(&file.path)).unwrap();
+            assert_eq!(file.contents, bytes, "{slug}/{}", file.path);
+        }
+    }
+
+    // A copy of an embedded example rewrites what names the app, as `--from` promises.
+    let copied = scaffold::copy_files(examples::files("hello").unwrap(), "greeter", "Greeter");
+    let manifest = copied.iter().find(|f| f.path == "app.toml").unwrap();
+    let manifest = std::str::from_utf8(&manifest.contents).unwrap();
+    assert!(manifest.contains("slug        = \"greeter\""), "{manifest}");
+    assert!(manifest.contains("apps/greeter/app.toml"), "{manifest}");
+}
+
+fn walk_relative(base: &Path, dir: &Path, into: &mut Vec<String>) {
+    for entry in fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            walk_relative(base, &path, into);
+        } else {
+            into.push(
+                path.strip_prefix(base)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/"),
+            );
+        }
+    }
 }

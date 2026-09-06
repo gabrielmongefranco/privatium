@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/embedded.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
+// Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  spec/app-contract.md §2.3 and §6 against the crate as a library (M13): a node
 //           opened with no app folders, an app this binary owns with its schema inline,
 //           append, append_batch, query with bound parameters and the data API's typing,
@@ -331,16 +331,16 @@ fn test_spec_app_contract_6_snapshot_and_restore_reach_an_embedded_app() {
     assert_eq!(rows[0]["points"], json!("3"));
 }
 
-/// `§6` — `serve_discovery`, `start_sync` and `sync_now` are present with their
-/// signatures and answer with a typed error naming the phase they arrive in. Never
-/// `Ok`: a no-op that succeeded is what an embedder would build on
-/// (`docs/plans/phase-1.md`, M13). `pair` is real and is held by `tests/pair.rs`.
+/// `§6` — `start_sync` and `sync_now` are present with their signatures and answer with
+/// a typed error naming the phase they arrive in. Never `Ok`: a no-op that succeeded is
+/// what an embedder would build on (`docs/plans/phase-1.md`, M13). `pair` is real and
+/// is held by `tests/pair.rs`; `serve_discovery` is real and is held by
+/// `tests/discover.rs`.
 #[test]
 fn test_spec_app_contract_6_phase_2_methods_never_ok() {
     let root = tempfile::tempdir().unwrap();
     let mut node = open(root.path());
-    let outcomes: [(&str, privatium_core::Result<()>); 3] = [
-        ("serve_discovery", node.serve_discovery()),
+    let outcomes: [(&str, privatium_core::Result<()>); 2] = [
         ("start_sync", node.start_sync()),
         ("sync_now", node.sync_now()),
     ];
@@ -353,7 +353,7 @@ fn test_spec_app_contract_6_phase_2_methods_never_ok() {
                 spec,
             } => {
                 assert_eq!(*feature, name);
-                assert!(*phase == "2" || *phase == "3", "{name}: phase {phase}");
+                assert_eq!(*phase, "3", "{name}: phase {phase}");
                 assert!(spec.starts_with("spec/protocol.md §"), "{name}: {spec}");
             }
             other => panic!("{name}: {other}"),

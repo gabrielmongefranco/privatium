@@ -73,7 +73,7 @@ would believe it was syncing.
 
 ## `Node`'s public methods at this version
 
-From every `impl Node` block under `crates/privatium-core/src/`. `pair(ttl)` opens a pairing window (`spec/protocol.md §7`). `serve_discovery`, `start_sync` and `sync_now` are present with their signatures and return `Error::Unimplemented` naming the phase they arrive in — discovery is Phase 2, sync Phase 3 (`docs/roadmap.md`) — never `Ok`.
+From every `impl Node` block under `crates/privatium-core/src/`. `pair(ttl)` opens a pairing window (`spec/protocol.md §7`); `serve_discovery` starts mDNS and the UDP responder together (`§6.5`) and `discovered` lists the nodes seen, by ID. `start_sync` and `sync_now` are present with their signatures and return `Error::Unimplemented` naming Phase 3 (`docs/roadmap.md`) — never `Ok`.
 
 ```rust
 pub fn open(data_dir: impl Into<PathBuf>) -> Result<Self>
@@ -99,6 +99,10 @@ pub fn auth_layer(&self) -> AuthLayer
 pub fn query(&self, app: &str, sql: &str, params: &[Value]) -> Result<Vec<Map<String, Value>>>
 pub fn close(mut self) -> Result<()>
 pub fn serve_discovery(&mut self) -> Result<()>
+pub fn discovery_status(&self) -> Option<&discover::Status>
+pub fn discovered(&self) -> Vec<discover::Discovered>
+pub fn discovery_facts(&self) -> Result<discover::Facts>
+pub fn publish_facts(&self) -> Result<()>
 pub fn start_sync(&mut self) -> Result<()>
 pub fn sync_now(&mut self) -> Result<()>
 pub fn paths(&self) -> &Paths

@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/xtask/src/skill_reference.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
+// Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  `cargo xtask gen-skill-reference [--check]` (docs/skills.md §7, plan M12): the
 //           reference/ files of every skill, written from the crate — the lint rule table,
 //           the pv surface, the sandbox's removed names, the limits, the permissions and
@@ -573,9 +573,10 @@ fn rust_api(root: &Path) -> Result<String> {
     Ok(format!(
         "# `privatium-core` as a library\n\n{}\n{}\n## `Node`'s public methods at this version\n\n\
          From every `impl Node` block under `crates/privatium-core/src/`. `pair(ttl)` opens a \
-         pairing window (`spec/protocol.md §7`). `serve_discovery`, `start_sync` and `sync_now` \
-         are present with their signatures and return `Error::Unimplemented` naming the phase \
-         they arrive in — discovery is Phase 2, sync Phase 3 (`docs/roadmap.md`) — never `Ok`.\n\n```rust\n{list}```\n",
+         pairing window (`spec/protocol.md §7`); `serve_discovery` starts mDNS and the UDP \
+         responder together (`§6.5`) and `discovered` lists the nodes seen, by ID. \
+         `start_sync` and `sync_now` are present with their signatures and return \
+         `Error::Unimplemented` naming Phase 3 (`docs/roadmap.md`) — never `Ok`.\n\n```rust\n{list}```\n",
         section(root, "spec/app-contract.md", "2.3")?,
         section(root, "spec/app-contract.md", "6")?
     ))

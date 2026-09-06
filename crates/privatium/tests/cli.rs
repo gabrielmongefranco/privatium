@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium/tests/cli.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-05
+// Created:  2026-09-04  |  Modified: 2026-09-06
 // Summary:  spec/cli.md against the real binary, section by section: the qualified
 //           --version (§1) and the exit codes; the flags, which are exactly the spec's
 //           synopsis lines (§1–§9, both directions); a node on loopback with --port,
@@ -51,8 +51,14 @@ struct Running {
 impl Running {
     /// Start with `args`, wait for the announce line, and keep the port.
     fn start(args: &[&str]) -> Self {
+        Self::start_with_env(args, &[])
+    }
+
+    /// [`start`](Self::start) with environment variables set for the child.
+    fn start_with_env(args: &[&str], envs: &[(&str, &str)]) -> Self {
         let mut child = Command::new(BIN)
             .args(args)
+            .envs(envs.iter().copied())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -293,8 +299,8 @@ fn test_no_undocumented_flags() {
     }
 }
 
-/// `§2` — bare `privatium` runs a node on loopback: `--port`, `--solo` for one run, and
-/// `--no-discovery` a notice until Phase 2 (`docs/plans/phase-1.md §2.1`).
+/// `§2` — bare `privatium` runs a node: `--port` and `--solo` hold for one run, and the
+/// local browser URL is announced beside the LAN one.
 #[test]
 fn test_spec_cli_2_runs_a_node_on_loopback() {
     let root = tempfile::tempdir().unwrap();
@@ -344,25 +350,74 @@ fn test_spec_cli_2_runs_a_node_on_loopback() {
     let (status, _) = solo.get("/a/hello/");
     assert_eq!(status, 404);
     drop(solo);
+}
 
-    // --no-discovery's notice goes to stderr; capture it with a short-lived run.
+/// Start a node, read its standard error until the local-browser line, kill it, and hand
+/// back everything it wrote to standard error.
+fn stderr_of_a_short_run(args: &[&str]) -> String {
     let mut child = Command::new(BIN)
-        .args(["--data-dir", &dir, "--port", "0", "--no-discovery"])
+        .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
     let mut out = BufReader::new(child.stdout.take().unwrap());
-    let mut line = String::new();
-    out.read_line(&mut line).unwrap();
+    loop {
+        let mut line = String::new();
+        if out.read_line(&mut line).unwrap() == 0 || line.contains("local browser at") {
+            break;
+        }
+    }
+    // Discovery starts after the announce; give it a moment to report.
+    std::thread::sleep(Duration::from_millis(1500));
     child.kill().unwrap();
     let output = child.wait_with_output().unwrap();
-    let err = String::from_utf8_lossy(&output.stderr);
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+/// `§2`, `spec/protocol.md §6` — `--no-discovery` starts neither mDNS nor the UDP
+/// responder and says so; without it a node reports each mechanism under `--verbose`
+/// and writes a `discovery.method` audit row either way, naming what started.
+#[test]
+fn test_cli_no_discovery_starts_nothing() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = data_dir(&root);
+
+    let err = stderr_of_a_short_run(&["--data-dir", &dir, "--port", "0", "--no-discovery"]);
     assert!(
-        err.contains("--no-discovery: there is no discovery to disable"),
+        err.contains("--no-discovery: not advertising on this network"),
         "{err}"
     );
+    assert!(!err.contains("discovery: mDNS"), "{err}");
+    assert!(!err.contains("discovery: UDP"), "{err}");
+    let audit = fs::read_to_string(
+        walk(&Path::new(&dir).join("data").join("_sys").join("log"))
+            .into_iter()
+            .find(|p| p.extension().is_some_and(|e| e == "jsonl"))
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(!audit.contains("discovery.method"), "{audit}");
+
+    let err = stderr_of_a_short_run(&["--data-dir", &dir, "--port", "0", "--verbose"]);
+    assert!(
+        err.contains("discovery: mDNS started") || err.contains("discovery: mDNS not started"),
+        "{err}"
+    );
+    assert!(
+        err.contains("discovery: UDP 52525 started")
+            || err.contains("discovery: UDP 52525 not started"),
+        "{err}"
+    );
+    let audit = fs::read_to_string(
+        walk(&Path::new(&dir).join("data").join("_sys").join("log"))
+            .into_iter()
+            .find(|p| p.extension().is_some_and(|e| e == "jsonl"))
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(audit.contains("discovery.method"), "{audit}");
 }
 
 /// `§3` — `dev --app <slug>` runs the node and names the app: where its files are, and
@@ -1053,4 +1108,155 @@ fn test_spec_cli_10_absent_commands() {
             "{absent} in help"
         );
     }
+}
+
+/// `§2` — a first run on a data directory that does not exist writes the example apps
+/// into `apps/` before loading, so a release download's launcher is never empty; the
+/// second run writes nothing; a directory with anything in it is not a first run. The
+/// test-only `PRIVATIUM_TEST_NO_CHECKOUT` stands in for a binary with no checkout beside
+/// it; without it the checkout's `apps/` is what serves and nothing is written.
+#[test]
+fn test_spec_cli_2_first_run_writes_the_example_apps() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = data_dir(&root);
+    let apps = Path::new(&dir).join("apps");
+
+    let node = Running::start_with_env(
+        &["--data-dir", &dir, "--port", "0", "--no-discovery"],
+        &[("PRIVATIUM_TEST_NO_CHECKOUT", "1")],
+    );
+    for slug in ["hello", "animals", "sketch"] {
+        assert!(apps.join(slug).join("app.toml").is_file(), "{slug}");
+    }
+    assert!(
+        apps.join("animals")
+            .join("static")
+            .join("alpine-csp.min.js")
+            .is_file()
+    );
+    let (status, body) = node.get("/a/hello/");
+    assert_eq!(status, 200, "{body}");
+    assert!(body.contains("We haven't met yet."), "{body}");
+    let (status, body) = node.get("/a/sketch/");
+    assert_eq!(status, 200, "{body}");
+    drop(node);
+
+    // The second run is not a first run: an edit to a written copy survives it.
+    let marker = apps.join("hello").join("README.md");
+    fs::write(&marker, "edited by the owner\n").unwrap();
+    let again = Running::start_with_env(
+        &["--data-dir", &dir, "--port", "0", "--no-discovery"],
+        &[("PRIVATIUM_TEST_NO_CHECKOUT", "1")],
+    );
+    drop(again);
+    assert_eq!(
+        fs::read_to_string(&marker).unwrap(),
+        "edited by the owner\n"
+    );
+
+    // A directory that exists and holds anything is not a first run either.
+    let other = root.path().join("other");
+    fs::create_dir_all(&other).unwrap();
+    fs::write(other.join("config.toml"), "[node]\nport = 0\n").unwrap();
+    let other_dir = other.to_string_lossy().into_owned();
+    let node = Running::start_with_env(
+        &["--data-dir", &other_dir, "--no-discovery"],
+        &[("PRIVATIUM_TEST_NO_CHECKOUT", "1")],
+    );
+    drop(node);
+    assert!(fs::read_dir(other.join("apps")).unwrap().next().is_none());
+
+    // In a checkout the repository's apps/ serves them and nothing is written.
+    let checkout = root.path().join("checkout");
+    let checkout_dir = checkout.to_string_lossy().into_owned();
+    let node = Running::start(&["--data-dir", &checkout_dir, "--port", "0", "--no-discovery"]);
+    let (status, body) = node.get("/");
+    assert_eq!(status, 200);
+    assert!(body.contains("Hello"), "{body}");
+    drop(node);
+    assert!(
+        fs::read_dir(checkout.join("apps"))
+            .unwrap()
+            .next()
+            .is_none()
+    );
+}
+
+/// `§4` — `new --examples` writes every example app under its own slug, prints each file,
+/// refuses to combine with a slug or another flag, and never overwrites: a second call is
+/// a runtime error naming the folder, before anything is written.
+#[test]
+fn test_spec_cli_4_new_examples_writes_all_three_and_never_overwrites() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = data_dir(&root);
+    let apps = Path::new(&dir).join("apps");
+
+    let (code, out, err) = privatium(root.path(), &["--data-dir", &dir, "new", "--examples"]);
+    assert_eq!(code, 0, "{err}");
+    for path in ["hello/app.lua", "animals/lib/tree.lua", "sketch/web/app.js"] {
+        assert!(out.contains(path), "{path}: {out}");
+        assert!(apps.join(path).is_file(), "{path}");
+    }
+    assert!(err.contains("hello, animals, sketch"), "{err}");
+    let manifest = fs::read_to_string(apps.join("hello").join("app.toml")).unwrap();
+    assert!(manifest.contains("slug        = \"hello\""), "{manifest}");
+
+    // Never overwrites, and nothing else is touched by the refusal.
+    fs::remove_dir_all(apps.join("sketch")).unwrap();
+    let (code, _, err) = privatium(root.path(), &["--data-dir", &dir, "new", "--examples"]);
+    assert_eq!(code, 1, "{err}");
+    assert!(
+        err.contains("hello") && err.contains("never overwrites"),
+        "{err}"
+    );
+    assert!(!apps.join("sketch").exists(), "the refusal wrote nothing");
+
+    for args in [
+        &["new", "myapp", "--examples"][..],
+        &["new", "--examples", "--tier", "web"],
+        &["new", "--examples", "--from", "hello"],
+    ] {
+        let mut full = vec!["--data-dir", dir.as_str()];
+        full.extend_from_slice(args);
+        let (code, _, err) = privatium(root.path(), &full);
+        assert_eq!(code, 2, "{args:?}: {err}");
+    }
+
+    // Every example loads on the node from the owner's apps/ alone.
+    let node = Running::start_with_env(
+        &["--data-dir", &dir, "--port", "0", "--no-discovery"],
+        &[("PRIVATIUM_TEST_NO_CHECKOUT", "1")],
+    );
+    let (status, body) = node.get("/a/animals/");
+    assert_eq!(status, 200, "{body}");
+}
+
+/// `§4` — `--from hello` copies the embedded example when no checkout and no installed
+/// app of that slug is beside the binary, which is every release download.
+#[test]
+fn test_new_from_hello_works_without_a_checkout() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = data_dir(&root);
+    let output = Command::new(BIN)
+        .args(["--data-dir", &dir, "new", "greeter", "--from", "hello"])
+        .env("PRIVATIUM_TEST_NO_CHECKOUT", "1")
+        .current_dir(root.path())
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(0), "{err}");
+    assert!(err.contains("the example app hello"), "{err}");
+    let manifest = fs::read_to_string(Path::new(&dir).join("apps/greeter/app.toml")).unwrap();
+    assert!(manifest.contains("slug        = \"greeter\""), "{manifest}");
+    assert!(manifest.contains("title       = \"Greeter\""), "{manifest}");
+
+    let output = Command::new(BIN)
+        .args(["--data-dir", &dir, "new", "xy", "--from", "no-such-app"])
+        .env("PRIVATIUM_TEST_NO_CHECKOUT", "1")
+        .current_dir(root.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&output.stderr);
+    assert!(err.contains("hello, animals, sketch"), "{err}");
 }

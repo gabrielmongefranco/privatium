@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/api.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  The two unauthenticated API routes of spec/protocol.md §9.2. Health is the
 //           protocol major and the Node ID and nothing else; the manifest is what discovery
 //           needs — ID, display name, the mounted apps by slug and title, the pair flag — and
@@ -26,8 +26,10 @@ pub fn health(node: &Node) -> String {
 /// `name` is `sys_node.display_name`, or the Node ID while the owner has set none, so a
 /// client always has something to show. `apps` is every app with a mount — the ones a
 /// device could open — with slug, title and icon; `pair` is whether the node is accepting a
-/// pairing right now, which in a build without pairing is `false`.
+/// pairing right now, read from the same facts the TXT record and the UDP answer carry
+/// (`spec/protocol.md §6.1`) so the three never disagree.
 pub fn manifest(node: &Node) -> Result<Value> {
+    let facts = node.discovery_facts()?;
     let id = node.id().as_str().to_owned();
     let name = display_name(node)?.unwrap_or_else(|| id.clone());
     let apps: Vec<Value> = node
@@ -45,7 +47,7 @@ pub fn manifest(node: &Node) -> Result<Value> {
         "id": id,
         "name": name,
         "apps": apps,
-        "pair": false,
+        "pair": facts.pair(jiff::Timestamp::now()),
     }))
 }
 

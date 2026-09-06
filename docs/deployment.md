@@ -14,9 +14,12 @@ It listens on `0.0.0.0` and, where available, `[::]`, using `[node] port` (8420 
 default). Startup prints a LAN URL and a separate loopback URL for the owner; `--open`
 uses loopback. `--verbose` lists other interface addresses. No bind flag is needed.
 
-The pairing screen and CLI pairing flow are planned for Phase 2 M19; discovery is
-planned for M18. Multi-node sync is Phase 3. Remote transports, tunnels and certificates
-below describe later phases. See [the roadmap](roadmap.md).
+The node advertises itself on the local network over mDNS and answers UDP probes on port
+52525 (`spec/protocol.md §6`); `--no-discovery` turns both off for one run, and the
+`discovery.mdns` and `discovery.udp` settings turn each off durably. The pairing screen
+and CLI pairing flow are planned for Phase 2. Multi-node sync is Phase 3. Remote
+transports, tunnels and certificates below describe later phases. See
+[the roadmap](roadmap.md).
 
 ## 1. Topologies
 
@@ -121,7 +124,8 @@ an owner who is not told will conclude the software is broken.
 
 **mDNS needs its own rule.** UDP 5353 inbound is separate from the TCP application port.
 Opening one and forgetting the other produces "it works by IP but not by name," which looks
-like a discovery bug and is not.
+like a discovery bug and is not. The UDP fallback for networks that filter multicast is a
+third rule, UDP 52525 (`spec/protocol.md §6.4`).
 
 ### 4.2 Never require administrator
 
@@ -131,8 +135,8 @@ shown so they can inspect what would be run.
 
 ```
 Fedora / openSUSE   sudo firewall-cmd --permanent --add-port=8420/tcp \
-                    --add-port=5353/udp && sudo firewall-cmd --reload
-Ubuntu / Debian     sudo ufw allow 8420/tcp && sudo ufw allow 5353/udp
+                    --add-port=5353/udp --add-port=52525/udp && sudo firewall-cmd --reload
+Ubuntu / Debian     sudo ufw allow 8420/tcp && sudo ufw allow 5353/udp && sudo ufw allow 52525/udp
 Windows             netsh advfirewall firewall add rule name="Privatium" \
                     dir=in action=allow protocol=TCP localport=8420 profile=private
 ```

@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/app/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-02  |  Modified: 2026-09-05
+// Created:  2026-09-02  |  Modified: 2026-09-06
 // Summary:  The app loader — step 5 of docs/plans/phase-1.md §2.6 and the lifecycle of
 //           spec/app-contract.md §8 up to and including mount. Discovers app folders,
 //           refuses per app and loudly (§3.1), keeps sys_app as events (§3.4), and owns
@@ -29,6 +29,7 @@ use crate::{
 };
 
 pub mod csp;
+pub mod examples;
 pub mod manifest;
 pub mod scaffold;
 pub mod seed;
@@ -703,6 +704,8 @@ impl Node {
         }
 
         self.store.refresh(&cutoff).map_err(boxed)?;
+        // The `apps` key of the TXT record follows what is mounted (`spec/protocol.md §6.1`).
+        self.publish_facts()?;
         self.flush()?;
         Ok(report)
     }
