@@ -243,9 +243,14 @@ fn test_spec_6_1_pair_flag_flips_when_pairing_opens() {
     assert!(facts.pair(t0 + Duration::from_secs(119)));
     // The window's expiry is in the facts, so an answer after it says 0 with no call.
     assert!(!facts.pair(t0 + Duration::from_secs(120)));
-    assert_eq!(record_map(&facts)["pair"], "1");
-    // The manifest reads the real clock; a window opened for a synthetic 2026 instant is
-    // over by now, which is the same rule at work.
+    // The record is written for the clock it is asked about: `1` inside the window and
+    // `0` after it, whatever the wall clock says while this test runs.
+    let at = |when: jiff::Timestamp| -> BTreeMap<String, String> {
+        txt::record(&facts, when).into_iter().collect()
+    };
+    assert_eq!(at(t0)["pair"], "1");
+    assert_eq!(at(t0 + Duration::from_secs(120))["pair"], "0");
+    // The manifest reads the real clock — the same rule, at whatever instant that is.
     assert_eq!(api::manifest(&node).unwrap()["pair"], facts.pair(now()));
 
     assert!(node.close_pairing(t0).unwrap());
