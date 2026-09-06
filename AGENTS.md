@@ -41,9 +41,11 @@ Violating any of these is a bug, regardless of how well the code works:
 6. **App SQL runs sandboxed.** The app-facing SQLite connection is read-only at the file,
    `query_only`, and behind an authorizer that refuses every write, every `PRAGMA`,
    `ATTACH` and extension loading. Only the framework's own connection writes.
-7. **XDG paths only.** Never write beside the binary, never assume a writable install
-   directory, never require `--filesystem=host`. Flatpak compatibility is a hard
-   requirement from day one, not a later port.
+7. **XDG paths by default.** Never assume a writable install directory, never require
+   `--filesystem=host`. The one place the node writes beside the binary is a
+   `privatium-data` folder the owner created there (`spec/cli.md §1`, portable mode);
+   the program never creates it. Flatpak compatibility is a hard requirement from day
+   one, not a later port.
 8. **Ports ≥ 1024 only.** No `CAP_NET_BIND_SERVICE`. ACME is DNS-01 only. The node runs as an
    ordinary user; elevation is only ever an optional firewall helper the owner can decline.
 9. **No node is primary.** Every node is a peer; an always-on node is a peer that happens to

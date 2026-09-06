@@ -355,8 +355,14 @@ fn test_spec_cli_2_runs_a_node_on_loopback() {
 /// Start a node, read its standard error until the local-browser line, kill it, and hand
 /// back everything it wrote to standard error.
 fn stderr_of_a_short_run(args: &[&str]) -> String {
-    let mut child = Command::new(BIN)
+    stderr_of_a_short_run_of(Path::new(BIN), args, &[])
+}
+
+/// [`stderr_of_a_short_run`] for a copy of the binary somewhere else.
+fn stderr_of_a_short_run_of(bin: &Path, args: &[&str], envs: &[(&str, &str)]) -> String {
+    let mut child = Command::new(bin)
         .args(args)
+        .envs(envs.iter().copied())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -1299,4 +1305,67 @@ fn test_new_from_hello_works_without_a_checkout() {
     assert_eq!(output.status.code(), Some(1));
     let err = String::from_utf8_lossy(&output.stderr);
     assert!(err.contains("hello, animals, sketch"), "{err}");
+}
+
+/// `§1` — the data root is `--data-dir` when given, else a `privatium-data` folder beside
+/// the executable when one exists, and every start says which; the platform directory
+/// is never touched here, since a test must not write into the owner's own.
+#[test]
+fn test_spec_cli_1_portable_folder_beside_the_binary_is_the_data_root() {
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join("portable");
+    fs::create_dir_all(home.join("privatium-data")).unwrap();
+    let copy = home.join(Path::new(BIN).file_name().unwrap());
+    fs::copy(BIN, &copy).unwrap();
+
+    let err = stderr_of_a_short_run_of(
+        &copy,
+        &["--port", "0", "--no-discovery"],
+        &[("PRIVATIUM_TEST_NO_CHECKOUT", "1")],
+    );
+    let expected = format!(
+        "privatium: data in {} (the privatium-data folder beside the program)",
+        home.join("privatium-data").display()
+    );
+    assert!(err.contains(&expected), "{err}");
+    assert!(
+        home.join("privatium-data")
+            .join("identity")
+            .join("node.key")
+            .is_file()
+    );
+    assert!(
+        home.join("privatium-data")
+            .join("apps")
+            .join("hello")
+            .join("app.toml")
+            .is_file(),
+        "the examples are written into the portable folder like any other empty apps/"
+    );
+
+    // The flag wins over the folder.
+    let flagged = root.path().join("flagged");
+    let flagged_dir = flagged.to_string_lossy().into_owned();
+    let err = stderr_of_a_short_run_of(
+        &copy,
+        &["--data-dir", &flagged_dir, "--port", "0", "--no-discovery"],
+        &[],
+    );
+    assert!(
+        err.contains(&format!(
+            "privatium: data in {} (named on the command line)",
+            flagged.display()
+        )),
+        "{err}"
+    );
+    assert!(flagged.join("identity").join("node.key").is_file());
+
+    // The data page names the same folder and the same reason.
+    let node = Running::start_with_env(
+        &["--data-dir", &flagged_dir, "--port", "0", "--no-discovery"],
+        &[],
+    );
+    let (status, body) = node.get("/settings/data");
+    assert_eq!(status, 200);
+    assert!(body.contains("named on the command line"), "{body}");
 }

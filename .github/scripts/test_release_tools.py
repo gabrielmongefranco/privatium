@@ -9,10 +9,42 @@ import zipfile
 import tarfile
 from pathlib import Path
 
-from release_tools import package, require_ci
+from release_tools import EXAMPLE_APPS, package, package_portable, require_ci
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_portable_zip_holds_the_binary_the_readme_and_the_example_apps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "release"
+            source.mkdir()
+            (source / "privatium.exe").write_bytes(b"synthetic binary\x00\xff")
+            apps = root / "apps"
+            for slug in EXAMPLE_APPS:
+                (apps / slug / "views").mkdir(parents=True)
+                (apps / slug / "app.toml").write_text(f'[app]\nslug = "{slug}"\n')
+                (apps / slug / "views" / "index.lsp").write_text("<h1>x</h1>")
+            (apps / "_lint" / "fail").mkdir(parents=True)
+            (apps / "_lint" / "fail" / "app.toml").write_text("excluded")
+            (apps / "README.md").write_text("excluded")
+            result = package_portable(source, root / "dist", apps)
+            self.assertEqual(result.name, "privatium-windows-portable.zip")
+            with zipfile.ZipFile(result) as bundle:
+                names = bundle.namelist()
+                self.assertEqual(names[0], "privatium.exe")
+                self.assertEqual(bundle.getinfo("privatium.exe").external_attr >> 16 & 0o777, 0o755)
+                self.assertIn("README.txt", names)
+                self.assertIn("privatium-data", bundle.read("README.txt").decode())
+                for slug in EXAMPLE_APPS:
+                    self.assertIn(f"privatium-data/apps/{slug}/app.toml", names)
+                    self.assertIn(f"privatium-data/apps/{slug}/views/index.lsp", names)
+                self.assertFalse(any("_lint" in n or n.endswith("apps/README.md") for n in names), names)
+                self.assertEqual(len(names), 2 + 2 * len(EXAMPLE_APPS))
+            with self.assertRaises(FileNotFoundError):
+                package_portable(source, root / "dist", root / "no-apps")
+            with self.assertRaises(FileNotFoundError):
+                package_portable(root / "no-binary", root / "dist", apps)
+
     def test_archives_contain_only_the_original_binary(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

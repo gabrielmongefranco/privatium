@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/shell.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-05
+// Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  The framework's own pages — launcher, settings, errors — as server-rendered HTML
 //           with HTMX and inlined Bootstrap Icons (docs/architecture.md §2.5, docs/icons.md).
 //           No client framework, no bundler, no inline script or style: every page renders
@@ -612,7 +612,11 @@ fn data_page(cx: &Context<'_>, body: &mut String) {
     dl(
         body,
         "Data directory",
-        &code(&paths.root().display().to_string()),
+        &format!(
+            "{} — {}",
+            code(&paths.root().display().to_string()),
+            escape(paths.source().describe())
+        ),
     );
     dl(
         body,

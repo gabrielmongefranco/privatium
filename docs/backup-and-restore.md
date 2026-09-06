@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/backup-and-restore.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-05
+Modified: 2026-09-06
 Summary:  The backup and restore procedure, written to be usable by a non-technical owner.
 -->
 
@@ -31,6 +31,14 @@ Everything else in this document is elaboration.
 Everything in `data/` is a text file. You can open one in Notepad and read your own
 information. This is on purpose. If a backup format needs special software to inspect, it
 is not a backup, it is a hostage situation.
+
+**Where these folders are.** Every start prints a line beginning `privatium: data in`,
+and the settings data page shows the same folder. It is one of three places
+(`spec/cli.md §1`): the folder you named with `--data-dir`; a `privatium-data` folder
+beside the program, if you created one or downloaded the portable zip; otherwise the
+platform's data directory — `%LOCALAPPDATA%\privatium` on Windows,
+`~/Library/Application Support/privatium` on macOS, `~/.local/share/privatium` on Linux.
+The Windows one is hidden by default; paste the path into the Explorer address bar.
 
 The first start creates both keys, including when you upgrade a Phase 1 folder. Each
 start renews the node certificate if it is still valid and fewer than ninety days remain.

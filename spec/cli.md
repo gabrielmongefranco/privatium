@@ -26,10 +26,20 @@ privatium [--data-dir <path>] [--config <file>] [--verbose] [--version] [<comman
 
 | Flag | Default |
 |---|---|
-| `--data-dir` | `$XDG_DATA_HOME/privatium`, or the platform equivalent |
+| `--data-dir` | A `privatium-data` folder beside the executable when one exists; else `$XDG_DATA_HOME/privatium`, or the platform equivalent |
 | `--config` | `<data-dir>/config.toml` |
 | `--verbose` | off |
 | `--version` | — |
+
+**Where the data root is** (`spec/protocol.md §3`), most explicit first: `--data-dir` when
+given; else the folder named `privatium-data` beside the running executable, when the
+owner has created one there — *portable mode*, the whole installation in one folder; else
+the platform data directory. The program never creates the portable folder itself, so a
+zip run from Downloads and the same program installed behave the same until the owner
+makes that folder. A portable folder that exists and cannot be written is a runtime error
+naming it, never a silent fall-through to the platform directory. Every run of a node
+prints the root it chose and which of the three rules chose it, and the settings data
+page shows the same.
 
 `--version` prints the build version and the protocol version it implements. An
 implementation that does not satisfy every item in `spec/protocol.md §13` MUST qualify the

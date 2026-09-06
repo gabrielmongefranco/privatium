@@ -83,6 +83,20 @@ pub fn run(global: &Global, options: Options) -> Result<u8> {
             })?;
             let addr = listener.local_addr()?;
             print!("{}", adapter::announce(addr));
+            // Where the data is and which rule of spec/cli.md §1 put it there, every
+            // start: the platform directory is hidden on Windows, and a portable folder
+            // beside the program is easy to forget.
+            {
+                let node = handler
+                    .node()
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                eprintln!(
+                    "privatium: data in {} ({})",
+                    node.paths().root().display(),
+                    node.paths().source().describe()
+                );
+            }
             if global.verbose {
                 match adapter::other_urls(addr.port()) {
                     Ok(urls) => for url in urls { eprintln!("privatium: interface at {url}"); },
