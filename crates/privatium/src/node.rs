@@ -131,8 +131,13 @@ pub fn failure_of(report: &LoadReport, slug: &str) -> Option<String> {
 
 /// Open `url` in the owner's browser (`spec/cli.md §2`, `--open`), through the platform's
 /// opener. Best effort: a failure is a line on standard error, never a reason to stop
-/// the node.
+/// the node. The test suite sets `PRIVATIUM_TEST_NO_BROWSER` so a test of `--open` never
+/// launches one; then the URL is reported and nothing is opened.
 pub fn open_browser(url: &str) {
+    if std::env::var_os("PRIVATIUM_TEST_NO_BROWSER").is_some() {
+        eprintln!("privatium: would open {url}");
+        return;
+    }
     #[cfg(target_os = "windows")]
     let mut command = {
         let mut command = Command::new("cmd");

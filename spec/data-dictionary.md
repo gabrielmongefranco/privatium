@@ -185,7 +185,7 @@ Every paired device, including browsers and other nodes.
 | `x25519_pub` | `VARCHAR` | base64 |
 | `paired_at` | `TIMESTAMPTZ` | |
 | `paired_via` | `VARCHAR` | `lan` \| `iroh` \| `onion` \| `tunnel` |
-| `last_seen_at` | `TIMESTAMPTZ` | Written at the channel handshake (`spec/protocol.md §8.3`) and by the first request of a session older than an hour — at most hourly, never per request |
+| `last_seen_at` | `TIMESTAMPTZ` | Written at the channel handshake (`spec/protocol.md §8.3`) when the row holds none or one more than an hour old, and by the first request an hour or more after the last write — at most hourly, never per request, and never per page navigation, each of which opens a channel of its own |
 | `user_agent` | `VARCHAR` | Nullable; browsers only |
 | `revoked_at` | `TIMESTAMPTZ` | Nullable. Set = access denied immediately. |
 | `revoked_reason` | `VARCHAR` | Nullable |

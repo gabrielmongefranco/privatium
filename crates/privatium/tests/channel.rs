@@ -1,7 +1,9 @@
 // Project:  Privatium™  |  File: crates/privatium/tests/channel.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
-// Summary:  Actual WebSocket pairing, authenticated routing, streaming and refusal (§8).
+// Created:  2026-09-05  |  Modified: 2026-09-06
+// Summary:  Actual WebSocket pairing, authenticated routing, streaming and refusal (§8);
+//           the owner-only acts a session is refused (§9.2), the session device an app
+//           sees, and the refusal a paired client makes of a re-keyed node (§8.1).
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -76,13 +78,20 @@ impl Drop for Fixture {
 }
 impl Fixture {
     async fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        Self::with_apps(tempfile::tempdir().unwrap(), None).await
+    }
+
+    /// A node over `root` — fresh, or one whose `data/` was copied in — with the
+    /// repository's apps and, when given, the owner's apps under `local`.
+    async fn with_apps(root: tempfile::TempDir, local: Option<&Path>) -> Self {
         let mut node = Node::open(root.path()).unwrap();
-        let report = node
-            .load_apps(&[AppRoot::bundled(
-                Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps"),
-            )])
-            .unwrap();
+        let mut roots = vec![AppRoot::bundled(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps"),
+        )];
+        if let Some(local) = local {
+            roots.insert(0, AppRoot::local(local.to_path_buf()));
+        }
+        let report = node.load_apps(&roots).unwrap();
         let handler = Arc::new(Handler::new(node, report));
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let destination = listener.local_addr().unwrap();
@@ -520,4 +529,204 @@ async fn test_spec_8_3_reused_ids_and_invalid_paths_close_the_channel() {
     c.id = 0;
     c.request("GET", "/api/v1/health", "").await;
     assert!(matches!(next(&mut c.socket).await, Message::Close(Some(c)) if c.code == 4400.into()));
+}
+
+// ---------------------------------------------------------------------------------------
+// The owner's standing, the session's device, and the refusal a paired client makes
+// ---------------------------------------------------------------------------------------
+
+/// A form POST through `handle` in-process — the owner's own standing (`§8.4`).
+fn owner_form(f: &Fixture, path: &str, fields: &str) -> Request {
+    let token = f.handler.csrf().token(path);
+    let body = if fields.is_empty() {
+        format!("_csrf={token}")
+    } else {
+        format!("{fields}&_csrf={token}")
+    };
+    axum::http::Request::builder()
+        .method("POST")
+        .uri(path)
+        .header("content-type", "application/x-www-form-urlencoded")
+        .body(axum::body::Body::from(body))
+        .unwrap()
+}
+
+/// `spec/protocol.md §9.2` — `/api/v1/pair` and the settings acts behind it are the
+/// owner's alone: a paired session is refused on every one of them, whatever its
+/// device, while the devices page it may read carries none of the forms.
+#[tokio::test]
+async fn test_spec_9_2_pair_route_refuses_a_session() {
+    let f = Fixture::new().await;
+    let paired = f.pair().await;
+    let mut c = f.connect(&paired).await;
+    for (method, path) in [
+        ("POST", "/api/v1/pair"),
+        ("GET", "/api/v1/pair"),
+        ("POST", "/settings/devices/pair"),
+        ("GET", "/settings/devices/pairing"),
+        ("POST", "/settings/devices/pairing/close"),
+        ("POST", "/settings/name"),
+        ("POST", "/settings/devices/b3nn8t2q/revoke"),
+        ("POST", "/settings/devices/b3nn8t2q/label"),
+    ] {
+        let id = c.request(method, path, "{\"ttl\":120}").await;
+        let (status, body) = c.response(id).await;
+        assert_eq!(status, 403, "{method} {path}: {body}");
+        assert!(body.contains("owner"), "{body}");
+    }
+    assert!(
+        !f.handler
+            .node()
+            .lock()
+            .unwrap()
+            .pairing_open(jiff::Timestamp::now()),
+        "nothing opened"
+    );
+    let id = c.request("GET", "/settings/devices", "").await;
+    let (status, page) = c.response(id).await;
+    assert_eq!(status, 200);
+    assert!(page.contains(&paired.device), "{page}");
+    assert!(
+        !page.contains("action=\"/settings/devices/pair\""),
+        "{page}"
+    );
+    assert!(!page.contains("/revoke\""), "{page}");
+    assert!(page.contains("only the owner"), "{page}");
+}
+
+/// `spec/lua-api.md §3.1`, `§3.4`, `spec/data-api.md §4` — through a channel, `req.device`,
+/// `pv.device()` and `/api/node`'s `dev` are the session's device, not this node's; and
+/// `peers` counts paired nodes alone: a paired browser is not one, an active `node` row
+/// is, a revoked one is not.
+#[tokio::test]
+async fn test_spec_lua_3_4_device_and_peers_come_from_the_session() {
+    let apps = tempfile::tempdir().unwrap();
+    let dir = apps.path().join("facts");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("app.toml"),
+        "[app]\nslug = \"facts\"\ntitle = \"Facts\"\nversion = \"1.0.0\"\napi = 1\ntier = \"lua\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("app.lua"),
+        "local pv = require 'privatium'\n\
+         pv.get('/', function(req)\n\
+           return pv.json({ device = pv.device(), req = req.device, peers = pv.node().peers })\n\
+         end)\n",
+    )
+    .unwrap();
+    let f = Fixture::with_apps(tempfile::tempdir().unwrap(), Some(apps.path())).await;
+    let paired = f.pair().await;
+    let node_id = f.handler.node().lock().unwrap().id().as_str().to_owned();
+    let mut c = f.connect(&paired).await;
+    let facts = |body: String| -> serde_json::Value { serde_json::from_str(&body).unwrap() };
+    let id = c.request("GET", "/a/facts/", "").await;
+    let (status, body) = c.response(id).await;
+    assert_eq!(status, 200, "{body}");
+    let first = facts(body);
+    assert_eq!(first["device"], paired.device);
+    assert_eq!(first["req"], paired.device);
+    assert_eq!(first["peers"], 0, "a paired browser is not a peer");
+    let id = c.request("GET", "/a/hello/api/node", "").await;
+    let node = facts(c.response(id).await.1);
+    assert_eq!(node["dev"], paired.device);
+    assert_eq!(node["id"], node_id);
+    assert_eq!(node["peers"], 0);
+
+    {
+        let mut node = f.handler.node().lock().unwrap();
+        let log = node.sys_log_mut();
+        log.put(
+            "sys_device",
+            "n0d3aaaa",
+            &serde_json::json!({"kind":"node","replica":true}),
+        )
+        .unwrap();
+        log.put(
+            "sys_device",
+            "n0d3bbbb",
+            &serde_json::json!({"kind":"node","replica":true,"revoked_at":"2026-09-06T00:00:00.000Z"}),
+        )
+        .unwrap();
+        node.refresh().unwrap();
+        assert_eq!(node.paired_node_count().unwrap(), 1);
+    }
+    let id = c.request("GET", "/a/facts/", "").await;
+    assert_eq!(facts(c.response(id).await.1)["peers"], 1);
+    let id = c.request("GET", "/a/hello/api/node", "").await;
+    assert_eq!(facts(c.response(id).await.1)["peers"], 1);
+}
+
+/// `spec/data-dictionary.md §3.2` — revoking a device denies it at once: its open channel
+/// is closed with 4403 by the revocation itself, not by its next frame, and its next
+/// handshake is refused.
+#[tokio::test]
+async fn test_spec_3_2_revoking_a_device_closes_its_open_channel_at_once() {
+    let f = Fixture::new().await;
+    let paired = f.pair().await;
+    let other = f.pair().await;
+    let mut victim = f.connect(&paired).await;
+    let mut bystander = f.connect(&other).await;
+    let path = format!("/settings/devices/{}/revoke", paired.device);
+    let response = f.handler.handle(owner_form(&f, &path, "")).await;
+    assert_eq!(response.status(), 303);
+    assert!(
+        matches!(next(&mut victim.socket).await, Message::Close(Some(c)) if c.code == 4403.into()),
+        "the revoked device's channel closes without a frame from it"
+    );
+    let id = bystander.request("GET", "/api/v1/health", "").await;
+    assert_eq!(
+        bystander.response(id).await.0,
+        200,
+        "another device is untouched"
+    );
+    let mut socket = f.socket("/ws").await;
+    socket
+        .send(Message::Text(start(&paired).1.into()))
+        .await
+        .unwrap();
+    assert!(matches!(next(&mut socket).await, Message::Close(Some(c)) if c.code == 4403.into()));
+}
+
+/// `spec/protocol.md §8.1`, `§2.3.2` — a node whose `identity/` was replaced (a new node
+/// key and a new cluster over the same `data/`) is refused by a client that paired with
+/// the old one: the certificate fails the pinned cluster key before any confirm is
+/// sent, with no way past it but pairing again. The roadmap's "changing the node key"
+/// bullet.
+#[tokio::test]
+async fn test_spec_8_1_a_reinitialized_node_is_refused_by_a_paired_client() {
+    let f = Fixture::new().await;
+    let paired = f.pair().await;
+    let old_id = f.handler.node().lock().unwrap().id().as_str().to_owned();
+    let root = tempfile::tempdir().unwrap();
+    copy_dir(&f._root.path().join("data"), &root.path().join("data"));
+    let g = Fixture::with_apps(root, None).await;
+    let new_id = g.handler.node().lock().unwrap().id().as_str().to_owned();
+    assert_ne!(old_id, new_id, "a fresh identity/ is a new node");
+    let mut socket = g.socket("/ws").await;
+    let (pending, hello) = start(&paired);
+    socket.send(Message::Text(hello.into())).await.unwrap();
+    let reply = next(&mut socket).await.into_text().unwrap();
+    let outcome = pending.finish(&reply, jiff::Timestamp::now());
+    assert!(
+        matches!(
+            outcome,
+            Err(privatium_core::session::SessionError::PinnedKey)
+        ),
+        "the certificate is not the pinned cluster's"
+    );
+}
+
+fn copy_dir(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_dir(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).unwrap();
+        }
+    }
 }

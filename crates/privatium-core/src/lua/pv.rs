@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lua/pv.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-05
+// Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  The `pv` module of spec/lua-api.md §3: routing (§3.1), reading on the sandboxed
 //           connection (§3.2), writing through the node's log as appends and batches (§3.3),
 //           and the rest of §3.4. Routes and `pv.on` register while app.lua loads; reads and
@@ -421,7 +421,8 @@ fn device(lua: &Lua, (): ()) -> mlua::Result<String> {
 }
 
 /// `pv.node()`: `{ id, name, solo, peers, restore_tier }`. `peers` is the number of paired
-/// peers, `0` until pairing exists; `restore_tier` is `nil` for an app this node has not
+/// nodes other than this one — a paired phone or browser does not count
+/// (`spec/lua-api.md §3.4`); `restore_tier` is `nil` for an app this node has not
 /// materialized.
 fn node(lua: &Lua, (): ()) -> mlua::Result<Table> {
     let facts = {
@@ -433,7 +434,7 @@ fn node(lua: &Lua, (): ()) -> mlua::Result<Table> {
     table.raw_set("id", facts.id)?;
     table.raw_set("name", facts.name)?;
     table.raw_set("solo", facts.solo)?;
-    table.raw_set("peers", 0)?;
+    table.raw_set("peers", i64::try_from(facts.peers).unwrap_or(i64::MAX))?;
     if let Some(tier) = facts.restore_tier {
         table.raw_set("restore_tier", i64::from(tier))?;
     }

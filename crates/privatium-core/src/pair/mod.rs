@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/pair/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
+// Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  The pairing window (spec/protocol.md §7.1, §7.5): one code at a time, held in
 //           memory beside its PAKE secret and never written, with its TTL, its attempt
 //           cap, its per-source rate limit and the refusals each produces.
@@ -16,6 +16,7 @@ use zeroize::Zeroizing;
 pub mod code;
 pub mod handshake;
 mod node;
+pub mod qr;
 pub mod spake2;
 
 pub use code::{Code, CodeError, GLYPHS, Glyph, WORDS};

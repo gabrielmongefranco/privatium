@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/identity.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-05
+// Created:  2026-09-01  |  Modified: 2026-09-06
 // Summary:  Node and cluster keys, canonical membership certificates, startup renewal,
 //           and purpose-separated CSRF and X25519 derivations (spec/protocol.md §2, §8).
 
@@ -75,6 +75,14 @@ impl NodeId {
     #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Whether `text` has the shape of a Node ID — eight lowercase Crockford Base32
+    /// characters (`spec/protocol.md §2.1`). The check a route or a form applies to an
+    /// ID it was handed before looking anything up by it.
+    #[must_use]
+    pub fn is_valid(text: &str) -> bool {
+        text.len() == ID_CHARS && text.bytes().all(|b| CROCKFORD.contains(&b))
     }
 }
 

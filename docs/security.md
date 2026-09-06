@@ -16,8 +16,12 @@ application channel at `/ws`. The node binds IPv4 on every interface and IPv6 wh
 available. Unpaired LAN browsers receive only the bootstrap set; loopback keeps the
 owner's existing access. The node advertises itself over mDNS and answers UDP probes
 (`spec/protocol.md §6`); what it advertises is its public identity and app slugs, never
-data. The pairing screen and CLI flow remain planned for Phase 2. Tests open pairing
-through the core's `Node::pair` API.
+data. Pairing opens only from the node itself — the devices page, `privatium pair`, or
+`--open` on a node no device has paired with yet — and the code is shown there as four
+emoji and two words. A phone that loads the node's address gets the pairing screen; a
+paired device is listed on the devices page, where the owner can label or revoke it, and
+a revoked device's open channel closes at once. A paired device cannot open pairing,
+revoke another device or rename the node: those need the owner at the node.
 
 The session helpers reject invalid keys, expired or mismatched certificates, altered
 handshake transcripts, and unauthentic frames. A failed frame permanently closes its
@@ -88,7 +92,10 @@ clients use Keychain, Keystore, or the OS keyring.
 
 Lose that storage and you re-pair. There is deliberately no recovery path that skips
 pairing. Each device is separately revocable, so your laptop's browser and your phone's
-browser are two entries.
+browser are two entries. Revoking one on the devices page writes the revocation to the
+registry — the record of the pairing stays — closes that device's open channel at
+once, and refuses its next handshake. A device's key is never registered twice: a browser
+that lost its storage pairs again with a new key and appears as a new entry.
 
 Browser storage is per-origin, so a device paired at a LAN address has no credential at a
 public name and must pair again — the everyday argument for one resolvable name across all
@@ -194,7 +201,8 @@ authenticated HTML; malformed hashes are refused before the resource is loaded. 
 modules, including framework modules, have no per-import integrity. Neither protection authenticates the next bootstrap.
 
 The plain-HTTP path still needs no domain, account or certificate setup. Its bootstrap
-discloses the risk for every visit; the planned M19 pairing screen uses the same wording. A signed native client or an
+discloses the risk for every visit, and the pairing screen and the node's code page use
+the same wording. A signed native client or an
 independently authenticated transport on every visit closes this gap; protecting only
 initial pairing does not protect later HTTP loads.
 

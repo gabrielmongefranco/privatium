@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/app-contract.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-05
+Modified: 2026-09-06
 Summary:  NORMATIVE. What an app is, the three tiers of app, and the three
           deployment modes. The declarative tier is one option, not the model.
 -->
@@ -448,7 +448,7 @@ express: a serial port, a scheduled job, a filesystem watcher, a non-HTTP protoc
 | `snapshot` / `restore` | Manual snapshot and three-tier restore |
 
 A build that does not implement an area — one that says so in `--version`
-(`spec/cli.md §1`), as `pv/1 (partial: phase 1)` does for discovery, pairing and sync —
+(`spec/cli.md §1`), as `pv/1 (partial: phase 2)` does for sync —
 MUST keep the method and answer it with a typed error naming the phase the area arrives
 in. It MUST NOT return success from a no-op: a program built on an `Ok` from `start_sync`
 would believe it was syncing.

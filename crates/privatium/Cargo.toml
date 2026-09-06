@@ -1,6 +1,6 @@
 # Project:  Privatium™  |  File: crates/privatium/Cargo.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-08-31  |  Modified: 2026-09-05
+# Created:  2026-08-31  |  Modified: 2026-09-06
 # Summary:  The binary — spec/cli.md, parsed by hand (src/cli.rs) — and beside it the axum
 #           adapter as a library target so its tests can reach it (ADR 0003: socket and peer
 #           address in, `core::handle` out — no routes of its own). At M0 it existed so that
@@ -32,6 +32,10 @@ anyhow         = { workspace = true }
 # The daily maintenance pass (src/run.rs) names the instant it runs at, which is what a
 # snapshot is named by (spec/protocol.md §5.1). Already in the graph beneath the core.
 jiff           = { workspace = true }
+# `privatium pair` (src/pair.rs) reads the window `/api/v1/pair` answers with
+# (spec/cli.md §8). Already in the graph beneath the core; promoted from the test-only
+# table for that one reader.
+serde_json     = { workspace = true }
 
 # M6 — the axum adapter. `http1` and `tokio` are what `axum::serve` needs; the adapter has
 # no router, so none of axum's routing or extractor features are on. `tokio`'s `net` is the
@@ -49,7 +53,6 @@ base64 = { workspace = true }
 x25519-dalek = { workspace = true }
 ed25519-dalek = { workspace = true }
 tempfile   = { workspace = true }
-serde_json = { workspace = true }
 
 [lints.rust]
 unsafe_code = "deny"

@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium/src/cli.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-04
+// Created:  2026-09-04  |  Modified: 2026-09-06
 // Summary:  The argument grammar of spec/cli.md, by hand. The surface is eight commands and
 //           twenty flags fixed by a normative document, and the help text is that document's
 //           synopsis lines — so there is no derive layer to drift from it, no dependency to

@@ -1,9 +1,9 @@
 // Project:  Privatium™  |  File: crates/privatium/src/main.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-08-31  |  Modified: 2026-09-04
+// Created:  2026-08-31  |  Modified: 2026-09-06
 // Summary:  Entry point: spec/cli.md. Bare `privatium` runs a node; `dev`, `new`, `lint`,
-//           `skill`, `snapshot` and `restore` are the subcommands of Phase 1; `pair` and
-//           `firewall` are later phases', and both parse and say so rather than being
+//           `skill`, `snapshot`, `restore` and `pair` are the subcommands this build has;
+//           `firewall` is a later phase's, and it parses and says so rather than being
 //           absent, so the help text matches the spec. Exit codes are §1's. Errors are
 //           anyhow at this boundary (AGENTS.md, Style) and print as one line.
 
@@ -14,16 +14,18 @@ mod data;
 mod lint;
 mod new;
 mod node;
+mod pair;
 mod run;
 mod skill;
 
 use cli::Command;
 
-/// The protocol claim of `spec/cli.md §1`: Phase 1 does not satisfy every item of
-/// `spec/protocol.md §13`, so the string is qualified rather than a bare `pv/1`
-/// (`docs/plans/phase-1.md §2.1`). The wire format itself is `privatium_core::PROTOCOL`.
+/// The protocol claim of `spec/cli.md §1`: a build that does not satisfy every item of
+/// `spec/protocol.md §13` qualifies the string rather than printing a bare `pv/1`. What
+/// this build cannot claim is sync's and the remote transports' (`docs/plans/phase-2.md
+/// §7`). The wire format itself is `privatium_core::PROTOCOL`.
 fn protocol_claim() -> String {
-    format!("{} (partial: phase 1)", privatium_core::PROTOCOL)
+    format!("{} (partial: phase 2)", privatium_core::PROTOCOL)
 }
 
 /// `--version`: the build version and the protocol it implements, on one line.
@@ -107,10 +109,7 @@ fn main() -> ExitCode {
         Command::Restore { from, app, dry_run } => {
             data::restore(&invocation.global, &from, app.as_deref(), dry_run)
         }
-        Command::Pair { .. } => not_in_this_build(
-            "pair",
-            "pairing is Phase 2 of docs/roadmap.md; spec/cli.md §8 and spec/protocol.md §7 are its contract",
-        ),
+        Command::Pair { open, timeout } => pair::pair(&invocation.global, open, timeout),
         Command::Firewall { .. } => not_in_this_build(
             "firewall",
             "the firewall helper is Phase 6 of docs/roadmap.md; spec/cli.md §9 is its contract",
@@ -126,8 +125,8 @@ fn main() -> ExitCode {
     }
 }
 
-/// A command the spec has and this build does not (`docs/plans/phase-1.md`, M11): it
-/// parses, so the help text is the spec's, and it says exactly why it stops.
+/// A command the spec has and this build does not: it parses, so the help text is the
+/// spec's, and it says exactly why it stops.
 fn not_in_this_build(command: &str, why: &str) -> anyhow::Result<u8> {
     eprintln!("privatium {command}: not in this build — {why}");
     Ok(1)

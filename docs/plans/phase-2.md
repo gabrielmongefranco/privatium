@@ -325,12 +325,13 @@ rule applied.*
 
 ## 3. Spec gaps found
 
-Rows 1–30 are fixed. As in
+Rows 1–31 are fixed. As in
 Phase 1, this records what changed and why;
 `cargo xtask gen-skill-reference` ran with the edits.
 
 | # | Was | Proposed | Files | Milestone |
 |---|---|---|---|---|
+| 31 | `§3.2` had `last_seen_at` "written at the channel handshake" unconditionally; since M17 every full-page navigation opens a channel of its own, so that sentence meant one `sys_device` event per page view | Written at the handshake only when the row holds no mark or one more than an hour old, and by a request an hour or more after the last write — at most hourly, never per request, never per page navigation. The node decides (`Node::note_device_seen`, the instant passed in) and the channel asks at the handshake and on every request | `data-dictionary.md §3.2` | **Fixed**; M19; `test_spec_3_2_last_seen_at_is_written_at_most_hourly` |
 | 30 | The data root was the platform directory or `--data-dir`, nothing else; on Windows that directory is hidden, so owners could not find their apps, and a zip download had no way to keep everything in one folder | Three sources, most explicit first: `--data-dir`; a `privatium-data` folder the owner created beside the executable (portable mode — the program never creates it, and one that cannot be written is a runtime error, never a fall-through); the platform directory. Every start prints the root and the rule that chose it; the data page shows the same. The Windows release gains `privatium-windows-portable.zip` carrying `privatium-data/apps/` with the three examples | `cli.md §1`, `protocol.md §3`, `AGENTS.md` invariant 7, `README.md`, `docs/backup-and-restore.md §1`, Tier 3 skill, `release_tools.py`, `release.yml` | **Fixed**, owner requested; between M18 and M19 |
 | 29 | `cli.md` had a release binary start with an empty launcher — the reference apps existed only in a checkout — and `new --from hello` failed without one | The binary carries the three example apps; a start whose `apps/` holds no app folder writes them there, whether the data directory is new or was used before the binary carried them, `new --examples` writes them on request, `--from` finds the embedded copy, and a checkout keeps mounting its own `apps/` as `bundled` and writes nothing | `cli.md §2, §4`, `data-dictionary.md §3.4`, `apps/README.md`, `README.md`, overview skill | **Fixed**, owner requested; M18 |
 | 28 | The integrity rule assumed every resource could be fetched by an origin-local channel | Hash same-origin external resources through the channel; require an existing integrity hash in authenticated HTML for permitted remote resources; keep inline script CSP and imported-module limits explicit | `protocol.md §8.3`, this plan §2.1, security and Tier 2 skills | **Fixed**; M17 |
@@ -1183,6 +1184,71 @@ all three platforms:
 
 ### M19 — The devices page, the pairing UI, `privatium pair`, and the documents
 
+**Implementation status, 2026-09-06, branch `m19-devices-shell`:** implemented. The
+node page carries the display-name form, the LAN URL beside the loopback one and the
+nodes `Node::discovered()` has seen, by ID; the devices page lists every active device
+with its label and user agent escaped, a label form and a revoke button per device, and
+the *Open pairing* button; the code page (`/settings/devices/pairing`) shows the four
+glyphs with their labels beneath, the two words, the QR code as an inline SVG image with
+the URL as text beside it, the seconds remaining, *Close pairing* and the `§7.7`
+sentence, and asks htmx to swap itself every five seconds while the window is open so a
+replaced code appears without a reload and nothing auto-dismisses. `POST` and `GET
+/api/v1/pair` answer the `PairingSnapshot` for the owner alone; `privatium pair` asks
+them over a hand-written loopback HTTP/1.1 exchange (`crates/privatium/src/pair.rs`),
+prints the code both ways and the QR code in block characters, polls every two seconds,
+and exits 0 naming the device or 1 on expiry; `--open` on a bare run prints the QR code
+of the LAN URL and, on a node whose `sys_device` holds no row but its own, opens one
+window and prints the code beneath it. The bootstrap document now carries the pairing
+screen's markup — sixteen labelled keys, the word field, the optional device name, the
+`role="status"` region — hidden until `client.js` finds no `pv:device`; `client.js`
+wires it (`pairingScreen`), says the three outcomes there, and its `§8.1` refusal screen
+names the space and keeps one action and no dismiss. `req.device`, `pv.device()` and
+`/api/node`'s `dev` were already the session's since M17; `peers` now counts active
+`kind = 'node'` rows other than this node. `--version` claims `pv/1 (partial: phase 2)`.
+
+Five shapes differ from the sketch below, none of them wire meaning. **Owner standing
+for every act:** `§9.2` makes `/api/v1/pair` the owner's alone, and the same standing —
+no channel session — is required to open or close pairing from the page, to name the
+node, and to label or revoke a device; a paired session sees the devices page without
+the forms. Fail closed; loosening it later is a one-line change. **A revocation closes
+the channel at once** through a broadcast the `Handler` carries (`revoked`), which
+every open channel listens to, rather than at the device's next frame. **The pairing
+screen is server-rendered** inside the bootstrap so `tests/common/a11y.rs` holds its
+markup; the client toggles and wires it. **No `pair.css`, no `http/auth.rs` change, no
+`tests/pairing.rs`:** the styles are appended to `shell.css`, the owner check reads the
+`Session` extension in `wire/owner.rs`, and the socket tests live in
+`crates/privatium/tests/channel.rs` beside the fixture they share; the registry edits
+live in `registry.rs` and the QR renderers in `pair/qr.rs`. **`last_seen_at` at the
+handshake follows the hourly rule** (§3 row 31), since every full-page navigation opens
+a channel. The QR code is drawn from `qrcode` 0.14.1's module matrix with its default
+features off — no `image` crate — so the SVG carries `role="img"`, a `<title>` and
+`focusable="false"` as `docs/icons.md` asks, and the terminal rendering is half-block
+characters with the standard's quiet zone. `PRIVATIUM_TEST_NO_BROWSER` is the test-only
+variable that keeps `--open` from launching a browser under test.
+
+The shell's user-facing vocabulary calls a node a *space*, following the UI change that
+merged just before this milestone; the spec, the code and this plan keep *node*.
+
+**Verification on Windows:**
+
+| Command | Outcome |
+|---|---|
+| `cargo test -p privatium-core --locked --test devices` | 7 passed |
+| `cargo test -p privatium --locked --test channel --test cli` | 16 and 24 passed |
+| `cargo test --workspace --locked` | 600 passed, 0 failed; 2 intentional fixture-generator ignores |
+| `cargo fmt --all --check` | Passed |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | Passed |
+| `cargo xtask header-check` | 332 files passed |
+| `cargo xtask gen-skill-reference` | Regenerated 21 files; the Tier 1, Tier 2 and Tier 3 references changed |
+| `cargo xtask gen-skill-reference --check` | 21 files match |
+| `cargo xtask lint-spec-refs` | 37 rules resolve |
+| `node --test crates/privatium-core/tests/js/*.test.mjs` | 59 passed, 2 of them new; Node 26 on PATH |
+| `cargo deny check` | Passed; advisories, bans, licences and sources OK with `qrcode` 0.14.1 added |
+| `bash .github/scripts/conformance.sh` | Every named test passed, the `devices` binary's included, using Git Bash |
+| `privatium lint apps/hello apps/animals apps/sketch` | 0 findings |
+
+The three-platform CI run decides the checklist below.
+
 - Settings, node page: a display-name form (§3 row 16) → `sys_node.display_name`;
   "Listening" shows the LAN URL; "Nodes on this network" lists `Node::discovered()` by ID.
 - Settings, devices page: every active device with kind, replica, label, paired, last
@@ -1250,6 +1316,43 @@ step 2 and the status paragraph; `docs/security.md §2.2`;
 `-accessibility` (the pairing screen's two paths, now real); `apps/*/README.md` where
 they name Phase 2; `spec/protocol.md`'s status line.
 
+**Acceptance checklist** — Windows runs are green; check after the named tests pass on
+all three platforms:
+
+- [ ] The owner's pairing window and the manifest's flag; a session refused:
+  `test_spec_9_2_manifest_pair_flag_is_true_while_open`,
+  `test_spec_9_2_pair_route_refuses_a_session`.
+- [ ] The code page and the bootstrap disclose `§7.7`, and every new page meets the
+  PV4xx rules: `test_spec_7_7_plain_http_pairing_page_discloses_the_gap`,
+  `test_spec_cli_5_pv4xx_pairing_and_devices_pages`.
+- [ ] Devices listed, labelled and revoked with nothing lost, the channel closed at once,
+  the mark hourly: `test_settings_devices_lists_paired_devices_and_revokes_one`,
+  `test_spec_3_2_revocation_is_a_put_never_a_del`,
+  `test_spec_3_2_revoking_a_device_closes_its_open_channel_at_once`,
+  `test_spec_3_2_last_seen_at_is_written_at_most_hourly`.
+- [ ] The display name reaches the manifest and the discovery facts:
+  `test_settings_node_display_name_is_set_by_the_owner_and_reaches_the_manifest`.
+- [ ] The session's device and the paired-node count:
+  `test_spec_lua_3_4_device_and_peers_come_from_the_session`,
+  `test_channel_requests_carry_the_session_device`.
+- [ ] A re-keyed node refused, the refusal screen without a dismiss, the pad and the
+  field one code: `test_spec_8_1_a_reinitialized_node_is_refused_by_a_paired_client`,
+  `test_spec_8_1_refusal_screen_has_no_dismiss`,
+  `test_spec_7_2_pad_and_word_field_yield_the_same_sixteen_bits` (JavaScript).
+- [ ] The CLI: `test_spec_cli_8_pair_prints_the_code_and_exits_on_success`,
+  `test_spec_cli_8_pair_without_a_node_is_a_runtime_error`,
+  `test_spec_cli_2_open_prints_a_qr_and_the_lan_url`,
+  `test_spec_cli_2_open_on_an_unpaired_node_opens_one_window`,
+  `test_spec_cli_1_version_qualifies_protocol`.
+
+**Manual pass still owed** (recorded here so it is not lost in the pull request): a
+phone on the LAN from scan to first page under twenty seconds; the word path with
+VoiceOver or TalkBack and images disabled; keyboard-only through the devices page and
+the code page at 200 % zoom; Wireshark beside the automated proxy test (R16). What was
+checked without a person: the PV4xx rules and the document checks over every new page
+and the bootstrap, the `§7.7` sentence on both, the sixteen keys named by their labels
+alone, the focus ring and the 44-pixel targets inherited from the shell's stylesheet.
+
 ---
 
 ### Hardening after M19
@@ -1285,10 +1388,11 @@ gains a `run` per binary naming the tests:
 | Framework-named scripts and stylesheets carry integrity through the channel (§8.3) | M17 | `test_spec_8_3_page_frame_scripts_carry_integrity` |
 | Cluster private key never leaves nodes; devices receive the public key only (§2.3.3) | M14, M16 | `test_spec_2_3_3_cluster_private_key_is_absent_…`, `test_spec_7_4_pairing_completes_and_writes_the_device_row` |
 | Node certificates expire at 180 days (§2.3.1) — the expiry half | M14 | `test_spec_2_3_1_certificate_verifies_…_expires_at_180_days` |
-| Cluster-key mismatch has no override path (§2.3.2, §8.1) | M19 | `client.test.mjs` |
+| Cluster-key mismatch has no override path (§2.3.2, §8.1) | M19 | `test_spec_8_1_a_reinitialized_node_is_refused_by_a_paired_client`, `test_spec_8_1_refusal_screen_has_no_dismiss` (`client.test.mjs`) |
 | Browser clients hold exactly one endpoint (§10.4, §10.8) | M17 | `test_spec_10_4_browser_client_holds_exactly_one_endpoint` |
 | `sys_device.replica` declared accurately (§10.7) — browsers | M16 | `test_spec_7_4_pairing_completes_and_writes_the_device_row` |
-| No SAS confirmation step exists (§7.8) | M19 | Review item: the pairing screen and `pair.js` carry no comparison step; `AGENTS.md` already forbids adding one |
+| No SAS confirmation step exists (§7.8) | M19 | Reviewed with M19: the pairing screen (`http/pairing.rs`, `client.js`) and `pair.js` carry no comparison step; `AGENTS.md` already forbids adding one |
+| Pairing requires explicit owner action — the owner's standing alone opens it (§7.1, §9.2) | M19 | `test_spec_9_2_manifest_pair_flag_is_true_while_open`, `test_spec_9_2_pair_route_refuses_a_session` |
 
 Phase 2 **cannot** claim: renewal on sync (§2.3.1), an unmet node trusted by a pinned
 device (§2.3.2), discovery filtered by `cl` once paired (§6.1 — a browser cannot browse,

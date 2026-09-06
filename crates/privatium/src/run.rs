@@ -115,6 +115,9 @@ pub fn run(global: &Global, options: Options) -> Result<u8> {
                 println!("privatium: {slug} at {url}");
             }
             if options.open {
+                if !options.dev {
+                    print_qr_and_first_run_code(&handler)?;
+                }
                 node::open_browser(&url);
             }
 
@@ -219,6 +222,42 @@ fn start_discovery(
             );
         }
     }
+    Ok(())
+}
+
+/// `--open` on a bare run (`spec/cli.md §2`): the QR code of the LAN URL with the URL in
+/// text beside it and, on a node whose `sys_device` holds no row but its own, one
+/// pairing window opened as the node starts with its code printed beneath the QR code
+/// (`spec/protocol.md §7.1`, first run). Once any device has paired, only the QR code.
+fn print_qr_and_first_run_code(handler: &Arc<Handler>) -> Result<()> {
+    let mut node = handler
+        .node()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let url = node.listen_url();
+    println!("privatium: on a phone on this network, scan this code or open {url}");
+    match privatium_core::pair::qr::text(&url) {
+        Some(code) => print!("{code}"),
+        None => println!("privatium: (the URL is too long for a QR code; type it)"),
+    }
+    if node.has_paired_device()? {
+        return Ok(());
+    }
+    let window = node
+        .pair(privatium_core::pair::TTL)
+        .context("opening the first-run pairing window (spec/protocol.md §7.1)")?;
+    println!(
+        "privatium: no device has paired yet, so pairing is open for {} seconds — on the \
+         phone, tap these four emoji in order:",
+        privatium_core::pair::TTL.as_secs()
+    );
+    for (glyph, label) in window.emoji.iter().zip(window.labels.iter()) {
+        println!("    {glyph}  {label}");
+    }
+    println!(
+        "privatium: or type these two words: {} {}",
+        window.words[0], window.words[1]
+    );
     Ok(())
 }
 

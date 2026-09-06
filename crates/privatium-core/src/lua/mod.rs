@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lua/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-05
+// Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  The Lua host (spec/lua-api.md, docs/plans/phase-1.md M7, M8): one pool of
 //           sandboxed VMs per Tier 1 app, every VM loading app.lua identically so the router
 //           can hold (method, pattern, index) from VM 0 (§2.4); one request holds one VM on
@@ -138,7 +138,8 @@ pub struct LuaRequest {
     pub body: Vec<u8>,
     /// Lower-case names.
     pub headers: Vec<(String, String)>,
-    /// The paired device's ID; this node's in Phase 1.
+    /// The device the request was authenticated as: the paired device's ID through the
+    /// channel, this node's own on loopback (`spec/lua-api.md §3.1`).
     pub device: String,
     /// Whether `HX-Request` was present.
     pub is_htmx: bool,
@@ -295,6 +296,9 @@ pub struct NodeFacts {
     pub name: String,
     /// `[node] mode = "solo"`.
     pub solo: bool,
+    /// The paired nodes other than this one (`spec/lua-api.md §3.4`): active
+    /// `sys_device` rows with `kind = 'node'`. Zero until a second node is admitted.
+    pub peers: u64,
     /// Which tier built this app's cache, if any has.
     pub restore_tier: Option<u8>,
 }

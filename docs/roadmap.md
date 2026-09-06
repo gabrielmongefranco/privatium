@@ -97,16 +97,33 @@ Full-page responses can cross document transitions without repeating a write. Na
 socket and browser-module tests are in the plan. M18 adds discovery: the TXT record of
 §6.1, mDNS advertisement and browsing, the UDP responder and probe of §6.4, both started
 together and stopped with the node, the `pair` flag from one source, and a real
-`--no-discovery`. The pairing screen remains planned for M19; the Phase 2 acceptance
-bullets below remain open.
+`--no-discovery`. M19 adds the surfaces: the pairing screen in the browser with the
+emoji pad and the word field, the code page and the devices page on the node with label
+and revoke, the display-name form, `/api/v1/pair` for the owner alone, `privatium pair`,
+the QR code and the first-run window behind `--open`, and `--version` claiming `pv/1
+(partial: phase 2)`. The bullets that need a person — a phone, a screen reader,
+Wireshark — stay open until the manual pass is recorded.
 
 **Done when:**
-- [ ] Pairing completes on a phone in under 20 seconds, without a keyboard
-- [ ] Word-code path completes with the screen reader on and images disabled
-- [ ] Wireshark on the LAN shows no plaintext application data
-- [ ] Changing the node key produces the full-screen refusal with no override
-- [ ] Two nodes on one LAN are distinguishable in the discovery list by ID, not name
-- [ ] Conformance checklist items for §6, §7, §8 pass
+- [ ] Pairing completes on a phone in under 20 seconds, without a keyboard — the
+      automated half is `test_spec_8_3_browser_client_against_live_core` and
+      `test_spec_7_2_pad_and_word_field_yield_the_same_sixteen_bits`; the phone and the
+      stopwatch are a manual pass
+- [ ] Word-code path completes with the screen reader on and images disabled — the
+      markup is held by `test_spec_cli_5_pv4xx_pairing_and_devices_pages`; the screen
+      reader is a manual pass
+- [ ] Wireshark on the LAN shows no plaintext application data — automated as
+      `test_spec_8_2_lan_socket_carries_no_plaintext_app_data`; a person with Wireshark
+      still looks (`docs/plans/phase-2.md` R16)
+- [x] Changing the node key produces the full-screen refusal with no override —
+      `test_spec_8_1_a_reinitialized_node_is_refused_by_a_paired_client`,
+      `test_spec_8_1_refusal_screen_has_no_dismiss` (JavaScript)
+- [x] Two nodes on one LAN are distinguishable in the discovery list by ID, not name —
+      `test_spec_6_1_two_nodes_with_one_name_are_distinct_by_id`,
+      `test_spec_6_1_mdns_registration_is_browsable_and_keyed_by_id`
+- [ ] Conformance checklist items for §6, §7, §8 pass — `.github/scripts/conformance.sh`
+      runs every item Phase 2 can claim by name (`docs/plans/phase-2.md §7`); the
+      `cl` filter of §6.1 needs a second node and is Phase 3's
 
 ## Phase 3 — More than one node
 

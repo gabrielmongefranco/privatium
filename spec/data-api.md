@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/data-api.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-05
+Modified: 2026-09-06
 Summary:  NORMATIVE. The HTTP data API that custom-UI (Tier 2) apps build against.
 -->
 
@@ -336,7 +336,8 @@ application data.
 ```
 
 `name` falls back to the Node ID while the owner has set none (`spec/protocol.md §9.2`);
-`dev` is the device the request is authenticated as — this node's own in Phase 1; `app`
+`dev` is the device the request is authenticated as — this node's own on loopback, the
+paired device's through the channel (`spec/protocol.md §8.3`); `app`
 is the slug this API is scoped to, which a page at a solo mount cannot read from its path
 and which `pv.js` keys its outbox entries by (§6); `restore_tier` is `null` for an app
 this node has not materialized.

@@ -6,8 +6,10 @@
 //           synopsis lines (§1–§9, both directions); a node on loopback with --port,
 //           --solo and --no-discovery (§2); dev naming the app (§3); new for each tier and
 //           from hello (§4); skill list and export (§6); snapshot, --verify, and restore from
-//           a backup with its tier reported and a diverged log refused (§7); pair and
-//           firewall parsing and refusing (§8, §9); the commands §10 keeps absent.
+//           a backup with its tier reported and a diverged log refused (§7); `pair`
+//           against a running node and without one (§8); `--open`'s QR code and the
+//           first-run window (§2); firewall parsing and refusing (§9); the commands §10
+//           keeps absent.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.
@@ -192,7 +194,8 @@ fn synopsis_flags(text: &str) -> BTreeSet<(String, String)> {
 }
 
 /// `§1` — `--version` prints the build version and a qualified protocol string, since a
-/// Phase 1 build does not satisfy `spec/protocol.md §13` (`docs/plans/phase-1.md §2.1`).
+/// build without sync does not satisfy `spec/protocol.md §13` (`docs/plans/phase-2.md
+/// §2.11`).
 #[test]
 fn test_spec_cli_1_version_qualifies_protocol() {
     let root = tempfile::tempdir().unwrap();
@@ -201,7 +204,7 @@ fn test_spec_cli_1_version_qualifies_protocol() {
     assert_eq!(
         out.trim(),
         format!(
-            "privatium {} pv/1 (partial: phase 1)",
+            "privatium {} pv/1 (partial: phase 2)",
             env!("CARGO_PKG_VERSION")
         )
     );
@@ -749,7 +752,7 @@ fn test_spec_cli_6_skill_list_and_export() {
     // Everything, into the default `skills/` under the working directory.
     let (code, _, err) = privatium(root.path(), &["skill", "export"]);
     assert_eq!(code, 0, "{err}");
-    assert!(err.contains("pv/1 (partial: phase 1)"), "{err}");
+    assert!(err.contains("pv/1 (partial: phase 2)"), "{err}");
     let exported = root.path().join("skills");
     let source = repo().join("skills");
     let mut count = 0;
@@ -1076,17 +1079,11 @@ fn copy_dir(from: &Path, to: &Path) {
     }
 }
 
-/// `§8`, `§9` — `pair` and `firewall` parse their flags and say they are not in this
-/// build, so the help text is the spec's without pretending to a phase that is not here.
+/// `§9` — `firewall` parses its flags and says it is not in this build, so the help
+/// text is the spec's without pretending to a phase that is not here.
 #[test]
-fn test_spec_cli_8_9_pair_and_firewall_parse_and_refuse() {
+fn test_spec_cli_9_firewall_parses_and_refuses() {
     let root = tempfile::tempdir().unwrap();
-    let (code, _, err) = privatium(root.path(), &["pair", "--open", "--timeout", "30"]);
-    assert_eq!(code, 1);
-    assert!(
-        err.contains("privatium pair: not in this build") && err.contains("Phase 2"),
-        "{err}"
-    );
     let (code, _, err) = privatium(root.path(), &["firewall", "--apply"]);
     assert_eq!(code, 1);
     assert!(
@@ -1094,7 +1091,7 @@ fn test_spec_cli_8_9_pair_and_firewall_parse_and_refuse() {
         "{err}"
     );
     // A wrong flag is still a usage error, not a "not in this build".
-    let (code, _, _) = privatium(root.path(), &["pair", "--qr"]);
+    let (code, _, _) = privatium(root.path(), &["firewall", "--now"]);
     assert_eq!(code, 2);
 }
 
@@ -1368,4 +1365,365 @@ fn test_spec_cli_1_portable_folder_beside_the_binary_is_the_data_root() {
     let (status, body) = node.get("/settings/data");
     assert_eq!(status, 200);
     assert!(body.contains("named on the command line"), "{body}");
+}
+
+// ---------------------------------------------------------------------------------------
+// §2 `--open`, §8 `privatium pair`
+// ---------------------------------------------------------------------------------------
+
+/// A loopback port nobody listens on right now, for a `config.toml` a node and `pair`
+/// will both read.
+fn free_port() -> u16 {
+    std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
+}
+
+/// A data directory whose `config.toml` names `port`.
+fn data_dir_on(root: &tempfile::TempDir, port: u16) -> String {
+    let dir = data_dir(root);
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        Path::new(&dir).join("config.toml"),
+        format!("[node]\nport = {port}\n"),
+    )
+    .unwrap();
+    dir
+}
+
+/// One HTTP/1.1 exchange with a node on loopback, by hand — the same shape
+/// `privatium pair` uses.
+fn http(port: u16, method: &str, path: &str, body: &str) -> (u16, String) {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    let request = format!(
+        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\
+         Content-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(request.as_bytes()).unwrap();
+    let mut raw = Vec::new();
+    stream.read_to_end(&mut raw).unwrap();
+    let split = raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap();
+    let head = String::from_utf8_lossy(&raw[..split]).into_owned();
+    let status: u16 = head
+        .lines()
+        .next()
+        .unwrap()
+        .split(' ')
+        .nth(1)
+        .unwrap()
+        .parse()
+        .unwrap();
+    (
+        status,
+        String::from_utf8_lossy(&raw[split + 4..]).into_owned(),
+    )
+}
+
+/// Pair a synthetic browser with the node on `port` using the words of its open window,
+/// over a real `/ws/pair` socket; the device's ID.
+fn pair_with(port: u16) -> String {
+    use futures_util::{SinkExt as _, StreamExt as _};
+    use privatium_core::pair::{Code, handshake::Client};
+    use tokio_tungstenite::tungstenite::Message;
+    let (status, body) = http(port, "GET", "/api/v1/pair", "");
+    assert_eq!(status, 200, "{body}");
+    let window: serde_json::Value = serde_json::from_str(&body).unwrap();
+    let words: Vec<&str> = window["words"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|w| w.as_str().unwrap())
+        .collect();
+    let code = Code::parse(&words.join(" ")).unwrap();
+    type Ws = tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >;
+    async fn next(socket: &mut Ws) -> Message {
+        tokio::time::timeout(Duration::from_secs(10), socket.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap()
+    }
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let (mut socket, _) =
+            tokio_tungstenite::connect_async(format!("ws://127.0.0.1:{port}/ws/pair"))
+                .await
+                .unwrap();
+        let hello = next(&mut socket).await.into_text().unwrap();
+        let (mut client, start) = Client::start(&hello, code, "browser").unwrap();
+        socket.send(Message::Text(start.into())).await.unwrap();
+        let reply = next(&mut socket).await.into_text().unwrap();
+        let confirm = client.reply(&reply).unwrap();
+        socket.send(Message::Text(confirm.into())).await.unwrap();
+        let sealed = next(&mut socket).await.into_data();
+        let (paired, finish) = client
+            .finish(
+                &sealed,
+                Some("Synthetic phone"),
+                None,
+                jiff::Timestamp::now(),
+            )
+            .unwrap();
+        socket.send(Message::Binary(finish.into())).await.unwrap();
+        paired.device
+    })
+}
+
+/// A node run in the background with both of its output streams captured, killed on
+/// drop. `settle` is how long to keep reading after the announce line.
+struct Captured {
+    child: Child,
+    port: u16,
+    stdout: std::sync::Arc<std::sync::Mutex<String>>,
+    stderr: std::sync::Arc<std::sync::Mutex<String>>,
+}
+
+impl Drop for Captured {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+impl Captured {
+    fn start(args: &[&str], envs: &[(&str, &str)], settle: Duration) -> Self {
+        let mut child = Command::new(BIN)
+            .args(args)
+            .envs(envs.iter().copied())
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let stdout = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let stderr = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let (out_pipe, err_pipe) = (child.stdout.take().unwrap(), child.stderr.take().unwrap());
+        let (out_sink, err_sink) = (stdout.clone(), stderr.clone());
+        std::thread::spawn(move || {
+            let mut reader = BufReader::new(err_pipe);
+            let mut line = String::new();
+            while reader.read_line(&mut line).unwrap_or(0) > 0 {
+                err_sink.lock().unwrap().push_str(&line);
+                line.clear();
+            }
+        });
+        std::thread::spawn(move || {
+            let mut reader = BufReader::new(out_pipe);
+            let mut line = String::new();
+            while reader.read_line(&mut line).unwrap_or(0) > 0 {
+                out_sink.lock().unwrap().push_str(&line);
+                line.clear();
+            }
+        });
+        let started = Instant::now();
+        let port = loop {
+            let text = stdout.lock().unwrap().clone();
+            if let Some(line) = text
+                .lines()
+                .find_map(|l| l.strip_prefix("privatium: listening on http://"))
+            {
+                break line
+                    .rsplit(':')
+                    .next()
+                    .unwrap()
+                    .trim_end_matches('/')
+                    .parse::<u16>()
+                    .unwrap();
+            }
+            assert!(
+                started.elapsed() < Duration::from_secs(30),
+                "no announce line; stderr: {}",
+                stderr.lock().unwrap()
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        std::thread::sleep(settle);
+        Self {
+            child,
+            port,
+            stdout,
+            stderr,
+        }
+    }
+
+    fn out(&self) -> String {
+        self.stdout.lock().unwrap().clone()
+    }
+
+    fn err(&self) -> String {
+        self.stderr.lock().unwrap().clone()
+    }
+}
+
+/// `§2` — `--open` prints a QR code of the LAN URL with the URL in text beside it, and
+/// opens the browser on the loopback URL; with the test variable set nothing is
+/// launched and the URL is reported instead.
+#[test]
+fn test_spec_cli_2_open_prints_a_qr_and_the_lan_url() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = data_dir(&root);
+    let node = Captured::start(
+        &[
+            "--data-dir",
+            &dir,
+            "--port",
+            "0",
+            "--no-discovery",
+            "--open",
+        ],
+        &[("PRIVATIUM_TEST_NO_BROWSER", "1")],
+        Duration::from_millis(1500),
+    );
+    let out = node.out();
+    assert!(out.contains("scan this code or open http://"), "{out}");
+    assert!(out.contains('█'), "the QR code in block characters:\n{out}");
+    assert!(
+        out.contains(&format!(":{}", node.port)),
+        "the URL names the bound port:\n{out}"
+    );
+    let err = node.err();
+    assert!(
+        err.contains(&format!("would open http://127.0.0.1:{}/", node.port)),
+        "{err}"
+    );
+}
+
+/// `§2`, `spec/protocol.md §7.1` — on a node whose `sys_device` holds no row but its
+/// own, `--open` opens one pairing window as the node starts and prints the code
+/// beneath the QR code; a phone pairs through it; once any device has paired, `--open`
+/// prints the QR code and opens no window.
+#[test]
+fn test_spec_cli_2_open_on_an_unpaired_node_opens_one_window() {
+    let root = tempfile::tempdir().unwrap();
+    let port = free_port();
+    let dir = data_dir_on(&root, port);
+    let env = [("PRIVATIUM_TEST_NO_BROWSER", "1")];
+    let device = {
+        let node = Captured::start(
+            &["--data-dir", &dir, "--no-discovery", "--open"],
+            &env,
+            Duration::from_millis(1500),
+        );
+        assert_eq!(node.port, port);
+        let out = node.out();
+        assert!(out.contains("pairing is open for 120 seconds"), "{out}");
+        assert!(out.contains("or type these two words: "), "{out}");
+        let (status, body) = http(port, "GET", "/api/v1/pair", "");
+        assert_eq!(status, 200);
+        let window: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert!(!window.is_null(), "the first-run window is open");
+        let words = window["words"].as_array().unwrap();
+        assert!(
+            out.contains(&format!(
+                "or type these two words: {} {}",
+                words[0].as_str().unwrap(),
+                words[1].as_str().unwrap()
+            )),
+            "{out}"
+        );
+        let device = pair_with(port);
+        let (_, body) = http(port, "GET", "/api/v1/pair", "");
+        let window: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(window["consumed_by"], device);
+        device
+    };
+    let node = Captured::start(
+        &["--data-dir", &dir, "--no-discovery", "--open"],
+        &env,
+        Duration::from_millis(1500),
+    );
+    let out = node.out();
+    assert!(out.contains('█'), "{out}");
+    assert!(!out.contains("pairing is open"), "{out}");
+    let (_, body) = http(port, "GET", "/api/v1/pair", "");
+    assert_eq!(body.trim(), "null", "no window once {device} has paired");
+}
+
+/// `§8` — `privatium pair` opens a window on the running node, prints the four emoji
+/// with their labels, the two words, the QR code and the URL, follows the window and
+/// exits 0 naming the device that paired.
+#[test]
+fn test_spec_cli_8_pair_prints_the_code_and_exits_on_success() {
+    let root = tempfile::tempdir().unwrap();
+    let port = free_port();
+    let dir = data_dir_on(&root, port);
+    let _node = Captured::start(
+        &["--data-dir", &dir, "--no-discovery"],
+        &[],
+        Duration::from_millis(200),
+    );
+    let pair = Command::new(BIN)
+        .args(["--data-dir", &dir, "pair", "--timeout", "60"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    // The window opens on the node's first answer; wait for it before pairing.
+    let started = Instant::now();
+    loop {
+        let (status, body) = http(port, "GET", "/api/v1/pair", "");
+        assert_eq!(status, 200);
+        if body.trim() != "null" {
+            break;
+        }
+        assert!(
+            started.elapsed() < Duration::from_secs(20),
+            "pair never opened a window"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let device = pair_with(port);
+    let output = pair.wait_with_output().unwrap();
+    let out = String::from_utf8_lossy(&output.stdout);
+    let err = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(output.status.code(), Some(0), "{out}\n{err}");
+    assert!(
+        out.contains(&format!("privatium pair: paired {device}")),
+        "{out}"
+    );
+    assert!(out.contains("tap these four emoji"), "{out}");
+    assert!(out.contains("or type these two words: "), "{out}");
+    assert!(out.contains('█'), "{out}");
+    assert!(out.contains("http://"), "{out}");
+    // A glyph, two spaces, its label — the QR code's lines are indented too, but hold
+    // block characters and spaces alone.
+    let labels = out
+        .lines()
+        .filter(|line| {
+            line.starts_with("    ")
+                && line
+                    .trim_start()
+                    .split("  ")
+                    .nth(1)
+                    .is_some_and(|label| label.chars().next().is_some_and(char::is_uppercase))
+        })
+        .count();
+    assert_eq!(labels, 4, "one glyph with its label per line:\n{out}");
+}
+
+/// `§8` — with no node running, `pair` is a runtime error that says to start one, and
+/// opens no node of its own: the data directory stays untouched.
+#[test]
+fn test_spec_cli_8_pair_without_a_node_is_a_runtime_error() {
+    let root = tempfile::tempdir().unwrap();
+    let dir = data_dir_on(&root, free_port());
+    let (code, out, err) = privatium(root.path(), &["--data-dir", &dir, "pair"]);
+    assert_eq!(code, 1, "{out}\n{err}");
+    assert!(err.contains("no node is running"), "{err}");
+    assert!(err.contains("start one with `privatium`"), "{err}");
+    assert!(
+        !Path::new(&dir).join("identity").exists(),
+        "pair opened no node"
+    );
+    // A wrong flag is still a usage error.
+    let (code, _, _) = privatium(root.path(), &["pair", "--qr"]);
+    assert_eq!(code, 2);
 }

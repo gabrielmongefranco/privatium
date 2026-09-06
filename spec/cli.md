@@ -85,10 +85,7 @@ Discovery is mDNS and the UDP responder on port 52525, started together
 neither for this run and says so; the `discovery.mdns` and `discovery.udp` settings
 (`spec/data-dictionary.md §3.6`) turn each off durably. A mechanism the platform refuses
 — no multicast interface, the port taken — is one line on standard error, never a reason
-for the node not to serve, and the `discovery.method` audit row names what started. A
-build without the pairing screen prints the LAN URL and opens the browser on the
-loopback URL; the QR code and the first-run window arrive with the pairing screen
-(`docs/roadmap.md`, Phase 2).
+for the node not to serve, and the `discovery.method` audit row names what started.
 
 `--solo <slug>` overrides `[node] mode` from the config file for this run.
 

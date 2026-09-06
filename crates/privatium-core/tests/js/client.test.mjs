@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/js/client.test.mjs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
+// Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  Browser channel framing, streaming, cancellation and origin confinement (§8.3).
 
 import { test } from 'node:test';
@@ -130,4 +130,135 @@ test('test_spec_8_3_malformed_response_closes_all_pending_requests_without_plain
   const refused = assert.rejects(promise, /channel/);
   socket.reply({ id: 1, kind: 'chunk' }, 'body before head');
   await refused; assert.equal(transport.closed, true);
+});
+
+// ---------------------------------------------------------------------------------------
+// The pairing screen (§7.2) and the refusal screen (§8.1), over a document fake enough
+// to hold what client.js does with one: elements with text, attributes, children,
+// listeners and a hidden flag.
+// ---------------------------------------------------------------------------------------
+
+function element(tag) {
+  const listeners = {}, attrs = {}, children = [];
+  const el = {
+    tagName: tag.toUpperCase(), textContent: '', value: '', hidden: false, disabled: false, dataset: {}, children,
+    setAttribute(name, value) { attrs[name] = String(value); if (name === 'hidden') el.hidden = true; },
+    getAttribute(name) { return attrs[name] ?? null; },
+    addEventListener(name, fn) { (listeners[name] ||= []).push(fn); },
+    fire(name, event = { preventDefault() {} }) { for (const fn of listeners[name] || []) fn(event); },
+    append(...nodes) { children.push(...nodes); },
+    insertBefore(node, before) { children.splice(Math.max(0, children.indexOf(before)), 0, node); },
+    replaceChildren(...nodes) { children.splice(0, children.length, ...nodes); },
+    focus() { el.focused = true; },
+    querySelector(selector) { return el.children.find(c => selector === '.pv-glyph-label' && c.className === 'pv-glyph-label') || null; },
+    get className() { return attrs.class || ''; }, set className(v) { attrs.class = v; },
+    get id() { return attrs.id || ''; }, set id(v) { attrs.id = v; },
+    get type() { return attrs.type; }, set type(v) { attrs.type = v; },
+    get tabIndex() { return attrs.tabindex; }, set tabIndex(v) { attrs.tabindex = v; },
+  };
+  return el;
+}
+
+/** The bootstrap's pairing markup as objects: sixteen keys, the fields, the regions. */
+function pairingDocument() {
+  const byId = {};
+  const make = (id, tag = 'div') => { const el = element(tag); el.id = id; byId[id] = el; return el; };
+  const keys = [];
+  for (let index = 0; index < 16; index++) {
+    const key = element('button'); key.className = 'pv-pad-key'; key.dataset.glyph = String(index);
+    const label = element('span'); label.className = 'pv-glyph-label'; label.textContent = ['Unicorn', 'Headphones', 'Pizza', 'UFO', 'Guitar', 'Mushroom', 'Diamond', 'Fox', 'Lightning', 'Hot Pepper', 'Flamingo', 'Artist Palette', 'Pineapple', 'Maple Leaf', 'Game Die', 'Strawberry'][index];
+    key.append(label); keys.push(key);
+  }
+  const section = make('pv-pair', 'section'); section.hidden = true;
+  make('pv-chosen', 'output'); make('pv-pair-status', 'p'); make('pv-words', 'input'); make('pv-label', 'input');
+  make('pv-pair-form', 'form'); make('pv-pair-submit', 'button'); make('pv-undo', 'button'); make('pv-clear', 'button'); make('pv-connecting', 'p');
+  const body = element('body'); body.dataset = { name: 'Study', node: 'k7m2q9xf' };
+  return { body, keys, byId, getElementById: id => byId[id] || null, querySelectorAll: () => keys, createElement: element };
+}
+
+test('test_spec_7_2_pad_and_word_field_yield_the_same_sixteen_bits', async () => {
+  const { pairingScreen } = await import('../../assets/shell/client.js');
+  const { encodeCode } = await import('../../assets/shell/pair.js');
+  Object.defineProperty(globalThis, 'navigator', { value: { userAgent: 'Synthetic/1.0 (Android)' }, configurable: true, writable: true });
+  const sent = [];
+  const doc = pairingDocument();
+  const screen = pairingScreen({ doc, pair: async (code, label) => { sent.push({ code, label }); return {}; }, onPaired() {} });
+  assert.equal(doc.byId['pv-pair'].hidden, false, 'the screen shows');
+  assert.equal(doc.byId['pv-connecting'].getAttribute('hidden'), '');
+  assert.equal(doc.byId['pv-label'].value, 'Android phone');
+  // Four taps on the pad — Fox, Strawberry, Pizza, Game Die — are 0x7F2E, exactly as
+  // typing the two words that render the same code.
+  const code = 0x7F2E, words = encodeCode(code).words.join(' ');
+  for (const index of [7, 15, 2, 14]) doc.keys[index].fire('click');
+  assert.equal(doc.byId['pv-chosen'].textContent, 'Fox, Strawberry, Pizza, Game Die (4 of 4)');
+  assert.equal(screen.code(), code);
+  doc.keys[0].fire('click');
+  assert.equal(screen.code(), code, 'a fifth tap changes nothing');
+  screen.undo(); screen.undo();
+  assert.equal(doc.byId['pv-chosen'].textContent, 'Fox, Strawberry (2 of 4)');
+  assert.equal(screen.code(), null, 'two taps and an empty field send nothing');
+  doc.byId['pv-words'].value = words.toUpperCase().replace(' ', '-');
+  assert.equal(screen.code(), code, 'the field is case- and punctuation-insensitive');
+  screen.clear();
+  assert.equal(doc.byId['pv-chosen'].textContent, 'none yet');
+  doc.byId['pv-label'].value = '  Pixel 9 ';
+  assert.equal(await screen.submit(), true);
+  assert.deepEqual(sent, [{ code, label: 'Pixel 9' }]);
+  assert.match(doc.byId['pv-pair-status'].textContent, /^Paired/);
+
+  // The three outcomes are said in the status region; a wrong code re-enables Pair.
+  for (const [thrown, expected] of [
+    ['pairing is closed on the node; open it there and try again', /closed on the space/],
+    ['the pairing code did not match; check the code on the node and try again', /did not match.*five attempts/],
+    ['cannot pair: this browser will not keep the pairing; enable site storage and try again', /site storage/],
+  ]) {
+    const failing = pairingScreen({ doc, pair: async () => { throw new Error(thrown); } });
+    doc.byId['pv-words'].value = words;
+    assert.equal(await failing.submit(), false);
+    assert.match(doc.byId['pv-pair-status'].textContent, expected);
+    assert.equal(doc.byId['pv-pair-submit'].disabled, false);
+  }
+  const empty = pairingScreen({ doc, pair: async () => ({}) });
+  doc.byId['pv-words'].value = '';
+  assert.equal(await empty.submit(), false);
+  assert.match(doc.byId['pv-pair-status'].textContent, /Tap the four emoji/);
+  doc.byId['pv-words'].value = 'not a code at all';
+  assert.equal(await empty.submit(), false);
+  assert.match(doc.byId['pv-pair-status'].textContent, /not recognized/);
+});
+
+test('test_spec_8_1_refusal_screen_has_no_dismiss', async () => {
+  const { showFailure } = await import('../../assets/shell/client.js');
+  const { identityRefusal } = await import('../../assets/shell/channel.js');
+  const record = { node: { id: 'abcdefgh', ed25519: Buffer.alloc(32, 1).toString('base64') } };
+  const hello = JSON.stringify({ cert: Buffer.from(JSON.stringify({ node_pub: Buffer.alloc(32, 2).toString('base64') })).toString('base64') });
+  const error = identityRefusal(record, hello);
+  const doc = pairingDocument();
+  doc.body.dataset = { name: 'Study', node: 'abcdefgh' };
+  const removed = [];
+  showFailure(error, doc, { removeItem: key => removed.push(key) });
+  const [main] = doc.body.children;
+  assert.equal(doc.body.children.length, 1, 'the whole document is the refusal');
+  assert.equal(main.focused, true);
+  const [title, message, text, list, forget] = main.children;
+  assert.equal(title.textContent, 'Space identity could not be verified');
+  assert.equal(message.getAttribute('role'), 'alert');
+  assert.match(text.textContent, /no override/);
+  const buttons = main.children.filter(c => c.tagName === 'BUTTON');
+  assert.equal(buttons.length, 1, 'one action and no dismiss');
+  assert.equal(forget, buttons[0]);
+  assert.match(forget.textContent, /Forget this pairing and pair again/);
+  assert.ok(!main.children.some(c => /continue|dismiss|ignore|anyway/i.test(c.textContent)));
+  const terms = list.children.filter((_, i) => i % 2 === 0).map(c => c.textContent);
+  const values = list.children.filter((_, i) => i % 2 === 1).map(c => c.textContent);
+  assert.deepEqual(terms, ['Space', 'Pinned key fingerprint', 'Presented key fingerprint']);
+  assert.equal(values[0], 'Study (abcdefgh)', 'the space is named');
+  assert.match(values[1], /^[0-9a-f]{64}$/);
+  assert.match(values[2], /^[0-9a-f]{64}$/);
+  assert.notEqual(values[1], values[2]);
+  globalThis.sessionStorage = { removeItem() {} };
+  globalThis.location = { reload() { doc.reloaded = true; } };
+  forget.fire('click');
+  assert.deepEqual(removed, ['pv:device'], 'forgetting wipes the pairing and nothing else');
+  assert.equal(doc.reloaded, true);
 });

@@ -105,7 +105,17 @@ run privatium channel \
   test_spec_8_3_browser_client_against_live_core \
   test_spec_8_3_1_handoff_survives_disconnect_without_repeating_a_write \
   test_spec_8_3_1_wrong_device_cannot_consume_or_release_a_response \
-  test_spec_8_3_1_capacity_refuses_before_dispatch_and_release_frees_it
+  test_spec_8_3_1_capacity_refuses_before_dispatch_and_release_frees_it \
+  test_spec_8_1_a_reinitialized_node_is_refused_by_a_paired_client \
+  test_spec_9_2_pair_route_refuses_a_session
+
+# The plain-HTTP pairing screens disclose the property-1 gap (§7.7); pairing opens only
+# with the owner's standing and the manifest says so (§7.1, §9.2); a revocation is a put
+# that survives, never a del (spec/data-dictionary.md §3.2).
+run privatium-core devices \
+  test_spec_7_7_plain_http_pairing_page_discloses_the_gap \
+  test_spec_9_2_manifest_pair_flag_is_true_while_open \
+  test_spec_3_2_revocation_is_a_put_never_a_del
 
 # Discovery (§6): the full TXT key set advertised and browsable (§6.1), every configured
 # mechanism started concurrently rather than chained (§6.5), and the UDP responder
@@ -116,4 +126,4 @@ run privatium-core discover \
   test_spec_6_5_mdns_and_udp_start_together_and_stop_together \
   test_spec_6_4_udp_refuses_a_public_source_and_answers_once_a_second
 
-echo "conformance: Phase 1, identity, pairing, encrypted-channel and discovery items hold by name"
+echo "conformance: Phase 1, identity, pairing, encrypted-channel, discovery and devices items hold by name"

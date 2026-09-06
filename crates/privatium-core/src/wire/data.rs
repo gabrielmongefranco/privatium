@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/wire/data.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-05
+// Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  The data API of spec/data-api.md beneath an app's mount — the one namespace the
 //           framework reserves there (spec/protocol.md §9.1). Reads run on the sandboxed
 //           connection off the node lock; writes go through Node::append like every other
@@ -1352,7 +1352,7 @@ impl Handler {
                 "name": facts.name,
                 "app": slug,
                 "solo": facts.solo,
-                "peers": 0,
+                "peers": facts.peers,
                 "restore_tier": facts.restore_tier,
             }),
         )

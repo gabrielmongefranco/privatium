@@ -66,7 +66,7 @@ express: a serial port, a scheduled job, a filesystem watcher, a non-HTTP protoc
 | `snapshot` / `restore` | Manual snapshot and three-tier restore |
 
 A build that does not implement an area — one that says so in `--version`
-(`spec/cli.md §1`), as `pv/1 (partial: phase 1)` does for discovery, pairing and sync —
+(`spec/cli.md §1`), as `pv/1 (partial: phase 2)` does for sync —
 MUST keep the method and answer it with a typed error naming the phase the area arrives
 in. It MUST NOT return success from a no-op: a program built on an `Ok` from `start_sync`
 would believe it was syncing.
@@ -142,4 +142,10 @@ pub fn pairing_confirm(&mut self, exchange: Exchange, text: &str) -> Result<(Sea
 pub fn pairing_finish( &mut self, sealed: Sealed, ciphertext: &[u8], now: jiff::Timestamp, ) -> Result<Paired>
 pub fn pairing_abandon(&mut self, device: &str, source: IpAddr) -> Result<()>
 pub fn listen_url(&self) -> String
+pub fn set_display_name(&mut self, name: &str) -> Result<()>
+pub fn label_device(&mut self, device: &str, label: &str) -> Result<()>
+pub fn revoke_device( &mut self, device: &str, reason: Option<&str>, now: jiff::Timestamp, ) -> Result<()>
+pub fn note_device_seen(&mut self, device: &str, now: jiff::Timestamp) -> Result<bool>
+pub fn paired_node_count(&self) -> Result<u64>
+pub fn has_paired_device(&self) -> Result<bool>
 ```
