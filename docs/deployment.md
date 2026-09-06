@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/deployment.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-05
+Modified: 2026-09-06
 Summary:  Topologies, the always-on node, and per-OS firewall behaviour.
 -->
 
@@ -163,7 +163,7 @@ containing folder inside the archive.
 |---|---|---|
 | macOS | `privatium-mac.zip` | `privatium` |
 | Windows | `privatium-windows.zip` | `privatium.exe` |
-| Linux | `privatium.linux.tar.gz` | `privatium` |
+| Linux | `privatium-linux.tar.gz` | `privatium` |
 
 These are native builds on GitHub's `macos-latest`, `windows-latest` and
 `ubuntu-latest` runners, respectively. The shorter names do not imply universal

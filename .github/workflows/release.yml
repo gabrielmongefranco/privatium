@@ -1,6 +1,6 @@
 # Project:  Privatium™  |  File: .github/workflows/release.yml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-09-05  |  Modified: 2026-09-05
+# Created:  2026-09-05  |  Modified: 2026-09-06
 # Summary:  Build a tested release commit and attach single-binary archives.
 
 name: Release binaries
@@ -95,5 +95,5 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           gh release upload "$RELEASE_TAG" \
-            dist/privatium-mac.zip dist/privatium-windows.zip dist/privatium.linux.tar.gz \
+            dist/privatium-mac.zip dist/privatium-windows.zip dist/privatium-linux.tar.gz \
             --clobber

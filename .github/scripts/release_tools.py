@@ -1,6 +1,6 @@
 # Project:  Privatium™  |  File: .github/scripts/release_tools.py
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-09-05  |  Modified: 2026-09-05
+# Created:  2026-09-05  |  Modified: 2026-09-06
 # Summary:  Package a single executable and require successful CI for a release commit.
 
 import argparse
@@ -15,7 +15,7 @@ from pathlib import Path
 
 def package(platform, source, destination):
     """Archive only the platform binary, preserving an executable Unix mode."""
-    names = {"Linux": ("privatium.linux.tar.gz", "privatium"),
+    names = {"Linux": ("privatium-linux.tar.gz", "privatium"),
              "macOS": ("privatium-mac.zip", "privatium"),
              "Windows": ("privatium-windows.zip", "privatium.exe")}
     if platform not in names:

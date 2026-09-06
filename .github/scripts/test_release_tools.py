@@ -1,6 +1,6 @@
 # Project:  Privatium™  |  File: .github/scripts/test_release_tools.py
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-09-05  |  Modified: 2026-09-05
+# Created:  2026-09-05  |  Modified: 2026-09-06
 # Summary:  Verify release archive layout and the exact-commit CI prerequisite.
 
 import tempfile
@@ -17,7 +17,7 @@ class ReleaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for os_name, archive, binary in [
-                ("Linux", "privatium.linux.tar.gz", "privatium"),
+                ("Linux", "privatium-linux.tar.gz", "privatium"),
                 ("macOS", "privatium-mac.zip", "privatium"),
                 ("Windows", "privatium-windows.zip", "privatium.exe"),
             ]:
