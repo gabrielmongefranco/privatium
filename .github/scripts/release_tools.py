@@ -103,12 +103,13 @@ def main():
     parser.add_argument("value")
     args = parser.parse_args()
     if args.command == "package":
-        results = [package(args.value, Path("target/release"), Path("dist"))]
-        if args.value == "Windows":
-            results.append(package_portable(Path("target/release"), Path("dist"), Path("apps")))
+        result = package(args.value, Path("target/release"), Path("dist"))
+        # A second output rather than a second line: with `archive: false` the upload
+        # action takes exactly one file per step, so the portable zip has its own step.
+        portable = package_portable(Path("target/release"), Path("dist"), Path("apps")) if args.value == "Windows" else None
         with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-            # One path per line: actions/upload-artifact reads a multi-line `path`.
-            output.write("path<<PATHS\n" + "".join(f"{r.as_posix()}\n" for r in results) + "PATHS\n")
+            output.write(f"path={result.as_posix()}\n")
+            output.write(f"portable={portable.as_posix() if portable else ''}\n")
     else:
         if not re.fullmatch(r"[0-9a-f]{40}", args.value):
             parser.error("Expected the release commit SHA.")

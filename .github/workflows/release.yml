@@ -74,6 +74,13 @@ jobs:
           path: ${{ steps.artifact.outputs.path }}
           archive: false
           if-no-files-found: error
+      # The Windows portable zip (spec/cli.md §1): one file per step with `archive: false`.
+      - uses: actions/upload-artifact@v7
+        if: steps.artifact.outputs.portable != ''
+        with:
+          path: ${{ steps.artifact.outputs.portable }}
+          archive: false
+          if-no-files-found: error
 
   attach:
     needs: build
