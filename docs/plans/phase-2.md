@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/plans/phase-2.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-09-05
-Modified: 2026-09-05
+Modified: 2026-09-06
 Summary:  Implementation plan for Phase 2 — other devices on the LAN: cluster identity,
           session cryptography, pairing, the encrypted browser channel, discovery, and
           the device registry. Non-normative. Where this plan and spec/ disagree, spec/
@@ -325,12 +325,14 @@ rule applied.*
 
 ## 3. Spec gaps found
 
-Rows 1–28 are fixed. As in
+Rows 1–30 are fixed. As in
 Phase 1, this records what changed and why;
 `cargo xtask gen-skill-reference` ran with the edits.
 
 | # | Was | Proposed | Files | Milestone |
 |---|---|---|---|---|
+| 30 | The data root was the platform directory or `--data-dir`, nothing else; on Windows that directory is hidden, so owners could not find their apps, and a zip download had no way to keep everything in one folder | Three sources, most explicit first: `--data-dir`; a `privatium-data` folder the owner created beside the executable (portable mode — the program never creates it, and one that cannot be written is a runtime error, never a fall-through); the platform directory. Every start prints the root and the rule that chose it; the data page shows the same. The Windows release gains `privatium-windows-portable.zip` carrying `privatium-data/apps/` with the three examples | `cli.md §1`, `protocol.md §3`, `AGENTS.md` invariant 7, `README.md`, `docs/backup-and-restore.md §1`, Tier 3 skill, `release_tools.py`, `release.yml` | **Fixed**, owner requested; between M18 and M19 |
+| 29 | `cli.md` had a release binary start with an empty launcher — the reference apps existed only in a checkout — and `new --from hello` failed without one | The binary carries the three example apps; a start whose `apps/` holds no app folder writes them there, whether the data directory is new or was used before the binary carried them, `new --examples` writes them on request, `--from` finds the embedded copy, and a checkout keeps mounting its own `apps/` as `bundled` and writes nothing | `cli.md §2, §4`, `data-dictionary.md §3.4`, `apps/README.md`, `README.md`, overview skill | **Fixed**, owner requested; M18 |
 | 28 | The integrity rule assumed every resource could be fetched by an origin-local channel | Hash same-origin external resources through the channel; require an existing integrity hash in authenticated HTML for permitted remote resources; keep inline script CSP and imported-module limits explicit | `protocol.md §8.3`, this plan §2.1, security and Tier 2 skills | **Fixed**; M17 |
 | 27 | Full-document replacement and `pushState` retain the previous CSP and module map | Fresh bootstrap documents use destination app permissions. A bounded, unpolled response stream stays in node RAM across a form transition; only a reference crosses in per-tab storage. Same-device attachment consumes it once without re-executing the request | `protocol.md §8.3.1`, this plan §2.1; `app-contract.md §5.4` remains binding | **Fixed**, owner approved; M17 |
 | 26 | The active-attacker gap was described as first pairing and Tier 2 imports only | State that every plain-HTTP load can replace the bootstrap and client, exposing stored device keys; keep the channel design and word the disclosure for every visit | `protocol.md §7.0, §7.7`, `docs/security.md §1, §4`, this plan §2.10, security skill | **Fixed**, owner confirmed; M17 |
@@ -436,7 +438,7 @@ request does.
 | Stream and sink helpers | `futures-util` | 0.3.34, MIT OR Apache-2.0 | Existing graph dependency, now direct for WebSocket and response streams |
 | Separate IPv6 socket | `socket2` | 0.6.5, MIT OR Apache-2.0 | Existing graph dependency, now direct to set IPv6-only before binding; avoids platform-dependent dual-stack defaults |
 | Verbose interface list | `if-addrs` | 0.15.0, MIT OR BSD-3-Clause | The standard-library UDP probe finds the default route but cannot enumerate every interface; the maintained cross-platform crate supplies that list |
-| mDNS | `mdns-sd` | 0.21.1, Apache-2.0 OR MIT | Registers with TXT and sub types, browses, runs its own thread — no runtime dependency, so an embedder without tokio can call `serve_discovery` |
+| mDNS | `mdns-sd` | 0.21.2, Apache-2.0 OR MIT | Registers with TXT, browses, runs its own thread — no runtime dependency, so an embedder without tokio can call `serve_discovery`; one subtype per registration (R17); taken with `default-features = false` |
 | QR | `qrcode` | 0.14.1, MIT OR Apache-2.0 | Renders to text for the terminal and SVG for the page; last released 2024-07 — check `cargo deny` and its issue tracker at M19 |
 | Browser crypto | `@noble/curves`, `@noble/ciphers`, `@noble/hashes` | 2.4.0, MIT | ES modules vendored at `assets/shell/vendor/noble/`, including their import dependencies; only bare imports become relative URLs (§3 row 21). Original and vendored hashes, licences, `VENDOR.md` and a `NOTICE` entry accompany them. Loaded under `script-src 'self'`; no bundle is built here |
 
@@ -1047,6 +1049,60 @@ proves them wrong; `docs/deployment.md §4` says the Windows prompt now happens;
 
 ### M18 — Discovery: mDNS and UDP, together
 
+**Implementation status, 2026-09-06, branch `m18-discovery`:** implemented. `discover::{Facts,
+Discovered, Discovery, Options, Switch, Status, Outcome}`, `discover::txt` (the record
+and its budget), `discover::mdns` (advertiser and browser on one `mdns-sd` daemon) and
+`discover::udp` (the responder, the probe, the source check and the rate limit) are in
+the core; `Node::{serve_discovery, discovery_status, discovered, discovery_facts,
+publish_facts}` are the node's surface, and `run.rs` starts discovery on the port the
+socket actually bound, so `p` is right under `--port 0`. The twelve tests of
+`tests/discover.rs` and `test_cli_no_discovery_starts_nothing` pass on Windows,
+including the real daemon browsing its own registration; the three-platform CI run
+decides risk R10.
+
+Four shapes differ from the sketch below. **Subtypes are computed and not advertised:**
+`mdns-sd` keys registrations by full name and carries one subtype per `ServiceInfo`,
+so a second subtype registration replaces the first, and registering each subtype
+under its own instance name would break `§6.1`'s instance-name rule and multiply the
+node's entries. `Facts::advertised` and `Facts::subtypes()` hold the rule — mounted,
+`nav.advertise = true`, at most fifteen characters, with the load warning for a longer
+slug — and the parent type carries the full TXT record; the SHOULD of `§6.1` waits on
+a library that can carry several subtypes, which is recorded as risk R17. **No `watch`
+channel:** the node hands new facts to the running mechanisms with `publish_facts`
+after apps load and whenever a pairing window opens, closes, expires or is consumed;
+the UDP responder reads the shared facts on every probe, and the mDNS registration
+is replaced. **`pair` is an instant, not a flag:** the facts carry the window's
+expiry, so an answer written after it says `0` with no call from the node, and the
+browsing thread re-registers when the flag on the wire no longer matches. **`Discovery`
+is not an error path:** `serve_discovery` fails only for the node's own trouble; a
+mechanism the platform refuses is `Outcome::Failed` in `discovery_status`, printed by
+the CLI and named in the `discovery.method` audit row, and a `discovery.*` setting
+that is neither `true` nor `false` keeps its mechanism off with that reason.
+`serve_discovery` is called after the bind rather than straight after `load_apps`,
+for the port. `Node::discovered()` exists for M19's node page; nothing prints it yet.
+
+The PR's macOS run exposed a latent flake in `pv.test.mjs`: two pages sharing one
+storage minted outbox ids in the same millisecond, and each page's monotonic counter
+knew nothing of the other's, so the replay order was the random tails'. `pv.js` now
+takes the newest adopted entry as its floor when it reads the storage, so a page
+mints past what another page queued; the test freezes the clock to make the case
+certain rather than probable.
+
+`mdns-sd` resolved to 0.21.2, the current patch of the 0.21.1 §5 planned; `default-features
+= false` drops its `async` and `logging` features, so `flume` comes without its async
+half and nothing logs. Its `if-addrs`, `socket2`, `mio` and `windows-sys` were already
+in the graph; `flume`, `spin` and `socket-pktinfo` are new. `cargo deny check` is in
+the PR's verification table.
+
+The same branch carries the owner's request that a release binary never start with an
+empty launcher (§3 row 29): the three example apps are embedded in the core
+(`app::examples`, 138 KB), written to `<data-dir>/apps/` whenever that folder holds no app and by
+`privatium new --examples`, and found by `--from hello` without a checkout. A checkout
+still mounts its own `apps/` as `bundled` and writes nothing, since a copy would shadow
+the folder the developer is editing. `PRIVATIUM_TEST_NO_CHECKOUT` is the test-only
+variable that lets the suite, which always runs from a checkout, exercise the release
+binary's path.
+
 - `discover::txt`: the record of `§6.1` — `v`, `id`, `cl`, `nm`, `apps`, `build`, `pair`,
   `p` — built from a `Facts` struct, `apps` truncated with `,…` to keep the whole under
   1300 bytes; instance name `sys_node.display_name` or the Node ID, ≤ 63 bytes.
@@ -1097,6 +1153,31 @@ pass, with the CI log as the evidence (risk R10). In `crates/privatium/tests/cli
 **Documentation:** `protocol.md §6.4` is written (row 11); `docs/deployment.md §4.1` (UDP
 5353 and 52525 both named); `docs/connectivity.md §1` (the browser row's "owner types the
 IP" becomes "scans the QR").
+
+**Acceptance checklist** — Windows runs are green; check after the named tests pass on
+all three platforms:
+
+- [ ] The record, its budget, the instance name and the subtype rule:
+  `test_spec_6_1_txt_record_carries_the_full_key_set_and_stays_under_1300_bytes`,
+  `test_spec_6_1_apps_is_truncated_with_an_ellipsis_when_over_budget`,
+  `test_spec_6_1_instance_name_is_the_display_name_or_the_node_id`,
+  `test_spec_6_1_subtypes_only_for_advertised_slugs_of_15_chars_or_less`.
+- [ ] The UDP fallback and its refusals:
+  `test_spec_6_4_udp_probe_is_answered_with_the_txt_key_set`,
+  `test_spec_6_4_udp_refuses_a_public_source_and_answers_once_a_second`.
+- [ ] Together, stopped together, switched by settings, and the pair flag from one source:
+  `test_spec_6_5_mdns_and_udp_start_together_and_stop_together`,
+  `test_discovery_settings_disable_each_mechanism`,
+  `test_spec_app_contract_6_serve_discovery_runs_from_the_nodes_facts`,
+  `test_spec_6_1_pair_flag_flips_when_pairing_opens`.
+- [ ] Browsing keyed by ID, with a real daemon:
+  `test_spec_6_1_two_nodes_with_one_name_are_distinct_by_id`,
+  `test_spec_6_1_mdns_registration_is_browsable_and_keyed_by_id` (risk R10).
+- [ ] The CLI: `test_cli_no_discovery_starts_nothing`; the example apps:
+  `test_spec_cli_2_first_run_writes_the_example_apps`,
+  `test_spec_cli_4_new_examples_writes_all_three_and_never_overwrites`,
+  `test_new_from_hello_works_without_a_checkout`,
+  `test_spec_cli_4_embedded_examples_match_the_repository_apps`.
 
 ---
 
@@ -1250,6 +1331,15 @@ pretending otherwise.
 **R15 — Rate limits and the lock.** `§7.5`'s per-source limit and the attempt counter are
 touched from WebSocket tasks; they live in the node behind its mutex, taken for
 microseconds, never across an await — the discipline `wire/mod.rs` already states.
+
+**R17 — Per-app subtypes wait on the library.** `mdns-sd` 0.21 carries one subtype per
+registration and keys registrations by full name, so `_<slug>._sub._privatium._tcp`
+cannot be advertised for more than one app without breaking `§6.1`'s instance-name
+rule. The parent type with the full TXT record — the MUST — is advertised; the subtype
+SHOULD is computed (`Facts::subtypes`) and not on the wire. A client that browses for
+one app filters the parent type's `apps` key instead, which the TXT record was designed
+for. Revisit when the library grows a multi-subtype registration or when a second
+implementation makes the fork worth owning.
 
 **R16 — The Wireshark bullet is a manual claim.** The proxy test proves the socket carries
 no known plaintext; a person with Wireshark still looks, in M19's manual pass, because a

@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lib.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-08-31  |  Modified: 2026-09-05
+// Created:  2026-08-31  |  Modified: 2026-09-06
 // Summary:  Crate root. The error type, the M0 linkage probe, `Node::open` — steps 1 to 4
 //           of the bootstrap order in docs/plans/phase-1.md §2.6 — the sink that turns
 //           what a log scan found into sys_audit rows (spec/protocol.md §4.4), and the
@@ -28,6 +28,7 @@ use thiserror::Error;
 pub mod app;
 pub mod backup;
 pub mod config;
+pub mod discover;
 mod durable;
 pub mod http;
 pub mod icons;
@@ -47,7 +48,8 @@ pub use app::{
     App, AppRoot, Appended, Csp, Event, LoadFailure, LoadReport, Manifest, Permissions, Seeded,
     Source, Stage, StreamEvent, Warning,
 };
-pub use config::{Config, LuaConfig, Mode, NodeConfig, Paths};
+pub use config::{Config, LuaConfig, Mode, NodeConfig, PORTABLE_DIR, Paths, RootSource};
+pub use discover::Discovered;
 pub use http::{AuthLayer, Device, Peer};
 pub use identity::{Identity, NodeId};
 pub use lock::DataLock;
@@ -376,6 +378,9 @@ pub struct Node {
     /// The one open pairing window (`spec/data-dictionary.md §3.3`), in memory and never
     /// written; `None` while pairing is closed (`spec/protocol.md §7.1`).
     pairing: Option<Pairing>,
+    /// The discovery mechanisms (`spec/protocol.md §6`) while they run; stopped when
+    /// the node drops.
+    discovery: Option<discover::Discovery>,
     /// The root's lock (`spec/protocol.md §3.1`). Last, so it is released after every
     /// log and store above it has closed.
     lock: DataLock,
@@ -478,6 +483,7 @@ impl Node {
             state,
             apps: BTreeMap::new(),
             pairing: None,
+            discovery: None,
             lock,
         })
     }
@@ -777,15 +783,151 @@ impl Node {
     // spec/app-contract.md §6 — the areas later phases fill. Present, never Ok.
     // -----------------------------------------------------------------------------------
 
-    /// mDNS and UDP discovery (`spec/protocol.md §6`) — Phase 2 of `docs/roadmap.md`.
-    /// This build has none and says so ([`Error::Unimplemented`]) rather than returning
-    /// from a no-op, which an embedder would build on. Pairing (`§7`) is
-    /// [`pair`](Self::pair).
+    /// Start LAN discovery (`spec/protocol.md §6`, `spec/app-contract.md §6`): mDNS
+    /// advertisement and browsing (`§6.1`) and the UDP responder on port 52525 (`§6.4`),
+    /// each as `discovery.mdns` and `discovery.udp` in `sys_setting` allow, started at
+    /// once and never in sequence (`§6.5`). A mechanism the platform refuses — no
+    /// multicast interface, the port taken — is reported in
+    /// [`discovery_status`](Self::discovery_status) and does not stop the other; a
+    /// setting that is neither `true` nor `false` keeps its mechanism off. Writes one
+    /// `discovery.method` audit row naming what started. Both stop when the node drops.
+    /// Calling this on a node whose discovery is already running is a no-op.
+    ///
+    /// Fails only for the node's own trouble: a `sys_setting` that cannot be read, an
+    /// audit row that cannot be written.
     pub fn serve_discovery(&mut self) -> Result<()> {
-        Err(Error::Unimplemented {
-            feature: "serve_discovery",
-            phase: "2",
-            spec: "spec/protocol.md §6",
+        if self.discovery.is_some() {
+            return Ok(());
+        }
+        let facts = self.discovery_facts()?;
+        let discovery = discover::Discovery::start(
+            facts,
+            discover::Options {
+                mdns: self.setting_flag("discovery.mdns")?,
+                udp: self.setting_flag("discovery.udp")?,
+                udp_port: discover::udp::PORT,
+            },
+        );
+        let detail = serde_json::to_string(&serde_json::json!({
+            "mdns": discovery.status().mdns.to_string(),
+            "udp": discovery.status().udp.to_string(),
+            "port": self.config.node.port,
+        }))?;
+        let at = log::now();
+        self.sys.put(
+            sys::AUDIT,
+            &new_ulid(),
+            &sys::AuditRow::info(&at, sys::KIND_DISCOVERY_METHOD, None, &detail),
+        )?;
+        self.discovery = Some(discovery);
+        Ok(())
+    }
+
+    /// What [`serve_discovery`](Self::serve_discovery) started, or `None` before it ran.
+    #[must_use]
+    pub fn discovery_status(&self) -> Option<&discover::Status> {
+        self.discovery.as_ref().map(discover::Discovery::status)
+    }
+
+    /// Every node seen on the network so far, keyed by ID (`spec/protocol.md §6.1`);
+    /// empty while discovery is not running.
+    #[must_use]
+    pub fn discovered(&self) -> Vec<discover::Discovered> {
+        self.discovery
+            .as_ref()
+            .map(discover::Discovery::discovered)
+            .unwrap_or_default()
+    }
+
+    /// The facts this node advertises (`spec/protocol.md §6.1`) as they stand: the IDs,
+    /// `sys_node.display_name` or the Node ID, the mounted slugs and the ones eligible
+    /// for a subtype, the build, the open pairing window's expiry, the port. The TXT
+    /// record, the UDP answer and the manifest's `pair` flag are all read from here.
+    pub fn discovery_facts(&self) -> Result<discover::Facts> {
+        let (display_name, build) = self.node_row_public_facts()?;
+        let mut apps: Vec<String> = self
+            .mounts()
+            .map(|(_, app)| app.slug().to_owned())
+            .collect();
+        apps.sort();
+        let mut advertised: Vec<String> = self
+            .mounts()
+            .filter(|(_, app)| {
+                app.manifest().nav.advertise && app.slug().len() <= app::MAX_ADVERTISED_SLUG
+            })
+            .map(|(_, app)| app.slug().to_owned())
+            .collect();
+        advertised.sort();
+        let pair_until = self
+            .pairing
+            .as_ref()
+            .filter(|window| window.consumed_by().is_none())
+            .map(Pairing::expires_at);
+        Ok(discover::Facts {
+            id: self.identity.id().as_str().to_owned(),
+            cluster: self.identity.cluster_id().as_str().to_owned(),
+            name: display_name.unwrap_or_else(|| self.identity.id().as_str().to_owned()),
+            apps,
+            advertised,
+            build,
+            pair_until,
+            port: self.config.node.port,
+        })
+    }
+
+    /// Hand the current facts to the running mechanisms — after apps load, when a
+    /// pairing window opens or closes, when the port is settled. A no-op while
+    /// discovery is not running.
+    pub fn publish_facts(&self) -> Result<()> {
+        if let Some(discovery) = &self.discovery {
+            discovery.update(self.discovery_facts()?);
+        }
+        Ok(())
+    }
+
+    /// This installation's `display_name` (empty is unset) and `build` from `sys_node`.
+    fn node_row_public_facts(&self) -> Result<(Option<String>, String)> {
+        let sql = format!("SELECT display_name, build FROM {} WHERE id = ?", sys::NODE);
+        match self.store.conn().query_row(
+            &sql,
+            rusqlite::params![self.identity.id().as_str()],
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                ))
+            },
+        ) {
+            Ok((name, build)) => Ok((
+                name.filter(|n| !n.trim().is_empty()),
+                build.unwrap_or_else(|| "custom".to_owned()),
+            )),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok((None, "custom".to_owned())),
+            Err(error) => Err(boxed(StoreError::Sql(error))),
+        }
+    }
+
+    /// A boolean `sys_setting` (`spec/data-dictionary.md §3.6`): on when absent or
+    /// `true`, off when `false`, and refused with the reason when it is anything else.
+    fn setting_flag(&self, key: &str) -> Result<discover::Switch> {
+        let Some(value) = self.setting_value(key)? else {
+            return Ok(discover::Switch::On);
+        };
+        let flag = serde_json::from_str::<serde_json::Value>(&value)
+            .ok()
+            .and_then(|parsed| {
+                parsed
+                    .as_bool()
+                    .or_else(|| match parsed.as_str().map(str::trim) {
+                        Some("true") => Some(true),
+                        Some("false") => Some(false),
+                        _ => None,
+                    })
+            });
+        Ok(match flag {
+            Some(true) => discover::Switch::On,
+            Some(false) => discover::Switch::Off,
+            None => discover::Switch::Refused(format!("{key} is not true or false")),
         })
     }
 

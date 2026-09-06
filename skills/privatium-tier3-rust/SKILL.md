@@ -37,7 +37,7 @@ const SCHEMA: &str = "CREATE TABLE reading (id VARCHAR PRIMARY KEY, celsius DECI
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut node = Node::open_with(None, None)?; // the platform data directory (spec/protocol.md §3)
+    let mut node = Node::open_with(None, None)?; // the data root of spec/cli.md §1: a privatium-data folder beside the program, else the platform directory
     node.open_app("myapp", SCHEMA)?; // your app: no folder, its schema.sql inline
 
     node.append("myapp", Event::put("reading", new_ulid(), json!({ "celsius": "21.4" })))?;
@@ -68,7 +68,7 @@ method of `Node` at this version, generated from the source.
 | Write | `append` (one `Event`), `append_batch` (all or nothing) |
 | Read | `query(app, sql, params)` — sandboxed, `?` bound, rows as `serde_json::Map` typed as `spec/data-api.md §1` types them |
 | React | `subscribe(app)` — a `broadcast::Receiver<StreamEvent>` of every append and every resync; will carry events arriving by sync too |
-| Network | `pair(ttl)` opens a pairing window and hands back the code in both renderings, the URL and the expiry (`spec/protocol.md §7`); `serve_discovery`, `start_sync` and `sync_now` are present and return `Error::Unimplemented` naming the phase they arrive in; never `Ok` |
+| Network | `pair(ttl)` opens a pairing window and hands back the code in both renderings, the URL and the expiry (`spec/protocol.md §7`); `serve_discovery` starts mDNS and the UDP responder together and `discovered()` lists the nodes seen, by ID (`§6`); `start_sync` and `sync_now` are present and return `Error::Unimplemented` naming Phase 3; never `Ok` |
 | Auth | `auth_layer` — Tower middleware; `core::handle` applies it itself, so wrap your own router with it only in embedded mode, and give the router `into_make_service_with_connect_info::<SocketAddr>()` so the layer sees the peer |
 | Data | `snapshot`, `restore`, `restore_tier`, `maintain` |
 | Ids | `new_ulid()` — the row key, minted by whoever writes the row |
@@ -81,8 +81,10 @@ method of `Node` at this version, generated from the source.
   as a JSON string — and do arithmetic in SQL with `decimal_add`, `decimal_sum` and the
   rest of `spec/data-dictionary.md §2.1`, or with an exact decimal type of your own.
   `f64` is a bug.
-- Resolve the data directory with `Node::open_with(None, None)` or the platform
-  file-chooser portal. **Never** write beside the binary, and never require
+- Resolve the data directory with `Node::open_with(None, None)` — `--data-dir`, else a
+  `privatium-data` folder the owner created beside the program, else the platform
+  directory (`spec/cli.md §1`) — or the platform file-chooser portal. **Never** write
+  beside the binary except into that owner-made folder, and never require
   `--filesystem=host`
 - Call `open_app` at every start, before the first `append` or `query`; an app never
   opened is `Error::AppNotLoaded`, not a silent success

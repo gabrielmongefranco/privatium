@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/config.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-05
+// Created:  2026-09-01  |  Modified: 2026-09-06
 // Summary:  Where the node's data lives (spec/protocol.md §3) and what config.toml may
 //           say about it. Both halves are here because --data-dir picks the root and
 //           --config defaults to a file inside it, so neither resolves without the other.
@@ -20,6 +20,33 @@ pub const DEFAULT_PORT: u16 = 8420;
 /// service type (`docs/naming.md`).
 const DIR_NAME: &str = "privatium";
 
+/// The folder beside the executable that makes an installation portable
+/// (`spec/cli.md §1`): when it exists, it is the data root.
+pub const PORTABLE_DIR: &str = "privatium-data";
+
+/// Which rule of `spec/cli.md §1` chose the data root, most explicit first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RootSource {
+    /// `--data-dir`, or a program that named the root itself.
+    Flag,
+    /// A [`PORTABLE_DIR`] folder beside the executable.
+    Portable,
+    /// The platform data directory.
+    Platform,
+}
+
+impl RootSource {
+    /// The reason in words, for the line a start prints beside the path.
+    #[must_use]
+    pub fn describe(self) -> &'static str {
+        match self {
+            Self::Flag => "named on the command line",
+            Self::Portable => "the privatium-data folder beside the program",
+            Self::Platform => "the platform data directory",
+        }
+    }
+}
+
 /// Every path under the node's data root, resolved once.
 ///
 /// `spec/protocol.md §3` fixes this layout. It is reproduced here as accessors rather than
@@ -29,21 +56,40 @@ const DIR_NAME: &str = "privatium";
 pub struct Paths {
     root: PathBuf,
     config: PathBuf,
+    source: RootSource,
 }
 
 impl Paths {
     /// Resolve from the two CLI flags of `spec/cli.md §1`, either of which may be absent.
     ///
-    /// `--data-dir` defaults to the platform data directory; `--config` defaults to
-    /// `config.toml` inside whatever root was chosen.
+    /// The root is `--data-dir` when given; else a [`PORTABLE_DIR`] folder beside the
+    /// running executable when one exists; else the platform data directory. `--config`
+    /// defaults to `config.toml` inside whatever root was chosen.
     pub fn resolve(data_dir: Option<&Path>, config: Option<&Path>) -> Result<Self> {
-        let root = match data_dir {
-            Some(explicit) => explicit.to_path_buf(),
-            None => default_root()?,
+        let beside = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(Path::to_path_buf));
+        Self::resolve_beside(data_dir, config, beside.as_deref())
+    }
+
+    /// [`resolve`](Self::resolve) with the executable's directory supplied — `None` when
+    /// it is unknown — so the precedence can be held to a test without a binary.
+    pub fn resolve_beside(
+        data_dir: Option<&Path>,
+        config: Option<&Path>,
+        beside: Option<&Path>,
+    ) -> Result<Self> {
+        let (root, source) = match data_dir {
+            Some(explicit) => (explicit.to_path_buf(), RootSource::Flag),
+            None => match beside.map(|dir| dir.join(PORTABLE_DIR)) {
+                Some(portable) if portable.is_dir() => (portable, RootSource::Portable),
+                _ => (default_root()?, RootSource::Platform),
+            },
         };
         Ok(Self {
             config: config.map_or_else(|| root.join("config.toml"), Path::to_path_buf),
             root,
+            source,
         })
     }
 
@@ -54,6 +100,7 @@ impl Paths {
         Self {
             config: root.join("config.toml"),
             root,
+            source: RootSource::Flag,
         }
     }
 
@@ -61,6 +108,12 @@ impl Paths {
     #[must_use]
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// Which rule chose the root (`spec/cli.md §1`).
+    #[must_use]
+    pub fn source(&self) -> RootSource {
+        self.source
     }
 
     /// `config.toml`. May be outside the root if `--config` said so.
@@ -367,6 +420,41 @@ mod tests {
     #[test]
     fn an_unknown_table_is_an_error() {
         assert!(toml::from_str::<Config>("[discovery]\nmdns = true\n").is_err());
+    }
+
+    /// `spec/cli.md §1` — `--data-dir` first, then a `privatium-data` folder beside the
+    /// executable, then the platform directory; a file of that name beside the
+    /// executable is not a folder and counts for nothing.
+    #[test]
+    fn test_spec_cli_1_data_root_precedence_is_flag_then_portable_then_platform() {
+        let beside = tempfile::tempdir().unwrap();
+        let elsewhere = tempfile::tempdir().unwrap();
+
+        let platform = Paths::resolve_beside(None, None, Some(beside.path())).unwrap();
+        assert_eq!(platform.source(), RootSource::Platform);
+        assert!(!platform.root().starts_with(beside.path()));
+
+        std::fs::write(beside.path().join(PORTABLE_DIR), "not a folder").unwrap();
+        let still = Paths::resolve_beside(None, None, Some(beside.path())).unwrap();
+        assert_eq!(still.source(), RootSource::Platform);
+        std::fs::remove_file(beside.path().join(PORTABLE_DIR)).unwrap();
+
+        std::fs::create_dir(beside.path().join(PORTABLE_DIR)).unwrap();
+        let portable = Paths::resolve_beside(None, None, Some(beside.path())).unwrap();
+        assert_eq!(portable.source(), RootSource::Portable);
+        assert_eq!(portable.root(), beside.path().join(PORTABLE_DIR));
+        assert_eq!(
+            portable.config_file(),
+            beside.path().join(PORTABLE_DIR).join("config.toml")
+        );
+
+        let flagged =
+            Paths::resolve_beside(Some(elsewhere.path()), None, Some(beside.path())).unwrap();
+        assert_eq!(flagged.source(), RootSource::Flag);
+        assert_eq!(flagged.root(), elsewhere.path());
+        let unknown = Paths::resolve_beside(Some(elsewhere.path()), None, None).unwrap();
+        assert_eq!(unknown.source(), RootSource::Flag);
+        assert_eq!(Paths::rooted("/tmp/root").source(), RootSource::Flag);
     }
 
     #[test]

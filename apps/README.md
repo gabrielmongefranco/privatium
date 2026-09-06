@@ -33,9 +33,12 @@ For layout and accessibility choices, see [Sample app design](../docs/sample-app
 
 Apps in this directory are *bundled*: in a checkout they sit beside the binary and are on
 the launcher without copying, and a packaged install (Phase 6 of `docs/roadmap.md`) will
-carry them read-only beside the program (a Flatpak install directory is not writable). A
-bare release binary starts with no apps; `privatium new` or a copied folder is where they
-come from.
+carry them read-only beside the program (a Flatpak install directory is not writable).
+
+A release binary carries the same three folders inside it. When you run it and your
+data directory's `apps/` holds no app yet, it writes them there, so the launcher has
+something to show and you have something to edit; `privatium new --examples` writes them
+again if you want a fresh copy (`spec/cli.md §2`, `§4`).
 
 Apps you write go in `$XDG_DATA_HOME/privatium/apps/<slug>/`, which is writable and
 survives upgrades. The framework loads both and records the origin in `sys_app.source`.

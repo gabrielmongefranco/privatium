@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/data-dictionary.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-05
+Modified: 2026-09-06
 Summary:  NORMATIVE. System tables, app index, type mappings, and field definitions.
 -->
 
@@ -251,8 +251,9 @@ about.
 - `source` says where the folder came from. `bundled` is a folder shipped with the
   framework — the repository's `apps/` in a development checkout, the package's at
   install. `local` is `<data-root>/apps/<slug>/`, the owner's, writable and surviving
-  upgrades. `url:<origin>` is reserved: `pv/1` has no registry (`spec/app-contract.md
-  §9`).
+  upgrades; the example apps a first run or `privatium new --examples` writes there
+  (`spec/cli.md §2`, `§4`) are `local` like anything else the owner may edit.
+  `url:<origin>` is reserved: `pv/1` has no registry (`spec/app-contract.md §9`).
 - One row per folder whose name is a valid, unreserved slug, written whether or not the
   app loaded: a refusal at any step of `spec/app-contract.md §8` sets `last_error` on it.
   `installed_at` is when the app first loaded cleanly and is NULL for a folder that never

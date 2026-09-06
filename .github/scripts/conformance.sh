@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Project:  Privatium™  |  File: .github/scripts/conformance.sh
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-09-05  |  Modified: 2026-09-05
+# Created:  2026-09-05  |  Modified: 2026-09-06
 # Summary:  docs/plans/phase-1.md §7: the lines of spec/protocol.md §13 a Phase 1 build can
 #           satisfy, asserted by name — plus the two docs/roadmap.md bullets §7 says are
 #           easy to lose (every route through core::handle; bodies stream both ways). The
@@ -107,4 +107,13 @@ run privatium channel \
   test_spec_8_3_1_wrong_device_cannot_consume_or_release_a_response \
   test_spec_8_3_1_capacity_refuses_before_dispatch_and_release_frees_it
 
-echo "conformance: Phase 1, identity, pairing and encrypted-channel items hold by name"
+# Discovery (§6): the full TXT key set advertised and browsable (§6.1), every configured
+# mechanism started concurrently rather than chained (§6.5), and the UDP responder
+# refusing a non-private source (§6.4).
+run privatium-core discover \
+  test_spec_6_1_txt_record_carries_the_full_key_set_and_stays_under_1300_bytes \
+  test_spec_6_1_mdns_registration_is_browsable_and_keyed_by_id \
+  test_spec_6_5_mdns_and_udp_start_together_and_stop_together \
+  test_spec_6_4_udp_refuses_a_public_source_and_answers_once_a_second
+
+echo "conformance: Phase 1, identity, pairing, encrypted-channel and discovery items hold by name"

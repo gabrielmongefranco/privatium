@@ -362,9 +362,9 @@ fn node_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
     );
     dl(
         body,
-        "Listening",
+        "Local address",
         &format!(
-            "<code>http://127.0.0.1:{}/</code> — this device only. Network access is coming soon.",
+            "<code>http://127.0.0.1:{}/</code>",
             config.port
         ),
     );
@@ -655,7 +655,11 @@ fn data_page(cx: &Context<'_>, body: &mut String) {
     dl(
         body,
         "Data directory",
-        &code(&paths.root().display().to_string()),
+        &format!(
+            "{} — {}",
+            code(&paths.root().display().to_string()),
+            escape(paths.source().describe())
+        ),
     );
     dl(
         body,

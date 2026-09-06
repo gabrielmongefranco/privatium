@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/pair.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
+// Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  Pairing against spec/protocol.md §7: the code and its renderings, the SPAKE2
 //           vectors both languages read, the six messages of /ws/pair through the node,
 //           the window's TTL, attempt cap and rate limit, the audit rows, and the device
@@ -973,11 +973,7 @@ fn test_spec_app_contract_6_pair_opens_a_window_and_returns_the_code() {
         node.pair_at(Duration::ZERO, later(7)),
         Err(Error::Pair(PairError::Ttl))
     ));
-    // The other two §6 network methods still refuse, naming their phase.
-    assert!(matches!(
-        node.serve_discovery(),
-        Err(Error::Unimplemented { phase: "2", .. })
-    ));
+    // Sync, the §6 network method that is still a later phase's, refuses naming it.
     assert!(matches!(
         node.start_sync(),
         Err(Error::Unimplemented { phase: "3", .. })

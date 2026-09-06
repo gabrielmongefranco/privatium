@@ -1,7 +1,7 @@
 /*
  * Project:  Privatium™  |  File: crates/privatium-core/assets/shell/pv.js
  * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
- * Created:  2026-09-03  |  Modified: 2026-09-05
+ * Created:  2026-09-03  |  Modified: 2026-09-06
  * Summary:  The data API helper of spec/data-api.md §5, served at /static/pv.js. Uses
  *           the encrypted channel when present. Queued writes carry their high-water
  *           mark, observed row ranks, app and node; the node judges replay against
@@ -92,11 +92,18 @@ function stored() {
   } catch { /* no storage */ }
   return entries;
 }
-// Another page's entries join this one's, oldest first: the ids are ULIDs.
+// Another page's entries join this one's, oldest first: the ids are ULIDs. The newest one
+// becomes this page's floor, so two pages in one millisecond still mint in order.
+let lastMs = 0, lastTail = null;
 function adopt() {
   const known = new Set(queue.map(entry => entry.id));
   for (const entry of stored()) if (!known.has(entry.id)) queue.push(entry);
   queue.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const last = queue.at(-1)?.id;
+  if (last?.length === 26 && (!lastTail || last > lastMinted())) {
+    const d = Array.from(last, c => ALPHABET.indexOf(c));
+    lastMs = d.slice(0, 10).reduce((n, v) => n * 32 + v, 0); lastTail = d.slice(10);
+  }
 }
 adopt();
 // The POST body: the events, and the node and the app they are for when known (§2).
@@ -210,23 +217,22 @@ function subscribe(fn) {
   return () => { subscribers.delete(fn); if (!subscribers.size && state.es) { state.es.close(); state.es = null; } };
 }
 
-// Monotonic within the page: a second ULID in the same millisecond increments the last one's
-// random tail, so ids minted in order sort in order — which is what the outbox replays by.
-let lastMs = 0, lastTail = null;
+// A second ULID in the same millisecond increments the last tail: ids minted in order sort in order.
 function ulid() {
   const now = Date.now();
-  let tail;
   if (now === lastMs && lastTail) {
-    tail = lastTail;
-    for (let i = 15; i >= 0; i--) { if (tail[i] === 31) tail[i] = 0; else { tail[i]++; break; } }
+    for (let i = 15; i >= 0; i--) { if (lastTail[i] === 31) lastTail[i] = 0; else { lastTail[i]++; break; } }
   } else {
     const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);   // available on plain HTTP; crypto.subtle is not
-    tail = Array.from(bytes, b => b & 31);
+    lastTail = Array.from(bytes, b => b & 31);
   }
-  lastMs = now; lastTail = tail;
-  let t = now, out = '';
+  lastMs = now;
+  return lastMinted();
+}
+function lastMinted() {
+  let t = lastMs, out = '';
   for (let i = 0; i < 10; i++) { out = ALPHABET[t % 32] + out; t = Math.floor(t / 32); }
-  for (let i = 0; i < 16; i++) out += ALPHABET[tail[i]];
+  for (let i = 0; i < 16; i++) out += ALPHABET[lastTail[i]];
   return out;
 }
 

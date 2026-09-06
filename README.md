@@ -21,47 +21,62 @@ See the License and Credits sections below for the full notices and attribution.
 
 ## Description
 
-Privatium™ is an open-source, local-first framework for building and running personal apps
-on your own devices. Use it to create a tracker, organize a collection, or build a small
-web app that does exactly what you need. Your apps and data stay on hardware you control,
-without cloud subscriptions or a separate database server.
+I built Privatium™ because I wanted small personal apps — a tracker, a collection, a
+form and a list — that run on my own computer, that I can read and back up as plain
+files, and that I do not have to rent from anyone. It is an open-source, local-first
+framework for exactly that. Your apps and your data live on hardware you control. There
+is no account, no cloud subscription, and no database server to look after.
 
-Built in Rust with Lua and SQLite, Privatium makes self-hosted apps easier to create and
-maintain. Start with an example, adapt it yourself, or ask an AI assistant to help. You can
-write simple pages in Lua, use your own HTML and JavaScript, or build a standalone Rust
-app. Run one app or keep several together. Back up your data by copying a folder.
+It is one program, written in Rust, with Lua and SQLite built in. Every record you save
+is a line of plain text in a file on your disk; SQLite is only a cache the program can
+rebuild at any time. Backing up is copying a folder. Restoring is copying it back. If
+you can open a text file, you can see everything Privatium knows about you.
 
-The goal is personal software that follows you across devices without giving up data
-ownership. Planned peer-to-peer sync will connect your devices without requiring a domain
-name, DNS setup, or port forwarding for native clients. Local apps work today; device
-pairing, sync, and remote access are being added in [Phases 2–5](docs/roadmap.md).
+You choose how much to write. A few Lua pages will do for most trackers and lists. If you
+want your own HTML and JavaScript, or a whole Rust program, the framework gets out of your
+way and gives you the same storage, the same backup and the same launcher. Run one app or
+keep several side by side. Start from an example, or hand the included guides to an AI
+assistant and let it write the first draft; a linter checks the result against the rules
+that matter, including accessibility.
+
+Other devices on your home network can already reach a node over an encrypted channel
+once they are paired. Pairing from a phone, discovery, and sync between your own machines
+are what I am working on now, and none of them will require a domain name, a DNS
+provider, or a port forward.
 
 ## Quick Start Guide
 
 You can run Privatium on Windows, macOS, or Linux. Lua and SQLite are included.
 
-1. **Download Privatium.** Download directly for your platform: [Windows](https://github.com/gabrielmongefranco/privatium/releases/latest/download/privatium-windows.zip), [macOS](https://github.com/gabrielmongefranco/privatium/releases/latest/download/privatium-mac.zip), [Linux](https://github.com/gabrielmongefranco/privatium/releases/latest/download/privatium-linux.tar.gz). After downloading, extract the `privatium` (or `privatium.exe` on Windows) binary to a folder of your choice.
-2. **Create a starter app.** Open a terminal in that folder and run:
-
-   ```sh
-   ./privatium new myapp
-   ```
-
-   On Windows, use `./privatium.exe` in place of `./privatium`.
-3. **Run your app.** In the same terminal, run:
+1. **Download Privatium.** Download directly for your platform: [Windows](https://github.com/gabrielmongefranco/privatium/releases/latest/download/privatium-windows.zip), [Windows portable](https://github.com/gabrielmongefranco/privatium/releases/latest/download/privatium-windows-portable.zip), [macOS](https://github.com/gabrielmongefranco/privatium/releases/latest/download/privatium-mac.zip), [Linux](https://github.com/gabrielmongefranco/privatium/releases/latest/download/privatium-linux.tar.gz). After downloading, extract the `privatium` (or `privatium.exe` on Windows) binary to a folder of your choice.
+2. **Run it.** Open a terminal in that folder and run:
 
    ```sh
    ./privatium
    ```
 
-4. **Open it in your browser.** Visit [Privatium on your computer](http://127.0.0.1:8420/)
-   and select **myapp**. Keep the terminal open while using your apps. Access from another
-   device is planned for Phase 2.
+   On Windows, use `./privatium.exe` in place of `./privatium`. The first run writes the
+   three [example apps](#example-applications) into its data folder and prints where
+   that folder is. The portable zip keeps everything in one place: it ships a
+   `privatium-data` folder beside the program, with the example apps already in it, and
+   the program uses that folder whenever it exists. Create one yourself beside any copy
+   of the program to get the same.
+3. **Open it in your browser.** Visit [Privatium on your computer](http://127.0.0.1:8420/)
+   and pick **Hello**. Keep the terminal open while you use your apps. Reaching them from
+   your phone needs pairing, which is not in this release yet.
+4. **Make your own app.** In a second terminal, run:
 
-To customize your app, edit the files in the folder printed when you created it, then
-refresh your browser. The [example apps](#example-applications) provide more starting points.
-See [backup and restore](docs/backup-and-restore.md) for saving your data and
-[command-line options](spec/cli.md) for development commands.
+   ```sh
+   ./privatium new myapp
+   ```
+
+   Refresh the launcher and **myapp** is there. Edit the files in the folder it printed,
+   then refresh again; there is nothing to restart.
+
+The example apps are ordinary folders in the same place, so you can edit them, copy them
+or delete them; `./privatium new --examples` brings them back. See
+[backup and restore](docs/backup-and-restore.md) for saving your data and
+[command-line options](spec/cli.md) for the rest of the commands.
 
 **Building from source?** Run `cargo build --release` from a checkout with the Rust
 version in `rust-toolchain.toml`. The program is written to `target/release/`.
@@ -83,19 +98,16 @@ To use Privatium inside your own Rust application, see the
 | [docs/connectivity.md](docs/connectivity.md) | Bootstrap and reachability per client type |
 | [docs/deployment.md](docs/deployment.md) | Topologies, the always-on machine, per-OS firewall behaviour |
 | [docs/backup-and-restore.md](docs/backup-and-restore.md) | The restore drill, for non-technical users |
-| [docs/roadmap.md](docs/roadmap.md) | Build phases and acceptance criteria |
 | [docs/frameworks.md](docs/frameworks.md) | Which libraries, frameworks and game engines fit, and which do not |
 | [docs/skills.md](docs/skills.md) | How LLM-authored apps get correct, accessible, secure code |
 | [docs/icons.md](docs/icons.md) | Icon system: Bootstrap Icons, inlined server-side |
 | [docs/decisions/](docs/decisions/) | Decision records: Barracuda declined (0001); Rust core, pkarr, peer transport (0002); one core interface behind three transports (0003); Gun, RxDB, libp2p, SharkTrustX and BAS-in-Rust declined (0004); what a phone is in the cluster (0005); SQLite as the query engine (0006) |
-| [docs/plans/](docs/plans/) | The per-phase work breakdowns: Phase 1 as built, Phases 2 and 3 as planned, later phases as stubs to be written from the roadmap |
 | [docs/naming.md](docs/naming.md) | Name, taglines, and the rename checklist |
-| [docs/phase-prompt-template.md](docs/phase-prompt-template.md) | The copy-and-paste prompt for starting a phase, milestone or change in a new AI chat |
 
 ## Example Applications
 
-These small apps show what you can build. They appear in the launcher when you run
-Privatium from a source checkout:
+These small apps show what you can build. The first run writes them into your data folder,
+and a source checkout serves them straight from `apps/`:
 
 - **[Hello](apps/hello)** — a simple Lua app with a form and a list. Start here.
 - **[Animals](apps/animals)** — a guessing game that learns new animals as you play.
@@ -151,25 +163,26 @@ Questions, bug reports, enhancement ideas and requests are welcome as GitHub iss
   while this one stores the tree as an append-only event log so it can sync
   across devices.
 
-### Chosen for the later phases of `docs/roadmap.md`, and not yet in the build:
+- [Noble cryptography](https://github.com/paulmillr/noble-curves) — audited, dependency-free
+  JavaScript implementations of X25519, Ed25519 and ChaCha20-Poly1305, used in the
+  browser because `crypto.subtle` is unavailable on plain-HTTP origins.
+- [SPAKE2 (RFC 9382)](https://www.rfc-editor.org/rfc/rfc9382.html) — the
+  password-authenticated key exchange for device pairing, implemented on both sides from
+  the libraries above rather than taken as a package.
+- [mdns-sd](https://github.com/keepsimple1/mdns-sd) — mDNS and DNS-SD in Rust, for
+  finding nodes on the local network.
+- [Magic Wormhole](https://github.com/magic-wormhole/magic-wormhole) — inspiration for the
+  short human-readable pairing code experience. No code from that project is used.
+
+### Chosen, and not yet in the build:
 
 - [iroh](https://github.com/n0-computer/iroh) — QUIC-based peer-to-peer transport with
-  hole punching, for direct node-to-node sync (Phase 5).
+  hole punching, for direct node-to-node sync.
 - [pkarr](https://github.com/pubky/pkarr) — signed DNS records on the BitTorrent mainline
-  DHT, which is how a public key will become an address with no registrar (Phase 5).
+  DHT, which is how a public key will become an address with no registrar.
 - [Arti](https://gitlab.torproject.org/tpo/core/arti) — the Tor Project's Rust
-  implementation of Tor, for in-process onion service hosting with no external daemon
-  (Phase 5).
-- [Noble cryptography](https://github.com/paulmillr/noble-curves) — audited, dependency-free
-  JavaScript implementations of X25519, Ed25519 and ChaCha20-Poly1305, needed because
-  `crypto.subtle` is unavailable on plain-HTTP origins (Phase 2).
-- [Tauri](https://github.com/tauri-apps/tauri) — desktop and mobile application shells
-  (Phase 4).
-- [SPAKE2 (RFC 9382)](https://www.rfc-editor.org/rfc/rfc9382.html) — the
-  password-authenticated key exchange for device pairing (Phase 2), implemented on both
-  sides from the libraries above rather than taken as a package.
-- [Magic Wormhole](https://github.com/magic-wormhole/magic-wormhole) — inspiration for the
-  short human-readable pairing code experience. No code from that project will be used.
+  implementation of Tor, for in-process onion service hosting with no external daemon.
+- [Tauri](https://github.com/tauri-apps/tauri) — desktop and mobile application shells.
 
 ## License
 

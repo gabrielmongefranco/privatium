@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/pair/node.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
+// Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  Pairing on the node (spec/app-contract.md §6, spec/protocol.md §7): opening
 //           and closing the window, driving the handshake against it under the node's
 //           lock, writing the device row, and every sys_audit row §7.5 requires.
@@ -38,6 +38,8 @@ impl Node {
         self.audit_pair(sys::KIND_PAIR_OPENED, false, window.id(), &detail)?;
         let snapshot = window.snapshot(self.listen_url());
         self.pairing = Some(window);
+        // The `pair` key of the TXT record flips the moment a window opens (`§6.1`).
+        self.publish_facts()?;
         Ok(snapshot)
     }
 
@@ -71,6 +73,7 @@ impl Node {
             }))?;
             self.pairing = None;
             self.audit_pair(sys::KIND_PAIR_EXPIRED, false, &id, &detail)?;
+            self.publish_facts()?;
         }
         Ok(self.pairing.as_ref().map(|p| p.snapshot(self.listen_url())))
     }
@@ -90,6 +93,7 @@ impl Node {
             }))?;
             self.audit_pair(sys::KIND_PAIR_EXPIRED, false, window.id(), &detail)?;
         }
+        self.publish_facts()?;
         Ok(open)
     }
 
@@ -246,6 +250,7 @@ impl Node {
             window.consume(&device, now);
         }
         self.refresh()?;
+        self.publish_facts()?;
         Ok(paired)
     }
 

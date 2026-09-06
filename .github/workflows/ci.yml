@@ -1,6 +1,6 @@
 # Project:  Privatium™  |  File: .github/workflows/ci.yml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-08-31  |  Modified: 2026-09-05
+# Created:  2026-08-31  |  Modified: 2026-09-06
 # Summary:  The gate. Three platforms, because "runs on Linux, Windows and macOS from a
 #           single binary" is a Phase 1 acceptance bullet and finding out at M13 that the
 #           bundled SQLite build never worked on one of them would be too late.
@@ -124,6 +124,14 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           path: ${{ steps.artifact.outputs.path }}
+          archive: false
+          if-no-files-found: error
+
+      # The Windows portable zip (spec/cli.md §1): one file per step with `archive: false`.
+      - uses: actions/upload-artifact@v7
+        if: steps.artifact.outputs.portable != ''
+        with:
+          path: ${{ steps.artifact.outputs.portable }}
           archive: false
           if-no-files-found: error
 
