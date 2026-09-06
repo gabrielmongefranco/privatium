@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/data.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-05
+// Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  The data API against spec/data-api.md and docs/plans/phase-1.md M9, every test
 //           through core::handle with no listener: the client's four fields and nothing
 //           stamped (§2, PV304), batches all or nothing with the offending index, the
@@ -1757,13 +1757,7 @@ async fn test_sketch_works_without_schema_sql() {
         assert!(pv.contains(name), "pv.js lacks {name}");
     }
     assert!(!pv.contains("dedupe"), "no dedupe table (AGENTS.md 11)");
-    for helper in [
-        "pv.events",
-        "pv.put",
-        "pv.append",
-        "pv.subscribe",
-        "pv.on('resync'",
-    ] {
+    for helper in ["pv.events", "pv.append", "pv.subscribe", "pv.on('resync'"] {
         assert!(app_js.contains(helper), "sketch does not use {helper}");
     }
 

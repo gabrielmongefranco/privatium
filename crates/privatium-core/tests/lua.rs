@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/lua.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-05
+// Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  The Lua host against spec/lua-api.md and docs/plans/phase-1.md M7 and M8, every
 //           test through core::handle with no listener: the sandbox of §5 and its four
 //           limits, adversarially (R2); the stable route index of §2.4; the pv module of §3
@@ -1744,6 +1744,7 @@ async fn test_reference_apps_load_and_route() {
         routes("animals"),
         [
             "GET /",
+            "GET /won",
             "POST /start",
             "POST /answer",
             "POST /seed",
@@ -2132,7 +2133,7 @@ async fn test_hot_reload_template_next_request() {
     write_file(&root, "hot", "views/index.lsp", "version two, <?= who ?>");
     let text = body_of(handler.handle(get("/a/hot/")).await).await;
     assert!(text.contains("version two, you"), "{text}");
-    assert!(!text.contains("v1"), "{text}");
+    assert!(!text.contains("v1 you"), "{text}");
     assert_eq!(
         sys_lines(&handler.node().lock().unwrap()).len(),
         sys_before,

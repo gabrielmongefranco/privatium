@@ -20,19 +20,19 @@ From `shell.css` at this version, both schemes, computed with the linter's contr
 
 | Pair | Floor | Light | Dark |
 |---|---|---|---|
-| `--pv-fg` on `--pv-bg` | 4.5:1 | 16.13:1 | 14.91:1 |
-| `--pv-fg` on `--pv-panel` | 4.5:1 | 14.92:1 | 13.57:1 |
-| `--pv-fg` on `--pv-line` | 4.5:1 | 11.83:1 | 10.72:1 |
-| `--pv-muted` on `--pv-bg` | 4.5:1 | 6.13:1 | 7.42:1 |
-| `--pv-muted` on `--pv-panel` | 4.5:1 | 5.67:1 | 6.75:1 |
-| `--pv-accent-fg` on `--pv-accent` | 4.5:1 | 15.06:1 | 11.80:1 |
+| `--pv-fg` on `--pv-bg` | 4.5:1 | 15.04:1 | 16.29:1 |
+| `--pv-fg` on `--pv-panel` | 4.5:1 | 16.29:1 | 14.34:1 |
+| `--pv-fg` on `--pv-line` | 4.5:1 | 10.17:1 | 4.96:1 |
+| `--pv-muted` on `--pv-bg` | 4.5:1 | 7.45:1 | 10.25:1 |
+| `--pv-muted` on `--pv-panel` | 4.5:1 | 8.07:1 | 9.02:1 |
+| `--pv-accent-fg` on `--pv-accent` | 4.5:1 | 7.85:1 | 11.70:1 |
 | `--pv-warn-fg` on `--pv-warn-bg` | 4.5:1 | 7.15:1 | 10.24:1 |
 | `--pv-alert-fg` on `--pv-alert-bg` | 4.5:1 | 8.75:1 | 8.38:1 |
 | `--pv-ok-fg` on `--pv-ok-bg` | 4.5:1 | 7.24:1 | 8.41:1 |
-| `--pv-focus` on `--pv-bg` | 3:1 | 15.06:1 | 11.80:1 |
-| `--pv-focus` on `--pv-panel` | 3:1 | 13.93:1 | 10.73:1 |
-| `--pv-accent` on `--pv-bg` | 3:1 | 15.06:1 | 11.80:1 |
-| `--pv-accent` on `--pv-panel` | 3:1 | 13.93:1 | 10.73:1 |
-| `--pv-alert-fg` on `--pv-bg` | 3:1 | 10.28:1 | 10.56:1 |
-| `--pv-muted` on `--pv-bg` | 3:1 | 6.13:1 | 7.42:1 |
-| `--pv-muted` on `--pv-panel` | 3:1 | 5.67:1 | 6.75:1 |
+| `--pv-focus` on `--pv-bg` | 3:1 | 7.24:1 | 11.70:1 |
+| `--pv-focus` on `--pv-panel` | 3:1 | 7.85:1 | 10.30:1 |
+| `--pv-accent` on `--pv-bg` | 3:1 | 7.24:1 | 11.70:1 |
+| `--pv-accent` on `--pv-panel` | 3:1 | 7.85:1 | 10.30:1 |
+| `--pv-alert-fg` on `--pv-bg` | 3:1 | 9.49:1 | 9.58:1 |
+| `--pv-muted` on `--pv-bg` | 3:1 | 7.45:1 | 10.25:1 |
+| `--pv-muted` on `--pv-panel` | 3:1 | 8.07:1 | 9.02:1 |
