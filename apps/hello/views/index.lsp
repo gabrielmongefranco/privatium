@@ -2,8 +2,12 @@
      Summary: Greeting. Note <?= ?> escapes by default, so a name containing
               markup is displayed, never executed. --?>
 
+<link rel="stylesheet" href="<?= url('/static/hello.css') ?>">
+<div class="hello">
+<p class="hello-mark"><?= icon('chat-heart') ?></p>
 <? if not me then ?>
   <h1>We haven't met yet.</h1>
+  <p>Give me a name, and I'll remember it for next time.</p>
   <a class="pv-btn pv-btn-primary" href="<?= url('/edit') ?>">
     <?= icon('chat-heart') ?> Introduce yourself
   </a>
@@ -17,3 +21,4 @@
     <?= icon('pencil') ?> Change my name
   </a>
 <? end ?>
+</div>

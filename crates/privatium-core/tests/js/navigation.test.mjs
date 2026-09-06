@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/js/navigation.test.mjs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
+// Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  Encrypted HTMX dispatch and metadata-only document handoffs (§8.3.1).
 
 import { test } from 'node:test';
@@ -16,11 +16,13 @@ test('test_spec_8_3_integrity_uses_authenticated_bytes_and_refuses_unpinned_remo
   const fetcher = async () => { fetched++; return new Response(bytes); };
   assert.equal(await resourceIntegrity(new URL('http://192.0.2.1/static/app.js'), 'untrusted hash', fetcher), expected);
   assert.equal(fetched, 1);
+  assert.equal(await resourceIntegrity(new URL('http://192.0.2.1/a/hello/static/hello.css'), '', fetcher), expected);
+  assert.equal(fetched, 2);
   assert.equal(await resourceIntegrity(new URL('https://example.invalid/app.js'), expected, fetcher), expected);
   await assert.rejects(resourceIntegrity(new URL('https://example.invalid/app.js'), '', fetcher));
   await assert.rejects(resourceIntegrity(new URL('https://example.invalid/app.js'), 'sha256-a', fetcher));
   await assert.rejects(resourceIntegrity(new URL('javascript:alert(1)'), expected, fetcher));
-  assert.equal(fetched, 1);
+  assert.equal(fetched, 2);
 });
 
 test('test_spec_8_3_1_browser_stores_only_reference_and_consumes_before_attach', () => {

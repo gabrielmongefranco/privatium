@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/channel.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
+// Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  LAN bootstrap isolation, channel framing and authenticated routing.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -183,17 +183,19 @@ async fn test_spec_8_3_page_frame_scripts_carry_integrity() {
                 .to_vec(),
         )
         .unwrap();
+        assert!(html.contains("href=\"/static/shell.css\""));
+        assert!(html.contains("src=\"/static/htmx.min.js\""));
+        // The frame pins framework assets; the client hashes app assets received
+        // through the authenticated channel (spec/protocol.md §8.3).
         for tag in html
             .split('<')
             .filter(|tag| tag.starts_with("script ") || tag.starts_with("link rel=\"stylesheet\""))
         {
-            assert!(
-                tag.split('>')
-                    .next()
-                    .unwrap()
-                    .contains("integrity=\"sha256-"),
-                "{tag}"
-            );
+            let tag = tag.split('>').next().unwrap();
+            if !tag.contains("href=\"/static/") && !tag.contains("src=\"/static/") {
+                continue;
+            }
+            assert!(tag.contains("integrity=\"sha256-"), "{tag}");
         }
     }
 }

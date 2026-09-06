@@ -1,36 +1,78 @@
 /* Project: Privatium™ | File: apps/sketch/web/style.css
    Authors: Gabriel Mongefranco (@gabrielmongefranco)
-   Created: 2026-08-28 | Modified: 2026-09-05
-   Summary: The app's own styling. The framework injects no CSS into Tier 2. The
-            swatch colours live here rather than in style= attributes, which the
-            default CSP of spec/protocol.md §9.3 blocks. The canvas takes its size
-            from here; app.js only matches the backing store to it. Focus and the
-            selected swatch are navy on white (about 15:1), never maize on white;
-            the canvas's own focus ring is drawn inside its edge, since it fills
-            the viewport and a ring outside it would never be seen. */
-:root { --navy:#00274C; --maize:#FFCB05; --charcoal:#333333; --muted:#5b6270; --line:#5b6270; }
-* { box-sizing:border-box; margin:0; }
-body { font:16px/1.4 system-ui,sans-serif; overflow:hidden; background:#fff; color:#1d2129; }
-#pad { display:block; width:100vw; height:calc(100vh - 56px); touch-action:none; cursor:crosshair; }
-#tools { display:flex; gap:.75rem; align-items:center; height:56px; padding:0 1rem;
-         border-top:1px solid #ddd; background:#fafafa; }
-#tools h1 { font-size:1rem; font-weight:600; color:var(--navy); margin-right:.5rem; }
-.swatch { width:32px; height:32px; border:2px solid #fff; border-radius:50%;
-          cursor:pointer; box-shadow:0 0 0 1px var(--line); }
-.swatch-navy { background:var(--navy); }
-.swatch-maize { background:var(--maize); }
-.swatch-charcoal { background:var(--charcoal); }
-/* The current colour: a navy ring outside the white border, so it reads on all three. */
-.swatch[aria-pressed="true"] { box-shadow:0 0 0 3px var(--navy); }
-:focus-visible { outline:3px solid var(--navy); outline-offset:3px; }
-#pad:focus-visible { outline-offset:-3px; }
-button#clear { padding:.4rem .9rem; border:1px solid var(--navy); border-radius:6px;
-               background:#fff; color:var(--navy); cursor:pointer; font:inherit; }
-#summary { margin-left:auto; color:var(--muted); font-size:.875rem; }
-#status { color:var(--muted); font-size:.875rem; }
-/* Read by assistive technology, never drawn: the key hint the canvas is described by. */
-.visually-hidden { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0);
-                   clip-path:inset(50%); white-space:nowrap; }
+   Created: 2026-08-28 | Modified: 2026-09-06
+   Summary: A white drawing surface with wrapping tools and readable help. The
+            canvas's CSS size drives its backing store; controls never shrink
+            to make room. All colors stay in this external sheet for the CSP. */
+:root { --navy:#00274C; --maize:#FFCB05; --charcoal:#333333; --muted:#46515f; --line:#657181; --brand:#17212b; }
+* { box-sizing:border-box; }
+body { margin:0; min-height:100vh; min-height:100svh; display:flex; flex-direction:column; font:16px/1.5 system-ui,sans-serif; background:#f4f6f8; color:var(--brand); overflow-wrap:anywhere; }
+#tools { position:relative; z-index:2; align-self:center; display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; max-width:calc(100% - 1rem); margin:.75rem .5rem 0; padding:.375rem; border:1px solid var(--line); border-radius:.875rem; background:#fff; box-shadow:0 3px 8px #17212b12; }
+.app-header { display:flex; align-items:center; gap:1.25rem; padding:.25rem 1rem; background:#fff; border-bottom:1px solid #c7cdd4; }
+.app-header h1 { display:flex; align-items:center; gap:.5rem; font-size:1.125rem; margin:0; }
+svg { width:1.125rem; height:1.125rem; flex-shrink:0; vertical-align:-.15em; }
+.app-header h1 svg { color:#174ea6; }
+.tool-modes { display:flex; flex-wrap:wrap; gap:.25rem; }
+#exit { min-height:44px; display:inline-flex; align-items:center; padding:0 .5rem; gap:.5rem; color:inherit; text-underline-offset:.2em; }
+#exit[hidden] { display:none; }
+button, #colors > summary { min-height:44px; padding:.5rem .75rem; border:1px solid var(--line); border-radius:.5rem; background:#fff; color:var(--brand); cursor:pointer; font:inherit; }
+button { display:inline-flex; align-items:center; justify-content:center; gap:.5rem; }
+button:hover, #colors > summary:hover { background:#e8eef7; }
+.swatch[aria-pressed="true"] { outline:2px solid var(--brand); outline-offset:1px; text-decoration:underline; text-underline-offset:.2em; font-weight:700; }
+#colors { margin:0; }
+.tool-modes button { border-color:transparent; }
+.tool-modes button[aria-pressed="true"] { background:#174ea6; color:#fff; font-weight:650; text-decoration:underline; text-underline-offset:.2em; }
+#colors > summary svg { margin-right:.4rem; }
+.color-panel { position:absolute; z-index:2; top:100%; right:.5rem; width:min(24rem, calc(100% - 1rem)); padding:1rem; background:#fff; border:1px solid var(--line); border-radius:.5rem; box-shadow:0 .5rem 1rem #17212b26; }
+.palette { display:flex; flex-wrap:wrap; gap:.5rem; margin-bottom:1rem; }
+.color-picker { display:grid; grid-template-columns:auto minmax(0,1fr); gap:.75rem; align-items:center; }
+.color-picker input { min-height:44px; min-width:0; max-width:100%; font:inherit; border:1px solid var(--line); border-radius:.4rem; background:#fff; color:var(--brand); }
+#color { width:100%; padding:.2rem; }
+#hex { width:100%; padding:.5rem; }
+#color-error { color:#9b1c1c; }
+#color-error:empty { margin:0; }
+.swatch::before { content:""; width:1rem; height:1rem; flex-shrink:0; border:1px solid var(--line); border-radius:50%; }
+.swatch-navy::before { background:var(--navy); }
+.swatch-maize::before { background:var(--maize); }
+.swatch-charcoal::before { background:var(--charcoal); }
+:focus-visible { outline:3px solid var(--brand); outline-offset:3px; }
+#pad:focus-visible { outline-offset:-4px; }
+main { position:relative; flex:1; min-height:60vh; min-height:60svh; margin:.75rem clamp(.5rem, 2vw, 1.5rem); border:1px solid var(--line); border-radius:.5rem; background:#fff; box-shadow:0 2px 6px #17212b0d; }
+#pad { position:absolute; inset:0; display:block; width:100%; height:100%; touch-action:pinch-zoom; cursor:crosshair; }
+footer { display:flex; flex-wrap:wrap; align-items:center; gap:0 1rem; padding:.25rem 1rem; }
+footer p { margin:.25rem 0; max-width:70ch; }
+#summary, #status { color:var(--muted); font-size:.875rem; }
+#status:empty { display:none; }
+footer details { margin-left:auto; }
+footer details[open] { flex-basis:100%; }
+summary { min-height:44px; padding:.5rem 0; cursor:pointer; text-decoration:underline; text-underline-offset:.2em; }
+@media (max-width:30rem) {
+  #tools { padding:.5rem; }
+  .app-header { padding:.25rem .5rem; }
+  #tools { gap:.25rem; }
+  #tools button, #colors > summary { padding:.5rem; }
+  #colors { flex:1; }
+  #colors > summary { text-align:center; }
+  footer { padding:.25rem .5rem; }
+}
 @media (prefers-reduced-motion: reduce) {
   * { transition-duration:.01ms !important; animation-duration:.01ms !important; }
 }
+
+.swatch-red::before { background:#B42335; }
+.swatch-green::before { background:#147D64; }
+.swatch-blue::before { background:#2459CF; }
+
+.app-header { position:relative; flex-wrap:wrap; z-index:3; }
+#sketch-actions { margin-left:auto; }
+#sketch-actions > summary { padding:.5rem; }
+.action-panel { position:absolute; right:.5rem; top:100%; width:min(22rem, calc(100% - 1rem)); padding:1rem; border:1px solid var(--line); border-radius:.5rem; background:#fff; box-shadow:0 .5rem 1rem #17212b26; }
+.action-panel button { display:flex; width:100%; margin-bottom:.5rem; }
+.action-panel p { font-size:.875rem; color:var(--muted); margin:.5rem 0 0; }
+button:disabled { color:var(--muted); border-style:dashed; cursor:default; }
+
+.app-navigation { display:flex; align-items:center; gap:.25rem; margin-left:auto; }
+.app-navigation #exit { width:44px; justify-content:center; }
+#sketch-actions > summary { display:flex; align-items:center; justify-content:center; width:44px; height:44px; list-style:none; border:1px solid var(--line); border-radius:.4rem; }
+#sketch-actions > summary::-webkit-details-marker { display:none; }
+#sketch-actions > summary svg { width:1.5rem; height:1.5rem; }

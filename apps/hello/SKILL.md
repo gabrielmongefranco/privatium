@@ -25,6 +25,8 @@ Tier 1. Stores one name and greets you.
   an amendment rather than a second person. Do not mint a new ULID on save.
 - Every link goes through `url()`. This app works unmodified in solo mode.
 - Templates use `<?= ?>` only. There is no `<?raw ?>` here and there should not be.
+- `static/hello.css` uses the shell's color tokens. Keep form controls and focus rings
+  inherited rather than duplicating the shell stylesheet.
 
 ## Extending it
 

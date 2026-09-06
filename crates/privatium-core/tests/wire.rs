@@ -253,7 +253,7 @@ async fn test_spec_9_2_unauthenticated_leaks_nothing() {
         ))
         .await;
     assert_eq!(rebound.status(), StatusCode::FORBIDDEN);
-    // Loopback with a loopback Host, or no peer at all (in-process), is this node.
+    // Loopback with a loopback Host, or no peer at all (in-process), is this space.
     for request in [
         with_host(
             with_peer(get("/settings"), "127.0.0.1:40000"),
@@ -828,7 +828,7 @@ async fn test_launcher_shows_a_missing_folder_as_unavailable() {
 
 /// The four settings pages render what `docs/plans/phase-1.md` M6 lists: identity, the
 /// installed apps with their warnings and errors, the data directory with backup
-/// instructions, and this node's own device row with the Phase 2 note.
+/// instructions, and this space's own device row with the Phase 2 note.
 #[tokio::test]
 async fn test_settings_pages_render_the_node() {
     let root = tempfile::tempdir().unwrap();
@@ -887,6 +887,9 @@ async fn test_settings_pages_render_the_node() {
 
     let devices = body_of(handler.handle(get("/settings/devices")).await).await;
     assert!(devices.contains(&id), "{devices}");
-    assert!(devices.contains("this node"), "{devices}");
-    assert!(devices.contains("Pairing arrives in Phase 2"), "{devices}");
+    assert!(devices.contains("this space"), "{devices}");
+    assert!(
+        devices.contains("Connecting other devices is coming soon."),
+        "{devices}"
+    );
 }

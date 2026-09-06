@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/apps.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  What answers beneath an app's mount (spec/protocol.md §9.1). Tier 2: web/ served
 //           as-is with index.html at the mount point, streamed in 64 KiB frames, under that
 //           app's own CSP (spec/app-contract.md §5, §5.4). Tier 1: what a Lua handler
@@ -96,6 +96,7 @@ pub fn lua_response(
     answer: LuaResponse,
     title: &str,
     csrf_token: &str,
+    node_label: &str,
     csp: &str,
     solo: bool,
 ) -> Response {
@@ -116,7 +117,7 @@ pub fn lua_response(
                 let body = String::from_utf8_lossy(&html);
                 headers::html(
                     StatusCode::OK,
-                    shell::app_frame(title, solo, csrf_token, &body),
+                    shell::app_frame(title, solo, csrf_token, &body, node_label),
                 )
             }
         }

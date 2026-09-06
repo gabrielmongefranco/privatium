@@ -1,6 +1,6 @@
 /* Project:  Privatium™  |  File: crates/privatium-core/assets/shell/shell.css
  * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
- * Created:  2026-09-03  |  Modified: 2026-09-04
+ * Created:  2026-09-03  |  Modified: 2026-09-06
  * Summary:  The shell's only stylesheet — launcher, settings, error pages, and the frame a
  *           Tier 1 view renders inside. Served at /static/shell.css under the default CSP
  *           of spec/protocol.md §9.3, which is why nothing in the shell carries a style=
@@ -11,14 +11,14 @@
  */
 
 :root {
-  --pv-bg: #ffffff;
-  --pv-fg: #1d2129;
-  --pv-muted: #5b6270;
-  --pv-line: #d9dde3;
-  --pv-panel: #f5f6f8;
-  --pv-accent: #00274c;
+  --pv-bg: #f4f6f8;
+  --pv-fg: #17212b;
+  --pv-muted: #46515f;
+  --pv-line: #c7cdd4;
+  --pv-panel: #ffffff;
+  --pv-accent: #174ea6;
   --pv-accent-fg: #ffffff;
-  --pv-focus: #00274c;
+  --pv-focus: #174ea6;
   --pv-warn-bg: #fff6d6;
   --pv-warn-fg: #6b4e00;
   --pv-alert-bg: #fde8e8;
@@ -29,14 +29,14 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --pv-bg: #14171c;
-    --pv-fg: #e8eaee;
-    --pv-muted: #a0a7b3;
-    --pv-line: #2c323b;
-    --pv-panel: #1c2027;
-    --pv-accent: #ffcb05;
-    --pv-accent-fg: #14171c;
-    --pv-focus: #ffcb05;
+    --pv-bg: #17212b;
+    --pv-fg: #ffffff;
+    --pv-muted: #c5ced9;
+    --pv-line: #657181;
+    --pv-panel: #202b38;
+    --pv-accent: #c6dcff;
+    --pv-accent-fg: #17212b;
+    --pv-focus: #c6dcff;
     --pv-warn-bg: #3a2f08;
     --pv-warn-fg: #ffe08a;
     --pv-alert-bg: #4a1c1c;
@@ -52,12 +52,17 @@ html { color-scheme: light dark; }
 
 body {
   margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
   font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color: var(--pv-fg);
   background: var(--pv-bg);
 }
 
 a { color: inherit; }
+img { max-width: 100%; height: auto; }
+main, .pv-header, body > footer { overflow-wrap: anywhere; }
 
 /* The focus ring is the scheme's accent — navy on light, maize on dark — so it clears
    3:1 against the page and the panels in both; maize on white did not. */
@@ -87,28 +92,34 @@ a { color: inherit; }
 
 .pv-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 1rem;
-  padding: .75rem 1.25rem;
+  padding: .2rem max(.75rem, calc((100% - 62rem) / 2));
   border-bottom: 1px solid var(--pv-line);
-  background: var(--pv-panel);
+  background: #17212b;
+  color: #ffffff;
+  --pv-focus: #c6dcff;
 }
 .pv-header h1, .pv-header .pv-brand { font-size: 1.125rem; font-weight: 700; margin: 0; }
-.pv-header h1 a, .pv-header .pv-brand a { text-decoration: none; display: inline-flex; align-items: center; gap: .5rem; }
-.pv-header nav { margin-left: auto; display: flex; gap: .25rem; }
+.pv-header h1 a, .pv-header .pv-brand a { min-height: 44px; text-decoration: none; display: inline-flex; align-items: center; gap: .5rem; }
+.pv-header nav { margin-left: auto; display: flex; flex-wrap: wrap; gap: .25rem; }
 .pv-header nav a {
   display: inline-flex;
   align-items: center;
   gap: .4rem;
   padding: .4rem .7rem;
+  min-height: 44px;
   border-radius: 6px;
   text-decoration: none;
 }
-.pv-header nav a[aria-current="page"] { background: var(--pv-bg); border: 1px solid var(--pv-line); }
+.pv-header nav a[aria-current="page"] { background: #c6dcff; color: #17212b; text-decoration: underline; }
 
-main { max-width: 56rem; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+main { width: 100%; max-width: 64rem; margin: 0 auto; padding: clamp(1.5rem, 5vw, 3.5rem) clamp(.75rem, 3vw, 2rem) 3rem; flex: 1; min-width: 0; }
+main h1 { font-size: clamp(1.75rem, 1.3rem + 2vw, 2.75rem); line-height: 1.15; letter-spacing: -.025em; margin: 0 0 1.5rem; text-wrap: balance; }
 main h2 { font-size: 1.5rem; margin: 0 0 1rem; }
 main h3 { font-size: 1.125rem; margin: 1.5rem 0 .5rem; }
+main p { max-width: 65ch; }
 
 .pv-icon { vertical-align: -.125em; flex-shrink: 0; }
 
@@ -117,23 +128,27 @@ main h3 { font-size: 1.125rem; margin: 1.5rem 0 .5rem; }
   padding: 0;
   margin: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
   gap: 1rem;
 }
 .pv-launcher li a, .pv-launcher li .pv-unavailable {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  flex-direction: column;
   gap: .75rem;
-  padding: 1rem;
+  padding: 1.5rem;
+  height: 100%;
   border: 1px solid var(--pv-line);
   border-radius: 8px;
   text-decoration: none;
   background: var(--pv-panel);
 }
-.pv-launcher .pv-icon { font-size: 1.75rem; }
+.pv-launcher .pv-icon { font-size: 2rem; color: var(--pv-accent); }
+.pv-launcher li a:hover { border-color: var(--pv-accent); background: var(--pv-bg); }
+.pv-launcher li a > span { font-size: 1.25rem; font-weight: 650; }
 /* An unavailable app says so in words; dimming it would take its reason below 4.5:1. */
 .pv-launcher .pv-unavailable { border-style: dashed; }
-.pv-launcher small { display: block; color: var(--pv-muted); }
+.pv-launcher small { display: block; color: var(--pv-muted); font-size: 1rem; font-weight: 400; margin-top: .35rem; }
 
 .pv-subnav {
   display: flex;
@@ -165,7 +180,7 @@ pre { background: var(--pv-panel); padding: .75rem 1rem; border-radius: 6px; ove
   margin: 0 0 1rem;
   background: var(--pv-panel);
 }
-.pv-card h3 { margin-top: 0; display: flex; align-items: center; gap: .5rem; }
+.pv-card h3 { margin-top: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
 .pv-card dl { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; margin: 0; }
 .pv-card dt { color: var(--pv-muted); }
 .pv-card dd { margin: 0; overflow-wrap: anywhere; }
@@ -203,6 +218,10 @@ pre { background: var(--pv-panel); padding: .75rem 1rem; border-radius: 6px; ove
 .pv-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  max-width: 100%;
+  text-align: center;
   gap: .4rem;
   padding: .45rem .9rem;
   border: 1px solid var(--pv-accent);
@@ -227,6 +246,7 @@ form.pv-inline { display: inline; }
 .pv-empty, .pv-help, .pv-meta { color: var(--pv-muted); }
 .pv-help, .pv-meta { font-size: .875rem; }
 main footer.pv-meta { border-top: 1px solid var(--pv-line); margin-top: 2rem; padding: 1rem 0 0; text-align: left; }
+main footer.pv-meta a { display: inline-flex; align-items: center; gap: .35rem; min-height: 44px; }
 
 /* The error page: the traceback as it was written, the offending line marked by a
    glyph and aria-current, never by colour alone. */
@@ -236,11 +256,12 @@ main footer.pv-meta { border-top: 1px solid var(--pv-line); margin-top: 2rem; pa
 /* Forms in apps: one field per line, labels above. A control's border is the muted
    text colour, not the hairline: a boundary has to clear 3:1 too (PV406). */
 main form label { display: block; margin: .75rem 0 .25rem; font-weight: 600; }
-main form fieldset label { display: inline-flex; gap: .35rem; margin: .25rem 1rem .25rem 0; font-weight: 400; }
+main form fieldset label { display: inline-flex; align-items: center; min-height: 44px; gap: .5rem; margin: .25rem 1rem .25rem 0; font-weight: 400; }
 main form input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="file"]):not([type="range"]):not([type="color"]),
 main form select,
 main form textarea {
   font: inherit;
+  min-height: 44px;
   padding: .45rem .6rem;
   border: 1px solid var(--pv-muted);
   border-radius: 6px;
@@ -249,8 +270,80 @@ main form textarea {
   color: var(--pv-fg);
 }
 main form textarea { min-height: 6rem; }
-main form fieldset { border: 1px solid var(--pv-muted); border-radius: 6px; padding: .5rem 1rem; margin: 1rem 0; }
+main form fieldset { min-width: 0; border: 1px solid var(--pv-muted); border-radius: 6px; padding: .5rem 1rem; margin: 1rem 0; }
 main form button, main form .pv-btn { margin: .75rem .5rem 0 0; }
 
 body > footer { text-align: center; color: var(--pv-muted); font-size: .875rem; padding: 1rem; border-top: 1px solid var(--pv-line); }
 footer a { color: inherit; }
+
+.pv-settings > h2 { font-size: 2rem; letter-spacing: -.02em; }
+.pv-settings .pv-subnav {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  gap: .5rem;
+  padding: .5rem;
+  border: 1px solid var(--pv-line);
+  border-radius: .75rem;
+  background: var(--pv-panel);
+}
+.pv-settings .pv-subnav a { display: block; min-height: 44px; height: 100%; border-radius: .4rem; }
+.pv-settings .pv-subnav a:hover { text-decoration: underline; }
+.pv-settings .pv-subnav a[aria-current="page"] { background: var(--pv-accent); color: var(--pv-accent-fg); text-decoration: underline; text-underline-offset: .25em; }
+.pv-settings .pv-card { background: var(--pv-bg); padding: 1.5rem; margin-bottom: 1.5rem; }
+.pv-settings .pv-card h3 { padding-bottom: 1rem; margin-bottom: 1rem; border-bottom: 1px solid var(--pv-line); }
+.pv-settings .pv-card h3 > .pv-icon { color: var(--pv-accent); }
+.pv-settings .pv-card h3 .pv-badge { margin-left: auto; }
+.pv-settings .pv-card dl { grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr); gap: .65rem 1.5rem; }
+.pv-settings .pv-notice { margin-top: 1rem; }
+.pv-records { table-layout: fixed; }
+.pv-records td, .pv-records th { padding: .85rem .6rem; }
+.pv-records tbody tr:nth-child(odd) { background: var(--pv-panel); }
+.pv-cell-label { display: none; }
+
+/* Explicit table roles in the markup preserve semantics when rows stack. Column
+   headers stay available to readers; the repeated visual labels are aria-hidden. */
+@media (max-width: 40rem) {
+  .pv-settings .pv-card { padding: 1rem; }
+  .pv-settings .pv-card dl { grid-template-columns: minmax(0, 1fr); gap: .15rem; }
+  .pv-settings .pv-card dd { margin-bottom: .75rem; }
+  .pv-settings .pv-card h3 .pv-badge { margin-left: 0; }
+  .pv-records, .pv-records tbody, .pv-records tr, .pv-records td { display: block; width: 100%; }
+  .pv-records thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .pv-records tbody tr { border: 1px solid var(--pv-line); border-radius: .5rem; margin-bottom: 1rem; padding: .5rem; }
+  .pv-records td { border: 0; padding: .4rem .5rem; }
+  .pv-cell-label { display: block; color: var(--pv-muted); font-size: .875rem; font-weight: 600; margin-bottom: .15rem; }
+}
+
+/* Narrow screens keep full labels and target sizes; space comes from stacking. */
+@media (max-width: 30rem) {
+  .pv-header { gap: .5rem; }
+  .pv-header nav { margin-left: 0; width: 100%; }
+  .pv-card { padding: 1rem; }
+  .pv-card dl { grid-template-columns: minmax(0, 1fr); }
+  .pv-card dd { margin-bottom: .5rem; }
+  .pv-launcher li a, .pv-launcher li .pv-unavailable { padding: 1.25rem; }
+  .pv-actions > form { flex: 1 1 8rem; }
+  .pv-actions > form .pv-btn { width: 100%; margin: 0; }
+}
+
+/* Native disclosure keeps navigation keyboard-accessible without a script. */
+.pv-visually-hidden { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+.pv-brand-logo { width:132px; height:auto; }
+.pv-menu { position:relative; }
+.pv-menu summary { display:flex; align-items:center; justify-content:center; width:44px; min-height:44px; padding:.5rem; cursor:pointer; border:1px solid #c6dcff; border-radius:6px; list-style:none; }
+.pv-menu summary::-webkit-details-marker { display:none; }
+.pv-menu summary .pv-icon { width:1.5rem; height:1.5rem; }
+.pv-menu nav { position:absolute; z-index:5; right:0; top:100%; min-width:12rem; padding:.5rem; background:#17212b; border:1px solid #c6dcff; border-radius:6px; flex-direction:column; }
+.pv-menu nav a:hover { text-decoration:underline; }
+@media (max-width:30rem) {
+  .pv-header > nav { width:auto; margin-left:auto; }
+  .pv-brand-logo { width:112px; }
+  .pv-menu nav { width:min(16rem, calc(100vw - 2rem)); }
+}
+
+.pv-footer { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 1rem; text-align:left; }
+.pv-footer > a { display:inline-flex; align-items:center; min-height:44px; }
+.pv-footer-node { display:flex; align-items:center; gap:.5rem; margin-left:auto; min-width:0; max-width:100%; }
+.pv-footer-node > span { min-width:0; overflow-wrap:anywhere; text-align:right; }
+.pv-join { display:inline-flex; align-items:center; justify-content:center; width:44px; min-height:44px; flex-shrink:0; }
+.pv-join .pv-icon { width:1.25rem; height:1.25rem; }

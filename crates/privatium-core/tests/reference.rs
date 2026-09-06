@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/reference.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-05
+// Created:  2026-09-04  |  Modified: 2026-09-06
 // Summary:  docs/plans/phase-1.md M10 — the three reference apps end to end through
 //           core::handle with no listener, exactly as their READMEs describe them: hello
 //           (write, amend, break the cache, and the README's own `echo >>` line run for
@@ -839,11 +839,16 @@ async fn test_animals_works_with_javascript_disabled() {
         "a leaf stays a leaf"
     );
 
-    // The board's forms: method and action beside hx-post, the token in each.
+    // Writes retain POST and CSRF; the read-only win page uses GET in both paths.
     let page = board().await;
     let forms = a11y::parse(&page).find_all("form").len();
     assert!(forms >= 1, "{page}");
     for form in a11y::parse(&page).find_all("form") {
+        if form.attr("action") == Some("/a/animals/won") {
+            assert_eq!(form.attr("method"), Some("get"));
+            assert_eq!(form.attr("hx-get"), form.attr("action"));
+            continue;
+        }
         assert_eq!(form.attr("method"), Some("post"), "{page}");
         let action = form.attr("action").unwrap();
         assert!(action.starts_with("/a/animals/"), "{page}");
@@ -1003,7 +1008,6 @@ async fn test_sketch_end_to_end() {
     let app_js = fs::read_to_string(web.join("app.js")).unwrap();
     for call in [
         "pv.events({ tbl: 'stroke' })",
-        "pv.put(",
         "pv.append(",
         "pv.subscribe(",
         "pv.on('resync'",
@@ -1283,6 +1287,40 @@ async fn test_spec_cli_5_pv4xx_shell_pages() {
     assert!(page("/nope").contains("<code>/nope</code>"));
 }
 
+/// `spec/app-contract.md §3` — optional descriptions are text, including markup from
+/// an untrusted manifest; absent and blank descriptions fall back to the app slug.
+#[tokio::test]
+async fn test_spec_app_3_launcher_description_escaped_and_optional() {
+    let root = tempfile::tempdir().unwrap();
+    let apps = root.path().join("apps");
+    for (slug, extra) in [
+        (
+            "described",
+            "description = '<img src=x onerror=alert(1)>'\n",
+        ),
+        ("blank", "description = '   '\n"),
+        ("absent", ""),
+    ] {
+        write_app(
+            &apps,
+            slug,
+            Some(&format!("{}{extra}", lua_manifest(slug))),
+            &[("app.lua", "")],
+        );
+    }
+    let handler = handler_for(&root);
+    let page = body_of(handler.handle(get("/")).await).await;
+    assert!(
+        page.contains("&lt;img src=x onerror=alert(1)&gt;"),
+        "{page}"
+    );
+    assert!(!page.contains("<img src=x"), "{page}");
+    for slug in ["blank", "absent"] {
+        assert!(page.contains(&format!("<small>{slug}</small>")), "{page}");
+    }
+    assert_clean("launcher descriptions", &page, Unit::Document);
+}
+
 /// `spec/cli.md §5.4` — the Tier 1 page frame and the reference views meet the same
 /// rules: hello's greeting, form and error re-render; animals' board, teach and knowledge
 /// pages with the seed loaded; the `_board` fragment on its own (element checks only —
@@ -1444,25 +1482,26 @@ fn test_spec_cli_5_pv406_declared_tokens_meet_contrast() {
     let sketch =
         fs::read_to_string(repo_apps_dir().join("sketch").join("web").join("style.css")).unwrap();
     let tokens = &a11y::root_tokens(&sketch)[0];
-    let navy = &tokens["--navy"];
+    let ink = &tokens["--brand"];
     let muted = &tokens["--muted"];
-    assert!(a11y::contrast(navy, "#ffffff") >= 3.0, "focus on the page");
     assert!(
-        a11y::contrast(navy, "#fafafa") >= 3.0,
-        "focus on the toolbar"
+        a11y::contrast(ink, "#ffffff") >= 7.0,
+        "canvas focus and toolbar text"
     );
     assert!(
-        a11y::contrast(navy, "#ffffff") >= 4.5,
-        "the clear button's text"
+        a11y::contrast(muted, "#f4f6f8") >= 7.0,
+        "status text on its actual surface"
     );
-    assert!(a11y::contrast(muted, "#fafafa") >= 4.5, "the status text");
-    assert!(a11y::contrast("#1d2129", "#ffffff") >= 4.5, "body text");
+    assert!(
+        a11y::contrast(&tokens["--line"], "#ffffff") >= 3.0,
+        "control boundaries"
+    );
     let rules = a11y::rules(&sketch);
     let focus = rules
         .iter()
         .find(|(selector, _)| selector.contains(":focus-visible"))
         .expect(":focus-visible rule");
-    assert!(focus.1["outline"].contains("var(--navy)"), "{:?}", focus.1);
+    assert!(focus.1["outline"].contains("var(--brand)"), "{:?}", focus.1);
     assert!(
         rules
             .iter()
@@ -1470,4 +1509,55 @@ fn test_spec_cli_5_pv406_declared_tokens_meet_contrast() {
         "the current swatch is drawn from aria-pressed"
     );
     assert!(!sketch.contains("user-scalable"), "{sketch}");
+}
+
+/// A correct guess renders a win in both HTML paths without resetting or writing data.
+#[tokio::test]
+async fn test_animals_win_and_restart() {
+    let root = tempfile::tempdir().unwrap();
+    configure(&root, LUA_CONFIG);
+    let handler = handler_for(&root);
+    assert_eq!(
+        handler.handle(get("/a/animals/won")).await.status(),
+        StatusCode::SEE_OTHER
+    );
+    handler
+        .handle(posted(&handler, "/a/animals/seed", "animal=otter"))
+        .await;
+    let log = log_path(&handler, "animals");
+    let before = log_lines(&log);
+    let page = body_of(handler.handle(get("/a/animals/won")).await).await;
+    assert!(page.contains("<h1>I guessed it!</h1>"));
+    assert!(page.contains("Start over"));
+    assert_clean("win page", &page, Unit::Document);
+    let fragment = body_of(handler.handle(with_htmx(get("/a/animals/won"))).await).await;
+    assert!(fragment.contains("<h1>I guessed it!</h1>"));
+    assert!(!fragment.contains("pv-header"));
+    assert_eq!(log_lines(&log), before);
+    let restarted = body_of(
+        handler
+            .handle(with_htmx(posted(&handler, "/a/animals/start", "")))
+            .await,
+    )
+    .await;
+    assert!(restarted.contains("<h1>Is it a otter?</h1>"));
+    assert!(!restarted.contains("I guessed it!"));
+    assert_eq!(log_lines(&log).len(), before.len() + 1);
+}
+
+/// Footer labels remain text; navigation points to the repo and current settings placeholder.
+#[test]
+fn test_footer_node_label_is_escaped() {
+    let page = privatium_core::http::shell::app_frame(
+        "Example",
+        false,
+        "token",
+        "<h1>Example</h1>",
+        "<img src=x onerror=alert(1)>",
+    );
+    assert!(page.contains("&lt;img src=x onerror=alert(1)&gt;"));
+    assert!(!page.contains("<img src=x"));
+    assert!(page.contains("https://github.com/gabrielmongefranco/privatium"));
+    assert!(page.contains("Connect another space"));
+    assert_clean("footer", &page, Unit::Document);
 }

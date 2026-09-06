@@ -3,14 +3,22 @@
               HTMX swaps it and a full page reload would lose the scroll position
               and the focus ring for no reason.
 
-              Nothing on this page is Alpine: every control here writes an event. --?>
+              The board uses ordinary forms, enhanced by HTMX. --?>
 
 <?= render('_assets') ?>
 
+<div class="animals">
+<p class="animals-intro"><?= icon('diagram-3') ?> Think of an animal. Let's see if I can guess it.</p>
 <div id="board">
-  <?= render('_board', { node = node, stats = stats, err = err }) ?>
+  <?= render('_board', { node = node, stats = stats, err = err, won = won }) ?>
 </div>
 
-<footer class="pv-meta">
+<footer class="pv-meta animals-links">
   <a href="<?= url('/knowledge') ?>"><?= icon('list-ul') ?> What I know</a>
+  <form method="post" action="<?= url('/start') ?>"
+        hx-post="<?= url('/start') ?>" hx-target="#board">
+    <?= csrf() ?>
+    <button type="submit" class="pv-btn pv-btn-quiet"><?= icon('arrow-counterclockwise') ?> Start over</button>
+  </form>
 </footer>
+</div>

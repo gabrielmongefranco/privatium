@@ -27,6 +27,8 @@ no storage, sync, auth, or backup by doing so. See `spec/app-contract.md`.
 Each app also carries a `SKILL.md` describing its own schema and conventions, so an
 assistant extending it has the local context. See `docs/skills.md`.
 
+For layout and accessibility choices, see [Sample app design](../docs/sample-app-design.md).
+
 ## Bundled vs installed
 
 Apps in this directory are *bundled*: in a checkout they sit beside the binary and are on
