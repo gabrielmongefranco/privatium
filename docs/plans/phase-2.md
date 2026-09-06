@@ -1080,6 +1080,13 @@ that is neither `true` nor `false` keeps its mechanism off with that reason.
 `serve_discovery` is called after the bind rather than straight after `load_apps`,
 for the port. `Node::discovered()` exists for M19's node page; nothing prints it yet.
 
+The PR's macOS run exposed a latent flake in `pv.test.mjs`: two pages sharing one
+storage minted outbox ids in the same millisecond, and each page's monotonic counter
+knew nothing of the other's, so the replay order was the random tails'. `pv.js` now
+takes the newest adopted entry as its floor when it reads the storage, so a page
+mints past what another page queued; the test freezes the clock to make the case
+certain rather than probable.
+
 `mdns-sd` resolved to 0.21.2, the current patch of the 0.21.1 §5 planned; `default-features
 = false` drops its `async` and `logging` features, so `flume` comes without its async
 half and nothing logs. Its `if-addrs`, `socket2`, `mio` and `windows-sys` were already
