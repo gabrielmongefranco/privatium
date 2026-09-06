@@ -1192,8 +1192,10 @@ and `dev`, so the page knows the rank of what it wrote (rows 114–116;
   debug binary on an empty data directory serves the launcher and `/a/hello/` at 8420.
 - **`§7` asserted by name**: `.github/scripts/conformance.sh` runs the named tests with
   `--exact` and fails when fewer ran than were named.
-- **One binary per platform**: the release build is uploaded as a workflow artefact named
-  by its target triple, and a `v*` tag publishes the three as a GitHub release with `gh`.
+- **One binary per platform**: CI uploads a single-binary archive per operating
+  system. Publishing a GitHub release builds and attaches the same archive formats with
+  `gh`, after the latest push CI run for that exact commit succeeds. Tag pushes neither repeat CI
+  nor publish a release. See `docs/deployment.md §6`.
   No installer, no third-party release action. *Decided against embedding the reference
   apps in the binary:* `data-dictionary.md §3.4` gives "the package's folder at install"
   to packaging, which is Phase 6, and the fresh-clone check is from a checkout, where
@@ -1247,6 +1249,14 @@ they land.
 ---
 
 ## 8. Risks
+
+**Release workflow verification:** `python -m unittest discover -s .github/scripts
+-p test_release_tools.py` checks archive names, root entries, executable modes, byte
+preservation, missing binaries, unknown platforms and refusal without successful CI
+for the exact commit. A published-release run on GitHub is still required to verify
+all three hosted builds, direct artifact downloads and attachment permissions. The
+rendered packaging instructions still need a human keyboard, zoom and screen-reader
+pass. No release is published as part of local verification.
 
 **R1 — the bundled engine build.** *(Written for DuckDB; ADR 0006 replaced it with SQLite,
 whose amalgamation compiles in about a minute and closes this risk. Kept as written.)*

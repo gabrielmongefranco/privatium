@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     README.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-31
-Modified: 2026-09-05
+Modified: 2026-09-06
 Summary:  Overview, quick start, examples, and documentation index for Privatium.
 Copyright © 2026 Gabriel Mongefranco
 Privatium™ is a trademark of Gabriel Mongefranco.
@@ -40,11 +40,7 @@ pairing, sync, and remote access are being added in [Phases 2–5](docs/roadmap.
 
 You can run Privatium on Windows, macOS, or Linux. Lua and SQLite are included.
 
-1. **Download Privatium.** Choose the file for your computer from the
-   [releases page](https://github.com/gabrielmongefranco/privatium/releases). Before the
-   first release, development builds are available under **Artifacts** in successful
-   [CI runs](https://github.com/gabrielmongefranco/privatium/actions/workflows/ci.yml)
-   on `main` (GitHub sign-in required). Extract the download into a folder.
+1. **Download Privatium.** Download directly for your platform: [Windows](https://github.com/gabrielmongefranco/privatium/releases/latest/download/privatium-windows.zip), [macOS](https://github.com/gabrielmongefranco/privatium/releases/latest/download/privatium-mac.zip), [Linux](https://github.com/gabrielmongefranco/privatium/releases/latest/download/privatium.linux.tar.gz). After downloading, extract the `privatium` (or `privatium.exe` on Windows) binary to a folder of your choice.
 2. **Create a starter app.** Open a terminal in that folder and run:
 
    ```sh

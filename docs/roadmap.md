@@ -75,7 +75,7 @@ CI matrix runs every one on Linux, macOS and Windows:
 - [x] Runs on Linux, Windows and macOS from a single binary — the CI matrix runs the
       suite on all three, `test_r1_sqlite_bundled_links` and
       `test_r2_mlua_vendored_links_and_is_lua_54` prove the engines on each, and the
-      release binary is uploaded per target triple
+      release binary is uploaded in a single-binary archive per operating system
 
 ## Phase 2 — Other devices on the LAN
 

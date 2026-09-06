@@ -10,9 +10,10 @@ name: CI
 on:
   push:
     branches: [main]
-    # A `v*` tag runs the whole gate and then `release` below (plan M13).
-    tags: ['v*']
   pull_request:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -113,26 +114,17 @@ jobs:
           # against this number.
           echo "binary size: $(wc -c < "$binary") bytes ($binary)"
 
-      # docs/roadmap.md Phase 1, last bullet: one binary per platform, from CI, with no
-      # installer — that is Phase 6. Named by the host triple so the three never collide.
-      - name: Name the binary by its target
-        id: artifact
-        shell: bash
-        run: |
-          triple="$(rustc -vV | sed -n 's/^host: //p')"
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            name="privatium-${triple}.exe"
-            cp target/release/privatium.exe "$name"
-          else
-            name="privatium-${triple}"
-            cp target/release/privatium "$name"
-          fi
-          echo "name=$name" >> "$GITHUB_OUTPUT"
+      - name: Release tooling tests
+        run: python -m unittest discover -s .github/scripts -p test_release_tools.py
 
-      - uses: actions/upload-artifact@v4
+      - name: Package the binary
+        id: artifact
+        run: python .github/scripts/release_tools.py package "${{ runner.os }}"
+
+      - uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.artifact.outputs.name }}
-          path: ${{ steps.artifact.outputs.name }}
+          path: ${{ steps.artifact.outputs.path }}
+          archive: false
           if-no-files-found: error
 
   # A second opinion from current stable, so a compiler change that will break us lands
@@ -157,28 +149,3 @@ jobs:
       - uses: actions/checkout@v4
       - uses: taiki-e/install-action@cargo-deny
       - run: cargo deny check
-
-  # A `v*` tag publishes the three binaries the matrix built as a GitHub release —
-  # packaging-lite (plan M13): the artefacts as they are, attached with `gh`, which every
-  # hosted runner carries, rather than a third-party action. Installers are Phase 6.
-  release:
-    name: release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [check, stable, deny]
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: privatium-*
-          merge-multiple: true
-          path: dist
-      - name: Publish the release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          ls -l dist
-          gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes

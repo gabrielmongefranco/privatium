@@ -1,0 +1,99 @@
+# Project:  Privatium™  |  File: .github/workflows/release.yml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  Build a tested release commit and attach single-binary archives.
+
+name: Release binaries
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.release.id }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Resolve the release commit
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Require successful CI for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.commit.outputs.sha }}
+        run: python .github/scripts/release_tools.py check-ci "$RELEASE_SHA"
+
+  build:
+    needs: ci
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.ci.outputs.sha }}
+          persist-credentials: false
+      - name: Install the pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release binary
+        run: cargo build -p privatium --release --locked
+      - name: Smoke test executable
+        shell: bash
+        run: |
+          binary=target/release/privatium
+          if [ "$RUNNER_OS" = Windows ]; then binary="$binary.exe"; fi
+          "$binary" --version
+          "$binary" skill list
+      - name: Package the binary
+        id: artifact
+        run: python .github/scripts/release_tools.py package "${{ runner.os }}"
+      - uses: actions/upload-artifact@v7
+        with:
+          path: ${{ steps.artifact.outputs.path }}
+          archive: false
+          if-no-files-found: error
+
+  attach:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: privatium*
+          merge-multiple: true
+          skip-decompress: true
+          path: dist
+      - name: Attach binaries to the published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            dist/privatium-mac.zip dist/privatium-windows.zip dist/privatium.linux.tar.gz \
+            --clobber

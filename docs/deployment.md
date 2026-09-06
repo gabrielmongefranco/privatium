@@ -155,14 +155,36 @@ sidestep this entirely. For browsers, one resolvable name across every path is t
 
 ## 6. Packaging
 
-| Stage | Artifact | Notes |
+Download the archive for your operating system from a published GitHub release or
+from an individual artifact in a successful CI run. Extract it once; there is no
+containing folder inside the archive.
+
+| Operating system | Archive | Contents |
 |---|---|---|
-| Now | Linux tarballs (x86_64, aarch64) | |
-| Now | AppImage | The "download and run" story |
-| Now | `.exe` / `.msi` | Bundle the WebView2 bootstrapper for older Windows |
-| Now | `.app` | Notarization improves the firewall prompt as well as Gatekeeper |
-| Next | `.deb`, `.rpm` | Trivial once the binary is stable |
-| Later | Flatpak | `--share=network` for mDNS; data under XDG or the portal; never `--filesystem=host` |
+| macOS | `privatium-mac.zip` | `privatium` |
+| Windows | `privatium-windows.zip` | `privatium.exe` |
+| Linux | `privatium.linux.tar.gz` | `privatium` |
+
+These are native builds on GitHub's `macos-latest`, `windows-latest` and
+`ubuntu-latest` runners, respectively. The shorter names do not imply universal
+architecture support. Apps are separate; the binary includes Lua and SQLite.
+Installers, AppImage, Flatpak and signed or notarized packages remain Phase 6 work.
+
+### 6.1 Publishing binaries
+
+1. Let CI pass on the commit you intend to release on `main`. CI runs on pushes to
+   `main` and pull requests; release builds require a push run for the exact commit.
+   Creating a release tag does not repeat CI.
+2. Publish a GitHub release for that commit. The **Release binaries** workflow also
+   handles prereleases. Pushing a tag alone does not create a release.
+3. The workflow checks the latest matching push CI run, builds the three binaries
+   with the pinned Rust toolchain and `Cargo.lock`, smoke-tests them, and attaches
+   the archives. It does not repeat the full test suite.
+
+If matching CI is missing, pending or unsuccessful, the release remains published
+without new binaries. Let CI pass, then rerun **Release binaries** from Actions.
+Rerunning replaces only these three named assets; release notes and other assets stay
+as they are. The workflow must be present in the released commit.
 
 ---
 
