@@ -1,7 +1,7 @@
 <?-- Project: Privatium™ | apps/animals/views/_board.lsp
      Summary: The game board, on its own so HTMX can swap it.
 
-     THIS IS THE HTMX HALF OF THE APP. Everything in here changes data: a guess
+     THIS IS THE HTMX HALF OF THE APP. Forms that change data include a guess
      answered, an animal planted, a round restarted. Each one is a form that posts
      and is replaced by the server's rendering of the new state.
 
@@ -13,7 +13,18 @@
   <p class="pv-error" role="alert"><?= icon('exclamation-triangle') ?> <?= err ?></p>
 <? end ?>
 
-<? if not node then ?>
+<? if won then ?>
+
+  <p class="animals-win-mark" aria-hidden="true"><?= icon('trophy') ?></p>
+  <h1>I guessed it!</h1>
+  <p>You were thinking of a <?= node.text ?>. Want to play again?</p>
+  <form method="post" action="<?= url('/start') ?>"
+        hx-post="<?= url('/start') ?>" hx-target="#board">
+    <?= csrf() ?>
+    <button type="submit" class="pv-btn pv-btn-primary"><?= icon('arrow-counterclockwise') ?> Start over</button>
+  </form>
+
+<? elseif not node then ?>
 
   <h1>I don't know any animals yet.</h1>
   <?-- hx-target="#board": the server returns this partial and it replaces itself. --?>
@@ -50,9 +61,8 @@
 
   <h1>Is it a <?= node.text ?>?</h1>
   <div class="pv-actions">
-    <form method="post" action="<?= url('/start') ?>"
-          hx-post="<?= url('/start') ?>" hx-target="#board">
-      <?= csrf() ?>
+    <form method="get" action="<?= url('/won') ?>"
+          hx-get="<?= url('/won') ?>" hx-target="#board">
       <button type="submit" class="pv-btn pv-btn-primary">
         <?= icon('check-lg') ?> Yes — you got it
       </button>

@@ -17,8 +17,12 @@ It exists to prove one thing: **the framework does not impose an application mod
 | `schema.sql` | **No.** This app has no tables. |
 | A build step | **No.** Plain ES modules; `app.js` is what ships. |
 
-`app.toml` is ~20 lines. `web/` is three files: an HTML page, a stylesheet, and 80 lines of
-JavaScript. That is the entire app.
+`web/` contains an HTML page, a stylesheet and three small JavaScript modules.
+Together with `app.toml`, that is the entire app.
+
+The toolbar wraps on small screens and labels every color. Open **How to draw** for
+keyboard instructions. Help and status text stay readable when zoomed; see
+[Sample app design](../../docs/sample-app-design.md) for the layout and its limits.
 
 ## What the framework still gives it
 

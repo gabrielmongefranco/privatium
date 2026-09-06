@@ -9,6 +9,7 @@
 
 <?= render('_assets') ?>
 
+<div class="animals">
 <h1>I give up. What was it?</h1>
 
 <? if err then ?>
@@ -64,3 +65,4 @@
   <button type="submit" class="pv-btn pv-btn-primary">Teach me</button>
   <a class="pv-btn" href="<?= url('/') ?>">Cancel</a>
 </form>
+</div>

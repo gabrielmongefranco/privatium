@@ -1,23 +1,34 @@
 /*
  * Project:  Privatium™  |  File: apps/sketch/web/app.js
  * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
- * Created:  2026-08-28  |  Modified: 2026-09-05
- * Summary:  The whole app. Plain ES modules — no build step, no framework,
+ * Created:  2026-08-28  |  Modified: 2026-09-06
+ * Summary:  Drawing, controls and event replay. Plain ES modules — no build step, no framework,
  *           no SQL. The event log is used directly as a document store. A
  *           stroke holds the pointer's capture from down to up, so ending
  *           it off the canvas still saves it; the keyboard draws too, and a
  *           live summary says what the canvas holds.
  */
 import { pv } from '/static/pv.js';
+import { hitsStroke } from './strokes.js';
+import { SketchHistory } from './history.js';
 
 const pad = document.getElementById('pad');
 const ctx = pad.getContext('2d');
 const status = document.getElementById('status');
 const summary = document.getElementById('summary');
-const NAMES = { '#00274C': 'navy', '#FFCB05': 'maize', '#333333': 'charcoal' };
+const NAMES = { '#00274C': 'navy', '#FFCB05': 'maize', '#333333': 'charcoal', '#B42335': 'red', '#147D64': 'green', '#2459CF': 'blue', '#FFFFFF': 'white eraser' };
 let color = '#00274C';
+let mode = 'draw';
+let erasePointer = null;
 let drawing = null;
 function say(text) { status.textContent = text; }
+
+const exit = document.getElementById('exit');
+exit.href = pv.url(pv.mount === '/' ? 'settings' : '../../');
+const exitLabel = pv.mount === '/' ? 'Settings' : 'Apps';
+exit.setAttribute('aria-label', exitLabel);
+exit.title = exitLabel;
+exit.hidden = false;
 
 // The CSS sizes the canvas (style.css); this matches the backing store to that size at
 // the device's pixel ratio. Sizing from innerWidth instead would draw a 125 % or 200 %
@@ -31,28 +42,41 @@ function fit() {
   ctx.lineCap = ctx.lineJoin = 'round';
   redrawAll();
 }
-addEventListener('resize', fit);
 
 // ---- rendering -----------------------------------------------------------
-const strokes = new Map();          // id -> {points, color, width}
+const history = new SketchHistory(events => pv.append(events), () => pv.ulid());
+const strokes = history.strokes;
+const undo = document.getElementById('undo');
+function refresh() { summarize(); redrawAll(); undo.disabled = !history.undoStack.length; }
+function closePanels() { document.querySelectorAll('details[open]').forEach(el => { el.open = false; }); }
+function newStroke(x, y, width = 3) {
+  closePanels();
+  return { points:[[x, y]], color:mode === 'erase' ? '#FFFFFF' : color, width:mode === 'erase' ? 24 : width };
+}
 
-function paint(s) {
-  ctx.strokeStyle = s.color;
-  ctx.lineWidth = s.width;
-  ctx.beginPath();
-  s.points.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
-  ctx.stroke();
+function paint(s, context = ctx) {
+  context.strokeStyle = s.color;
+  context.lineWidth = s.width;
+  context.beginPath();
+  if (s.points.length === 1) {
+    context.fillStyle = s.color;
+    context.arc(s.points[0][0], s.points[0][1], s.width / 2, 0, Math.PI * 2);
+    context.fill();
+    return;
+  }
+  s.points.forEach(([x, y], i) => (i ? context.lineTo(x, y) : context.moveTo(x, y)));
+  context.stroke();
 }
 
 function redrawAll() {
   ctx.clearRect(0, 0, pad.clientWidth, pad.clientHeight);
-  for (const s of strokes.values()) paint(s);
+  for (const [, s] of history.entries()) paint(s);
   if (drawing) paint(drawing);
   drawPen();
 }
 
 // The text of the drawing, for the summary the canvas is described by: how many strokes,
-// in which colours. Refreshed whenever the set of strokes changes, from any source.
+// in which colors. Refreshed whenever the set of strokes changes, from any source.
 function summarize() {
   const counts = new Map();
   for (const s of strokes.values()) counts.set(s.color, (counts.get(s.color) || 0) + 1);
@@ -68,9 +92,12 @@ function summarize() {
 // the in-progress slot before the append is awaited, so one begun meanwhile is not
 // cleared by this one's handler.
 pad.addEventListener('pointerdown', e => {
+  if (history.busy || e.button !== 0) return;
+  closePanels();
+  if (mode === 'stroke') { erasePointer = e.pointerId; return; }
   if (drawing) return;
   pad.setPointerCapture(e.pointerId);
-  drawing = { points: [[e.offsetX, e.offsetY]], color, width: e.pressure ? e.pressure * 8 : 3 };
+  drawing = newStroke(e.offsetX, e.offsetY, e.pressure ? e.pressure * 8 : 3);
 });
 
 pad.addEventListener('pointermove', e => {
@@ -84,13 +111,35 @@ async function finish() {
   const stroke = drawing;
   drawing = null;
   const id = pv.ulid();
-  strokes.set(id, stroke);
-  summarize();
-  // One append: a durable line in a text file you can read — and, from Phase 3, on every
-  // device you own.
-  await pv.put('stroke', id, stroke);
+  try {
+    const result = await history.change([{op:'put', tbl:'stroke', id, d:stroke}]);
+    say(result?.queued ? 'Offline — stroke queued.' : 'Stroke saved.');
+  } catch (error) { say(`Could not save stroke. ${error.message}`); }
+  refresh();
 }
-for (const end of ['pointerup', 'pointercancel', 'lostpointercapture']) pad.addEventListener(end, finish);
+pad.addEventListener('pointerup', e => {
+  if (erasePointer === e.pointerId) {
+    erasePointer = null;
+    eraseAt(e.offsetX, e.offsetY);
+  } else finish();
+});
+for (const end of ['pointercancel', 'lostpointercapture']) pad.addEventListener(end, () => {
+  erasePointer = null;
+  finish();
+});
+
+// A tombstone removes the topmost hit stroke from every window without rewriting it.
+async function eraseAt(x, y) {
+  const hit = history.entries().reverse().find(([, stroke]) => hitsStroke(stroke, x, y));
+  if (!hit) { say('No stroke here to erase.'); return; }
+  try {
+    const result = await history.change([{ op: 'del', tbl: 'stroke', id: hit[0] }]);
+    refresh();
+    say(result?.queued ? 'Offline — erasure queued.' : 'Stroke erased.');
+  } catch {
+    say('Could not erase the stroke. Try again.');
+  }
+}
 
 // ---- keyboard ------------------------------------------------------------
 // A drawing must not need a pointer (WCAG 2.5.7, and the accessibility skill's rule that
@@ -102,7 +151,7 @@ const pen = { x: 40, y: 40 };
 function drawPen() {
   if (document.activeElement !== pad) return;
   ctx.save();
-  ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+  ctx.strokeStyle = '#00274C'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
   ctx.beginPath();
   ctx.moveTo(pen.x - 10, pen.y); ctx.lineTo(pen.x + 10, pen.y);
   ctx.moveTo(pen.x, pen.y - 10); ctx.lineTo(pen.x, pen.y + 10);
@@ -122,8 +171,11 @@ pad.addEventListener('keydown', e => {
     case ' ':
     case 'Enter':
       e.preventDefault();
-      if (drawing) { finish(); say('Pen up. Stroke saved.'); }
-      else { drawing = { points: [[pen.x, pen.y]], color, width: 3 }; say('Pen down.'); }
+      if (history.busy) return;
+      closePanels();
+      if (mode === 'stroke') { eraseAt(pen.x, pen.y); return; }
+      if (drawing) { finish(); }
+      else { drawing = newStroke(pen.x, pen.y); say('Pen down.'); }
       redrawAll();
       return;
     case 'Escape':
@@ -139,21 +191,95 @@ pad.addEventListener('keydown', e => {
   redrawAll();
 });
 
-// The current colour is state the page shows, not only a variable: aria-pressed on the
+// The current color is state the page shows, not only a variable: aria-pressed on the
 // swatch is what a screen reader announces and what style.css draws the ring from.
 const swatches = document.querySelectorAll('.swatch');
-swatches.forEach(b =>
-  b.onclick = () => {
-    color = b.dataset.color;
-    swatches.forEach(s => s.setAttribute('aria-pressed', String(s === b)));
-  });
-
-document.getElementById('clear').onclick = async () => {
-  const ids = [...strokes.keys()];
-  strokes.clear();
-  summarize();
+const picker = document.getElementById('color');
+const hex = document.getElementById('hex');
+const eraser = document.getElementById('eraser');
+const wholeStroke = document.getElementById('erase-stroke');
+const draw = document.getElementById('draw');
+draw.onclick = () => chooseColor(color);
+function chooseColor(value) {
+  if (!/^#[0-9a-f]{6}$/i.test(value)) {
+    document.getElementById('color-error').textContent = 'Enter # followed by six hexadecimal digits, such as #008080.';
+    hex.setAttribute('aria-invalid', 'true');
+    return;
+  }
+  color = value.toUpperCase();
+  picker.value = color;
+  hex.value = color;
+  hex.removeAttribute('aria-invalid');
+  document.getElementById('color-error').textContent = '';
+  setMode('draw');
+  swatches.forEach(s => s.setAttribute('aria-pressed', String(s.dataset.color === color)));
+  say(`Pen color: ${NAMES[color] || color}.`);
+}
+picker.addEventListener('input', () => chooseColor(picker.value));
+hex.addEventListener('change', () => chooseColor(hex.value));
+hex.addEventListener('keydown', e => { if (e.key === 'Enter') chooseColor(hex.value); });
+function setMode(value) {
+  drawing = null;
+  mode = value;
+  draw.setAttribute('aria-pressed', String(mode === 'draw'));
+  eraser.setAttribute('aria-pressed', String(mode === 'erase'));
+  wholeStroke.setAttribute('aria-pressed', String(mode === 'stroke'));
+  swatches.forEach(s => s.setAttribute('aria-pressed', String(mode === 'draw' && s.dataset.color === color)));
+  say(mode === 'erase' ? 'Eraser: draw with white ink.' : mode === 'stroke'
+    ? 'Stroke eraser: tap a stroke or press Space over it.' : 'Draw selected.');
   redrawAll();
-  await pv.append(ids.map(id => ({ op: 'del', tbl: 'stroke', id })));
+}
+eraser.onclick = () => setMode('erase');
+wholeStroke.onclick = () => setMode('stroke');
+swatches.forEach(b =>
+  b.onclick = () => chooseColor(b.dataset.color));
+
+undo.onclick = async () => {
+  if (drawing) { drawing = null; refresh(); say('Stroke in progress discarded.'); return; }
+  try {
+    const result = await history.undo();
+    refresh();
+    say(result?.queued ? 'Offline — undo queued.' : 'Action undone.');
+  } catch (error) { say(error.message); }
+};
+document.getElementById('clear').onclick = async () => {
+  drawing = null;
+  try {
+    const result = await history.change([...strokes.keys()].map(id => ({op:'del', tbl:'stroke', id})));
+    refresh();
+    closePanels();
+    pad.focus();
+    say(result?.queued ? 'Offline — new sketch queued.' : 'New sketch ready. Undo restores the previous drawing in this tab.');
+  } catch (error) { say(`Could not start a new sketch. ${error.message}`); }
+};
+// Render saved strokes on an opaque white surface; omit the keyboard crosshair.
+document.getElementById('download').onclick = () => {
+  const output = document.createElement('canvas');
+  const entries = history.entries();
+  let width = pad.clientWidth, height = pad.clientHeight;
+  for (const [, stroke] of entries) {
+    for (const [x, y] of stroke.points) {
+      width = Math.max(width, x + stroke.width / 2);
+      height = Math.max(height, y + stroke.width / 2);
+    }
+  }
+  width = Math.ceil(width); height = Math.ceil(height);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width * height > 16000000) {
+    say('Drawing is too large to export. PNG export is limited to 16 million pixels.'); return;
+  }
+  output.width = width; output.height = height;
+  const context = output.getContext('2d');
+  context.fillStyle = '#FFFFFF'; context.fillRect(0, 0, width, height);
+  context.lineCap = context.lineJoin = 'round';
+  entries.forEach(([, stroke]) => paint(stroke, context));
+  output.toBlob(blob => {
+    if (!blob) { say('Could not create PNG. Try again.'); return; }
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.href = url; link.download = 'sketch.png'; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    say('PNG download requested.');
+  }, 'image/png');
 };
 
 // ---- live updates --------------------------------------------------------
@@ -162,9 +288,8 @@ document.getElementById('clear').onclick = async () => {
 // tab was closed.
 pv.subscribe(ev => {
   if (ev.tbl !== 'stroke') return;
-  if (ev.op === 'del') { strokes.delete(ev.id); redrawAll(); }
-  else { strokes.set(ev.id, ev.d); paint(ev.d); }
-  summarize();
+  history.apply(ev);
+  refresh();
 });
 
 pv.on('offline', () => say('Offline — your strokes are queued.'));
@@ -175,8 +300,9 @@ pv.on('online',  () => say(''));
 // resync, which is the node saying its cache was rebuilt underneath us.
 async function load() {
   strokes.clear();
+  history.order.clear();
   for await (const ev of pv.events({ tbl: 'stroke' })) {
-    if (ev.op === 'del') strokes.delete(ev.id); else strokes.set(ev.id, ev.d);
+    history.apply(ev);
   }
   summarize();
   redrawAll();
@@ -184,3 +310,5 @@ async function load() {
 pv.on('resync', load);
 await load();
 fit();
+// Help, status text and wrapping tools can resize the canvas without a window resize.
+new ResizeObserver(fit).observe(pad);

@@ -19,6 +19,7 @@
 
 <?= render('_assets') ?>
 
+<div class="animals">
 <h1>What I know</h1>
 
 <? if #rows == 0 then ?>
@@ -67,7 +68,7 @@
        one plain form underneath, nothing persisted either way. With JavaScript
        off the first button is gone and the form is shown: one step instead of
        two, and the write is still yours to make. --?>
-  <div x-data="confirmable">
+  <div class="animals-reset" x-data="confirmable">
     <button type="button" class="pv-btn pv-btn-danger pv-js-only" x-on:click="ask">
       <?= icon('trash') ?> Forget everything
     </button>
@@ -88,3 +89,4 @@
 <footer class="pv-meta">
   <a href="<?= url('/') ?>"><?= icon('arrow-left') ?> Back to the game</a>
 </footer>
+</div>

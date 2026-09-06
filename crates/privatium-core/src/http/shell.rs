@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/shell.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-05
+// Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  The framework's own pages — launcher, settings, errors — as server-rendered HTML
 //           with HTMX and inlined Bootstrap Icons (docs/architecture.md §2.5, docs/icons.md).
 //           No client framework, no bundler, no inline script or style: every page renders
@@ -79,7 +79,7 @@ enum Active {
 /// The shell's own page frame. `solo` drops the launcher link: there is no launcher to
 /// link to.
 fn layout(title: &str, active: Active, solo: bool, body: &str) -> String {
-    page(title, active, solo, true, "", body)
+    page(title, active, solo, true, "", body, None)
 }
 
 /// The frame a Tier 1 view renders inside when it calls no `layout()`
@@ -88,12 +88,26 @@ fn layout(title: &str, active: Active, solo: bool, body: &str) -> String {
 /// `hx-headers` on the body so every htmx request beneath the mount carries the CSRF
 /// token — which is what lets an `hx-delete` button, with no form, pass the host's check.
 #[must_use]
-pub fn app_frame(title: &str, solo: bool, csrf_token: &str, body: &str) -> String {
+pub fn app_frame(
+    title: &str,
+    solo: bool,
+    csrf_token: &str,
+    body: &str,
+    node_label: &str,
+) -> String {
     let attrs = format!(
         " hx-headers='{{\"X-CSRF-Token\":\"{}\"}}'",
         escape(csrf_token)
     );
-    page(title, Active::None, solo, false, &attrs, body)
+    page(
+        title,
+        Active::None,
+        solo,
+        false,
+        &attrs,
+        body,
+        Some(node_label),
+    )
 }
 
 /// The document around a body: head, header, main, footer. `brand_heading` makes the
@@ -105,6 +119,7 @@ fn page(
     brand_heading: bool,
     body_attrs: &str,
     body: &str,
+    node_label: Option<&str>,
 ) -> String {
     let mut out = String::with_capacity(body.len() + 2048);
     out.push_str("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
@@ -140,9 +155,8 @@ fn page(
     };
     let _ = write!(
         out,
-        "<header class=\"pv-header\">\n{brand_open}<a href=\"/\">{} Privatium</a>{brand_close}\n\
-         <nav aria-label=\"Framework\">\n",
-        icon("grid-3x3-gap")
+        "<header class=\"pv-header\">\n{brand_open}<a href=\"/\"><img class=\"pv-brand-logo\" src=\"/static/privatium-logo-light.svg\" alt=\"\" width=\"160\" height=\"34\"><span class=\"pv-visually-hidden\">Privatium</span></a>{brand_close}\n\
+         <nav aria-label=\"Framework\">\n"
     );
     if !solo {
         let _ = writeln!(
@@ -152,19 +166,36 @@ fn page(
             icon("grid-3x3-gap")
         );
     }
-    let _ = writeln!(
+    let _ = write!(
         out,
-        "<a href=\"/settings\"{}>{} Settings</a>",
-        current(active == Active::Settings),
-        icon("gear")
+        "<details class=\"pv-menu\"><summary aria-label=\"Menu\" title=\"Menu\">{}</summary><nav aria-label=\"All pages\">",
+        icon("list")
     );
+    if !solo {
+        out.push_str("<a href=\"/\">Apps</a>");
+    }
+    out.push_str("<a href=\"/settings\">Space settings</a><a href=\"/settings/apps\">App settings</a><a href=\"/settings/data\">Data settings</a><a href=\"/settings/devices\">Devices</a></nav></details>");
     out.push_str("</nav>\n</header>\n<main id=\"main\">\n");
     out.push_str(body);
-    out.push_str(
-        "\n</main>\n<footer>Privatium — <code>pv/1</code>, Phase 1: this node listens on \
-                  loopback only; LAN access arrives with pairing.</footer>\n</body>\n</html>\n",
+    let _ = write!(
+        out,
+        "\n</main>\n<footer class=\"pv-footer\"><a href=\"https://github.com/gabrielmongefranco/privatium\">Privatium</a>\n<div class=\"pv-footer-node\"><span>{}</span><a class=\"pv-join\" href=\"/settings\" aria-label=\"Connect another space — opens Space settings\" title=\"Connect another space (coming soon)\">{}</a></div></footer>\n</body>\n</html>\n",
+        escape(node_label.unwrap_or("")),
+        icon("qr-code")
     );
     out
+}
+
+fn node_layout(
+    cx: &Context<'_>,
+    title: &str,
+    active: Active,
+    solo: bool,
+    body: &str,
+) -> Result<String> {
+    let label = crate::http::api::display_name(cx.node)?
+        .unwrap_or_else(|| cx.node.id().as_str().to_owned());
+    Ok(page(title, active, solo, true, "", body, Some(&label)))
 }
 
 fn current(active: bool) -> &'static str {
@@ -193,7 +224,7 @@ pub fn launcher(cx: &Context<'_>) -> Result<String> {
             "<p class=\"pv-muted\">No apps yet. Copy an app folder into <code>apps/</code> under \
              the data directory (see <a href=\"/settings/data\">Data and backup</a>) and restart.</p>",
         );
-        return Ok(layout("Apps", Active::Launcher, false, &body));
+        return node_layout(cx, "Apps", Active::Launcher, false, &body);
     }
     body.push_str("<ul class=\"pv-launcher\">\n");
     for (slug, title, glyph, last_error) in rows {
@@ -201,13 +232,19 @@ pub fn launcher(cx: &Context<'_>) -> Result<String> {
         let glyph = glyph.as_deref().unwrap_or(crate::icons::FALLBACK);
         match cx.node.app(&slug).and_then(|app| app.mount()) {
             Some(mount) => {
+                let description = cx
+                    .node
+                    .app(&slug)
+                    .and_then(|app| app.manifest().app.description.as_deref())
+                    .filter(|text| !text.trim().is_empty())
+                    .unwrap_or(&slug);
                 let _ = writeln!(
                     body,
                     "<li><a href=\"{}\">{}<span>{}<small>{}</small></span></a></li>",
                     escape(&url(mount, "")),
                     icon(glyph),
                     escape(&title),
-                    escape(&slug)
+                    escape(description)
                 );
             }
             None => {
@@ -225,14 +262,14 @@ pub fn launcher(cx: &Context<'_>) -> Result<String> {
         }
     }
     body.push_str("</ul>\n");
-    Ok(layout("Apps", Active::Launcher, false, &body))
+    node_layout(cx, "Apps", Active::Launcher, false, &body)
 }
 
 /// One of the four settings pages.
 pub fn settings(cx: &Context<'_>, page: SettingsPage, notice: Option<&Notice>) -> Result<String> {
     let solo = cx.node.config().node.mode == Mode::Solo;
     let mut body = String::from(
-        "<h2>Settings</h2>\n<nav aria-label=\"Settings\">\n<ul class=\"pv-subnav\">\n",
+        "<div class=\"pv-settings\"><h2>Settings</h2>\n<nav aria-label=\"Settings\">\n<ul class=\"pv-subnav\">\n",
     );
     for item in SettingsPage::ALL {
         let _ = writeln!(
@@ -259,7 +296,8 @@ pub fn settings(cx: &Context<'_>, page: SettingsPage, notice: Option<&Notice>) -
         SettingsPage::Data => data_page(cx, &mut body),
         SettingsPage::Devices => devices_page(cx, &mut body)?,
     }
-    Ok(layout(page.title(), Active::Settings, solo, &body))
+    body.push_str("</div>\n");
+    node_layout(cx, page.title(), Active::Settings, solo, &body)
 }
 
 fn node_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
@@ -286,13 +324,13 @@ fn node_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
 
     body.push_str("<div class=\"pv-card\"><h3>");
     body.push_str(&icon("info-circle"));
-    body.push_str(" This node</h3>\n<dl>\n");
-    dl(body, "Node ID", &code(node.id().as_str()));
+    body.push_str(" This space</h3>\n<dl>\n");
+    dl(body, "Space ID", &code(node.id().as_str()));
     dl(
         body,
         "Display name",
         &display_name.map_or_else(
-            || "<span class=\"pv-muted\">not set — the Node ID stands in for it</span>".to_owned(),
+            || "<span class=\"pv-muted\">not set — the Space ID stands in for it</span>".to_owned(),
             |name| escape(&name),
         ),
     );
@@ -326,8 +364,7 @@ fn node_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
         body,
         "Listening",
         &format!(
-            "<code>http://127.0.0.1:{}/</code> — loopback only; LAN access arrives with pairing \
-             (Phase 2)",
+            "<code>http://127.0.0.1:{}/</code> — this device only. Network access is coming soon.",
             config.port
         ),
     );
@@ -351,16 +388,22 @@ fn node_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
         body.push_str("<p class=\"pv-muted\">No alerts in the last 200 audit rows.</p>\n");
     } else {
         body.push_str(
-            "<table><thead><tr><th scope=\"col\">When</th><th scope=\"col\">Kind</th>\
-             <th scope=\"col\">Subject</th><th scope=\"col\">Detail</th></tr></thead><tbody>\n",
+            "<table class=\"pv-records\" role=\"table\" aria-label=\"Recent alerts\"><thead role=\"rowgroup\"><tr role=\"row\"><th scope=\"col\">When</th><th scope=\"col\">Kind</th>\
+             <th scope=\"col\">Subject</th><th scope=\"col\">Detail</th></tr></thead><tbody role=\"rowgroup\">\n",
         );
         for (at, kind, subject, detail) in alerts {
             let _ = writeln!(
                 body,
-                "<tr><td>{}</td><td><span class=\"pv-badge pv-badge-alert\">{} {}</span></td><td>{}</td><td><code>{}</code></td></tr>",
+                "<tr role=\"row\"><td role=\"cell\"><span class=\"pv-cell-label\" aria-hidden=\"true\">When</span>{}</td>\
+                 <td role=\"cell\"><span class=\"pv-cell-label\" aria-hidden=\"true\">Kind</span><span class=\"pv-badge pv-badge-alert\">{} {}</span></td>\
+                 <td role=\"cell\"><span class=\"pv-cell-label\" aria-hidden=\"true\">Subject</span>{}</td>\
+                 <td role=\"cell\"><span class=\"pv-cell-label\" aria-hidden=\"true\">Detail</span><code>{}</code></td></tr>",
                 escape(at.as_deref().unwrap_or("")),
                 icon("shield-exclamation"),
-                escape(kind.as_deref().unwrap_or("")),
+                escape(match kind.as_deref() {
+                    Some("node") => "space",
+                    other => other.unwrap_or(""),
+                }),
                 escape(subject.as_deref().unwrap_or("")),
                 escape(detail.as_deref().unwrap_or(""))
             );
@@ -490,7 +533,7 @@ fn apps_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
                 });
             }
             dl(body, "Tables", &tables);
-            dl(body, "Events (this node)", &app.log().seq().to_string());
+            dl(body, "Events (this space)", &app.log().seq().to_string());
         }
         body.push_str("</dl>\n");
 
@@ -523,7 +566,7 @@ fn apps_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
                 "<form class=\"pv-inline\" method=\"post\" action=\"{action}\" hx-post=\"{action}\" \
                  hx-target=\"body\" hx-push-url=\"true\">{}<button type=\"submit\" class=\"pv-btn pv-btn-primary\">\
                  {} Load sample data</button> <span class=\"pv-muted\">synthetic events from \
-                 <code>sample/seed.jsonl</code>, appended as this node's; only offered while the \
+                 <code>sample/seed.jsonl</code>, appended as this space's; only offered while the \
                  app has no events</span></form>",
                 cx.csrf.field(&action),
                 icon("plus-lg"),
@@ -624,7 +667,7 @@ fn data_page(cx: &Context<'_>, body: &mut String) {
     );
     dl(
         body,
-        "Your node's key",
+        "Your space's key",
         &format!(
             "{} — back up separately and privately; leaking it is worse than losing it",
             code(&paths.identity_dir().display().to_string())
@@ -681,20 +724,22 @@ fn devices_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
     )?;
     body.push_str("<div class=\"pv-notice pv-notice-info\">");
     body.push_str(&icon("qr-code"));
+    body.push_str("<div>Connecting other devices is coming soon.</div></div>\n");
     body.push_str(
-        "<div>Pairing arrives in Phase 2. Until then this node is the only device: it listens on \
-         loopback, and every request is its own.</div></div>\n",
-    );
-    body.push_str(
-        "<table><thead><tr><th scope=\"col\">Device</th><th scope=\"col\">Kind</th>\
-         <th scope=\"col\">Replica</th><th scope=\"col\">Label</th><th scope=\"col\">Paired</th>\
-         <th scope=\"col\">Last seen</th></tr></thead><tbody>\n",
+        "<table class=\"pv-records\" role=\"table\" aria-label=\"Devices\"><thead role=\"rowgroup\"><tr role=\"row\"><th scope=\"col\">Device</th><th scope=\"col\">Kind</th>\
+         <th scope=\"col\">Replica</th><th scope=\"col\">Label</th><th scope=\"col\">Connected</th>\
+         <th scope=\"col\">Last seen</th></tr></thead><tbody role=\"rowgroup\">\n",
     );
     for (id, kind, replica, label, paired_at, last_seen) in rows {
         let this_node = id == node.id().as_str();
         let _ = writeln!(
             body,
-            "<tr><td>{} <code>{}</code>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
+            "<tr role=\"row\"><td role=\"cell\"><span class=\"pv-cell-label\" aria-hidden=\"true\">Device</span>{} <code>{}</code>{}</td>\
+             <td role=\"cell\"><span class=\"pv-cell-label\" aria-hidden=\"true\">Kind</span>{}</td>\
+             <td role=\"cell\"><span class=\"pv-cell-label\" aria-hidden=\"true\">Replica</span>{}</td>\
+             <td role=\"cell\"><span class=\"pv-cell-label\" aria-hidden=\"true\">Label</span>{}</td>\
+             <td role=\"cell\"><span class=\"pv-cell-label\" aria-hidden=\"true\">Connected</span>{}</td>\
+             <td role=\"cell\"><span class=\"pv-cell-label\" aria-hidden=\"true\">Last seen</span>{}</td></tr>",
             if kind.as_deref() == Some("node") {
                 icon("hdd-network")
             } else {
@@ -702,11 +747,14 @@ fn devices_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
             },
             escape(&id),
             if this_node {
-                " <span class=\"pv-badge pv-badge-ok\">this node</span>"
+                " <span class=\"pv-badge pv-badge-ok\">this space</span>"
             } else {
                 ""
             },
-            escape(kind.as_deref().unwrap_or("")),
+            escape(match kind.as_deref() {
+                Some("node") => "space",
+                other => other.unwrap_or(""),
+            }),
             match replica {
                 Some(true) => "yes",
                 Some(false) => "no",

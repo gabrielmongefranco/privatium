@@ -1,7 +1,7 @@
 <!--
   Project:  Privatium™  |  File: apps/sketch/web/index.html
   Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-  Created:  2026-08-28  |  Modified: 2026-09-05
+  Created:  2026-08-28  |  Modified: 2026-09-06
   Summary:  Tier 2 entry point. The framework serves this file verbatim at
             the app's mount point and injects nothing. No HTMX, no shell,
             no opinions. The swatches are classes, not style= attributes:
@@ -21,20 +21,83 @@
 <title>Sketch</title>
 <link rel="stylesheet" href="style.css">
 
+<header class="app-header">
+
+  <h1><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-pencil" viewBox="0 0 16 16">
+  <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325"/>
+</svg>Sketch</h1>
+  <nav class="app-navigation" aria-label="App navigation">
+  <a id="exit" aria-label="Apps" title="Apps" hidden><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-grid-3x3-gap" viewBox="0 0 16 16">
+  <path d="M4 2v2H2V2zm1 12v-2a1 1 0 0 0-1-1H2a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1m0-5V7a1 1 0 0 0-1-1H2a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1m0-5V2a1 1 0 0 0-1-1H2a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1m5 10v-2a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1m0-5V7a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1m0-5V2a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1M9 2v2H7V2zm5 0v2h-2V2zM4 7v2H2V7zm5 0v2H7V7zm5 0h-2v2h2zM4 12v2H2v-2zm5 0v2H7v-2zm5 0v2h-2v-2zM12 1a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zm-1 6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1zm1 4a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1z"/>
+</svg></a>
+  <details id="sketch-actions">
+    <summary aria-label="Sketch actions" title="Sketch actions"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-list" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5"/>
+</svg></summary>
+    <div class="action-panel">
+      <button id="download" type="button">Download PNG</button>
+      <button id="clear" type="button">New sketch</button>
+      <p>New sketch clears the shared canvas. Undo restores it in this tab.</p>
+    </div>
+  </details>
+  </nav>
+</header>
+<nav id="tools" aria-label="Drawing tools">
+  <div class="tool-modes" role="group" aria-label="Drawing mode">
+    <button id="draw" type="button" aria-pressed="true"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-pencil" viewBox="0 0 16 16">
+  <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325"/>
+</svg>Draw</button>
+    <button id="eraser" type="button" aria-pressed="false"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-eraser" viewBox="0 0 16 16">
+  <path d="M8.086 2.207a2 2 0 0 1 2.828 0l3.879 3.879a2 2 0 0 1 0 2.828l-5.5 5.5A2 2 0 0 1 7.879 15H5.12a2 2 0 0 1-1.414-.586l-2.5-2.5a2 2 0 0 1 0-2.828zm2.121.707a1 1 0 0 0-1.414 0L4.16 7.547l5.293 5.293 4.633-4.633a1 1 0 0 0 0-1.414zM8.746 13.547 3.453 8.254 1.914 9.793a1 1 0 0 0 0 1.414l2.5 2.5a1 1 0 0 0 .707.293H7.88a1 1 0 0 0 .707-.293z"/>
+</svg>Eraser</button>
+    <button id="erase-stroke" type="button" aria-pressed="false"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-node-minus" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M11 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8M6.025 7.5a5 5 0 1 1 0 1H4A1.5 1.5 0 0 1 2.5 10h-1A1.5 1.5 0 0 1 0 8.5v-1A1.5 1.5 0 0 1 1.5 6h1A1.5 1.5 0 0 1 4 7.5zM1.5 7a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5zM8 8a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5A.5.5 0 0 1 8 8"/>
+</svg>Stroke eraser</button>
+  </div>
+  <details id="colors">
+    <summary><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-palette" viewBox="0 0 16 16">
+  <path d="M8 5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3m4 3a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3M5.5 7a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0m.5 6a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3"/>
+  <path d="M16 8c0 3.15-1.866 2.585-3.567 2.07C11.42 9.763 10.465 9.473 10 10c-.603.683-.475 1.819-.351 2.92C9.826 14.495 9.996 16 8 16a8 8 0 1 1 8-8m-8 7c.611 0 .654-.171.655-.176.078-.146.124-.464.07-1.119-.014-.168-.037-.37-.061-.591-.052-.464-.112-1.005-.118-1.462-.01-.707.083-1.61.704-2.314.369-.417.845-.578 1.272-.618.404-.038.812.026 1.16.104.343.077.702.186 1.025.284l.028.008c.346.105.658.199.953.266.653.148.904.083.991.024C14.717 9.38 15 9.161 15 8a7 7 0 1 0-7 7"/>
+</svg>Colors</summary>
+    <div class="color-panel">
+  <div class="palette" role="group" aria-label="Pen color">
+    <button data-color="#00274C" class="swatch swatch-navy" aria-label="Navy" aria-pressed="true">Navy</button>
+    <button data-color="#FFCB05" class="swatch swatch-maize" aria-label="Maize" aria-pressed="false">Maize</button>
+    <button data-color="#B42335" class="swatch swatch-red" aria-label="Red" aria-pressed="false">Red</button>
+    <button data-color="#147D64" class="swatch swatch-green" aria-label="Green" aria-pressed="false">Green</button>
+    <button data-color="#2459CF" class="swatch swatch-blue" aria-label="Blue" aria-pressed="false">Blue</button>
+    <button data-color="#333333" class="swatch swatch-charcoal" aria-label="Charcoal" aria-pressed="false">Charcoal</button>
+  </div>
+  <div class="color-picker">
+    <label for="color">Color</label>
+    <input id="color" type="color" value="#00274c">
+    <label for="hex">Hex color</label>
+    <input id="hex" type="text" value="#00274C" maxlength="7" pattern="#[0-9a-fA-F]{6}" spellcheck="false" aria-describedby="color-error">
+  </div>
+  <p id="color-error" aria-live="polite"></p>
+    </div>
+  </details>
+  <button id="undo" type="button" disabled><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-counterclockwise" viewBox="0 0 16 16">
+  <path fill-rule="evenodd" d="M8 3a5 5 0 1 1-4.546 2.914.5.5 0 0 0-.908-.417A6 6 0 1 0 8 2z"/>
+  <path d="M8 4.466V.534a.25.25 0 0 0-.41-.192L5.23 2.308a.25.25 0 0 0 0 .384l2.36 1.966A.25.25 0 0 0 8 4.466"/>
+</svg>Undo</button>
+</nav>
+
 <main>
   <canvas id="pad" aria-label="Shared drawing canvas" tabindex="0" aria-describedby="keys summary"></canvas>
-  <p id="keys" class="visually-hidden">Arrow keys move the pen, Shift moves it farther. Space or Enter puts the pen down and lifts it. Escape discards the stroke in progress.</p>
 </main>
 
-<nav id="tools" aria-label="Tools">
-  <h1>Sketch</h1>
-  <button data-color="#00274C" class="swatch swatch-navy" aria-label="Navy" aria-pressed="true"></button>
-  <button data-color="#FFCB05" class="swatch swatch-maize" aria-label="Maize" aria-pressed="false"></button>
-  <button data-color="#333333" class="swatch swatch-charcoal" aria-label="Charcoal" aria-pressed="false"></button>
-  <button id="clear" aria-label="Clear the canvas">Clear</button>
-  <span id="summary" aria-live="polite"></span>
-  <span id="status" role="status"></span>
-</nav>
+<footer>
+  <p id="summary" aria-live="polite"></p>
+  <p id="status" role="status"></p>
+  <details>
+    <summary>Help</summary>
+    <p>Draw on the canvas with a mouse or one finger. Choose a color above.</p>
+    <p>Use Color to open the color picker, or enter a hex color such as #008080. Choose Eraser to paint with white ink, or Stroke eraser, then tap a stroke to remove it entirely. From the keyboard, move the pen onto a stroke and press Space or Enter. Choose a color to draw again.</p>
+    <p id="keys">Arrow keys move the pen, Shift moves it farther. Space or Enter puts the pen down and lifts it. Escape discards the stroke in progress.</p>
+    <p>Undo reverses up to 50 actions from this tab until you reload. Sketch actions offers Download PNG and New sketch. Download before starting over if you want a separate copy.</p>
+  </details>
+</footer>
 
 <script type="module" src="app.js"></script>
 </html>

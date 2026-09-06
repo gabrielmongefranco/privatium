@@ -1,6 +1,6 @@
 -- Project:  Privatium™  |  File: apps/animals/app.lua
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
--- Created:  2026-08-28  |  Modified: 2026-09-03
+-- Created:  2026-08-28  |  Modified: 2026-09-06
 -- Summary:  The guess-the-animal game. Demonstrates multi-event atomic writes,
 --           recursive SQL, stored session state, and the HTMX/Alpine boundary.
 
@@ -42,6 +42,15 @@ end
 
 pv.get('/', function()
   return pv.render('play', { node = here(), stats = tree.stats() })
+end)
+
+-- Winning is a presentation state; starting over is the action that moves the cursor.
+pv.get('/won', function(req)
+  local node = here()
+  if not node or node.kind ~= 'a' then return pv.redirect(url('/')) end
+  return pv.render(req.is_htmx and '_board' or 'play', {
+    node = node, stats = tree.stats(), won = true,
+  })
 end)
 
 -- Start a fresh round at the root.

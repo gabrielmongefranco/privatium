@@ -50,6 +50,8 @@ Two things worth noticing, because both look like exceptions and are not:
   enhancement on top, and `board()` in `app.lua` returns a fragment or a redirect
   depending on `req.is_htmx`. Do not delete either branch: without the redirect,
   recording a guess would require JavaScript.
+- After HTMX replaces the board, `static/animals.js` focuses its new heading. Preserve
+  that keyboard starting point so Tab reaches the next answers.
 - **Every write is reachable with JavaScript off**, including the ones Alpine hides.
   `views/_assets.lsp` links `static/nojs.css` from a `<noscript>`; it reverts
   `x-cloak` and hides `.pv-js-only`. Mark a button whose only effect is Alpine state
@@ -107,3 +109,7 @@ input.
   is already loaded — do not vendor a second copy.
 
 Run `privatium lint apps/animals` before finishing.
+
+A correct guess uses the read-only `/won` route, rendering the same win state with
+or without HTMX. Start over posts to `/start` with CSRF protection and preserves
+learned animals; the win message itself writes no event.

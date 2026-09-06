@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/assets.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-05
+// Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  /static/* (spec/protocol.md §9.1): the shell's own assets, embedded from
 //           assets/shell/ — stylesheet, htmx, pv.js, and browser session modules.
 
@@ -39,10 +39,16 @@ pub struct Asset {
     pub content_type: &'static str,
 }
 
-/// The asset at `/static/<rest>`, if the shell ships one. Only stylesheets and scripts
+/// The asset at `/static/<rest>`, if the shell ships one. Only the named brand logo, stylesheets and scripts
 /// are served; nested paths are confined to the vendored Noble module directory.
 #[must_use]
 pub fn get(rest: &str) -> Option<Asset> {
+    if rest == "privatium-logo-light.svg" {
+        return Some(Asset {
+            bytes: include_bytes!("../../../../assets/branding/privatium-logo-light.svg"),
+            content_type: "image/svg+xml",
+        });
+    }
     if rest.contains('\\')
         || rest.split('/').any(|part| {
             part.is_empty()
@@ -95,6 +101,12 @@ mod tests {
             "{} bytes: spec/data-api.md §5 says under 12 KB, unminified, no build",
             pv.bytes.len()
         );
+        assert_eq!(
+            get("privatium-logo-light.svg").unwrap().content_type,
+            "image/svg+xml"
+        );
+        assert!(get("../privatium-logo-light.svg").is_none());
+        assert!(get("unknown.svg").is_none());
         assert!(get("VENDOR.md").is_none());
         assert!(get("../icons/LICENSE").is_none());
     }

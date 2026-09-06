@@ -54,7 +54,7 @@ impl SettingsPage {
     #[must_use]
     pub fn title(self) -> &'static str {
         match self {
-            Self::Node => "Node",
+            Self::Node => "Space",
             Self::Apps => "Apps",
             Self::Data => "Data and backup",
             Self::Devices => "Devices",

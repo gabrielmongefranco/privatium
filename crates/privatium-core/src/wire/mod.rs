@@ -503,6 +503,12 @@ impl Handler {
                             Plan::Lua(LuaPlan {
                                 host: Arc::clone(host),
                                 title: app.title().to_owned(),
+                                node_label: match api::display_name(&node) {
+                                    Ok(name) => {
+                                        name.unwrap_or_else(|| node.id().as_str().to_owned())
+                                    }
+                                    Err(error) => return self.failure(&error),
+                                },
                                 csp,
                                 conn,
                                 facts: node_facts(&node, slug),
@@ -673,9 +679,14 @@ impl Handler {
         let outcome = tokio::task::spawn_blocking(move || host.run(index, lua_request, ctx)).await;
 
         let response = match outcome {
-            Ok(Ok(answer)) => {
-                apps::lua_response(answer, &plan.title, &plan.csrf_token, &plan.csp, solo)
-            }
+            Ok(Ok(answer)) => apps::lua_response(
+                answer,
+                &plan.title,
+                &plan.csrf_token,
+                &plan.node_label,
+                &plan.csp,
+                solo,
+            ),
             Ok(Err(RunError::Limit { kind, detail })) => {
                 let audit = serde_json::json!({
                     "app": slug,
@@ -950,6 +961,7 @@ struct LuaPlan {
     host: Arc<Host>,
     /// `app.toml`'s title, for the page frame.
     title: String,
+    node_label: String,
     csp: String,
     conn: rusqlite::Connection,
     facts: NodeFacts,

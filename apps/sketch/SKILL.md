@@ -46,10 +46,14 @@ A drawing is not a pointer-only or a sight-only thing here, and a change must ke
 - **What happens is said.** The `#status` region (`role="status"`) announces focus (with
   the keys), pen down, pen up and saved, discarded, and the offline state.
 - **What is drawn is described.** `#summary` (`aria-live="polite"`) says how many strokes
-  the canvas holds in which colours, refreshed on load, on every stroke from any source,
+  the canvas holds in which colors, refreshed on load, on every stroke from any source,
   and on clear; the canvas is `aria-describedby` it and the key hint.
-- The swatches announce the current colour through `aria-pressed`; the viewport stays
-  zoomable; focus is navy on white.
+- The swatches announce the current color through `aria-pressed`; the viewport stays
+  zoomable; focus is near-black on white.
+- Color buttons have visible names and never shrink below their touch size. Tools wrap;
+  status and native expandable help remain in the page flow, with no clipped overflow.
+- A `ResizeObserver` calls `fit()` when the canvas changes size, including when help
+  opens. Keep stored pixel coordinates unchanged when adjusting the layout.
 
 Two things to keep when touching the canvas: size it in `style.css`, and let `fit()` in
 `app.js` match the backing store to `clientWidth`/`clientHeight` at `devicePixelRatio`.
@@ -57,3 +61,20 @@ Sizing from `innerWidth` draws past the viewport on every HiDPI display. And nev
 gesture — a drag, a swipe, a pinch — without a single-key or button way to do the same.
 
 Run `privatium lint apps/sketch` before finishing.
+
+The native color picker has a labelled hex-field alternative. Stroke eraser appends a
+tombstone for the topmost hit; keyboard Space or Enter uses the same hit test.
+
+Keep the main toolbar compact. Color controls belong in the native Colors
+disclosure, and instructions belongs in Help. The canvas keeps
+at least 60% of the viewport height; opening colors overlays it without resizing.
+
+Keep app navigation in the header, separate from drawing controls. Tool icons are
+inline Bootstrap SVGs with visible text labels; their shapes are decorative to
+assistive technology. Draw and Stroke eraser expose their mode with aria-pressed.
+
+Undo uses compensating events and fresh IDs when restoring deleted strokes. The
+optional stroke `layer` retains its original drawing order across those restorations.
+Keep undo local to this tab and bounded to 50 actions. New sketch clears the shared
+canvas; it does not introduce a document library. PNG export uses an opaque white
+background and excludes the keyboard cursor. Sketch actions groups export and New sketch.
