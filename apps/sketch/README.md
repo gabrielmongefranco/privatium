@@ -2,9 +2,10 @@
 
 A shared canvas. Draw in one browser window and it shows up in another. A page already
 open can queue strokes while disconnected and replay them on reconnect. A plain-HTTP
-LAN page cannot load anew while the node is offline. The encrypted channel is available
-in Phase 2 M17; the pairing screen for phones remains planned for M19. Draw with a pointer, or from the keyboard: focus the canvas, move the pen with
-the arrow keys, put it down with Space.
+LAN page cannot load anew while the node is offline. A phone on the same network pairs
+by scanning the QR code the node prints and tapping four emoji, then draws on the same
+canvas over the encrypted channel. Draw with a pointer, or from the keyboard: focus the
+canvas, move the pen with the arrow keys, put it down with Space.
 
 It exists to prove one thing: **the framework does not impose an application model.**
 
@@ -37,7 +38,6 @@ The framework provides:
 
 What arrives with the later phases of `docs/roadmap.md`, with nothing to change here:
 
-- **Discovery** (Phase 2) — the phone finds the node with no URL typed
 - **Sync** (Phase 3) — strokes reach every paired device over LAN, iroh, or a synced folder
 
 ## The event log as a document store

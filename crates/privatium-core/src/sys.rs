@@ -208,7 +208,7 @@ pub(crate) struct NodeRow<'a> {
 impl<'a> NodeRow<'a> {
     /// This installation's row.
     ///
-    /// `protocol` is `pv/1` — the protocol implemented. The `(partial: phase 1)`
+    /// `protocol` is `pv/1` — the protocol implemented. The `(partial: …)`
     /// qualifier `spec/cli.md §1` requires belongs to the `--version` string, which is a
     /// claim about conformance rather than about which wire format this speaks.
     ///

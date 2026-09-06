@@ -39,6 +39,7 @@ pub mod lock;
 pub mod log;
 pub mod lua;
 pub mod pair;
+pub mod registry;
 pub mod session;
 pub mod store;
 pub mod sys;
@@ -89,6 +90,24 @@ pub enum Error {
     /// The platform has no data directory and none was given.
     #[error("no platform data directory is available; pass an explicit data directory")]
     NoDataDir,
+    /// Owner-typed text a registry column cannot hold (`spec/data-dictionary.md §3.1`,
+    /// `§3.2`); the message names the field and the bound, never the text.
+    #[error("{field}: {problem}")]
+    InvalidText {
+        /// Which field.
+        field: &'static str,
+        /// What was wrong with it.
+        problem: String,
+    },
+    /// A device ID no `sys_device` row carries (`spec/data-dictionary.md §3.2`).
+    #[error("{device}: no such device is paired with this node")]
+    DeviceUnknown {
+        /// The ID that was asked for.
+        device: String,
+    },
+    /// The owner asked to revoke or relabel this node's own device row.
+    #[error("this node's own device row cannot be revoked or relabelled")]
+    OwnDevice,
 
     /// A filesystem operation failed, named by the path it failed on.
     #[error("{path}: {source}")]

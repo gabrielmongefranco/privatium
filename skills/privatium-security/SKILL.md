@@ -104,13 +104,14 @@ everything. Treat it like a script a stranger emailed you.
 
 ## Three properties — do not conflate them
 
-Current Phase 2 work provides live `/ws/pair` and `/ws` transports. Non-loopback clients
-need a paired channel for application data; only bootstrap documents and public assets
-are served without it. Discovery remains M18 and the pairing screen remains M19. Tests
-open the pairing window through `Node::pair`; do not claim the phone setup flow exists.
-Session transports must use fresh ephemerals on reconnect and close the connection on
-every frame error. Never reconstruct a frame counter under an existing key
-(`spec/protocol.md §8, §8.3`).
+The node provides live `/ws/pair` and `/ws` transports. Non-loopback clients need a
+paired channel for application data; only bootstrap documents and public assets are
+served without it. Pairing opens only with the owner's standing — the devices page,
+`privatium pair`, or `--open` on a node no device has paired with — never from a paired
+session (`spec/protocol.md §9.2`); the same holds for labelling or revoking a device and
+naming the node. A revoked device's open channel is closed at once. Session transports
+must use fresh ephemerals on reconnect and close the connection on every frame error.
+Never reconstruct a frame counter under an existing key (`spec/protocol.md §8, §8.3`).
 
 | # | Property | Mechanism | Missing anywhere? |
 |---|---|---|---|

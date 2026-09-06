@@ -88,6 +88,8 @@ async fn test_spec_8_4_plain_http_on_the_lan_serves_only_the_bootstrap_set() {
         "/a/hello/api/schema",
         "/a/hello/api/events",
         "/a/hello/api/stream",
+        "/api/v1/pair",
+        "/settings/devices/pairing",
     ] {
         assert_eq!(
             h.handle(lan("GET", path, "application/json"))

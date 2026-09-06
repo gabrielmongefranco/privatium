@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/wire/channel.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
+// Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  Encrypted WebSocket adapter over core::handle and live pairing (§7.4, §8.3).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -14,7 +14,7 @@ use axum::http::{HeaderName, HeaderValue, Method, StatusCode, Uri};
 use futures_util::StreamExt as _;
 use rusqlite::OptionalExtension as _;
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 use tokio::task::{AbortHandle, JoinSet};
 
 use super::{ApiSettings, Body, Handler, Peer, Request, Response};
@@ -182,6 +182,22 @@ pub enum ChannelError {
     /// The complete request body exceeded the current setting.
     #[error("request exceeds api.max_body; send a smaller request")]
     BodyLimit,
+    /// The owner revoked this device while the channel was open
+    /// (`spec/data-dictionary.md §3.2`).
+    #[error("this device was revoked; pair it again")]
+    Revoked,
+}
+
+impl ChannelError {
+    /// The WebSocket close code: `4403` for a revoked device, as the handshake refuses
+    /// one (`spec/protocol.md §8.3`), and `4400` for a frame the channel could not use.
+    #[must_use]
+    pub fn close_code(&self) -> u16 {
+        match self {
+            Self::Revoked => 4403,
+            Self::Format | Self::Upload | Self::BodyLimit => 4400,
+        }
+    }
 }
 
 impl Frame {
@@ -517,6 +533,10 @@ pub async fn serve_ws(handler: Handler, peer: Peer, host: HeaderValue, mut socke
         close(&mut socket, 4403, "session refused; pair this device again").await;
         return;
     };
+    // `last_seen_at` at the handshake, and again on a request once an hour has passed
+    // (`spec/data-dictionary.md §3.2`); the node decides whether a write is due.
+    device_seen(&handler, &session);
+    let mut revoked = handler.revoked.subscribe();
     let (tx, mut rx) = mpsc::channel::<Frame>(8);
     let mut jobs = JoinSet::new();
     let mut running: HashMap<u64, AbortHandle> = HashMap::new();
@@ -524,10 +544,21 @@ pub async fn serve_ws(handler: Handler, peer: Peer, host: HeaderValue, mut socke
     let outcome: Result<(), ChannelError> = async {
         loop {
             tokio::select! {
+                notice = revoked.recv() => {
+                    // A lagged receiver missed some IDs; the registry says whether this
+                    // device was among them.
+                    let mine = match notice {
+                        Ok(device) => device == session.device.as_str(),
+                        Err(broadcast::error::RecvError::Lagged(_)) => !active(&handler.lock(), &session),
+                        Err(broadcast::error::RecvError::Closed) => false,
+                    };
+                    if mine { return Err(ChannelError::Revoked); }
+                }
                 message = receive(&mut socket) => {
                     let Message::Binary(bytes) = message.map_err(|_| ChannelError::Format)? else { return Err(ChannelError::Format); };
                     let plaintext = crypto.receive.open(&bytes).map_err(|_| ChannelError::Format)?;
                     let frame = Frame::decode(&plaintext)?;
+                    if frame.kind == Kind::Req { device_seen(&handler, &session); }
                     if frame.kind == Kind::Cancel {
                         if !frame.payload.is_empty() || frame.method.is_some() || frame.path.is_some() || frame.status.is_some() || frame.headers.is_some() || frame.navigation.is_some() || frame.handoff.is_some() || !seen.contains(&frame.id) { return Err(ChannelError::Format); }
                         if let Some(job) = running.remove(&frame.id) { job.abort(); }
@@ -576,14 +607,23 @@ pub async fn serve_ws(handler: Handler, peer: Peer, host: HeaderValue, mut socke
         }
     }.await;
     jobs.abort_all();
-    close(
-        &mut socket,
-        if outcome.is_ok() { 1000 } else { 4400 },
-        &outcome
-            .err()
-            .map_or_else(|| "session ended; reconnect".to_owned(), |e| e.to_string()),
-    )
-    .await;
+    let (code, reason) = match &outcome {
+        Ok(()) => (1000, "session ended; reconnect".to_owned()),
+        Err(error) => (error.close_code(), error.to_string()),
+    };
+    close(&mut socket, code, &reason).await;
+}
+
+/// Mark the session's device seen now; the node writes `last_seen_at` only when an hour
+/// has passed (`spec/data-dictionary.md §3.2`). A failed write is the node's own
+/// trouble, reported and never a reason to drop the channel.
+fn device_seen(handler: &Handler, session: &Session) {
+    if let Err(error) = handler
+        .lock()
+        .note_device_seen(session.device.as_str(), jiff::Timestamp::now())
+    {
+        eprintln!("privatium: could not record last_seen_at: {error}");
+    }
 }
 
 async fn respond(

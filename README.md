@@ -39,16 +39,16 @@ keep several side by side. Start from an example, or hand the included guides to
 assistant and let it write the first draft; a linter checks the result against the rules
 that matter, including accessibility.
 
-Other devices on your home network can already reach a node over an encrypted channel
-once they are paired. Pairing from a phone, discovery, and sync between your own machines
-are what I am working on now, and none of them will require a domain name, a DNS
-provider, or a port forward.
+Other devices on your home network reach a node over an encrypted channel once they are
+paired: scan a QR code, tap four emoji, done. Sync between your own machines is what I
+am working on now, and none of this requires a domain name, a DNS provider, or a port
+forward.
 
 ## Quick Start Guide
 
 You can run Privatium on Windows, macOS, or Linux. Lua and SQLite are included.
 
-1. **Download Privatium.** Download directly for your platform: [Windows](https://github.com/gabrielmongefranco/privatium/releases/latest/download/privatium-windows.zip), [Windows portable](https://github.com/gabrielmongefranco/privatium/releases/latest/download/privatium-windows-portable.zip), [macOS](https://github.com/gabrielmongefranco/privatium/releases/latest/download/privatium-mac.zip), [Linux](https://github.com/gabrielmongefranco/privatium/releases/latest/download/privatium-linux.tar.gz). After downloading, extract the `privatium` (or `privatium.exe` on Windows) binary to a folder of your choice.
+1. **Download Privatium.** Download directly for your platform: [Windows](https://github.com/gabrielmongefranco/privatium/releases/download/v0.1/privatium-windows.zip), [macOS](https://github.com/gabrielmongefranco/privatium/releases/download/v0.1/privatium-mac.zip), [Linux](https://github.com/gabrielmongefranco/privatium/releases/download/v0.1/privatium-linux.tar.gz). After downloading, extract the `privatium` (or `privatium.exe` on Windows) binary to a folder of your choice.
 2. **Run it.** Open a terminal in that folder and run:
 
    ```sh
@@ -57,13 +57,15 @@ You can run Privatium on Windows, macOS, or Linux. Lua and SQLite are included.
 
    On Windows, use `./privatium.exe` in place of `./privatium`. The first run writes the
    three [example apps](#example-applications) into its data folder and prints where
-   that folder is. The portable zip keeps everything in one place: it ships a
-   `privatium-data` folder beside the program, with the example apps already in it, and
-   the program uses that folder whenever it exists. Create one yourself beside any copy
-   of the program to get the same.
+   that folder is. To keep everything in one place instead, create a folder named
+   `privatium-data` beside the program: the program uses that folder whenever it
+   exists, and the example apps are written into it on the first run.
 3. **Open it in your browser.** Visit [Privatium on your computer](http://127.0.0.1:8420/)
-   and pick **Hello**. Keep the terminal open while you use your apps. Reaching them from
-   your phone needs pairing, which is not in this release yet.
+   and pick **Hello**. Keep the terminal open while you use your apps. To use them from
+   your phone on the same network, run `./privatium --open` instead: it prints a QR code
+   and a pairing code. Scan the code with the phone and tap the four emoji it shows, or
+   type the two words. Later, open pairing again from **Settings › Devices** or with
+   `./privatium pair`. (Builds after v0.1; see [connectivity](docs/connectivity.md).)
 4. **Make your own app.** In a second terminal, run:
 
    ```sh

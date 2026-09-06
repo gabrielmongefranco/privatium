@@ -28,6 +28,11 @@ pub struct Context<'a> {
     pub report: &'a LoadReport,
     /// The token issuer for the page's forms.
     pub csrf: &'a Csrf,
+    /// Whether the request has the node's own standing (`spec/protocol.md §8.4`, `§9.2`)
+    /// — a loopback request or an in-process call — rather than a paired session. The
+    /// forms that open pairing, name the node, label or revoke a device render for the
+    /// owner alone; a session sees the pages without them.
+    pub owner: bool,
 }
 
 /// A one-line message shown at the top of a settings page.
@@ -179,7 +184,7 @@ fn page(
     out.push_str(body);
     let _ = write!(
         out,
-        "\n</main>\n<footer class=\"pv-footer\"><a href=\"https://github.com/gabrielmongefranco/privatium\">Privatium</a>\n<div class=\"pv-footer-node\"><span>{}</span><a class=\"pv-join\" href=\"/settings\" aria-label=\"Connect another space — opens Space settings\" title=\"Connect another space (coming soon)\">{}</a></div></footer>\n</body>\n</html>\n",
+        "\n</main>\n<footer class=\"pv-footer\"><a href=\"https://github.com/gabrielmongefranco/privatium\">Privatium</a>\n<div class=\"pv-footer-node\"><span>{}</span><a class=\"pv-join\" href=\"/settings/devices\" aria-label=\"Connect a device — opens Devices\" title=\"Connect a device\">{}</a></div></footer>\n</body>\n</html>\n",
         escape(node_label.unwrap_or("")),
         icon("qr-code")
     );
@@ -267,6 +272,26 @@ pub fn launcher(cx: &Context<'_>) -> Result<String> {
 
 /// One of the four settings pages.
 pub fn settings(cx: &Context<'_>, page: SettingsPage, notice: Option<&Notice>) -> Result<String> {
+    let mut body = String::new();
+    match page {
+        SettingsPage::Node => node_page(cx, &mut body)?,
+        SettingsPage::Apps => apps_page(cx, &mut body)?,
+        SettingsPage::Data => data_page(cx, &mut body),
+        SettingsPage::Devices => crate::http::devices::page(cx, &mut body)?,
+    }
+    settings_frame(cx, page, page.title(), notice, &body)
+}
+
+/// The settings document around `content`: the heading, the settings navigation with
+/// `active` marked, an optional notice, then the content. The four pages and the code
+/// page of `spec/protocol.md §7.2` (`/settings/devices/pairing`) share it.
+pub fn settings_frame(
+    cx: &Context<'_>,
+    active: SettingsPage,
+    title: &str,
+    notice: Option<&Notice>,
+    content: &str,
+) -> Result<String> {
     let solo = cx.node.config().node.mode == Mode::Solo;
     let mut body = String::from(
         "<div class=\"pv-settings\"><h2>Settings</h2>\n<nav aria-label=\"Settings\">\n<ul class=\"pv-subnav\">\n",
@@ -276,7 +301,7 @@ pub fn settings(cx: &Context<'_>, page: SettingsPage, notice: Option<&Notice>) -
             body,
             "<li><a href=\"{}\"{}>{}</a></li>",
             item.path(),
-            current(item == page),
+            current(item == active),
             item.title()
         );
     }
@@ -290,14 +315,9 @@ pub fn settings(cx: &Context<'_>, page: SettingsPage, notice: Option<&Notice>) -
             escape(&notice.text)
         );
     }
-    match page {
-        SettingsPage::Node => node_page(cx, &mut body)?,
-        SettingsPage::Apps => apps_page(cx, &mut body)?,
-        SettingsPage::Data => data_page(cx, &mut body),
-        SettingsPage::Devices => devices_page(cx, &mut body)?,
-    }
+    body.push_str(content);
     body.push_str("</div>\n");
-    node_layout(cx, page.title(), Active::Settings, solo, &body)
+    node_layout(cx, title, Active::Settings, solo, &body)
 }
 
 fn node_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
@@ -329,9 +349,9 @@ fn node_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
     dl(
         body,
         "Display name",
-        &display_name.map_or_else(
+        &display_name.as_deref().map_or_else(
             || "<span class=\"pv-muted\">not set — the Space ID stands in for it</span>".to_owned(),
-            |name| escape(&name),
+            escape,
         ),
     );
     dl(body, "Public key", &code(pubkey.as_deref().unwrap_or("")));
@@ -360,12 +380,9 @@ fn node_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
             }
         },
     );
-    dl(
-        body,
-        "Local address",
-        &format!("<code>http://127.0.0.1:{}/</code>", config.port),
-    );
+    crate::http::devices::listening_rows(cx, body);
     body.push_str("</dl></div>\n");
+    crate::http::devices::node_section(cx, display_name.as_deref(), body);
 
     // §3.10: alerts MUST surface in the UI, not only in the log.
     let alerts = query(
@@ -707,69 +724,6 @@ fn data_page(cx: &Context<'_>, body: &mut String) {
     );
 }
 
-fn devices_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
-    let node = cx.node;
-    let rows = query(
-        node,
-        "SELECT id, kind, replica, label, paired_at, last_seen_at FROM v_device_active ORDER BY id",
-        |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, Option<String>>(1)?,
-                row.get::<_, Option<bool>>(2)?,
-                row.get::<_, Option<String>>(3)?,
-                row.get::<_, Option<String>>(4)?,
-                row.get::<_, Option<String>>(5)?,
-            ))
-        },
-    )?;
-    body.push_str("<div class=\"pv-notice pv-notice-info\">");
-    body.push_str(&icon("qr-code"));
-    body.push_str("<div>Connecting other devices is coming soon.</div></div>\n");
-    body.push_str(
-        "<table class=\"pv-records\" role=\"table\" aria-label=\"Devices\"><thead role=\"rowgroup\"><tr role=\"row\"><th scope=\"col\">Device</th><th scope=\"col\">Kind</th>\
-         <th scope=\"col\">Replica</th><th scope=\"col\">Label</th><th scope=\"col\">Connected</th>\
-         <th scope=\"col\">Last seen</th></tr></thead><tbody role=\"rowgroup\">\n",
-    );
-    for (id, kind, replica, label, paired_at, last_seen) in rows {
-        let this_node = id == node.id().as_str();
-        let _ = writeln!(
-            body,
-            "<tr role=\"row\"><td role=\"cell\"><span class=\"pv-cell-label\" aria-hidden=\"true\">Device</span>{} <code>{}</code>{}</td>\
-             <td role=\"cell\"><span class=\"pv-cell-label\" aria-hidden=\"true\">Kind</span>{}</td>\
-             <td role=\"cell\"><span class=\"pv-cell-label\" aria-hidden=\"true\">Replica</span>{}</td>\
-             <td role=\"cell\"><span class=\"pv-cell-label\" aria-hidden=\"true\">Label</span>{}</td>\
-             <td role=\"cell\"><span class=\"pv-cell-label\" aria-hidden=\"true\">Connected</span>{}</td>\
-             <td role=\"cell\"><span class=\"pv-cell-label\" aria-hidden=\"true\">Last seen</span>{}</td></tr>",
-            if kind.as_deref() == Some("node") {
-                icon("hdd-network")
-            } else {
-                icon("phone")
-            },
-            escape(&id),
-            if this_node {
-                " <span class=\"pv-badge pv-badge-ok\">this space</span>"
-            } else {
-                ""
-            },
-            escape(match kind.as_deref() {
-                Some("node") => "space",
-                other => other.unwrap_or(""),
-            }),
-            match replica {
-                Some(true) => "yes",
-                Some(false) => "no",
-                None => "",
-            },
-            escape(label.as_deref().unwrap_or("")),
-            escape(paired_at.as_deref().unwrap_or("—")),
-            escape(last_seen.as_deref().unwrap_or("—")),
-        );
-    }
-    body.push_str("</tbody></table>\n");
-    Ok(())
-}
-
 /// The 404 page.
 #[must_use]
 pub fn not_found(path: &str, solo: bool) -> String {
@@ -855,16 +809,18 @@ pub fn error(status: StatusCode, detail: &str, solo: bool) -> String {
     )
 }
 
-fn dl(out: &mut String, term: &str, definition: &str) {
+/// One `<dt>`/`<dd>` pair; `definition` is markup the caller already escaped.
+pub(crate) fn dl(out: &mut String, term: &str, definition: &str) {
     let _ = writeln!(out, "<dt>{}</dt><dd>{definition}</dd>", escape(term));
 }
 
-fn code(text: &str) -> String {
+/// `text` escaped inside `<code>`.
+pub(crate) fn code(text: &str) -> String {
     format!("<code>{}</code>", escape(text))
 }
 
 /// Run a read on the `_sys` store's privileged connection.
-fn query<T>(
+pub(crate) fn query<T>(
     node: &Node,
     sql: &str,
     map: impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<T>,

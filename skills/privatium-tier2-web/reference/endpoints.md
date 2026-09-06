@@ -300,7 +300,8 @@ application data.
 ```
 
 `name` falls back to the Node ID while the owner has set none (`spec/protocol.md §9.2`);
-`dev` is the device the request is authenticated as — this node's own in Phase 1; `app`
+`dev` is the device the request is authenticated as — this node's own on loopback, the
+paired device's through the channel (`spec/protocol.md §8.3`); `app`
 is the slug this API is scoped to, which a page at a solo mount cannot read from its path
 and which `pv.js` keys its outbox entries by (§6); `restore_tier` is `null` for an app
 this node has not materialized.

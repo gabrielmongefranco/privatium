@@ -63,9 +63,9 @@ Handlers return one of:
 `path` is the path beneath the app's mount, `/` for the mount point. `query` is the query
 string decoded, `form` an `application/x-www-form-urlencoded` body decoded, `body` the
 body as received — at most 64 KiB, because Tier 1 does not stream — and `headers` is keyed
-by lower-case name. `device` is the ID of the device the request was authenticated as;
-in Phase 1 that is always this node's own ID (`docs/plans/phase-1.md §2.2`), and a paired
-device's arrives with pairing. Routes register while `app.lua` loads and are matched in
+by lower-case name. `device` is the ID of the device the request was authenticated as:
+the paired device's through the channel (`spec/protocol.md §8.3`), and this node's own
+on loopback (`§8.4`). Routes register while `app.lua` loads and are matched in
 registration order; a path that matches a pattern with no route for the method is a 405,
 one that matches nothing a 404.
 
@@ -189,7 +189,7 @@ handler that errors fails the request, but the batch is already durable.
 ```lua
 pv.ulid()                     -- fresh ULID
 pv.now()                      -- RFC 3339 UTC string
-pv.device()                   -- the device this request is from; this node's ID in Phase 1
+pv.device()                   -- the device this request is from: a paired device's ID, or this node's
 pv.node()                     -- { id, name, solo, peers, restore_tier }
 pv.setting('key', default)    -- read a sys_setting; `default` when the key is unset
 pv.log('info', 'message')     -- the diagnostic log; never write to stdout directly

@@ -1,9 +1,11 @@
 // Project:  Privatium™  |  File: crates/privatium-core/assets/shell/client.js
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
-// Summary:  Bootstrap rendering, encrypted HTMX and fresh-document navigation (§8.3).
+// Created:  2026-09-05  |  Modified: 2026-09-06
+// Summary:  Bootstrap rendering, the pairing screen (§7.2), the refusal screen (§8.1),
+//           encrypted HTMX and fresh-document navigation (§8.3).
 
 import { channel, channelFetch, closeChannel, eventSource, localUrl } from './channel.js';
+import { pair, parseCode } from './pair.js';
 import { base64, decode64 } from './session.js';
 import { sha256 } from './vendor/noble/hashes/sha2.js';
 
@@ -106,31 +108,121 @@ async function pinMarkup(html, full, base) {
   return '<!doctype html>' + doc.documentElement.outerHTML;
 }
 
-function showFailure(error) {
-  const main = document.createElement('main'); main.id = 'main'; main.tabIndex = -1;
-  const title = document.createElement('h1'); title.textContent = 'Cannot open this app';
-  const message = document.createElement('p'); message.setAttribute('role', 'alert');
+/**
+ * Replace the document with a failure screen. A pinned-identity refusal (§8.1) is the
+ * full-page form: the space's name and ID, both key fingerprints, no way past it, and
+ * one action — forget this pairing and pair again. `doc` and `storage` are the
+ * document and localStorage, replaceable by a test.
+ */
+export function showFailure(error, doc = document, storage = globalThis.localStorage) {
+  const main = doc.createElement('main'); main.id = 'main'; main.tabIndex = -1;
+  const title = doc.createElement('h1'); title.textContent = 'Cannot open this app';
+  const message = doc.createElement('p'); message.setAttribute('role', 'alert');
   message.textContent = error.message || 'Connection failed. Reconnect and check before submitting again.';
   main.append(title, message);
   if (error.message?.includes('pinned identity')) {
-    title.textContent = 'Node identity could not be verified';
-    const text = document.createElement('p'); text.textContent = 'Connection stopped. There is no override. Check the node with its owner before forgetting this pairing.';
-    const forget = document.createElement('button'); forget.type = 'button'; forget.className = 'pv-btn'; forget.textContent = 'Forget pairing';
+    title.textContent = 'Space identity could not be verified';
+    const text = doc.createElement('p'); text.textContent = 'Connection stopped. There is no override and no way past this screen. Check the space with its owner before forgetting this pairing.';
+    const forget = doc.createElement('button'); forget.type = 'button'; forget.className = 'pv-btn pv-btn-danger'; forget.textContent = 'Forget this pairing and pair again';
     forget.addEventListener('click', () => {
-      try { localStorage.removeItem('pv:device'); sessionStorage.removeItem(HANDOFF); location.reload(); }
+      try { storage.removeItem('pv:device'); sessionStorage.removeItem(HANDOFF); location.reload(); }
       catch { message.textContent = 'Cannot clear pairing. Clear this site’s stored data in your browser settings.'; }
     });
     main.append(text, forget);
     if (error.identity) {
-      const list = document.createElement('dl'); list.className = 'pv-card';
-      for (const [label, value] of [['Node', error.identity.node], ['Pinned key fingerprint', error.identity.pinned], ['Presented key fingerprint', error.identity.presented]]) {
-        const term = document.createElement('dt'), description = document.createElement('dd');
+      const list = doc.createElement('dl'); list.className = 'pv-card';
+      const name = doc.body?.dataset?.name;
+      const rows = [['Space', name && name !== error.identity.node ? `${name} (${error.identity.node})` : error.identity.node],
+        ['Pinned key fingerprint', error.identity.pinned], ['Presented key fingerprint', error.identity.presented]];
+      for (const [label, value] of rows) {
+        const term = doc.createElement('dt'), description = doc.createElement('dd');
         term.textContent = label; description.textContent = value; list.append(term, description);
       }
       main.insertBefore(list, forget);
     }
   }
-  document.body.replaceChildren(main); main.focus();
+  doc.body.replaceChildren(main); main.focus();
+}
+
+/** The sixteen-bit code four pad presses spell, big-endian nibbles (§7.2). */
+function padCode(presses) {
+  return (presses[0] << 12) | (presses[1] << 8) | (presses[2] << 4) | presses[3];
+}
+
+/** What a browser device suggests as its label: the platform, for the owner to rename. */
+function suggestedLabel() {
+  const agent = globalThis.navigator?.userAgent || '';
+  for (const [needle, name] of [['iPhone', 'iPhone'], ['iPad', 'iPad'], ['Android', 'Android phone'], ['Windows', 'Windows browser'], ['Mac', 'Mac browser'], ['Linux', 'Linux browser']]) {
+    if (agent.includes(needle)) return name;
+  }
+  return 'Browser';
+}
+
+/**
+ * Wire the pairing screen the bootstrap carries (§7.2): the sixteen pad keys, the two
+ * undo buttons, the word field and the form. Four presses on the pad or two words in
+ * the field are the same sixteen bits; the Pair button sends whichever is complete.
+ * The three outcomes — paired, wrong code, closed — are said in the status region.
+ * `options.pair(code, label)` performs the exchange (the real one opens /ws/pair);
+ * `options.doc` is the document. Returns the controller, for a test.
+ */
+export function pairingScreen(options = {}) {
+  const doc = options.doc || document;
+  const section = doc.getElementById('pv-pair');
+  const chosen = doc.getElementById('pv-chosen'), status = doc.getElementById('pv-pair-status');
+  const words = doc.getElementById('pv-words'), label = doc.getElementById('pv-label');
+  const form = doc.getElementById('pv-pair-form'), submit = doc.getElementById('pv-pair-submit');
+  const keys = [...doc.querySelectorAll('.pv-pad-key')];
+  const presses = [];
+  const say = text => { status.textContent = text; };
+  const show = () => {
+    const labels = presses.map(index => keys[index]?.querySelector('.pv-glyph-label')?.textContent || String(index));
+    chosen.textContent = labels.length ? `${labels.join(', ')} (${labels.length} of 4)` : 'none yet';
+  };
+  const perform = options.pair || (async (code, name) => {
+    const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws/pair`);
+    await new Promise((resolve, reject) => { socket.addEventListener('open', resolve, { once: true }); socket.addEventListener('error', () => reject(new Error('cannot pair: the space did not answer; check that it is running and that you are on its network')), { once: true }); });
+    return pair(socket, code, { label: name, userAgent: globalThis.navigator?.userAgent });
+  });
+  const controller = {
+    press(index) { if (presses.length < 4) { presses.push(index); show(); } },
+    undo() { presses.pop(); show(); },
+    clear() { presses.length = 0; show(); },
+    /** The code the screen would send: the pad when it holds four presses, else the field. */
+    code() {
+      if (presses.length === 4) return padCode(presses);
+      const typed = words.value.trim();
+      return typed ? parseCode(typed) : null;
+    },
+    async submit() {
+      let code;
+      try { code = controller.code(); } catch (error) { say(error.message); return false; }
+      if (code === null) { say('Tap the four emoji shown on the space, or type its two words, then press Pair.'); return false; }
+      submit.disabled = true; say('Pairing…');
+      try {
+        await perform(code, label.value.trim() || suggestedLabel());
+        say('Paired. Opening the page…');
+        options.onPaired ? options.onPaired() : location.reload();
+        return true;
+      } catch (error) {
+        const text = error.message || '';
+        if (text.includes('closed')) say('Pairing is closed on the space. Open it there — Settings › Devices › Open pairing, or privatium pair — and press Pair again.');
+        else if (text.includes('did not match')) say('The code did not match. Check the code on the space and try again; a code allows five attempts before a new one is shown there.');
+        else say(text || 'Could not pair. Try again.');
+        submit.disabled = false;
+        return false;
+      }
+    },
+  };
+  keys.forEach((key, index) => key.addEventListener('click', () => controller.press(Number(key.dataset.glyph ?? index))));
+  doc.getElementById('pv-undo').addEventListener('click', controller.undo);
+  doc.getElementById('pv-clear').addEventListener('click', controller.clear);
+  form.addEventListener('submit', event => { event.preventDefault(); controller.submit(); });
+  if (!label.value) label.value = suggestedLabel();
+  doc.getElementById('pv-connecting')?.setAttribute('hidden', '');
+  section.hidden = false;
+  say('This device is not paired yet.');
+  return controller;
 }
 
 function formFailure(error) {
@@ -196,6 +288,11 @@ async function submit(form, button, node) {
 async function start() {
   const { path, node } = document.body.dataset;
   globalThis.__pv_channel = Object.freeze({ fetch: channelFetch, eventSource });
+  // No pairing in storage means the pairing screen, not a refusal (§7.6): a browser
+  // that never paired, or one whose storage was cleared, pairs again here.
+  let record = null;
+  try { record = JSON.parse(localStorage.getItem('pv:device')); } catch { /* storage unavailable or unreadable: pair again */ }
+  if (record?.v !== 1) { pairingScreen(); return; }
   const connection = await channel();
   const handoff = takeHandoff(path, node);
   const response = handoff ? await connection.resume(handoff) : await connection.fetch(path, { headers: { accept: 'text/html' } });

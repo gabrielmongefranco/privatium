@@ -6,8 +6,8 @@ description: Write Tier 3 Privatium apps in Rust by linking the privatium-core c
 # Privatium Tier 3 — Rust
 
 Your binary, your `main()`, your routing. `privatium-core` supplies the log, the
-materializer and the auth layer as a library now; discovery, pairing and sync are on the
-same `Node` and arrive with Phases 2 and 3 of `docs/roadmap.md`.
+materializer, the auth layer, discovery and pairing as a library now; sync is on the
+same `Node` and arrives with Phase 3 of `docs/roadmap.md`.
 
 ## When Tier 3 is right
 

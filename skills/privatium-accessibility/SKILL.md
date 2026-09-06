@@ -87,6 +87,13 @@ Additional requirements there:
 - The code can be regenerated freely; no aggressive countdown pressure
 - Generous letter spacing and large type on the code display
 
+The framework's own pairing screen is the worked example: the node's code page shows
+the four emoji with their labels, the two words, and the QR code as a labelled image with
+the URL as text beside it; the phone's screen is a pad of sixteen labelled buttons beside
+a word field, both visible at once, and every outcome — paired, wrong code, closed — is
+said in a `role="status"` region. The emoji inside each key is hidden from the screen
+reader so its label is read once. Match it when an app of yours shows or takes a code.
+
 ## Anti-patterns
 
 ```html

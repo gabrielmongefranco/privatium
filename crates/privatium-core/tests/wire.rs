@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/wire.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-05
+// Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  core::handle against spec/protocol.md §9 and ADR 0003 — every route reachable
 //           with no listener, the headers of §9.3 on every response, nothing leaked
 //           unauthenticated (§9.2), solo mode at `/` with the framework prefixes winning
@@ -888,8 +888,5 @@ async fn test_settings_pages_render_the_node() {
     let devices = body_of(handler.handle(get("/settings/devices")).await).await;
     assert!(devices.contains(&id), "{devices}");
     assert!(devices.contains("this space"), "{devices}");
-    assert!(
-        devices.contains("Connecting other devices is coming soon."),
-        "{devices}"
-    );
+    assert!(devices.contains("Pair a device"), "{devices}");
 }

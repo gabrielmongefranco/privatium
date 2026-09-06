@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/wire/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-05
+// Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  core::handle(Request) -> Response (ADR 0003): the one entry point for application
 //           traffic. Bodies are streams in both directions. The router is built from
 //           Node::mounts(); the auth layer runs here so every adapter gets it; the §9.3
@@ -30,6 +30,7 @@ use crate::{Error, Node};
 pub mod channel;
 mod data;
 mod handoff;
+mod owner;
 pub mod router;
 
 pub use data::{ApiSettings, ApiState, PING as STREAM_PING};
@@ -86,6 +87,10 @@ pub struct Handler {
     /// The data API's per-device state: SQL rate buckets and open streams.
     api: ApiState,
     handoffs: handoff::Handoffs,
+    /// The ID of each device the owner revokes, as it happens: every open channel
+    /// listens and closes its own device's socket at once (`spec/data-dictionary.md
+    /// §3.2`, "access denied immediately"), rather than at its next frame.
+    revoked: tokio::sync::broadcast::Sender<String>,
 }
 
 impl std::fmt::Debug for Handler {
@@ -116,6 +121,7 @@ impl Handler {
             default_origin,
             api: ApiState::default(),
             handoffs: handoff::Handoffs::default(),
+            revoked: tokio::sync::broadcast::channel(64).0,
         }
     }
 
@@ -287,7 +293,11 @@ impl Handler {
                 node.mounts().map(|(mount, app)| (mount, app.slug())),
             )
             .resolve(request.uri().path());
-            let mut response = http::pairing::bootstrap(request.uri(), node.id().as_str());
+            let name = api::display_name(&node)
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| node.id().as_str().to_owned());
+            let mut response = http::pairing::bootstrap(request.uri(), node.id().as_str(), &name);
             if let Route::App { slug, .. } = route {
                 if node.refresh_app(&slug).is_err() {
                     return headers::text(
@@ -309,6 +319,7 @@ impl Handler {
         let path = request.uri().path().to_owned();
         let head = method == Method::HEAD;
         let get = method == Method::GET || head;
+        let owner = Self::is_owner(&request);
 
         let route = {
             let node = self.lock();
@@ -327,7 +338,7 @@ impl Handler {
                 if !get {
                     return headers::method_not_allowed("GET, HEAD");
                 }
-                self.render(shell::launcher)
+                self.render(owner, shell::launcher)
             }
             Route::Settings(page) => {
                 if !get {
@@ -336,7 +347,7 @@ impl Handler {
                 if page == SettingsPage::Apps {
                     self.refresh_all_apps();
                 }
-                self.render(|cx| shell::settings(cx, page, None))
+                self.render(owner, |cx| shell::settings(cx, page, None))
             }
             Route::Seed { slug } => {
                 if method != Method::POST {
@@ -344,6 +355,33 @@ impl Handler {
                 }
                 return self.seed(&slug, &path, request).await;
             }
+            Route::NodeName => {
+                return self
+                    .owner_action(owner::OwnerAction::NodeName, &path, request)
+                    .await;
+            }
+            Route::PairOpen => {
+                return self
+                    .owner_action(owner::OwnerAction::PairOpen, &path, request)
+                    .await;
+            }
+            Route::PairClose => {
+                return self
+                    .owner_action(owner::OwnerAction::PairClose, &path, request)
+                    .await;
+            }
+            Route::DeviceLabel { id } => {
+                return self
+                    .owner_action(owner::OwnerAction::DeviceLabel(id), &path, request)
+                    .await;
+            }
+            Route::DeviceRevoke { id } => {
+                return self
+                    .owner_action(owner::OwnerAction::DeviceRevoke(id), &path, request)
+                    .await;
+            }
+            Route::PairPage => return self.pairing_page(&request),
+            Route::PairApi => return self.pair_api(request).await,
             Route::Health => {
                 if !get {
                     return headers::method_not_allowed("GET, HEAD");
@@ -500,7 +538,7 @@ impl Handler {
                                 Ok(conn) => conn,
                                 Err(error) => return self.failure(&Error::Store(Box::new(error))),
                             };
-                            Plan::Lua(LuaPlan {
+                            Plan::Lua(Box::new(LuaPlan {
                                 host: Arc::clone(host),
                                 title: app.title().to_owned(),
                                 node_label: match api::display_name(&node) {
@@ -514,7 +552,7 @@ impl Handler {
                                 facts: node_facts(&node, slug),
                                 ui: ui_settings(&node),
                                 csrf_token: self.csrf.token(mount),
-                            })
+                            }))
                         }
                         None => Plan::Done(apps::no_handler(slug, &csp, self.solo())),
                     },
@@ -536,7 +574,7 @@ impl Handler {
                 apps::serve_web(dir, &base, file, request, &csp, self.solo()).await
             }
             Plan::Done(response) => response,
-            Plan::Lua(plan) => self.lua(slug, mount, rest, request, plan).await,
+            Plan::Lua(plan) => self.lua(slug, mount, rest, request, *plan).await,
         }
     }
 
@@ -815,41 +853,9 @@ impl Handler {
             .extensions()
             .get::<Device>()
             .map(|device| device.0.as_str().to_owned());
-        // A declared length past the limit is refused before the body is read at all, so a
-        // client that sent `Expect: 100-continue` never sends it. A body with no declared
-        // length is read up to the limit and refused there; the rest is never read.
-        let declared = request
-            .headers()
-            .get(CONTENT_LENGTH)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.parse::<usize>().ok());
-        if declared.is_some_and(|length| length > http::FORM_LIMIT) {
-            return headers::text(
-                StatusCode::PAYLOAD_TOO_LARGE,
-                "413 Payload Too Large: a form here carries a token and nothing else
-",
-            );
-        }
-        let body = match to_bytes(request.into_body(), http::FORM_LIMIT).await {
-            Ok(body) => body,
-            Err(_) => {
-                return headers::text(
-                    StatusCode::PAYLOAD_TOO_LARGE,
-                    "413 Payload Too Large: a form here carries a token and nothing else\n",
-                );
-            }
-        };
-        let form = http::parse_form(&body);
-        let token = form
-            .get(http::csrf::FIELD)
-            .map(String::as_str)
-            .unwrap_or_default();
-        if !self.csrf.verify(path, token) {
-            return headers::text(
-                StatusCode::FORBIDDEN,
-                "403 Forbidden: the form token is missing, stale, or for another form — reload \
-                 the page and try again\n",
-            );
+        let owner = Self::is_owner(&request);
+        if let Err(refusal) = self.form_with_token(path, request).await {
+            return refusal;
         }
 
         let outcome = self.lock().load_seed(slug);
@@ -887,6 +893,7 @@ impl Handler {
                         node: &node,
                         report: &self.report,
                         csrf: &self.csrf,
+                        owner,
                     };
                     shell::settings(&cx, SettingsPage::Apps, Some(&notice))
                 };
@@ -900,7 +907,11 @@ impl Handler {
 
     /// Render a shell page under the lock, after refreshing `_sys` (per request: the read
     /// path notices a `_sys` log that grew behind it).
-    fn render(&self, page: impl FnOnce(&Context<'_>) -> crate::Result<String>) -> Response {
+    fn render(
+        &self,
+        owner: bool,
+        page: impl FnOnce(&Context<'_>) -> crate::Result<String>,
+    ) -> Response {
         let mut node = self.lock();
         if let Err(error) = node.refresh() {
             return self.failure(&error);
@@ -909,6 +920,7 @@ impl Handler {
             node: &node,
             report: &self.report,
             csrf: &self.csrf,
+            owner,
         };
         match page(&cx) {
             Ok(html) => headers::html(StatusCode::OK, html),
@@ -950,8 +962,9 @@ enum Plan {
     Web { web_dir: PathBuf, csp: String },
     /// Tier 1: stream the app's `static/`.
     Static { dir: PathBuf, csp: String },
-    /// Tier 1: run a handler.
-    Lua(LuaPlan),
+    /// Tier 1: run a handler. Boxed: the plan carries a connection, the node facts and
+    /// three strings, many times the size of the other variants.
+    Lua(Box<LuaPlan>),
     /// Already answered.
     Done(Response),
 }
@@ -991,6 +1004,7 @@ fn node_facts(node: &Node, slug: &str) -> NodeFacts {
         id,
         name,
         solo: node.config().node.mode == Mode::Solo,
+        peers: node.paired_node_count().unwrap_or(0),
         restore_tier: node.restore_tier(slug).map(|tier| tier.as_u8()),
     }
 }

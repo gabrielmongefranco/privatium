@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-05
+// Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  What sits behind core::handle (docs/plans/phase-1.md §4): the §9.3 headers, the
 //           auth layer and csrf() of §2.2, the shell's pages, the two API routes of §9.2,
 //           the skills routes of spec/cli.md §6, the shell's embedded assets, and the Tier 2
@@ -13,6 +13,7 @@ pub mod apps;
 pub mod assets;
 pub mod auth;
 pub mod csrf;
+pub mod devices;
 pub mod headers;
 pub mod pairing;
 

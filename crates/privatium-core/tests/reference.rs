@@ -1558,6 +1558,6 @@ fn test_footer_node_label_is_escaped() {
     assert!(page.contains("&lt;img src=x onerror=alert(1)&gt;"));
     assert!(!page.contains("<img src=x"));
     assert!(page.contains("https://github.com/gabrielmongefranco/privatium"));
-    assert!(page.contains("Connect another space"));
+    assert!(page.contains("Connect a device"));
     assert_clean("footer", &page, Unit::Document);
 }

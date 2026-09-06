@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/wire/router.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-05
+// Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  The route namespaces of spec/protocol.md §9.1 as one function from a path to a
 //           Route. Framework prefixes win in both modes; everything else belongs to
 //           whichever app is mounted there, and the mount table is Node::mounts(). This is
@@ -78,10 +78,33 @@ pub enum Route {
         /// The app.
         slug: String,
     },
+    /// `POST /settings/name` — the owner's display name (`spec/protocol.md §6.1`).
+    NodeName,
+    /// `POST /settings/devices/pair` — open a pairing window from the settings page
+    /// (`spec/cli.md §8`).
+    PairOpen,
+    /// `GET /settings/devices/pairing` — the code page (`spec/protocol.md §7.2`).
+    PairPage,
+    /// `POST /settings/devices/pairing/close` — close the open window.
+    PairClose,
+    /// `POST /settings/devices/<id>/label` — a device's label (`spec/data-dictionary.md
+    /// §3.2`).
+    DeviceLabel {
+        /// The device's Node ID, already shaped as one.
+        id: String,
+    },
+    /// `POST /settings/devices/<id>/revoke` — a device's revocation (`§3.2`).
+    DeviceRevoke {
+        /// The device's Node ID, already shaped as one.
+        id: String,
+    },
     /// `GET /api/v1/health`.
     Health,
     /// `GET /api/v1/manifest`.
     Manifest,
+    /// `POST` and `GET /api/v1/pair` — the pairing window, for the owner alone
+    /// (`spec/protocol.md §9.2`).
+    PairApi,
     /// `/skills/<name>.md`.
     Skill {
         /// The skill's folder name.
@@ -157,21 +180,40 @@ impl Router {
                 "/apps" | "/apps/" => Route::Settings(SettingsPage::Apps),
                 "/data" | "/data/" => Route::Settings(SettingsPage::Data),
                 "/devices" | "/devices/" => Route::Settings(SettingsPage::Devices),
-                _ => match rest
-                    .strip_prefix("/apps/")
-                    .and_then(|r| r.strip_suffix("/seed"))
-                {
-                    Some(slug) if crate::app::manifest::is_valid_slug(slug) => Route::Seed {
-                        slug: slug.to_owned(),
-                    },
-                    _ => Route::NotFound,
-                },
+                "/name" => Route::NodeName,
+                "/devices/pair" => Route::PairOpen,
+                "/devices/pairing" => Route::PairPage,
+                "/devices/pairing/close" => Route::PairClose,
+                _ => {
+                    if let Some(slug) = rest
+                        .strip_prefix("/apps/")
+                        .and_then(|r| r.strip_suffix("/seed"))
+                        .filter(|slug| crate::app::manifest::is_valid_slug(slug))
+                    {
+                        return Route::Seed {
+                            slug: slug.to_owned(),
+                        };
+                    }
+                    if let Some((id, action)) = rest
+                        .strip_prefix("/devices/")
+                        .and_then(|r| r.split_once('/'))
+                        .filter(|(id, _)| crate::identity::NodeId::is_valid(id))
+                    {
+                        return match action {
+                            "label" => Route::DeviceLabel { id: id.to_owned() },
+                            "revoke" => Route::DeviceRevoke { id: id.to_owned() },
+                            _ => Route::NotFound,
+                        };
+                    }
+                    Route::NotFound
+                }
             };
         }
         if let Some(rest) = strip_prefix(path, "/api") {
             return match rest {
                 "/v1/health" => Route::Health,
                 "/v1/manifest" => Route::Manifest,
+                "/v1/pair" => Route::PairApi,
                 // In solo mode the mount is `/`, so `/api/…` is also the solo app's data
                 // API (`spec/data-api.md`); `§9.2`'s `/api/v1/*` stays the framework's.
                 _ if self.mode == Mode::Solo && rest.len() > 1 && !rest.starts_with("/v1") => {
@@ -365,8 +407,42 @@ mod tests {
                 }
             );
             assert_eq!(router.resolve("/settings/apps/Bad/seed"), Route::NotFound);
+            assert_eq!(router.resolve("/settings/name"), Route::NodeName);
+            assert_eq!(router.resolve("/settings/devices/pair"), Route::PairOpen);
+            assert_eq!(router.resolve("/settings/devices/pairing"), Route::PairPage);
+            assert_eq!(
+                router.resolve("/settings/devices/pairing/close"),
+                Route::PairClose
+            );
+            assert_eq!(
+                router.resolve("/settings/devices/b3nn8t2q/label"),
+                Route::DeviceLabel {
+                    id: "b3nn8t2q".into()
+                }
+            );
+            assert_eq!(
+                router.resolve("/settings/devices/b3nn8t2q/revoke"),
+                Route::DeviceRevoke {
+                    id: "b3nn8t2q".into()
+                }
+            );
+            // An ID that is not shaped as one — too short, upper case, a confusable
+            // letter, a traversal — never reaches a lookup.
+            for bad in [
+                "/settings/devices/b3nn8t2/revoke",
+                "/settings/devices/B3NN8T2Q/revoke",
+                "/settings/devices/b3nn8t2i/revoke",
+                "/settings/devices/../revoke",
+                "/settings/devices/b3nn8t2q/delete",
+                "/settings/devices/b3nn8t2q",
+                "/settings/devices/pairing/",
+                "/settings/namex",
+            ] {
+                assert_eq!(router.resolve(bad), Route::NotFound, "{bad}");
+            }
             assert_eq!(router.resolve("/api/v1/health"), Route::Health);
             assert_eq!(router.resolve("/api/v1/manifest"), Route::Manifest);
+            assert_eq!(router.resolve("/api/v1/pair"), Route::PairApi);
             assert_eq!(router.resolve("/api/v1/nope"), Route::NotFound);
             assert_eq!(router.resolve("/api"), Route::NotFound);
             assert_eq!(router.resolve("/api/"), Route::NotFound);

@@ -16,8 +16,9 @@ uses loopback. `--verbose` lists other interface addresses. No bind flag is need
 
 The node advertises itself on the local network over mDNS and answers UDP probes on port
 52525 (`spec/protocol.md §6`); `--no-discovery` turns both off for one run, and the
-`discovery.mdns` and `discovery.udp` settings turn each off durably. The pairing screen
-and CLI pairing flow are planned for Phase 2. Multi-node sync is Phase 3. Remote
+`discovery.mdns` and `discovery.udp` settings turn each off durably. A phone pairs by
+scanning the QR code `--open` or `privatium pair` prints, or the one on the devices
+page. Multi-node sync is Phase 3. Remote
 transports, tunnels and certificates below describe later phases. See
 [the roadmap](roadmap.md).
 
