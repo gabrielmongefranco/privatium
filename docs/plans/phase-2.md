@@ -331,7 +331,7 @@ Phase 1, this records what changed and why;
 
 | # | Was | Proposed | Files | Milestone |
 |---|---|---|---|---|
-| 29 | `cli.md` had a release binary start with an empty launcher — the reference apps existed only in a checkout — and `new --from hello` failed without one | The binary carries the three example apps; a first run (a data directory that does not exist or holds nothing) writes them to `apps/`, `new --examples` writes them on request, `--from` finds the embedded copy, and a checkout keeps mounting its own `apps/` as `bundled` and writes nothing | `cli.md §2, §4`, `data-dictionary.md §3.4`, `apps/README.md`, `README.md`, overview skill | **Fixed**, owner requested; M18 |
+| 29 | `cli.md` had a release binary start with an empty launcher — the reference apps existed only in a checkout — and `new --from hello` failed without one | The binary carries the three example apps; a start whose `apps/` holds no app folder writes them there, whether the data directory is new or was used before the binary carried them, `new --examples` writes them on request, `--from` finds the embedded copy, and a checkout keeps mounting its own `apps/` as `bundled` and writes nothing | `cli.md §2, §4`, `data-dictionary.md §3.4`, `apps/README.md`, `README.md`, overview skill | **Fixed**, owner requested; M18 |
 | 28 | The integrity rule assumed every resource could be fetched by an origin-local channel | Hash same-origin external resources through the channel; require an existing integrity hash in authenticated HTML for permitted remote resources; keep inline script CSP and imported-module limits explicit | `protocol.md §8.3`, this plan §2.1, security and Tier 2 skills | **Fixed**; M17 |
 | 27 | Full-document replacement and `pushState` retain the previous CSP and module map | Fresh bootstrap documents use destination app permissions. A bounded, unpolled response stream stays in node RAM across a form transition; only a reference crosses in per-tab storage. Same-device attachment consumes it once without re-executing the request | `protocol.md §8.3.1`, this plan §2.1; `app-contract.md §5.4` remains binding | **Fixed**, owner approved; M17 |
 | 26 | The active-attacker gap was described as first pairing and Tier 2 imports only | State that every plain-HTTP load can replace the bootstrap and client, exposing stored device keys; keep the channel design and word the disclosure for every visit | `protocol.md §7.0, §7.7`, `docs/security.md §1, §4`, this plan §2.10, security skill | **Fixed**, owner confirmed; M17 |
@@ -1088,7 +1088,7 @@ the PR's verification table.
 
 The same branch carries the owner's request that a release binary never start with an
 empty launcher (§3 row 29): the three example apps are embedded in the core
-(`app::examples`, 138 KB), written to `<data-dir>/apps/` on a first run and by
+(`app::examples`, 138 KB), written to `<data-dir>/apps/` whenever that folder holds no app and by
 `privatium new --examples`, and found by `--from hello` without a checkout. A checkout
 still mounts its own `apps/` as `bundled` and writes nothing, since a copy would shadow
 the folder the developer is editing. `PRIVATIUM_TEST_NO_CHECKOUT` is the test-only

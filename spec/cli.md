@@ -82,14 +82,16 @@ loopback URL; the QR code and the first-run window arrive with the pairing scree
 
 `--solo <slug>` overrides `[node] mode` from the config file for this run.
 
-**First run.** When the data directory does not exist or holds nothing, the node writes
-the example apps the binary carries — `hello`, `animals` and `sketch`, the folders of
-`apps/README.md`, unchanged — into `<data-dir>/apps/` before it loads anything, so the
-launcher is never empty. It does so once: a data directory with anything in it is not a
-first run, and an example the owner edits or deletes stays edited or deleted. `privatium
-new --examples` (`§4`) writes them again on request. A binary running from a source
-checkout already mounts the checkout's `apps/` as `bundled` (`spec/app-contract.md §3.1`)
-and writes nothing.
+**First run.** When `<data-dir>/apps/` holds no app folder — it does not exist yet, or
+nothing in it is a directory — the node writes the example apps the binary carries —
+`hello`, `animals` and `sketch`, the folders of `apps/README.md`, unchanged — into it
+before it loads anything, so the launcher is never empty. The rest of the data directory
+is not consulted: a root used before the binary carried the examples gets them too. Once
+any app folder is there, the owner's or an example's, nothing is written again, so an
+example the owner edits or deletes stays edited or deleted; `privatium new --examples`
+(`§4`) writes them again on request. A binary running from a source checkout already
+mounts the checkout's `apps/` as `bundled` (`spec/app-contract.md §3.1`) and writes
+nothing.
 
 ---
 

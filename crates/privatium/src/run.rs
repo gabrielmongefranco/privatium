@@ -125,20 +125,21 @@ pub fn run(global: &Global, options: Options) -> Result<u8> {
     Ok(0)
 }
 
-/// The first run of `§2`: a data directory that does not exist or holds nothing gets the
-/// example apps written into its `apps/` before the node opens, so the launcher is never
-/// empty. A checkout already mounts the repository's copies as `bundled`
+/// The first run of `§2`: an `apps/` that holds no app folder gets the example apps
+/// written into it before the node opens, so the launcher is never empty — on a data
+/// directory that is brand new and on one that was used before the binary carried the
+/// examples alike. A checkout already mounts the repository's copies as `bundled`
 /// (`node::checkout_apps`) and gets nothing written, since a second copy of each slug
 /// would shadow the one the developer is editing.
 fn write_examples_on_first_run(global: &Global) -> Result<()> {
     let paths = node::paths(global)?;
-    if !node::first_run(&paths) {
+    if !node::apps_dir_is_empty(&paths) {
         return Ok(());
     }
     if node::checkout_apps().is_some() {
         if global.verbose {
             eprintln!(
-                "privatium: first run in a checkout — the repository's apps/ serves the \
+                "privatium: running from a checkout — the repository's apps/ serves the \
                  example apps, so none are written to {}",
                 paths.apps_dir().display()
             );
@@ -149,7 +150,7 @@ fn write_examples_on_first_run(global: &Global) -> Result<()> {
     let written = new::write_examples(&apps_dir)
         .with_context(|| format!("writing the example apps to {}", apps_dir.display()))?;
     eprintln!(
-        "privatium: first run — {} example app(s) written to {} ({} files); edit or \
+        "privatium: no apps yet — {} example app(s) written to {} ({} files); edit or \
          delete them freely (spec/cli.md §2)",
         privatium_core::app::examples::SLUGS.len(),
         apps_dir.display(),
@@ -193,7 +194,7 @@ fn start_discovery(
                     eprintln!("privatium: discovery: {name} is off in sys_setting");
                 }
                 privatium_core::discover::Outcome::Failed(why) => {
-                    eprintln!("privatium: discovery: {name} {why}");
+                    eprintln!("privatium: discovery: {name} not started: {why}");
                 }
             }
         }

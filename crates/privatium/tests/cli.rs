@@ -1110,11 +1110,12 @@ fn test_spec_cli_10_absent_commands() {
     }
 }
 
-/// `§2` — a first run on a data directory that does not exist writes the example apps
-/// into `apps/` before loading, so a release download's launcher is never empty; the
-/// second run writes nothing; a directory with anything in it is not a first run. The
-/// test-only `PRIVATIUM_TEST_NO_CHECKOUT` stands in for a binary with no checkout beside
-/// it; without it the checkout's `apps/` is what serves and nothing is written.
+/// `§2` — a run whose `apps/` holds no app folder writes the example apps there before
+/// loading, so a release download's launcher is never empty: on a data directory that
+/// does not exist, and on one used before the binary carried the examples; the second
+/// run writes nothing, and an `apps/` with any folder in it gets nothing. The test-only
+/// `PRIVATIUM_TEST_NO_CHECKOUT` stands in for a binary with no checkout beside it;
+/// without it the checkout's `apps/` is what serves and nothing is written.
 #[test]
 fn test_spec_cli_2_first_run_writes_the_example_apps() {
     let root = tempfile::tempdir().unwrap();
@@ -1154,17 +1155,56 @@ fn test_spec_cli_2_first_run_writes_the_example_apps() {
         "edited by the owner\n"
     );
 
-    // A directory that exists and holds anything is not a first run either.
-    let other = root.path().join("other");
-    fs::create_dir_all(&other).unwrap();
-    fs::write(other.join("config.toml"), "[node]\nport = 0\n").unwrap();
-    let other_dir = other.to_string_lossy().into_owned();
+    // A data directory used before, from a checkout, has an empty apps/ and index rows
+    // for the examples: the release binary writes them rather than reporting every app
+    // as folder missing.
+    let used = root.path().join("used");
+    let used_dir = used.to_string_lossy().into_owned();
+    let node = Running::start(&["--data-dir", &used_dir, "--port", "0", "--no-discovery"]);
+    let (status, body) = node.get("/a/hello/");
+    assert_eq!(status, 200, "{body}");
+    drop(node);
+    assert!(fs::read_dir(used.join("apps")).unwrap().next().is_none());
     let node = Running::start_with_env(
-        &["--data-dir", &other_dir, "--no-discovery"],
+        &["--data-dir", &used_dir, "--port", "0", "--no-discovery"],
         &[("PRIVATIUM_TEST_NO_CHECKOUT", "1")],
     );
+    let (status, body) = node.get("/a/hello/");
+    assert_eq!(status, 200, "{body}");
+    let (status, body) = node.get("/settings/apps");
+    assert_eq!(status, 200);
+    assert!(!body.contains("folder missing"), "{body}");
     drop(node);
-    assert!(fs::read_dir(other.join("apps")).unwrap().next().is_none());
+    assert!(used.join("apps").join("sketch").join("app.toml").is_file());
+
+    // An apps/ with any folder in it — the owner's own — gets nothing.
+    let mine = root.path().join("mine");
+    let mine_apps = mine.join("apps");
+    fs::create_dir_all(mine_apps.join("myapp")).unwrap();
+    fs::write(
+        mine_apps.join("myapp").join("app.toml"),
+        "[app]\nslug = \"myapp\"\ntitle = \"Mine\"\nversion = \"1.0.0\"\napi = 1\ntier = \"web\"\n",
+    )
+    .unwrap();
+    fs::create_dir_all(mine_apps.join("myapp").join("web")).unwrap();
+    fs::write(
+        mine_apps.join("myapp").join("web").join("index.html"),
+        "<h1>Mine</h1>",
+    )
+    .unwrap();
+    let mine_dir = mine.to_string_lossy().into_owned();
+    let node = Running::start_with_env(
+        &["--data-dir", &mine_dir, "--port", "0", "--no-discovery"],
+        &[("PRIVATIUM_TEST_NO_CHECKOUT", "1")],
+    );
+    let (status, body) = node.get("/a/myapp/");
+    assert_eq!(status, 200, "{body}");
+    drop(node);
+    let folders: Vec<String> = fs::read_dir(&mine_apps)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(folders, ["myapp"]);
 
     // In a checkout the repository's apps/ serves them and nothing is written.
     let checkout = root.path().join("checkout");

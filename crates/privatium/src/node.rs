@@ -38,7 +38,8 @@ pub fn paths(global: &Global) -> Result<Paths> {
 /// beside the binary's source, mounted as `bundled` so an edit to the repository's copy
 /// is what runs. A bare binary — a CI artefact, a release download — has no such folder:
 /// it carries the same apps embedded (`privatium_core::app::examples`) and writes them
-/// into the owner's `apps/` on a first run ([`first_run`], `spec/cli.md §2`). A package
+/// into the owner's `apps/` while that folder holds no app ([`apps_dir_is_empty`],
+/// `spec/cli.md §2`). A package
 /// that ships the folder at a path of its own is Phase 6 (`spec/data-dictionary.md
 /// §3.4`, `source = bundled`). The path is fixed at compile time and simply absent
 /// anywhere else; the test suite, which always runs from a checkout, sets
@@ -55,13 +56,16 @@ pub fn checkout_apps() -> Option<PathBuf> {
     dir.is_dir().then_some(dir)
 }
 
-/// Whether running a node on these paths is its first run (`spec/cli.md §2`): the data
-/// directory does not exist, or holds nothing at all. A directory with anything in it —
-/// an `identity/`, a `config.toml`, an `apps/` the owner emptied on purpose — is not.
+/// Whether the owner's `apps/` holds no app folder at all (`spec/cli.md §2`): it does not
+/// exist, or contains no directory. Files do not count; a single folder, the owner's or
+/// an example's, does. The rest of the data directory is not consulted, so a root that
+/// was used before the binary carried the examples still gets them.
 #[must_use]
-pub fn first_run(paths: &Paths) -> bool {
-    match std::fs::read_dir(paths.root()) {
-        Ok(mut entries) => entries.next().is_none(),
+pub fn apps_dir_is_empty(paths: &Paths) -> bool {
+    match std::fs::read_dir(paths.apps_dir()) {
+        Ok(entries) => !entries
+            .flatten()
+            .any(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir())),
         Err(error) => error.kind() == std::io::ErrorKind::NotFound,
     }
 }
