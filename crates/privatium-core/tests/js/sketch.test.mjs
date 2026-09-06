@@ -6,9 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { hitsStroke } from '../../../../apps/sketch/web/strokes.js';
 test('eraser hits segment interiors, endpoints and width boundary without mutation', () => {
-  let nextId = 0;
-const makeHistory = write => new SketchHistory(write, () => `restored-${nextId++}`);
-const stroke = { width: 4, points: [[0, 0], [100, 0]] };
+  const stroke = { width: 4, points: [[0, 0], [100, 0]] };
   const before = JSON.stringify(stroke);
   assert.equal(hitsStroke(stroke, 50, 8), true);
   assert.equal(hitsStroke(stroke, 50, 8.01), false);

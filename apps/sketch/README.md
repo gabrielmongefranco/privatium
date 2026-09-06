@@ -20,7 +20,7 @@ It exists to prove one thing: **the framework does not impose an application mod
 `web/` contains an HTML page, a stylesheet and three small JavaScript modules.
 Together with `app.toml`, that is the entire app.
 
-The toolbar wraps on small screens and labels every color. Open **How to draw** for
+The toolbar wraps on small screens and labels every color. Open **Help** for
 keyboard instructions. Help and status text stay readable when zoomed; see
 [Sample app design](../../docs/sample-app-design.md) for the layout and its limits.
 

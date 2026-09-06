@@ -45,8 +45,8 @@ widths, reduce padding and stack controls; do not shrink text to make it fit.
   components still control disclosures and reset confirmation. After an HTMX swap,
   focus moves to the new question so Tab reaches its answers.
 - **Sketch:** a separate back link and title sit above a compact drawing toolbar and framed
-  white canvas. Bootstrap icons accompany the visible tool labels. Draw and Erase
-  stroke show their selected mode with text styling and an accessible pressed state. Labelled
+  white canvas. Bootstrap icons accompany the visible tool labels. Draw and Stroke eraser
+  show their selected mode with text styling and an accessible pressed state. Labelled
   color presets and the picker live in a native Colors disclosure. Draw, Eraser, Stroke eraser and Undo stay on the toolbar. Help contains instructions;
   Sketch actions offers Download PNG and New sketch. A `ResizeObserver` matches the canvas backing store
   to its CSS size when tools or help change height. Keyboard drawing remains available;
@@ -91,10 +91,6 @@ Before implementing this alternative, specify its reserved name, loading precede
 asset boundary and behaviour when files are missing or invalid. Neither approach is
 implemented by the sample app refresh.
 
----
-
-Copyright © 2026 Gabriel Mongefranco
-
 ## Sketch editing and export
 
 Starting a stroke closes open color and action panels. Eraser paints a 24-pixel white
@@ -125,3 +121,7 @@ settings until the connection interface is available.
 
 UI wording calls a node a “space” and uses “connect” for the connection action.
 Protocol names, stored fields and routes keep their existing technical names.
+
+---
+
+Copyright © 2026 Gabriel Mongefranco

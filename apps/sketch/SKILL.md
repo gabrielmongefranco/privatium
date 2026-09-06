@@ -66,7 +66,7 @@ The native color picker has a labelled hex-field alternative. Stroke eraser appe
 tombstone for the topmost hit; keyboard Space or Enter uses the same hit test.
 
 Keep the main toolbar compact. Color controls belong in the native Colors
-disclosure, and instructions belongs in Help. The canvas keeps
+disclosure, and instructions belong in Help. The canvas keeps
 at least 60% of the viewport height; opening colors overlays it without resizing.
 
 Keep app navigation in the header, separate from drawing controls. Tool icons are

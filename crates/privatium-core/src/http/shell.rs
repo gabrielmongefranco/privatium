@@ -363,10 +363,7 @@ fn node_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
     dl(
         body,
         "Local address",
-        &format!(
-            "<code>http://127.0.0.1:{}/</code>",
-            config.port
-        ),
+        &format!("<code>http://127.0.0.1:{}/</code>", config.port),
     );
     body.push_str("</dl></div>\n");
 
