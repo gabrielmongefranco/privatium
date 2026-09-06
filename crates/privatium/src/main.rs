@@ -92,6 +92,7 @@ fn main() -> ExitCode {
             from.as_deref(),
             scaffold.as_deref(),
         ),
+        Command::NewExamples => new::examples(&invocation.global),
         Command::Lint {
             paths,
             format,

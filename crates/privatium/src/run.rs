@@ -1,8 +1,9 @@
 // Project:  Privatium™  |  File: crates/privatium/src/run.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-05
-// Summary:  Bare `privatium` (spec/cli.md §2) and `privatium dev` (§3): open the node,
-//           apply the run's overrides, load every app, bind the LAN, and serve
+// Created:  2026-09-04  |  Modified: 2026-09-06
+// Summary:  Bare `privatium` (spec/cli.md §2) and `privatium dev` (§3): write the example
+//           apps on a first run, open the node, apply the run's overrides, load every
+//           app, bind the LAN, start discovery on the bound port, and serve
 //           `core::handle` until Ctrl-C. `dev` is the same node with the app named — the
 //           reloading is the host's own, a stat on the next request (§3, spec/lua-api.md
 //           §7), so there is nothing for this file to watch. The weekly snapshots of
@@ -18,7 +19,7 @@ use privatium_core::store::snapshot;
 use privatium_core::{Handler, Mode, Node};
 
 use crate::cli::Global;
-use crate::node;
+use crate::{new, node};
 
 /// What `run` and `dev` pass in.
 pub struct Options {
@@ -26,7 +27,7 @@ pub struct Options {
     pub port: Option<u16>,
     /// `--solo <slug>`: overrides `[node] mode` for this run (`§2`).
     pub solo: Option<String>,
-    /// `--no-discovery`: parses, and is a notice, until Phase 2 has discovery to disable.
+    /// `--no-discovery`: start neither mDNS nor the UDP responder (`§2`).
     pub no_discovery: bool,
     /// `--open`: a browser on the node — or on the app, under `dev --app`.
     pub open: bool,
@@ -42,17 +43,11 @@ pub struct Options {
 const MAINTENANCE_EVERY: Duration = Duration::from_secs(24 * 60 * 60);
 
 pub fn run(global: &Global, options: Options) -> Result<u8> {
+    write_examples_on_first_run(global)?;
     let mut node = node::open(global)?;
     apply_overrides(&mut node, &options)?;
     let report = node.load_apps(&node::roots(&node))?;
     node::print_report(&report, global.verbose || options.dev);
-
-    if options.no_discovery {
-        eprintln!(
-            "privatium: --no-discovery: there is no discovery to disable in this build — \
-             discovery is Phase 2 (docs/roadmap.md)"
-        );
-    }
 
     // `dev --app`: the app must be running, and its folder is what the owner edits.
     let mut dev_mount = None;
@@ -94,6 +89,9 @@ pub fn run(global: &Global, options: Options) -> Result<u8> {
                     Err(_) => eprintln!("privatium: could not enumerate other interfaces; use the announced address"),
                 }
             }
+            // The port is settled only now (`--port 0` asks the OS), and it is what the
+            // pairing URL and the TXT record's `p` key carry; discovery starts on it.
+            start_discovery(&handler, addr.port(), options.no_discovery, global.verbose)?;
             let origin = format!("http://127.0.0.1:{}", addr.port());
             let url = match &dev_mount {
                 Some(mount) => format!("{origin}{mount}"),
@@ -125,6 +123,89 @@ pub fn run(global: &Global, options: Options) -> Result<u8> {
             served
         })?;
     Ok(0)
+}
+
+/// The first run of `§2`: an `apps/` that holds no app folder gets the example apps
+/// written into it before the node opens, so the launcher is never empty — on a data
+/// directory that is brand new and on one that was used before the binary carried the
+/// examples alike. A checkout already mounts the repository's copies as `bundled`
+/// (`node::checkout_apps`) and gets nothing written, since a second copy of each slug
+/// would shadow the one the developer is editing.
+fn write_examples_on_first_run(global: &Global) -> Result<()> {
+    let paths = node::paths(global)?;
+    if !node::apps_dir_is_empty(&paths) {
+        return Ok(());
+    }
+    if node::checkout_apps().is_some() {
+        if global.verbose {
+            eprintln!(
+                "privatium: running from a checkout — the repository's apps/ serves the \
+                 example apps, so none are written to {}",
+                paths.apps_dir().display()
+            );
+        }
+        return Ok(());
+    }
+    let apps_dir = paths.apps_dir();
+    let written = new::write_examples(&apps_dir)
+        .with_context(|| format!("writing the example apps to {}", apps_dir.display()))?;
+    eprintln!(
+        "privatium: no apps yet — {} example app(s) written to {} ({} files); edit or \
+         delete them freely (spec/cli.md §2)",
+        privatium_core::app::examples::SLUGS.len(),
+        apps_dir.display(),
+        written.len()
+    );
+    Ok(())
+}
+
+/// Settle the bound port into this run's configuration, then start discovery
+/// (`spec/protocol.md §6`, `spec/cli.md §2`) unless `--no-discovery` was given. Each
+/// mechanism reports its own outcome: a refusal by the platform is a line here and never
+/// a reason for the node not to serve.
+fn start_discovery(
+    handler: &Arc<Handler>,
+    port: u16,
+    no_discovery: bool,
+    verbose: bool,
+) -> Result<()> {
+    let mut node = handler
+        .node()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    node.config_mut().node.port = port;
+    if no_discovery {
+        eprintln!(
+            "privatium: --no-discovery: not advertising on this network; other devices \
+             reach this node by its URL alone (spec/protocol.md §6)"
+        );
+        return Ok(());
+    }
+    node.serve_discovery()
+        .context("starting discovery (spec/protocol.md §6)")?;
+    if let Some(status) = node.discovery_status() {
+        for (name, outcome) in [("mDNS", &status.mdns), ("UDP 52525", &status.udp)] {
+            match outcome {
+                privatium_core::discover::Outcome::Started if verbose => {
+                    eprintln!("privatium: discovery: {name} started");
+                }
+                privatium_core::discover::Outcome::Started => {}
+                privatium_core::discover::Outcome::Off => {
+                    eprintln!("privatium: discovery: {name} is off in sys_setting");
+                }
+                privatium_core::discover::Outcome::Failed(why) => {
+                    eprintln!("privatium: discovery: {name} not started: {why}");
+                }
+            }
+        }
+        if !status.any_started() {
+            eprintln!(
+                "privatium: discovery: nothing is advertising; other devices reach this \
+                 node by its URL alone"
+            );
+        }
+    }
+    Ok(())
 }
 
 /// `--port` and `--solo` hold for this run and are never written back (`§2`).

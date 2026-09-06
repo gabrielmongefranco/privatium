@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/js/pv.test.mjs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
+// Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  pv.js against spec/data-api.md §5 and §6 and spec/protocol.md §10.6, under
 //           `node --test`: the outbox queues while the node is unreachable and replays in
 //           order when it is back; an empty replay leaves the helper able to replay
@@ -355,4 +355,30 @@ test('spec/data-api.md §6: two pages over one storage keep both queues — one 
   await b.pv.flush();
   assert.deepEqual(posts(b.requests).map(r => r.body.events[0].id), ['01K4B0000000000000000000A1', '01K4B0000000000000000000B1']);
   assert.equal(stored(store).length, 0, 'the queue is empty again');
+});
+
+test('spec/data-api.md §6: two pages queueing in the same millisecond still replay oldest first — the second page mints past the entries it adopted', async () => {
+  // A fast machine puts both entries inside one millisecond. Each page has its own
+  // counter, so without the adopted entries as a floor the order would be the random
+  // tails' — a coin toss. The clock is frozen to make the case certain.
+  const store = storage();
+  const realNow = Date.now;
+  const frozen = realNow();
+  Date.now = () => frozen;
+  let a, b;
+  try {
+    a = await page({ store, respond: downNode(), online: false });
+    await a.pv.put('stroke', '01K4B0000000000000000000A1', { n: 1 });
+    b = await page({ store, respond: downNode(), online: false });
+    await b.pv.put('stroke', '01K4B0000000000000000000B1', { n: 2 });
+  } finally {
+    Date.now = realNow;
+  }
+  const [first, second] = stored(store);
+  assert.equal(first.id.slice(0, 10), second.id.slice(0, 10), 'both minted in the frozen millisecond');
+  assert.ok(first.id < second.id, `${first.id} < ${second.id}`);
+  b.respond(upNode());
+  b.fire('online');
+  await b.pv.flush();
+  assert.deepEqual(posts(b.requests).map(r => r.body.events[0].id), ['01K4B0000000000000000000A1', '01K4B0000000000000000000B1']);
 });

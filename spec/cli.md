@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/cli.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-30
-Modified: 2026-09-05
+Modified: 2026-09-06
 Summary:  NORMATIVE. The command-line interface, including the linter that makes
           the skills system enforceable rather than advisory.
 -->
@@ -70,11 +70,28 @@ the LAN URL beside the URL in text; on a node with no paired device it also open
 pairing window as the node starts and prints the code beneath the QR code
 (`spec/protocol.md §7.1`), and once any device is paired it does that no more.
 
-A Phase 1 build — `pv/1 (partial: phase 1)`, `§1` — has no discovery and no pairing yet:
-it listens on loopback, prints that URL, and `--open` opens it in a browser. The LAN URL
-and the QR code arrive with pairing (`docs/roadmap.md`, Phase 2).
+Discovery is mDNS and the UDP responder on port 52525, started together
+(`spec/protocol.md §6.5`), on the port the node actually bound. `--no-discovery` starts
+neither for this run and says so; the `discovery.mdns` and `discovery.udp` settings
+(`spec/data-dictionary.md §3.6`) turn each off durably. A mechanism the platform refuses
+— no multicast interface, the port taken — is one line on standard error, never a reason
+for the node not to serve, and the `discovery.method` audit row names what started. A
+build without the pairing screen prints the LAN URL and opens the browser on the
+loopback URL; the QR code and the first-run window arrive with the pairing screen
+(`docs/roadmap.md`, Phase 2).
 
 `--solo <slug>` overrides `[node] mode` from the config file for this run.
+
+**First run.** When `<data-dir>/apps/` holds no app folder — it does not exist yet, or
+nothing in it is a directory — the node writes the example apps the binary carries —
+`hello`, `animals` and `sketch`, the folders of `apps/README.md`, unchanged — into it
+before it loads anything, so the launcher is never empty. The rest of the data directory
+is not consulted: a root used before the binary carried the examples gets them too. Once
+any app folder is there, the owner's or an example's, nothing is written again, so an
+example the owner edits or deletes stays edited or deleted; `privatium new --examples`
+(`§4`) writes them again on request. A binary running from a source checkout already
+mounts the checkout's `apps/` as `bundled` (`spec/app-contract.md §3.1`) and writes
+nothing.
 
 ---
 
@@ -113,18 +130,26 @@ beneath the mount until the next save loads — never the code from before it.
 
 ```
 privatium new <slug> [--tier lua|web|rust] [--from <existing-app>] [--scaffold <table>]
+privatium new --examples
 ```
 
 Creates `<data-dir>/apps/<slug>/` populated for the chosen tier. Defaults to `--tier lua`.
 The slug is validated as `spec/app-contract.md §3` requires and a reserved one is a usage
 error; the title is the slug's words capitalised, for the author to change.
 
-- `--from hello` copies a reference app and rewrites its slug and title. `<existing-app>`
-  is an installed app's slug, a reference app's, or a folder holding an `app.toml`. What is
-  rewritten is what names the app — the manifest's `slug` and `title`, the `apps/<old>`
-  path in file headers and READMEs, the `privatium-app-<old>` skill name, a heading that
-  is the bare slug, an HTML `<title>` equal to the old title — and prose is left alone.
-  The tier is the copied app's; `--tier` beside `--from` must agree with it.
+- `--from hello` copies an example app and rewrites its slug and title. `<existing-app>`
+  is an installed app's slug, an example app's — `hello`, `animals` or `sketch`, from the
+  checkout's `apps/` or, on a binary with no checkout beside it, the copy the binary
+  carries — or a folder holding an `app.toml`. What is rewritten is what names the app —
+  the manifest's `slug` and `title`, the `apps/<old>` path in file headers and READMEs,
+  the `privatium-app-<old>` skill name, a heading that is the bare slug, an HTML
+  `<title>` equal to the old title — and prose is left alone. The tier is the copied
+  app's; `--tier` beside `--from` must agree with it.
+- `--examples` writes every example app under its own slug, exactly as the repository
+  holds it, with nothing rewritten — what a first run writes (`§2`), on request. It takes
+  no slug and no other flag; combining them is a usage error. Because `new` never
+  overwrites, an example whose folder already exists is a runtime error naming it, before
+  anything is written.
 - `--scaffold <table>` reads the app's own `schema.sql` — the one `--from` copied, or the
   one already in the folder — and emits `app.lua` plus `views/*.lsp` giving list, detail,
   create, and edit screens for that table. Structured columns (`JSON`, `VARCHAR[]`) are

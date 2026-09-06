@@ -158,10 +158,10 @@ either be wrong or fight every commit that touches the file.
   URL construction point.
 - **Do not model request or response bodies as `Vec<u8>`.** Both directions stream. SSE
   needs it on the way out; uploads need it on the way in.
-- **Do not stub a later phase's method with `Ok(())`.** `serve_discovery`, `pair`,
-  `start_sync` and `sync_now` are on `Node` with their signatures and return
-  `Error::Unimplemented` naming the phase (`spec/app-contract.md §6`), exactly as the CLI's
-  `pair` and `firewall` parse and refuse. A no-op that succeeds is what an embedder builds
+- **Do not stub a later phase's method with `Ok(())`.** `start_sync` and `sync_now` are
+  on `Node` with their signatures and return `Error::Unimplemented` naming the phase
+  (`spec/app-contract.md §6`), exactly as the CLI's `pair` and `firewall` parse and
+  refuse; `serve_discovery` and `pair` were held the same way until their milestones. A no-op that succeeds is what an embedder builds
   on; keep the error until the phase lands, and never make the example or the skill call a
   method that does not exist.
 - **Do not treat the browser's offline limits as a rendering problem.** They are a secure

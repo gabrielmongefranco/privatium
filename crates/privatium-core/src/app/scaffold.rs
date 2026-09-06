@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/app/scaffold.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-04
+// Created:  2026-09-04  |  Modified: 2026-09-06
 // Summary:  What `privatium new` writes (spec/cli.md §4, spec/app-contract.md §4.7): the
 //           files of an empty app for each tier, a copy of an existing app with its slug and
 //           title rewritten, and the list / detail / create / edit screens for one table of
@@ -219,14 +219,25 @@ const TEXT_EXTENSIONS: &[&str] = &[
 /// the old title. Prose is left alone — a README that says "hello" in a sentence still
 /// says it, because rewriting words is how a copy becomes wrong in ways nobody reads.
 pub fn copy(source: &Path, slug: &str, title: &str) -> Result<Vec<File>, ScaffoldError> {
-    let manifest_path = source.join("app.toml");
-    let manifest_text = fs::read_to_string(&manifest_path).map_err(io_at(&manifest_path))?;
-    let old_slug = toml_string(&manifest_text, "slug").unwrap_or_default();
-    let old_title = toml_string(&manifest_text, "title").unwrap_or_default();
-
     let mut files = Vec::new();
     walk(source, source, &mut files)?;
+    Ok(copy_files(files, slug, title))
+}
+
+/// [`copy`] over files already in memory — an example app the binary carries
+/// (`app::examples`) rather than a folder on disk. The manifest is the `app.toml` among
+/// them; without one nothing is renamed and the files come back sorted and otherwise
+/// untouched.
+#[must_use]
+pub fn copy_files(mut files: Vec<File>, slug: &str, title: &str) -> Vec<File> {
     files.sort_by(|a, b| a.path.cmp(&b.path));
+    let manifest_text = files
+        .iter()
+        .find(|file| file.path == "app.toml")
+        .and_then(|file| std::str::from_utf8(&file.contents).ok())
+        .unwrap_or_default();
+    let old_slug = toml_string(manifest_text, "slug").unwrap_or_default();
+    let old_title = toml_string(manifest_text, "title").unwrap_or_default();
 
     for file in &mut files {
         let extension = Path::new(&file.path)
@@ -261,7 +272,7 @@ pub fn copy(source: &Path, slug: &str, title: &str) -> Result<Vec<File>, Scaffol
         }
         file.contents = text.into_bytes();
     }
-    Ok(files)
+    files
 }
 
 fn walk(base: &Path, dir: &Path, into: &mut Vec<File>) -> Result<(), ScaffoldError> {

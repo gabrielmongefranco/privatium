@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/connectivity.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-08-28
+Modified: 2026-09-06
 Summary:  Per-deployment matrices for bootstrap and reachability, and the
           resulting decision on peer-to-peer transport.
 -->
@@ -25,7 +25,7 @@ Three distinct properties, easily conflated. See `spec/protocol.md §7.0`.
 | Deployment | How the client code arrives | **1. Program authenticity** | Finds a node via | **2. Device authentication** |
 |---|---|---|---|---|
 | **Mobile native** | App store or sideload | Store signature / notarization | mDNS (NSD / Bonjour) + UDP fallback | PAKE → pins cluster key |
-| **Browser, LAN, plain HTTP** | Node serves it | **None.** TOFU gap (§7.7) | Owner types the IP; `.local` unreliable on Android | PAKE over plaintext |
+| **Browser, LAN, plain HTTP** | Node serves it | **None.** TOFU gap (§7.7) | Owner scans the QR code or types the IP; `.local` unreliable on Android | PAKE over plaintext |
 | **PWA** | HTTPS origin, cached by service worker | CA chain, then SW cache | **Cannot discover** — origin fixed at install | Token over TLS |
 | **Laptop node (Wi-Fi)** | Installer / package | Package signature, notarization | mDNS + UDP | Admitted to the cluster once |
 | **Desktop node (Ethernet)** | Installer / package | Package signature, notarization | mDNS + UDP | Founds the cluster |

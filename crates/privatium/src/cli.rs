@@ -22,7 +22,8 @@ privatium [--data-dir <path>] [--config <file>] [--verbose] [--version] [<comman
   privatium dev [--app <slug>] [--open]
       the development loop: a node, and the app to edit (§3)
   privatium new <slug> [--tier lua|web|rust] [--from <existing-app>] [--scaffold <table>]
-      scaffold an app under <data-dir>/apps/<slug>/ (§4)
+  privatium new --examples
+      scaffold an app under <data-dir>/apps/<slug>/, or write every example app (§4)
   privatium lint [<path>...] [--format text|json] [--severity error|warn|info] [--fix]
       the linter (§5)
   privatium skill list
@@ -90,6 +91,8 @@ pub enum Command {
         from: Option<String>,
         scaffold: Option<String>,
     },
+    /// `§4`, `new --examples`: every example app the binary carries.
+    NewExamples,
     /// `§5`.
     Lint {
         paths: Vec<PathBuf>,
@@ -407,11 +410,16 @@ fn dev(global: &mut Global, args: &mut Args) -> Result<Command, Usage> {
 
 fn new(global: &mut Global, args: &mut Args) -> Result<Command, Usage> {
     let (mut slug, mut tier, mut from, mut scaffold) = (None, None, None, None);
+    let mut examples = false;
     let terminal = flags(
         global,
         args,
         |name, inline, args| {
             match name {
+                "--examples" => {
+                    Args::switch(name, inline)?;
+                    examples = true;
+                }
                 "--tier" => {
                     let value = args.value(name, inline)?;
                     tier = Some(match value.as_str() {
@@ -438,7 +446,16 @@ fn new(global: &mut Global, args: &mut Args) -> Result<Command, Usage> {
     if let Some(terminal) = terminal {
         return Ok(terminal);
     }
-    let slug = slug.ok_or_else(|| usage("new: a slug is required"))?;
+    if examples {
+        if slug.is_some() || tier.is_some() || from.is_some() || scaffold.is_some() {
+            return Err(usage(
+                "new --examples: writes every example app under its own slug and takes no \
+                 slug and no other flag",
+            ));
+        }
+        return Ok(Command::NewExamples);
+    }
+    let slug = slug.ok_or_else(|| usage("new: a slug is required, or --examples"))?;
     Ok(Command::New {
         slug,
         tier,
@@ -721,6 +738,10 @@ mod tests {
                 fix: true
             }
         );
+        assert_eq!(
+            parsed("new --examples").unwrap().command,
+            Command::NewExamples
+        );
         assert_eq!(parsed("skill list").unwrap().command, Command::SkillList);
         assert_eq!(
             parsed("skill export a b --out d").unwrap().command,
@@ -766,6 +787,8 @@ mod tests {
             ("new", "slug"),
             ("new a b", "unexpected"),
             ("new a --tier perl", "--tier"),
+            ("new a --examples", "--examples"),
+            ("new --examples --tier web", "--examples"),
             ("restore", "--from"),
             ("skill", "list or export"),
             ("skill nope", "nope"),

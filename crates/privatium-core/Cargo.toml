@@ -102,6 +102,7 @@ futures-util = { workspace = true }
 hmac        = { workspace = true }
 hkdf        = { workspace = true }
 include_dir = { workspace = true }
+mdns-sd = { version = "0.21.1", default-features = false }
 
 [dev-dependencies]
 tempfile = { workspace = true }
