@@ -2,10 +2,11 @@
  * Project:  Privatium™  |  File: crates/privatium-core/assets/shell/pv.js
  * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
  * Created:  2026-09-03  |  Modified: 2026-09-06
- * Summary:  The data API helper of spec/data-api.md §5, served at /static/pv.js. Uses
- *           the encrypted channel when present. Queued writes carry their high-water
- *           mark, observed row ranks, app and node; the node judges replay against
- *           the log (spec/protocol.md §10.6). DECIMAL stays a string.
+ * Summary:  The data API helper of spec/data-api.md §5, served at /static/pv.js. Uses the
+ *           encrypted channel when present. Queued writes carry their high-water mark,
+ *           observed row ranks, app and node; the node judges replay against the log
+ *           (spec/protocol.md §10.6). DECIMAL stays a string.
+ *           See main README.md for full license information.
  */
 const MOUNT = (() => {
   const m = location.pathname.match(/^\/a\/[a-z][a-z0-9-]{1,30}\//);

@@ -1,15 +1,16 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/reference.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-04  |  Modified: 2026-09-06
-// Summary:  docs/plans/phase-1.md M10 — the three reference apps end to end through
-//           core::handle with no listener, exactly as their READMEs describe them: hello
-//           (write, amend, break the cache, and the README's own `echo >>` line run for
-//           real), animals (the seed, a round over htmx and over plain form posts, the
-//           three-event teach, the recursive knowledge page, reset as tombstones, and the
-//           CSP the Alpine build runs under), sketch (every call app.js makes, against the
-//           log). Then the accessibility baseline: the PV4xx rules of spec/cli.md §5 held
-//           over the shell's own pages, the Tier 1 page frame and the reference views
-//           (§5.4), and the declared colour tokens at their contrast floors (PV406).
+// Summary:  The three reference apps end to end through core::handle with no listener,
+//           exactly as their READMEs describe them: hello (write, amend, break the cache,
+//           and the README's own `echo >>` line run for real), animals (the seed, a round
+//           over htmx and over plain form posts, the three-event teach, the recursive
+//           knowledge page, reset as tombstones, and the CSP the Alpine build runs under),
+//           sketch (every call app.js makes, against the log). Then the accessibility
+//           baseline: the PV4xx rules of spec/cli.md §5 held over the shell's own pages,
+//           the Tier 1 page frame and the reference views (§5.4), and the declared colour
+//           tokens at their contrast floors (PV406).
+//           See main README.md for full license information.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

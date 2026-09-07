@@ -1,8 +1,9 @@
 /* Project:  Privatium™  |  File: apps/animals/static/animals.js
  * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
  * Created:  2026-08-31  |  Modified: 2026-09-06
- * Summary:  Game focus management and Alpine components for interactions that are
- *           purely visual. Everything that changes data is HTMX, not this file.
+ * Summary:  Game focus management and Alpine components for interactions that are purely
+ *           visual. Everything that changes data is HTMX, not this file.
+ *           See main README.md for full license information.
  *
  * WHY THIS FILE EXISTS AT ALL, RATHER THAN INLINE x-data
  * -----------------------------------------------------

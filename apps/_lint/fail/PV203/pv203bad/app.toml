@@ -2,6 +2,7 @@
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-05
 # Summary:  PV203 fail: os.execute and io are removed from the sandbox.
+#           See main README.md for full license information.
 
 [app]
 slug    = "pv203bad"

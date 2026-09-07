@@ -3,6 +3,7 @@
 // Created:  2026-09-01  |  Modified: 2026-09-05
 // Summary:  Node and cluster identities, certificate validation and renewal, secret
 //           exclusion, and identity selection after restore (spec/protocol.md §2).
+//           See main README.md for full license information.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

@@ -1,13 +1,13 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/app/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-02  |  Modified: 2026-09-06
-// Summary:  The app loader — step 5 of docs/plans/phase-1.md §2.6 and the lifecycle of
-//           spec/app-contract.md §8 up to and including mount. Discovers app folders,
-//           refuses per app and loudly (§3.1), keeps sys_app as events (§3.4), and owns
-//           each app's log, store and — for Tier 1 — its Lua host. The node's one public
-//           write path, `Node::append_batch`, is here too, beside `append`, load_seed,
-//           `open_app` (an embedder's app with no folder, §2.3) and `subscribe`, so
-//           nothing above this module ever holds an app's log.
+// Summary:  The app loader — the lifecycle of spec/app-contract.md §8 up to and including
+//           mount. Discovers app folders, refuses per app and loudly (§3.1), keeps sys_app
+//           as events (§3.4), and owns each app's log, store and — for Tier 1 — its Lua
+//           host. The node's one public write path, `Node::append_batch`, is here too,
+//           beside `append`, load_seed, `open_app` (an embedder's app with no folder, §2.3)
+//           and `subscribe`, so nothing above this module ever holds an app's log.
+//           See main README.md for full license information.
 
 use std::collections::BTreeMap;
 use std::fmt;

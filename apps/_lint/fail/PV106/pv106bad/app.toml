@@ -2,6 +2,7 @@
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-05
 # Summary:  PV106 fail: the table's id is an INTEGER and not the primary key.
+#           See main README.md for full license information.
 
 [app]
 slug    = "pv106bad"

@@ -5,9 +5,10 @@
 //           events carries `"batch": n`, and a reader that finds fewer than n consecutive
 //           lines with that `ts` and contiguous `seq` after it — the segment ended, a line
 //           with another `ts` came first, a new batch began — has an incomplete batch on
-//           its hands, which a crash between the write and the disk left. Its lines are
-//           not materialized, not served and not sent; nothing is truncated, and the
-//           writer continues after them. Every reader of a log applies this one function.
+//           its hands, which a crash between the write and the disk left. Its lines are not
+//           materialized, not served and not sent; nothing is truncated, and the writer
+//           continues after them. Every reader of a log applies this one function.
+//           See main README.md for full license information.
 
 use std::ops::Range;
 

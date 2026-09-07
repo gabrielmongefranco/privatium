@@ -2,9 +2,10 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-04  |  Modified: 2026-09-04
 // Summary:  `privatium skill list|export` (spec/cli.md §6, docs/skills.md §6): the skills
-//           embedded in this build — the same files /skills/<name>.md and /skills/bundle.zip
-//           serve — named, and written to disk at their repository-relative paths so an
-//           owner hands their assistant the contract of the version they are running.
+//           embedded in this build — the same files /skills/<name>.md and
+//           /skills/bundle.zip serve — named, and written to disk at their
+//           repository-relative paths so an owner hands their assistant the contract of the
+//           version they are running. See main README.md for full license information.
 
 use std::fs;
 use std::path::Path;

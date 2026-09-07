@@ -2,10 +2,11 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-06  |  Modified: 2026-09-06
 // Summary:  DNS-SD over mDNS (spec/protocol.md §6.1): one registration of
-//           `_privatium._tcp.local.` carrying the TXT record, replaced whenever the
-//           facts change and when the pairing window closes; and a browser of the same
-//           type that keeps every node it resolves keyed by `id`. The daemon runs its
-//           own thread; a second thread here reads what it browses.
+//           `_privatium._tcp.local.` carrying the TXT record, replaced whenever the facts
+//           change and when the pairing window closes; and a browser of the same type that
+//           keeps every node it resolves keyed by `id`. The daemon runs its own thread; a
+//           second thread here reads what it browses.
+//           See main README.md for full license information.
 
 use std::collections::BTreeMap;
 use std::net::IpAddr;

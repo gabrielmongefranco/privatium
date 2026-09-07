@@ -1,23 +1,35 @@
 # Project:  Privatium™  |  File: .github/workflows/release.yml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-06
-# Summary:  Build a tested release commit and attach single-binary archives.
+# Summary:  Build a tested release commit and attach the four release archives — one
+#           single-binary archive per operating system and the Windows portable zip — when a
+#           release is published, or on demand for a release tag that already exists.
+#           See main README.md for full license information.
 
 name: Release binaries
 
 on:
   release:
     types: [published]
+  # Attach binaries to a release that was published without them — one made before
+  # this workflow existed, or one whose run failed — by naming its tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The tag of the published release to build and attach binaries to
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.event.release.id }}
+  group: release-${{ github.event.release.tag_name || inputs.tag }}
   cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
+  RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
 
 jobs:
   ci:
@@ -31,6 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ env.RELEASE_TAG }}
           persist-credentials: false
       - name: Resolve the release commit
         id: commit
@@ -83,25 +96,31 @@ jobs:
           if-no-files-found: error
 
   attach:
-    needs: build
+    needs: [ci, build]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.ci.outputs.sha }}
+          persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
           pattern: privatium*
           merge-multiple: true
           skip-decompress: true
           path: dist
-      - name: Attach binaries to the published release
+      # Every archive release_tools.py names must be here, or nothing is attached.
+      - name: Attach the archives to the published release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          gh release upload "$RELEASE_TAG" \
-            dist/privatium-mac.zip dist/privatium-windows.zip \
-            dist/privatium-windows-portable.zip dist/privatium-linux.tar.gz \
-            --clobber
+          assets=""
+          for name in $(python .github/scripts/release_tools.py assets list); do
+            test -s "dist/$name" || { echo "missing archive: dist/$name"; exit 1; }
+            assets="$assets dist/$name"
+          done
+          gh release upload "$RELEASE_TAG" $assets --clobber

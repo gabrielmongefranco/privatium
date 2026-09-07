@@ -138,7 +138,7 @@ pub fn close_pairing(&mut self, now: jiff::Timestamp) -> Result<bool>
 pub fn pairing_hello(&self, now: jiff::Timestamp) -> String
 pub fn pairing_begin( &mut self, source: IpAddr, now: jiff::Timestamp, text: &str, ) -> Result<(Exchange, String)>
 pub fn pairing_begin_with( &mut self, source: IpAddr, now: jiff::Timestamp, text: &str, secret: &[u8; 64], ) -> Result<(Exchange, String)>
-pub fn pairing_confirm(&mut self, exchange: Exchange, text: &str) -> Result<(Sealed, Vec<u8>)>
+pub fn pairing_confirm( &mut self, exchange: Exchange, text: &str, now: jiff::Timestamp, ) -> Result<(Sealed, Vec<u8>)>
 pub fn pairing_finish( &mut self, sealed: Sealed, ciphertext: &[u8], now: jiff::Timestamp, ) -> Result<Paired>
 pub fn pairing_abandon(&mut self, device: &str, source: IpAddr) -> Result<()>
 pub fn listen_url(&self) -> String

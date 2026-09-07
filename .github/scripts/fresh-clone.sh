@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Project:  Privatium™  |  File: .github/scripts/fresh-clone.sh
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-09-05  |  Modified: 2026-09-05
-# Summary:  The fresh-clone check of docs/plans/phase-1.md M13: `cargo build`, then the
-#           binary, given nothing but an empty data directory, serves the hello app at
-#           http://127.0.0.1:8420 — the Phase 1 deliverable of docs/roadmap.md, from a
+# Created:  2026-09-05  |  Modified: 2026-09-06
+# Summary:  The fresh-clone check: `cargo build`, then the binary, given nothing but an
+#           empty data directory, serves the hello app at http://127.0.0.1:8420 from a
 #           checkout, with no configuration. Bash on all three CI platforms.
+#           See main README.md for full license information.
 
 set -euo pipefail
 

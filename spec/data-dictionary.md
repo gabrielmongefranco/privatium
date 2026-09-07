@@ -5,6 +5,7 @@ Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
 Modified: 2026-09-06
 Summary:  NORMATIVE. System tables, app index, type mappings, and field definitions.
+          See main README.md for full license information.
 -->
 
 # Data Dictionary — `pv/1`

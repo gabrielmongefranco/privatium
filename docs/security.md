@@ -5,6 +5,7 @@ Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
 Modified: 2026-09-06
 Summary:  Threat model, protections, and honest statements of what is not protected.
+          See main README.md for full license information.
 -->
 
 # Security Model
@@ -16,7 +17,12 @@ application channel at `/ws`. The node binds IPv4 on every interface and IPv6 wh
 available. Unpaired LAN browsers receive only the bootstrap set; loopback keeps the
 owner's existing access. The node advertises itself over mDNS and answers UDP probes
 (`spec/protocol.md §6`); what it advertises is its public identity and app slugs, never
-data. Pairing opens only from the node itself — the devices page, `privatium pair`, or
+data. What it hears back is checked before it is listed — an ID that is not shaped as
+one is dropped, a name is cut to length — and the UDP responder answers a bounded number
+of probes a second from a bounded number of addresses, so a flood of invented addresses
+cannot use it to amplify traffic.
+
+Pairing opens only from the node itself — the devices page, `privatium pair`, or
 `--open` on a node no device has paired with yet — and the code is shown there as four
 emoji and two words. A phone that loads the node's address gets the pairing screen; a
 paired device is listed on the devices page, where the owner can label or revoke it, and
@@ -50,7 +56,7 @@ guarantees into one. Normative version: `spec/protocol.md §7.0`.
 | # | Property | Question | Mechanism |
 |---|---|---|---|
 | **1** | Program authenticity | Is this client genuine? | Package signature, notarization, or a CA chain |
-| **2** | Device authentication | May this device talk to my cluster? | PAKE first contact, pinned keys after |
+| **2** | Device authentication | May this device talk to the owner's cluster? | PAKE first contact, pinned keys after |
 | **3** | Transport security | Is the channel confidential? | The derived session key |
 
 | Client | 1 | 2 | 3 |
@@ -234,7 +240,11 @@ PAKE rather than being sent as a bearer token, there is no offline dictionary at
 guess costs a full network round trip. A guess is counted the moment the node answers a
 device's first message, because that answer already reveals whether the code matched; a
 device that never sends its confirmation has still spent one, and five spent guesses
-replace the code inside the same window.
+replace the code inside the same window. A guess is against the code it was made
+against: once five failures have replaced the code, or another device has paired, a
+confirmation still on its way is refused and nothing is sealed for it. A device that
+opens the pairing socket and then says nothing is dropped after thirty seconds, with no
+guess counted.
 
 For comparison, a 6-digit banking OTP is roughly 20 bits with far worse ergonomics and
 frequently a 5-minute window.
@@ -259,6 +269,11 @@ Therefore:
   script from a stranger.
 - There is no app registry in `pv/1`, deliberately. A registry implies curation, curation
   implies a trust signal, and a false trust signal is worse than none.
+- Apps share the node's origin. Script from an installed app running in the owner's own
+  browser on the node has the owner's standing there: it can open pairing through
+  `/api/v1/pair` or submit the devices page's forms, as the owner could. That is one more
+  reason to treat an app folder as code you chose to run, not a boundary the framework
+  draws for you.
 
 ## 8. Revocation
 

@@ -1,16 +1,15 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lib.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-08-31  |  Modified: 2026-09-06
-// Summary:  Crate root. The error type, the M0 linkage probe, `Node::open` — steps 1 to 4
-//           of the bootstrap order in docs/plans/phase-1.md §2.6 — the sink that turns
-//           what a log scan found into sys_audit rows (spec/protocol.md §4.4), and the
-//           node-level snapshot, restore, verify, prune and maintenance API of
-//           spec/app-contract.md §6 (M4), routed to every loaded app's store (M5),
-//           auth_layer (M6), and the rest of the §6 surface an embedder calls — query,
-//           close, and the discovery, pairing and sync methods that are present and never
-//           Ok until their phase (M13). core::handle itself is wire::Handler; the Lua host
-//           behind a Tier 1 mount is `lua` (M7); append, append_batch, open_app and
-//           subscribe are `app`'s.
+// Summary:  Crate root. The error type, the engine linkage probe, `Node::open` and the
+//           bootstrap order it follows, the sink that turns what a log scan found into
+//           sys_audit rows (spec/protocol.md §4.4), and the node-level API of
+//           spec/app-contract.md §6 — snapshot, restore, verify, prune and maintenance
+//           routed to every loaded app's store, auth_layer, query, close, the discovery and
+//           pairing methods, and the sync methods, which are present and never Ok until
+//           sync is built. core::handle itself is wire::Handler; the Lua host behind a Tier
+//           1 mount is `lua`; append, append_batch, open_app and subscribe are `app`'s.
+//           See main README.md for full license information.
 
 //! Privatium core.
 //!

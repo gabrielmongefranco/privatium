@@ -2,9 +2,10 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  The `pv` module of spec/lua-api.md §3: routing (§3.1), reading on the sandboxed
-//           connection (§3.2), writing through the node's log as appends and batches (§3.3),
-//           and the rest of §3.4. Routes and `pv.on` register while app.lua loads; reads and
-//           writes run only inside a request, where a connection and the node are at hand.
+//           connection (§3.2), writing through the node's log as appends and batches
+//           (§3.3), and the rest of §3.4. Routes and `pv.on` register while app.lua loads;
+//           reads and writes run only inside a request, where a connection and the node are
+//           at hand. See main README.md for full license information.
 
 use std::sync::PoisonError;
 

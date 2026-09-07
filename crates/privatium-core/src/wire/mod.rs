@@ -1,12 +1,13 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/wire/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-03  |  Modified: 2026-09-06
-// Summary:  core::handle(Request) -> Response (ADR 0003): the one entry point for application
-//           traffic. Bodies are streams in both directions. The router is built from
-//           Node::mounts(); the auth layer runs here so every adapter gets it; the §9.3
-//           headers go on every response on the way out. How the Node is shared is decided
-//           here too — one mutex, taken for the synchronous part of a request and released
-//           before anything awaits; a Lua handler runs on a blocking thread outside it.
+// Summary:  core::handle(Request) -> Response (ADR 0003): the one entry point for
+//           application traffic. Bodies are streams in both directions. The router is built
+//           from Node::mounts(); the auth layer runs here so every adapter gets it; the
+//           §9.3 headers go on every response on the way out. How the Node is shared is
+//           decided here too — one mutex, taken for the synchronous part of a request and
+//           released before anything awaits; a Lua handler runs on a blocking thread
+//           outside it. See main README.md for full license information.
 
 use std::collections::BTreeMap;
 use std::net::Ipv4Addr;
@@ -91,6 +92,8 @@ pub struct Handler {
     /// listens and closes its own device's socket at once (`spec/data-dictionary.md
     /// §3.2`, "access denied immediately"), rather than at its next frame.
     revoked: tokio::sync::broadcast::Sender<String>,
+    /// How long a `/ws` or `/ws/pair` peer may take over its handshake.
+    timeouts: channel::ChannelTimeouts,
 }
 
 impl std::fmt::Debug for Handler {
@@ -122,7 +125,14 @@ impl Handler {
             api: ApiState::default(),
             handoffs: handoff::Handoffs::default(),
             revoked: tokio::sync::broadcast::channel(64).0,
+            timeouts: channel::ChannelTimeouts::default(),
         }
+    }
+
+    /// The handshake bounds of `/ws` and `/ws/pair` — to shorten them in a test, or for
+    /// an embedder whose link is slower than a LAN.
+    pub fn channel_timeouts_mut(&mut self) -> &mut channel::ChannelTimeouts {
+        &mut self.timeouts
     }
 
     /// The shared node. Lock it briefly; never across an `await`.

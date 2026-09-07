@@ -1,14 +1,14 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lint/sql.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
+// Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  The SQL half of the linter. schema.sql goes through the engine: PV106 asks the
-//           catalog for `id VARCHAR PRIMARY KEY`, and PV107 — settled here for SQLite, as
-//           docs/plans/phase-1.md M12 left it — prepares each statement under an authorizer
-//           that records the actions SQLite reports, so a statement is classified by what
-//           the engine would do, never by its first word. App SQL — the literals Lua,
-//           templates and JavaScript hand to pv.query and pv.sql, and CREATE VIEW bodies —
-//           goes through a small tokenizer for PV303 (no writes) and PV308 (no SUM over a
-//           DECIMAL, no + or - on a DATE).
+//           catalog for `id VARCHAR PRIMARY KEY`, and PV107 prepares each statement under
+//           an authorizer that records the actions SQLite reports, so a statement is
+//           classified by what the engine would do, never by its first word. App SQL — the
+//           literals Lua, templates and JavaScript hand to pv.query and pv.sql, and CREATE
+//           VIEW bodies — goes through a small tokenizer for PV303 (no writes) and PV308
+//           (no SUM over a DECIMAL, no + or - on a DATE).
+//           See main README.md for full license information.
 
 use std::sync::{Arc, Mutex, PoisonError};
 

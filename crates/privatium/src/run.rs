@@ -2,13 +2,13 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-04  |  Modified: 2026-09-06
 // Summary:  Bare `privatium` (spec/cli.md §2) and `privatium dev` (§3): write the example
-//           apps on a first run, open the node, apply the run's overrides, load every
-//           app, bind the LAN, start discovery on the bound port, and serve
-//           `core::handle` until Ctrl-C. `dev` is the same node with the app named — the
-//           reloading is the host's own, a stat on the next request (§3, spec/lua-api.md
-//           §7), so there is nothing for this file to watch. The weekly snapshots of
-//           spec/protocol.md §5 are written by a daily pass here, since a node with no
-//           request loop of its own had nobody to write them.
+//           apps on a first run, open the node, apply the run's overrides, load every app,
+//           bind the LAN, start discovery on the bound port, and serve `core::handle` until
+//           Ctrl-C. `dev` is the same node with the app named — the reloading is the host's
+//           own, a stat on the next request (§3, spec/lua-api.md §7), so there is nothing
+//           for this file to watch. The weekly snapshots of spec/protocol.md §5 are written
+//           by a daily pass here, since a node with no request loop of its own had nobody
+//           to write them. See main README.md for full license information.
 
 use std::sync::Arc;
 use std::time::Duration;

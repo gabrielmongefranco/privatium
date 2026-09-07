@@ -9,6 +9,7 @@
 //           strict prefix of it, and a divergence refuses the whole restore before a byte
 //           moves. Snapshots are caches and are copied when absent. local/ and cache/ are
 //           never read from a backup (spec/protocol.md §3.1).
+//           See main README.md for full license information.
 
 use std::collections::BTreeSet;
 use std::fs;

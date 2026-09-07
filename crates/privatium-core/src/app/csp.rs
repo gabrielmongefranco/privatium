@@ -5,6 +5,7 @@
 //           (spec/app-contract.md §5.4) over the default of spec/protocol.md §9.3. The
 //           default is never relaxed to make anything work (AGENTS.md); each permission
 //           widens exactly one directive and each widening is surfaced to the owner.
+//           See main README.md for full license information.
 
 use crate::app::manifest::Permissions;
 

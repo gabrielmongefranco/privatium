@@ -2,6 +2,7 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  LAN bootstrap isolation, channel framing and authenticated routing.
+//           See main README.md for full license information.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

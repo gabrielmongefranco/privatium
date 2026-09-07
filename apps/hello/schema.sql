@@ -2,6 +2,7 @@
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 -- Created:  2026-08-28  |  Modified: 2026-09-03
 -- Summary:  One table, one column. Derived from the event log on every start.
+--           See main README.md for full license information.
 
 CREATE TABLE profile (
     id           VARCHAR PRIMARY KEY,   -- ULID, minted by the framework

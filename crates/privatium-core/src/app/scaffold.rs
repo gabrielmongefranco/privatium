@@ -2,11 +2,12 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-04  |  Modified: 2026-09-06
 // Summary:  What `privatium new` writes (spec/cli.md §4, spec/app-contract.md §4.7): the
-//           files of an empty app for each tier, a copy of an existing app with its slug and
-//           title rewritten, and the list / detail / create / edit screens for one table of
-//           schema.sql. Pure functions returning files — the CLI decides where they go and
-//           refuses to overwrite. Nothing here has a runtime presence: the output is ordinary
-//           source an author edits, deletes or rewrites, and no file describes a UI.
+//           files of an empty app for each tier, a copy of an existing app with its slug
+//           and title rewritten, and the list / detail / create / edit screens for one
+//           table of schema.sql. Pure functions returning files — the CLI decides where
+//           they go and refuses to overwrite. Nothing here has a runtime presence: the
+//           output is ordinary source an author edits, deletes or rewrites, and no file
+//           describes a UI. See main README.md for full license information.
 
 use std::fs;
 use std::path::{Path, PathBuf};

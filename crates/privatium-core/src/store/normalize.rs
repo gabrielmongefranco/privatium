@@ -1,13 +1,13 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/normalize.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-03  |  Modified: 2026-09-03
-// Summary:  Typed writes (spec/data-dictionary.md §2.1, spec/lua-api.md §3.3): the values of
-//           a `d` about to be appended, checked and normalized against the column each
+// Summary:  Typed writes (spec/data-dictionary.md §2.1, spec/lua-api.md §3.3): the values
+//           of a `d` about to be appended, checked and normalized against the column each
 //           names — BIGINT and DECIMAL as digit strings at the declared scale, BOOLEAN as
 //           true/false, and DATE, TIME and TIMESTAMPTZ parsed from the forms people type
 //           into the ISO spelling the cache stores. A value that is not its type refuses
 //           the append before anything is written, so the log stays clean and nothing has
-//           to materialize as NULL later.
+//           to materialize as NULL later. See main README.md for full license information.
 
 use serde_json::{Map, Value};
 

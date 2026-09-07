@@ -1,11 +1,12 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/validate.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-03  |  Modified: 2026-09-03
-// Summary:  NOT NULL and CHECK before an append (spec/data-api.md §2, spec/lua-api.md §3.3).
-//           The author's schema.sql runs in a throwaway in-memory database and every put of
-//           the batch is inserted there, so the engine judges each row by the constraints
-//           exactly as they were written — no second parser, no list of constraint kinds.
-//           A violation names the event's index in the batch; nothing has reached the log.
+// Summary:  NOT NULL and CHECK before an append (spec/data-api.md §2, spec/lua-api.md
+//           §3.3). The author's schema.sql runs in a throwaway in-memory database and every
+//           put of the batch is inserted there, so the engine judges each row by the
+//           constraints exactly as they were written — no second parser, no list of
+//           constraint kinds. A violation names the event's index in the batch; nothing has
+//           reached the log. See main README.md for full license information.
 
 use rusqlite::Connection;
 

@@ -4,6 +4,7 @@
 // Summary:  Actual WebSocket pairing, authenticated routing, streaming and refusal (§8);
 //           the owner-only acts a session is refused (§9.2), the session device an app
 //           sees, and the refusal a paired client makes of a re-keyed node (§8.1).
+//           See main README.md for full license information.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -84,6 +85,16 @@ impl Fixture {
     /// A node over `root` — fresh, or one whose `data/` was copied in — with the
     /// repository's apps and, when given, the owner's apps under `local`.
     async fn with_apps(root: tempfile::TempDir, local: Option<&Path>) -> Self {
+        Self::build(root, local, |_| {}).await
+    }
+
+    /// [`Fixture::with_apps`] with the handler adjusted before it serves — the handshake
+    /// bounds, for the tests that wait on them.
+    async fn build(
+        root: tempfile::TempDir,
+        local: Option<&Path>,
+        configure: impl FnOnce(&mut Handler),
+    ) -> Self {
         let mut node = Node::open(root.path()).unwrap();
         let mut roots = vec![AppRoot::bundled(
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps"),
@@ -92,7 +103,9 @@ impl Fixture {
             roots.insert(0, AppRoot::local(local.to_path_buf()));
         }
         let report = node.load_apps(&roots).unwrap();
-        let handler = Arc::new(Handler::new(node, report));
+        let mut handler = Handler::new(node, report);
+        configure(&mut handler);
+        let handler = Arc::new(handler);
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let destination = listener.local_addr().unwrap();
         let h = handler.clone();
@@ -478,6 +491,93 @@ async fn test_spec_8_1_a_revoked_device_is_refused_at_the_handshake() {
         .await
         .unwrap();
     assert!(matches!(next(&mut socket).await, Message::Close(Some(c)) if c.code == 4403.into()));
+}
+
+/// `spec/protocol.md §7.4.2`, `§7.5` — a peer that opens `/ws/pair` and sends nothing is
+/// closed when the handshake bound passes, with no attempt counted and no audit row
+/// written, and the window is untouched for the next device; a peer that opens `/ws`
+/// and sends nothing is closed the same way. The bounds are shortened for the test;
+/// nothing here reads a clock.
+#[tokio::test]
+async fn test_spec_7_4_a_silent_pairing_peer_is_closed_without_an_attempt() {
+    let f = Fixture::build(tempfile::tempdir().unwrap(), None, |handler| {
+        let timeouts = handler.channel_timeouts_mut();
+        timeouts.pairing = Duration::from_millis(300);
+        timeouts.handshake = Duration::from_millis(300);
+    })
+    .await;
+    let opened = f
+        .handler
+        .node()
+        .lock()
+        .unwrap()
+        .pair(Duration::from_secs(120))
+        .unwrap();
+    let mut silent = f.socket("/ws/pair").await;
+    let hello: serde_json::Value =
+        serde_json::from_str(&next(&mut silent).await.into_text().unwrap()).unwrap();
+    assert_eq!(hello["open"], true);
+    assert!(
+        matches!(next(&mut silent).await, Message::Close(Some(c)) if c.code == 4400.into() && c.reason.contains("could not finish")),
+        "closed at the bound"
+    );
+    {
+        let mut node = f.handler.node().lock().unwrap();
+        node.refresh().unwrap();
+        let window = node
+            .refresh_pairing(jiff::Timestamp::now())
+            .unwrap()
+            .unwrap();
+        assert_eq!(window.id, opened.id);
+        assert_eq!(window.attempts, 0, "nothing was counted");
+        for kind in ["pair.attempt", "pair.failed"] {
+            let count: i64 = node
+                .store()
+                .conn()
+                .query_row(
+                    "SELECT count(*) FROM sys_audit WHERE kind = ?",
+                    [kind],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(count, 0, "{kind}");
+        }
+    }
+    // The window is still open, and the next device pairs through it.
+    f.pair().await;
+    // A silent peer on the channel is closed the same way, with 4403.
+    let mut silent = f.socket("/ws").await;
+    assert!(matches!(next(&mut silent).await, Message::Close(Some(c)) if c.code == 4403.into()));
+}
+
+/// `spec/protocol.md §8.3` — the node's own `sys_device` row, which carries keys for
+/// other purposes, cannot open a channel: a hello naming this node's ID is refused with
+/// 4403 before any hello is answered, exactly as an unknown device is.
+#[tokio::test]
+async fn test_spec_8_3_the_nodes_own_row_cannot_open_a_channel() {
+    let f = Fixture::new().await;
+    let paired = f.pair().await;
+    let node_id = f.handler.node().lock().unwrap().id().as_str().to_owned();
+    let mut socket = f.socket("/ws").await;
+    let (_, hello) = ClientHandshake::start(
+        &node_id,
+        x25519_dalek::StaticSecret::from(paired.x25519.to_bytes()),
+        NodePins {
+            id: paired.node_id.clone(),
+            cluster: paired.cluster_pub,
+            x25519: paired.node_x25519,
+        },
+    )
+    .unwrap();
+    socket.send(Message::Text(hello.into())).await.unwrap();
+    assert!(
+        matches!(next(&mut socket).await, Message::Close(Some(c)) if c.code == 4403.into()),
+        "refused without a node hello"
+    );
+    // The paired device itself is unaffected.
+    let mut c = f.connect(&paired).await;
+    let id = c.request("GET", "/api/v1/health", "").await;
+    assert_eq!(c.response(id).await.0, 200);
 }
 
 #[tokio::test]

@@ -7,6 +7,7 @@
 //           writes nothing. Restore brings a backed-up data/ folder in (core::backup), then
 //           rebuilds each app's cache by the three tiers and says which one it used;
 //           --dry-run prints the plan and the prediction instead.
+//           See main README.md for full license information.
 
 use std::path::Path;
 

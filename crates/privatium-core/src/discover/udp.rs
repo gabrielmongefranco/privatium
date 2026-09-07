@@ -3,9 +3,10 @@
 // Created:  2026-09-06  |  Modified: 2026-09-06
 // Summary:  The UDP broadcast fallback of spec/protocol.md §6.4 for networks that filter
 //           multicast: a responder on port 52525 that answers `PVDISCO1` + nonce from a
-//           private, link-local or loopback source with the same prefix, the nonce and
-//           the TXT key set as JSON, once per source per second; and the probe a node
-//           sends to find its peers.
+//           private, link-local or loopback source with the same prefix, the nonce and the
+//           TXT key set as JSON, once per source per second and within a budget for every
+//           source together; and the probe a node sends to find its peers.
+//           See main README.md for full license information.
 
 use std::collections::{BTreeMap, HashMap};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
@@ -49,32 +50,60 @@ pub fn source_allowed(ip: IpAddr) -> bool {
     }
 }
 
-/// The per-source limit, over a clock the caller supplies.
+/// The limits of `§6.4` over a clock the caller supplies: one answer per source per
+/// second, and — because a probe is twelve bytes from an address nobody verified and an
+/// answer is a kilobyte — a budget on answers per second across every source, and a cap
+/// on the sources remembered. A flood of invented private addresses is answered at the
+/// budget and then not at all until the table forgets them; a source already known keeps
+/// its one answer a second throughout.
 #[derive(Debug, Default)]
 pub struct RateLimit {
     last: HashMap<IpAddr, Instant>,
+    /// When the current one-second budget window began.
+    window: Option<Instant>,
+    /// Answers sent in that window.
+    answered: u32,
 }
 
-/// Entries older than this are dropped whenever the table is pruned.
-const FORGET_AFTER: Duration = Duration::from_secs(60);
+/// The most answers sent in any one second, to every source together.
+pub const GLOBAL_PER_SECOND: u32 = 32;
 
-/// The table is pruned when it grows past this many sources.
-const PRUNE_AT: usize = 1024;
+/// The most sources remembered at once; an unseen source past this is not answered
+/// until an entry ages out.
+pub const SOURCES_MAX: usize = 1024;
+
+/// Entries older than this are dropped when the table is full.
+const FORGET_AFTER: Duration = Duration::from_secs(60);
 
 impl RateLimit {
     /// Whether a probe from `ip` at `now` gets an answer, and record it if so.
     pub fn allow(&mut self, ip: IpAddr, now: Instant) -> bool {
-        if self.last.len() > PRUNE_AT {
-            self.last
-                .retain(|_, last| now.duration_since(*last) < FORGET_AFTER);
+        if self
+            .window
+            .is_none_or(|began| now.duration_since(began) >= PER_SOURCE)
+        {
+            self.window = Some(now);
+            self.answered = 0;
+        }
+        if self.answered >= GLOBAL_PER_SECOND {
+            return false;
         }
         match self.last.get(&ip) {
-            Some(last) if now.duration_since(*last) < PER_SOURCE => false,
-            _ => {
-                self.last.insert(ip, now);
-                true
+            Some(last) if now.duration_since(*last) < PER_SOURCE => return false,
+            Some(_) => {}
+            None => {
+                if self.last.len() >= SOURCES_MAX {
+                    self.last
+                        .retain(|_, last| now.duration_since(*last) < FORGET_AFTER);
+                }
+                if self.last.len() >= SOURCES_MAX {
+                    return false;
+                }
             }
         }
+        self.last.insert(ip, now);
+        self.answered += 1;
+        true
     }
 }
 

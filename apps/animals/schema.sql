@@ -1,8 +1,8 @@
 -- Project:  Privatium™  |  File: apps/animals/schema.sql
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 -- Created:  2026-08-28  |  Modified: 2026-09-03
--- Summary:  A binary decision tree in one table. Leaves are animals, branches
---           are yes/no questions.
+-- Summary:  A binary decision tree in one table. Leaves are animals, branches are yes/no
+--           questions. See main README.md for full license information.
 
 CREATE TABLE node (
     id     VARCHAR PRIMARY KEY,   -- ULID

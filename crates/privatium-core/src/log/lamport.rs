@@ -4,6 +4,7 @@
 // Summary:  The Lamport counter of spec/protocol.md §4.3. Small enough to inline
 //           everywhere, and a type rather than a bare u64 because getting its arithmetic
 //           subtly wrong would corrupt §4.5 merge order silently.
+//           See main README.md for full license information.
 
 /// One node's Lamport counter for one app (`spec/protocol.md §4.3`).
 ///

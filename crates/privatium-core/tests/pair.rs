@@ -2,9 +2,9 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  Pairing against spec/protocol.md §7: the code and its renderings, the SPAKE2
-//           vectors both languages read, the six messages of /ws/pair through the node,
-//           the window's TTL, attempt cap and rate limit, the audit rows, and the device
-//           row a success writes.
+//           vectors both languages read, the six messages of /ws/pair through the node, the
+//           window's TTL, attempt cap and rate limit, the audit rows, and the device row a
+//           success writes. See main README.md for full license information.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -90,7 +90,7 @@ fn run(
         }
     };
     wire.texts.push(confirm.clone());
-    let (sealed, node_sealed) = node.pairing_confirm(exchange, &confirm)?;
+    let (sealed, node_sealed) = node.pairing_confirm(exchange, &confirm, when)?;
     wire.sealed.push(node_sealed.clone());
     let (_pins, client_sealed) = client.finish(
         &node_sealed,
@@ -414,7 +414,7 @@ fn test_spec_7_4_the_client_pins_the_cluster_key_and_the_node_certificate() {
     let (mut client, start) = Client::start(&hello, code, "mobile").unwrap();
     let (exchange, reply) = node.pairing_begin(source(1), now(), &start).unwrap();
     let confirm = client.reply(&reply).unwrap();
-    let (sealed, node_sealed) = node.pairing_confirm(exchange, &confirm).unwrap();
+    let (sealed, node_sealed) = node.pairing_confirm(exchange, &confirm, now()).unwrap();
     let (pins, client_sealed) = client
         .finish(&node_sealed, None, None, jiff::Timestamp::now())
         .unwrap();
@@ -844,7 +844,9 @@ fn test_spec_7_4_2_malformed_messages_and_a_mismatched_device_id_are_refused() {
     let (exchange, reply) = node.pairing_begin(source(50), later(50), &start).unwrap();
     client.reply(&reply).unwrap();
     let forged = json!({"cA": STANDARD.encode([7; 32])}).to_string();
-    let refused = node.pairing_confirm(exchange, &forged).unwrap_err();
+    let refused = node
+        .pairing_confirm(exchange, &forged, later(50))
+        .unwrap_err();
     assert!(matches!(refused, Error::Pair(PairError::WrongCode)));
     assert_eq!(audit_rows(&mut node, "pair.failed").len(), 2);
     assert_eq!(node.refresh_pairing(now()).unwrap().unwrap().attempts, 2);
@@ -861,7 +863,7 @@ fn test_spec_7_4_2_malformed_messages_and_a_mismatched_device_id_are_refused() {
     let (mut client, start) = Client::start(&node.pairing_hello(now()), code, "browser").unwrap();
     let (exchange, reply) = node.pairing_begin(source(52), later(52), &start).unwrap();
     let confirm = client.reply(&reply).unwrap();
-    let (sealed, mut node_sealed) = node.pairing_confirm(exchange, &confirm).unwrap();
+    let (sealed, mut node_sealed) = node.pairing_confirm(exchange, &confirm, later(52)).unwrap();
     node_sealed[3] ^= 1;
     assert!(matches!(
         client.finish(&node_sealed, None, None, jiff::Timestamp::now()),
@@ -896,7 +898,7 @@ fn test_spec_7_6_a_registered_device_key_cannot_pair_again() {
         )?;
         let (exchange, reply) = node.pairing_begin(source(1), when, &start)?;
         let confirm = client.reply(&reply)?;
-        let (sealed, node_sealed) = node.pairing_confirm(exchange, &confirm)?;
+        let (sealed, node_sealed) = node.pairing_confirm(exchange, &confirm, when)?;
         let (_, client_sealed) = client.finish(&node_sealed, None, None, jiff::Timestamp::now())?;
         node.pairing_finish(sealed, &client_sealed, when)
     };
@@ -980,6 +982,192 @@ fn test_spec_app_contract_6_pair_opens_a_window_and_returns_the_code() {
     ));
 }
 
+/// The node's side of one attempt, held between `pA` and `cA`, as a socket would hold it.
+fn begin(
+    node: &mut Node,
+    code: Code,
+    from: IpAddr,
+    when: jiff::Timestamp,
+) -> (Client, Exchange, String) {
+    let hello = node.pairing_hello(when);
+    let (mut client, start) = Client::start(&hello, code, "browser").unwrap();
+    let (exchange, reply) = node.pairing_begin(from, when, &start).unwrap();
+    let confirm = client.reply(&reply).unwrap();
+    (client, exchange, confirm)
+}
+
+/// `spec/protocol.md §7.4.2`, `§7.5` — an attempt accepted at `pA` is an attempt against
+/// that code and no other: when five failures replace the code while its `cA` is still
+/// on the way, the `cA` — correct for the old code — is refused with 4429 before anything
+/// is sealed, audited as a failure, and the window goes on with the new code. The
+/// refusal comes before the message is read, so an empty or malformed `cA` after the
+/// replacement is the same refusal.
+#[test]
+fn test_spec_7_5_an_attempt_begun_before_a_rotation_cannot_finish_after_it() {
+    let root = tempfile::tempdir().unwrap();
+    let mut node = open(&root);
+    node.pair_at(Duration::from_secs(120), now()).unwrap();
+    let right = code_of(&node);
+    let wrong = Code::from_u16(right.as_u16() ^ 0x0F0F);
+    // The first attempt holds the right code and waits before sending cA.
+    let (_, held, held_confirm) = begin(&mut node, right, source(1), later(1));
+    // Four wrong guesses complete; the fourth is the code's fifth attempt and replaces it.
+    for n in 2..=5u8 {
+        let outcome = run(&mut node, wrong, source(n), later(i64::from(n)));
+        assert!(
+            matches!(outcome, Err(Error::Pair(PairError::WrongCode))),
+            "{n}"
+        );
+    }
+    let window = node.refresh_pairing(later(6)).unwrap().unwrap();
+    assert_eq!((window.attempts, window.generation), (0, 1));
+    assert_ne!(code_of(&node), right, "the code was replaced");
+    let failed_before = audit_rows(&mut node, "pair.failed").len();
+    let refused = node
+        .pairing_confirm(held, &held_confirm, later(6))
+        .unwrap_err();
+    assert!(
+        matches!(refused, Error::Pair(PairError::Exhausted)),
+        "{refused}"
+    );
+    assert_eq!(PairError::Exhausted.close_code(), 4429);
+    let failed = audit_rows(&mut node, "pair.failed");
+    assert_eq!(
+        failed.len(),
+        failed_before + 1,
+        "the refusal is audited once"
+    );
+    let detail: Value =
+        serde_json::from_str(failed.last().unwrap()["detail"].as_str().unwrap()).unwrap();
+    assert_eq!(detail["reason"], "code replaced before confirmation");
+    assert_eq!(detail["new_code"], false);
+    assert!(detail["source"].as_str().unwrap().starts_with("192.0.2."));
+    // Nothing was sealed and nothing was written: the window is open on its new code.
+    assert!(sys_row(&node, "sys_device", "b3nn8t2q").is_none());
+    assert!(audit_rows(&mut node, "pair.success").is_empty());
+    let window = node.refresh_pairing(later(7)).unwrap().unwrap();
+    assert!(node.pairing_open(later(7)));
+    assert_eq!((window.attempts, window.generation), (0, 1));
+    // The same refusal for a cA that is empty or malformed, since the check comes first:
+    // hold an attempt against the new code and spend that code's four other attempts.
+    let renewed = code_of(&node);
+    let (_, held, _) = begin(&mut node, renewed, source(10), later(10));
+    for n in 11..=14u8 {
+        run(
+            &mut node,
+            Code::from_u16(renewed.as_u16() ^ 1),
+            source(n),
+            later(i64::from(n)),
+        )
+        .unwrap_err();
+    }
+    assert_eq!(
+        node.refresh_pairing(later(15)).unwrap().unwrap().generation,
+        2
+    );
+    let refused = node.pairing_confirm(held, "", later(15)).unwrap_err();
+    assert!(
+        matches!(refused, Error::Pair(PairError::Exhausted)),
+        "{refused}"
+    );
+    // The new code pairs.
+    let current = code_of(&node);
+    run(&mut node, current, source(20), later(20)).unwrap();
+}
+
+/// `spec/protocol.md §7.4` step 6, `§7.4.2` — a window is consumed by its first success
+/// and closes at its expiry; an attempt still in flight at either moment cannot finish.
+/// At `cA` it is refused with 4404 before anything is sealed; after `cA`, at the sealed
+/// message, it is refused before the message is opened and writes no row. Each refusal
+/// is one audited failure.
+#[test]
+fn test_spec_7_4_a_second_attempt_cannot_finish_once_the_window_is_consumed_or_expired() {
+    let root = tempfile::tempdir().unwrap();
+    let mut node = open(&root);
+    node.pair_at(Duration::from_secs(120), now()).unwrap();
+    let code = code_of(&node);
+    // Two devices race with the right code; the second one's cA arrives after the
+    // first has paired.
+    let (_, second, second_confirm) = begin(&mut node, code, source(2), later(1));
+    let (first, _) = run(&mut node, code, source(1), later(2)).unwrap();
+    assert!(!node.pairing_open(later(3)), "consumed");
+    let refused = node
+        .pairing_confirm(second, &second_confirm, later(3))
+        .unwrap_err();
+    assert!(
+        matches!(refused, Error::Pair(PairError::Closed)),
+        "{refused}"
+    );
+    assert_eq!(PairError::Closed.close_code(), 4404);
+    let failed = audit_rows(&mut node, "pair.failed");
+    assert_eq!(failed.len(), 1);
+    let detail: Value = serde_json::from_str(failed[0]["detail"].as_str().unwrap()).unwrap();
+    assert_eq!(detail["reason"], "window closed before confirmation");
+    assert_eq!(audit_rows(&mut node, "pair.success").len(), 1);
+    let devices: Vec<Value> = {
+        node.refresh().unwrap();
+        let mut statement = node
+            .store()
+            .conn()
+            .prepare("SELECT id FROM sys_device WHERE id <> ?")
+            .unwrap();
+        statement
+            .query_map(rusqlite::params![node.id().as_str()], |row| {
+                row.get::<_, String>(0)
+            })
+            .unwrap()
+            .map(|r| Value::String(r.unwrap()))
+            .collect()
+    };
+    assert_eq!(
+        devices,
+        [Value::String(first.device.clone())],
+        "one row, the first device's"
+    );
+
+    // A fresh window: an attempt whose cA arrives at the expiry is refused as closed.
+    let opened = later(100);
+    node.pair_at(Duration::from_secs(120), opened).unwrap();
+    let code = code_of(&node);
+    let (_, late, late_confirm) = begin(&mut node, code, source(3), later(219));
+    let refused = node
+        .pairing_confirm(late, &late_confirm, later(220))
+        .unwrap_err();
+    assert!(
+        matches!(refused, Error::Pair(PairError::Closed)),
+        "{refused}"
+    );
+    assert_eq!(audit_rows(&mut node, "pair.failed").len(), 2);
+    // And one that confirmed in time but whose sealed message arrives late: refused
+    // before the message is opened, no row written, audited once.
+    node.pair_at(Duration::from_secs(120), later(300)).unwrap();
+    let code = code_of(&node);
+    let (client, timely, timely_confirm) = begin(&mut node, code, source(4), later(301));
+    let (sealed, node_sealed) = node
+        .pairing_confirm(timely, &timely_confirm, later(302))
+        .unwrap();
+    let (_, client_sealed) = client
+        .finish(&node_sealed, Some("Late"), None, jiff::Timestamp::now())
+        .unwrap();
+    let refused = node
+        .pairing_finish(sealed, &client_sealed, later(420))
+        .unwrap_err();
+    assert!(
+        matches!(refused, Error::Pair(PairError::Closed)),
+        "{refused}"
+    );
+    let failed = audit_rows(&mut node, "pair.failed");
+    assert_eq!(failed.len(), 3);
+    let detail: Value = serde_json::from_str(failed[2]["detail"].as_str().unwrap()).unwrap();
+    assert_eq!(detail["reason"], "window closed before registration");
+    assert_eq!(
+        audit_rows(&mut node, "pair.success").len(),
+        1,
+        "still the first device alone"
+    );
+    assert!(node.pairing().is_some_and(|w| !w.is_open(later(420))));
+}
+
 // -------------------------------------------------------------------------------------
 // The vector file both languages read (docs/plans/phase-2.md §2.4, risk R9)
 // -------------------------------------------------------------------------------------
@@ -1036,7 +1224,9 @@ fn test_spec_7_4_2_the_transcript_matches_the_checked_in_vectors() {
     assert_eq!(reply, t["node_reply"]);
     let confirm = client.reply(&reply).unwrap();
     assert_eq!(confirm, t["client_confirm"]);
-    let (sealed, node_sealed) = exchange.confirm(&identity, &mut window, &confirm).unwrap();
+    let (sealed, node_sealed) = exchange
+        .confirm(&identity, &mut window, &confirm, when)
+        .unwrap();
     assert_eq!(STANDARD.encode(&node_sealed), t["node_sealed"]);
     let (pins, client_sealed) = client
         .finish(&node_sealed, v["label"].as_str(), v["ua"].as_str(), when)
@@ -1101,7 +1291,9 @@ fn generate_pake_vectors() {
     let (exchange, reply) =
         Exchange::begin_with(&identity, &mut window, source(1), when, &start, &y).unwrap();
     let confirm = client.reply(&reply).unwrap();
-    let (sealed, node_sealed) = exchange.confirm(&identity, &mut window, &confirm).unwrap();
+    let (sealed, node_sealed) = exchange
+        .confirm(&identity, &mut window, &confirm, when)
+        .unwrap();
     let (_, client_sealed) = client
         .finish(
             &node_sealed,

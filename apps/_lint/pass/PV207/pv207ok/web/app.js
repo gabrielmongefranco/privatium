@@ -2,6 +2,7 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-05  |  Modified: 2026-09-05
 // Summary:  PV207 pass: the origin the fetch reaches is in permissions.remote.
+//           See main README.md for full license information.
 
 const out = document.getElementById('out');
 const response = await fetch('https://api.example.com/today');

@@ -3,8 +3,9 @@
 // Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  The two unauthenticated API routes of spec/protocol.md §9.2. Health is the
 //           protocol major and the Node ID and nothing else; the manifest is what discovery
-//           needs — ID, display name, the mounted apps by slug and title, the pair flag — and
-//           never a row count, a timestamp, or any app content.
+//           needs — ID, display name, the mounted apps by slug and title, the pair flag —
+//           and never a row count, a timestamp, or any app content.
+//           See main README.md for full license information.
 
 use serde_json::{Value, json};
 

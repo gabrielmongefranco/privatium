@@ -1,15 +1,15 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lint/template.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
-// Summary:  The template rules over M8's own front end (docs/plans/phase-1.md M12): each
-//           views/*.lsp is scanned into segments (PV202 is every raw tag), compiled to the
-//           chunk the host runs, and that chunk is parsed with full_moon — so an `if` in
-//           the template is an `If` in the tree, a loop a loop, and the author's Lua gets
-//           the Lua rules through the line map. The HTML between tags is parsed
-//           line-aligned with the .lsp for the element rules (PV401–403, 405, 407) and
-//           PV204; PV404 is judged over the page as rendered — a view with its partials in
-//           the frame, or the document a layout() owns — with each branch a state of the
-//           page, never a file on its own (spec/cli.md §5.1, plan §3 row 68).
+// Created:  2026-09-05  |  Modified: 2026-09-06
+// Summary:  The template rules over the compiler's own front end: each views/*.lsp is
+//           scanned into segments (PV202 is every raw tag), compiled to the chunk the host
+//           runs, and that chunk is parsed with full_moon — so an `if` in the template is
+//           an `If` in the tree, a loop a loop, and the author's Lua gets the Lua rules
+//           through the line map. The HTML between tags is parsed line-aligned with the
+//           .lsp for the element rules (PV401–403, 405, 407) and PV204; PV404 is judged
+//           over the page as rendered — a view with its partials in the frame, or the
+//           document a layout() owns — with each branch a state of the page, never a file
+//           on its own (spec/cli.md §5.1). See main README.md for full license information.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;

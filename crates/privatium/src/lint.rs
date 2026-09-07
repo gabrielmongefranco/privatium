@@ -6,6 +6,7 @@
 //           `--severity` as the floor; `--fix` for the mechanical corrections of §5.3, then
 //           a second pass so what is printed is what remains; exit 3 when anything is
 //           reported (§1). The rules themselves are the core's (privatium_core::lint).
+//           See main README.md for full license information.
 
 use std::path::PathBuf;
 

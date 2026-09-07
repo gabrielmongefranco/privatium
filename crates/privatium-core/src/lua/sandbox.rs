@@ -7,6 +7,7 @@
 //           diagnostic log, the request-scoped environment that keeps one request's global
 //           assignments from the next, and the sandbox globals of §4.0 — url, icon, fmt.*,
 //           t — that handler code and templates (lsp) share.
+//           See main README.md for full license information.
 
 use std::fs;
 use std::path::PathBuf;

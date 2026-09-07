@@ -2,17 +2,15 @@
   Project:  Privatium™  |  File: apps/sketch/web/index.html
   Authors:  Gabriel Mongefranco (@gabrielmongefranco)
   Created:  2026-08-28  |  Modified: 2026-09-06
-  Summary:  Tier 2 entry point. The framework serves this file verbatim at
-            the app's mount point and injects nothing. No HTMX, no shell,
-            no opinions. The swatches are classes, not style= attributes:
-            the default CSP (spec/protocol.md §9.3) has no style-src, so
-            default-src 'self' governs styles and an inline one is dropped.
-            The viewport stays zoomable — pinch-zoom is an accessibility
-            feature, not a bug — and the canvas is sized by CSS, with app.js
-            matching the backing store to it at the device's pixel ratio.
-            The canvas is focusable and drawn from the keyboard too, and a
-            live summary says what is on it, so a drawing is never a
-            pointer-only or a sight-only thing.
+  Summary:  Tier 2 entry point. The framework serves this file verbatim at the app's mount
+            point and injects nothing. No HTMX, no shell, no opinions. The swatches are
+            classes, not style= attributes: the default CSP (spec/protocol.md §9.3) has no
+            style-src, so default-src 'self' governs styles and an inline one is dropped.
+            The viewport stays zoomable — pinch-zoom is an accessibility feature, not a bug
+            — and the canvas is sized by CSS, with app.js matching the backing store to it
+            at the device's pixel ratio. The canvas is focusable and drawn from the keyboard
+            too, and a live summary says what is on it, so a drawing is never a pointer-only
+            or a sight-only thing. See main README.md for full license information.
 -->
 <!doctype html>
 <html lang="en">

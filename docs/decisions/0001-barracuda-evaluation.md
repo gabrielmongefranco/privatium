@@ -4,8 +4,8 @@ File:     docs/decisions/0001-barracuda-evaluation.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
 Modified: 2026-09-05
-Summary:  Decision record. Barracuda App Server / Mako Server evaluated as a
-          foundation and declined. Status: DECIDED — Rust.
+Summary:  Decision record. Barracuda App Server / Mako Server evaluated as a foundation and
+          declined. Status: DECIDED — Rust. See main README.md for full license information.
 Copyright © 2026 Gabriel Mongefranco
 Privatium™ is a trademark of Gabriel Mongefranco.
 Documentation license: GFDL-1.3-or-later, with no Invariant Sections,

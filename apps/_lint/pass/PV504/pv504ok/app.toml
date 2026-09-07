@@ -1,7 +1,7 @@
 # Project:  Privatium™  |  File: apps/_lint/pass/PV504/pv504ok/app.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-05
-# Summary:  A script vendored under web/.
+# Summary:  A script vendored under web/. See main README.md for full license information.
 
 [app]
 slug    = "pv504ok"

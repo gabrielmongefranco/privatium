@@ -2,10 +2,11 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-04  |  Modified: 2026-09-06
 // Summary:  The argument grammar of spec/cli.md, by hand. The surface is eight commands and
-//           twenty flags fixed by a normative document, and the help text is that document's
-//           synopsis lines — so there is no derive layer to drift from it, no dependency to
-//           carry for it, and `test_no_undocumented_flags` compares the two directly. A
-//           mistake here is a usage error, exit 2 (§1); nothing here touches a node.
+//           twenty flags fixed by a normative document, and the help text is that
+//           document's synopsis lines — so there is no derive layer to drift from it, no
+//           dependency to carry for it, and `test_no_undocumented_flags` compares the two
+//           directly. A mistake here is a usage error, exit 2 (§1); nothing here touches a
+//           node. See main README.md for full license information.
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -37,7 +38,8 @@ privatium [--data-dir <path>] [--config <file>] [--verbose] [--version] [<comman
   privatium firewall [--apply]
       the firewall helper (§9)
 
-  --data-dir  the node's data root; the platform data directory by default
+  --data-dir  the node's data root; by default a privatium-data folder beside the
+              program when you created one, else the platform data directory
   --config    config.toml; <data-dir>/config.toml by default
   --verbose   report what the node loaded and maintained, not only what failed
   --version   the build version and the protocol it implements

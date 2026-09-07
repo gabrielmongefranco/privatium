@@ -5,6 +5,7 @@ Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-09-05
 Modified: 2026-09-05
 Summary:  Approved visual direction, brand assets, and usage guidance.
+          See main README.md for full license information.
 Copyright © 2026 Gabriel Mongefranco
 Privatium™ is a trademark of Gabriel Mongefranco.
 Documentation license: GFDL-1.3-or-later, with no Invariant Sections,

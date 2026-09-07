@@ -3,8 +3,8 @@
 # Created:  2026-08-31  |  Modified: 2026-09-06
 # Summary:  The binary — spec/cli.md, parsed by hand (src/cli.rs) — and beside it the axum
 #           adapter as a library target so its tests can reach it (ADR 0003: socket and peer
-#           address in, `core::handle` out — no routes of its own). At M0 it existed so that
-#           CI had a release artefact whose size means something; M11 made it the front door.
+#           address in, `core::handle` out — no routes of its own).
+#           See main README.md for full license information.
 
 [package]
 name        = "privatium"

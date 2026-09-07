@@ -3,9 +3,9 @@
 // Created:  2026-09-04  |  Modified: 2026-09-06
 // Summary:  What every subcommand that touches a node shares: opening it from the two
 //           global flags of spec/cli.md §1, the app roots it loads (the owner's apps/ and,
-//           in a checkout, the repository's example apps as bundled), what a first run
-//           is, the load report printed the same way everywhere, and the browser opener
-//           `--open` uses.
+//           in a checkout, the repository's example apps as bundled), what a first run is,
+//           the load report printed the same way everywhere, and the browser opener
+//           `--open` uses. See main README.md for full license information.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};

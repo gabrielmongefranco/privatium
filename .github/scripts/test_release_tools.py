@@ -2,6 +2,7 @@
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-06
 # Summary:  Verify release archive layout and the exact-commit CI prerequisite.
+#           See main README.md for full license information.
 
 import tempfile
 import unittest
@@ -9,10 +10,30 @@ import zipfile
 import tarfile
 from pathlib import Path
 
-from release_tools import EXAMPLE_APPS, package, package_portable, require_ci
+from release_tools import ASSETS, EXAMPLE_APPS, package, package_portable, require_ci
 
 
 class ReleaseTests(unittest.TestCase):
+    def test_release_assets_name_the_four_archives_including_the_portable_zip(self):
+        """The names the workflow attaches are the names package() and package_portable() write."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            written = set()
+            for os_name, binary in [("Linux", "privatium"), ("macOS", "privatium"), ("Windows", "privatium.exe")]:
+                source = root / os_name
+                source.mkdir()
+                (source / binary).write_bytes(b"synthetic binary\x00\xff")
+                written.add(package(os_name, source, root / "dist").name)
+            apps = root / "apps"
+            for slug in EXAMPLE_APPS:
+                (apps / slug).mkdir(parents=True)
+                (apps / slug / "app.toml").write_text(f'[app]\nslug = "{slug}"\n')
+            written.add(package_portable(root / "Windows", root / "dist", apps).name)
+            self.assertEqual(set(ASSETS), written)
+            self.assertEqual(len(ASSETS), 4)
+            self.assertIn("privatium-windows-portable.zip", ASSETS)
+            self.assertEqual(len(set(ASSETS)), len(ASSETS), "no name twice")
+            self.assertTrue(all(name.startswith("privatium") for name in ASSETS), "the download pattern")
     def test_portable_zip_holds_the_binary_the_readme_and_the_example_apps(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

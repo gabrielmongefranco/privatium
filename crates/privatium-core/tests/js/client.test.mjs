@@ -2,6 +2,7 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  Browser channel framing, streaming, cancellation and origin confinement (§8.3).
+//           See main README.md for full license information.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -210,6 +211,8 @@ test('test_spec_7_2_pad_and_word_field_yield_the_same_sixteen_bits', async () =>
   for (const [thrown, expected] of [
     ['pairing is closed on the node; open it there and try again', /closed on the space/],
     ['the pairing code did not match; check the code on the node and try again', /did not match.*five attempts/],
+    ['too many attempts, or the code was replaced; read the code on the node now and try again in a moment', /too many tries, or a new code/],
+    ['cannot pair: the node ended the connection (1006)', /^cannot pair: the space ended the connection \(1006\)$/],
     ['cannot pair: this browser will not keep the pairing; enable site storage and try again', /site storage/],
   ]) {
     const failing = pairingScreen({ doc, pair: async () => { throw new Error(thrown); } });

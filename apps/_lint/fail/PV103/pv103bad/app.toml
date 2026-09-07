@@ -2,6 +2,7 @@
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-05
 # Summary:  PV103 fail: api = 2 exceeds what a pv/1 node implements (spec/protocol.md §12).
+#           See main README.md for full license information.
 
 [app]
 slug    = "pv103bad"

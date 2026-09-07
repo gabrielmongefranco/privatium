@@ -6,6 +6,7 @@ Created:  2026-09-05
 Modified: 2026-09-05
 Summary:  Stub. The Phase 4 plan — native shells — is written from docs/roadmap.md when
           Phase 3 closes, in the shape of docs/plans/phase-1.md. Non-normative.
+          See main README.md for full license information.
 -->
 
 # Phase 4 Implementation Plan — stub

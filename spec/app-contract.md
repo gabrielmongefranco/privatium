@@ -4,8 +4,9 @@ File:     spec/app-contract.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
 Modified: 2026-09-06
-Summary:  NORMATIVE. What an app is, the three tiers of app, and the three
-          deployment modes. The declarative tier is one option, not the model.
+Summary:  NORMATIVE. What an app is, the three tiers of app, and the three deployment modes.
+          The declarative tier is one option, not the model.
+          See main README.md for full license information.
 -->
 
 # App Contract — `api = 1`

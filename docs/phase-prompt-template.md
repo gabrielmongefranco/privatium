@@ -6,6 +6,7 @@ Created:  2026-09-05
 Modified: 2026-09-05
 Summary:  A copy-and-paste prompt for starting a Privatium phase, milestone, change or
           repair in a new AI chat. Non-normative.
+          See main README.md for full license information.
 -->
 
 # Phase Prompt Template

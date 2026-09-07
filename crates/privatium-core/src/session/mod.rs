@@ -1,8 +1,9 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/session/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-05  |  Modified: 2026-09-05
-// Summary:  Directional session keys and authenticated frames with owned counters
-//           and terminal refusals (spec/protocol.md §8, §8.3).
+// Summary:  Directional session keys and authenticated frames with owned counters and
+//           terminal refusals (spec/protocol.md §8, §8.3).
+//           See main README.md for full license information.
 
 //! Session cryptography without transport or storage side effects.
 

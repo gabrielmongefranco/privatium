@@ -6,6 +6,7 @@
 //           enforces does not belong in the linter. This opens every rule's reference
 //           against the checkout — the document, and the numbered heading — and fails
 //           naming the rule whose citation points at nothing.
+//           See main README.md for full license information.
 
 use std::path::Path;
 

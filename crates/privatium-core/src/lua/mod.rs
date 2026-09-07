@@ -1,13 +1,14 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lua/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-03  |  Modified: 2026-09-06
-// Summary:  The Lua host (spec/lua-api.md, docs/plans/phase-1.md M7, M8): one pool of
-//           sandboxed VMs per Tier 1 app, every VM loading app.lua identically so the router
-//           can hold (method, pattern, index) from VM 0 (§2.4); one request holds one VM on
-//           a blocking thread with a read-only connection of its own; the four limits armed
-//           per run; a VM that trips one is discarded and rebuilt on the next checkout. The
-//           app's compiled templates live here too (lsp), and pv.render is fulfilled inside
-//           the same run so a template shares the request's limits and connection.
+// Summary:  The Lua host (spec/lua-api.md): one pool of sandboxed VMs per Tier 1 app, every
+//           VM loading app.lua identically so the router can hold (method, pattern, index)
+//           from VM 0 (§2.4); one request holds one VM on a blocking thread with a
+//           read-only connection of its own; the four limits armed per run; a VM that trips
+//           one is discarded and rebuilt on the next checkout. The app's compiled templates
+//           live here too (lsp), and pv.render is fulfilled inside the same run so a
+//           template shares the request's limits and connection.
+//           See main README.md for full license information.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;

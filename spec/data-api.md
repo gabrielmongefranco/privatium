@@ -5,6 +5,7 @@ Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
 Modified: 2026-09-06
 Summary:  NORMATIVE. The HTTP data API that custom-UI (Tier 2) apps build against.
+          See main README.md for full license information.
 -->
 
 # Data API — `api = 1`

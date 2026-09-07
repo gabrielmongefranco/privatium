@@ -6,6 +6,7 @@
 //           string is data and is escaped; an Html is markup and passes. Concatenating one
 //           into a string yields a plain string, which is then escaped again: losing the
 //           marker is the safe direction, and there is no flag to change any of it.
+//           See main README.md for full license information.
 
 use mlua::{MetaMethod, UserData, UserDataMethods, Value};
 

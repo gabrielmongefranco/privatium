@@ -1,13 +1,14 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/apps.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-03  |  Modified: 2026-09-06
-// Summary:  What answers beneath an app's mount (spec/protocol.md §9.1). Tier 2: web/ served
-//           as-is with index.html at the mount point, streamed in 64 KiB frames, under that
-//           app's own CSP (spec/app-contract.md §5, §5.4). Tier 1: what a Lua handler
-//           answered, as a response with the same headers — a rendered view inside the
-//           framework's page frame unless the app supplied the document — the app's
-//           static/ served the same way as web/, and the error page with the traceback
-//           and the offending line (spec/cli.md §3).
+// Summary:  What answers beneath an app's mount (spec/protocol.md §9.1). Tier 2: web/
+//           served as-is with index.html at the mount point, streamed in 64 KiB frames,
+//           under that app's own CSP (spec/app-contract.md §5, §5.4). Tier 1: what a Lua
+//           handler answered, as a response with the same headers — a rendered view inside
+//           the framework's page frame unless the app supplied the document — the app's
+//           static/ served the same way as web/, and the error page with the traceback and
+//           the offending line (spec/cli.md §3).
+//           See main README.md for full license information.
 
 use std::path::PathBuf;
 

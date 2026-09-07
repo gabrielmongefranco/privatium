@@ -2,6 +2,7 @@
  * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
  * Created:  2026-08-31  |  Modified: 2026-09-06
  * Summary:  A focused game board and readable question paths, using shell tokens.
+ *           See main README.md for full license information.
  */
 
 /* Alpine hides x-show elements only once it has initialised. Without this the

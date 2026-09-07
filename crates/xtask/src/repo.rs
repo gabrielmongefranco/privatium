@@ -3,6 +3,7 @@
 // Created:  2026-08-31  |  Modified: 2026-08-31
 // Summary:  Locating the repository, listing its files, and reading them in a way that
 //           gives the same answer on every platform.
+//           See main README.md for full license information.
 
 use std::path::{Path, PathBuf};
 

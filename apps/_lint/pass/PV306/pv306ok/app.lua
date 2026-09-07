@@ -2,6 +2,7 @@
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 -- Created:  2026-09-05  |  Modified: 2026-09-05
 -- Summary:  PV306 pass: pv.batch makes the two events one write.
+--           See main README.md for full license information.
 
 local pv = require 'privatium'
 

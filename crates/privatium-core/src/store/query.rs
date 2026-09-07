@@ -1,11 +1,11 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/query.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
-// Summary:  One statement on the sandboxed connection, its rows as JSON typed by the
-//           schema (spec/data-api.md §1, spec/data-dictionary.md §2.1): what the data API
-//           answers and what Node::query hands an embedder (spec/app-contract.md §6),
-//           through one function so the two cannot type a column differently. Lived in
-//           wire/data.rs until M13 gave it a second caller.
+// Created:  2026-09-05  |  Modified: 2026-09-06
+// Summary:  One statement on the sandboxed connection, its rows as JSON typed by the schema
+//           (spec/data-api.md §1, spec/data-dictionary.md §2.1): what the data API answers
+//           and what Node::query hands an embedder (spec/app-contract.md §6), through one
+//           function so the two cannot type a column differently.
+//           See main README.md for full license information.
 
 use std::time::{Duration, Instant};
 

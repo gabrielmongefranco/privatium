@@ -2,6 +2,7 @@
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 -- Created:  2026-08-28  |  Modified: 2026-09-04
 -- Summary:  The entire application. Three routes, eleven lines of logic.
+--           See main README.md for full license information.
 
 local pv = require 'privatium'
 

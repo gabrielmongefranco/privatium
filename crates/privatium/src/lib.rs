@@ -1,10 +1,11 @@
 // Project:  Privatium™  |  File: crates/privatium/src/lib.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-03  |  Modified: 2026-09-05
-// Summary:  The axum adapter (ADR 0003): a socket in, core::handle out. It holds no
-//           routing table, adds no route and rewrites no path — every request goes to
+// Summary:  The axum adapter (ADR 0003): a socket in, core::handle out. It holds no routing
+//           table, adds no route and rewrites no path — every request goes to
 //           `Handler::handle` unchanged, with the peer address attached so the core's auth
 //           layer can see it. A library target beside the binary so tests can reach it.
+//           See main README.md for full license information.
 
 pub mod adapter {
     //! The daemon's transport. `bind` opens all interfaces (spec/cli.md §2),

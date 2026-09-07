@@ -1,8 +1,9 @@
 // Project:  Privatium™  |  File: crates/privatium-core/assets/shell/session.js
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-05  |  Modified: 2026-09-05
-// Summary:  Browser session keys, authenticated frames, and single-use client
-//           handshake for spec/protocol.md §8. No storage or network side effects.
+// Summary:  Browser session keys, authenticated frames, and single-use client handshake for
+//           spec/protocol.md §8. No storage or network side effects.
+//           See main README.md for full license information.
 
 import { x25519, ed25519 } from './vendor/noble/curves/ed25519.js';
 import { sha256 } from './vendor/noble/hashes/sha2.js';

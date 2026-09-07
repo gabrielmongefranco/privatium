@@ -2,6 +2,7 @@
 // Authors: Gabriel Mongefranco (@gabrielmongefranco)
 // Created: 2026-09-06 | Modified: 2026-09-06
 // Summary: Stroke erasing respects segment edges and rejects malformed geometry.
+//          See main README.md for full license information.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { hitsStroke } from '../../../../apps/sketch/web/strokes.js';

@@ -1,8 +1,9 @@
 // Project:  Privatium™  |  File: crates/xtask/src/header.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-08-31  |  Modified: 2026-08-31
+// Created:  2026-08-31  |  Modified: 2026-09-06
 // Summary:  `cargo xtask header-check`. AGENTS.md requires a header block on every source
 //           file; this is what turns that from a habit into a gate.
+//           See main README.md for full license information.
 
 use std::path::Path;
 
@@ -10,6 +11,10 @@ use anyhow::Result;
 
 /// How many lines from the top of a file the header block may occupy.
 const HEADER_WINDOW: usize = 25;
+
+/// The sentence every summary ends with, pointing at the licence notices the README
+/// carries in full, so no file has to repeat them.
+const LICENSE_SENTENCE: &str = "See main README.md for full license information.";
 
 /// Extensions that must carry a header, and the comment openers each accepts.
 ///
@@ -163,6 +168,11 @@ fn problems(path: &str, contents: &str, shape: Shape) -> Vec<String> {
     }
     if !window.contains("Summary:") {
         problems.push("no `Summary:` field".to_owned());
+    } else if !window.contains(LICENSE_SENTENCE) {
+        // The sentence is kept whole on one line so this check, and a reader, can find it.
+        problems.push(format!(
+            "the summary does not end with `{LICENSE_SENTENCE}`"
+        ));
     }
 
     if shape == Shape::Full {
@@ -208,10 +218,29 @@ mod tests {
 // Project:  Privatium™  |  File: crates/privatium-core/src/lib.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-08-31  |  Modified: 2026-08-31
-// Summary:  Crate root.
+// Summary:  Crate root. See main README.md for full license information.
 
 pub fn nothing() {}
 ";
+
+    #[test]
+    fn a_summary_without_the_license_sentence_fails() {
+        let bare = GOOD.replace(" See main README.md for full license information.", "");
+        let found = problems("crates/privatium-core/src/lib.rs", &bare, Shape::Full);
+        assert!(
+            found
+                .iter()
+                .any(|problem| problem.contains("license information")),
+            "{found:?}"
+        );
+        // Split across two lines it is not found either: the sentence stays whole.
+        let split = GOOD.replace(
+            " See main README.md for full license information.",
+            "\n//           See main README.md for full\n//           license information.",
+        );
+        let found = problems("crates/privatium-core/src/lib.rs", &split, Shape::Full);
+        assert!(!found.is_empty(), "{found:?}");
+    }
 
     #[test]
     fn a_complete_header_passes() {
@@ -253,7 +282,7 @@ pub fn nothing() {}
     fn a_template_needs_less() {
         let template = "\
 <?-- Project: Privatium™ | apps/hello/views/index.lsp
-     Summary: Greeting. --?>
+     Summary: Greeting. See main README.md for full license information. --?>
 <h1>Hello</h1>
 ";
         let found = problems("apps/hello/views/index.lsp", template, Shape::Template);

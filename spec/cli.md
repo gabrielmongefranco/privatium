@@ -4,8 +4,9 @@ File:     spec/cli.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-30
 Modified: 2026-09-06
-Summary:  NORMATIVE. The command-line interface, including the linter that makes
-          the skills system enforceable rather than advisory.
+Summary:  NORMATIVE. The command-line interface, including the linter that makes the skills
+          system enforceable rather than advisory.
+          See main README.md for full license information.
 -->
 
 # Command-Line Interface — `pv/1`

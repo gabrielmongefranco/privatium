@@ -1,14 +1,14 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lua/lsp.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-05
-// Summary:  LSP templates (spec/lua-api.md §4, docs/plans/phase-1.md M8). The compiler turns
-//           views/<name>.lsp — HTML with <? ?>, <?= ?>, <?raw ?> and <?-- --?> — into a Lua
-//           chunk plus a line map, so a traceback names the .lsp line the author wrote.
-//           The compiled source is shared by every VM of an app and swapped as one snapshot
-//           when a file changes; the loaded chunk is cached per VM by generation; each
-//           render runs the chunk with a fresh environment holding the ctx keys and the
-//           template-only helpers render, layout and csrf, falling through to the
-//           request-scoped environment handlers use.
+// Created:  2026-09-03  |  Modified: 2026-09-06
+// Summary:  LSP templates (spec/lua-api.md §4). The compiler turns views/<name>.lsp — HTML
+//           with <? ?>, <?= ?>, <?raw ?> and <?-- --?> — into a Lua chunk plus a line map,
+//           so a traceback names the .lsp line the author wrote. The compiled source is
+//           shared by every VM of an app and swapped as one snapshot when a file changes;
+//           the loaded chunk is cached per VM by generation; each render runs the chunk
+//           with a fresh environment holding the ctx keys and the template-only helpers
+//           render, layout and csrf, falling through to the request-scoped environment
+//           handlers use. See main README.md for full license information.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;

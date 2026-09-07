@@ -4,6 +4,7 @@
 // Summary:  The single writer of one data/<slug>/log/<dev>.jsonl (AGENTS.md 2). Appends
 //           puts, tombstones, and all-or-nothing batches, with `seq` gapless per
 //           spec/protocol.md §4.1 and the clock read here rather than taken from a caller.
+//           See main README.md for full license information.
 
 use std::fs;
 use std::path::{Path, PathBuf};

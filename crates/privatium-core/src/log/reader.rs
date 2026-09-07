@@ -4,6 +4,7 @@
 // Summary:  Reading an app's log: the segment list of spec/protocol.md §3.2, a line
 //           iterator per segment, and the one startup scan that recovers `seq` and the
 //           Lamport counter and applies §4.4's clock hygiene.
+//           See main README.md for full license information.
 //
 //           This is NOT the materialization path. M3's store reads the log files itself at
 //           data/<slug>/log/*.jsonl directly (docs/plans/phase-1.md, M3). What lives here

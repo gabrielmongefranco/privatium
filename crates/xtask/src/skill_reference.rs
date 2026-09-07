@@ -1,14 +1,15 @@
 // Project:  Privatium™  |  File: crates/xtask/src/skill_reference.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-05  |  Modified: 2026-09-06
-// Summary:  `cargo xtask gen-skill-reference [--check]` (docs/skills.md §7, plan M12): the
-//           reference/ files of every skill, written from the crate — the lint rule table,
-//           the pv surface, the sandbox's removed names, the limits, the permissions and
-//           their plain-language widenings, the framework prefixes, the reserved slugs,
-//           the icon set — and from the spec, whose numbered sections are copied in
-//           whole so a skill's "pinned reference" is the contract's own words at this
-//           version. --check regenerates in memory and fails naming every file that
-//           differs, is missing, or was not written by the generator.
+// Summary:  `cargo xtask gen-skill-reference [--check]` (docs/skills.md §7): the reference/
+//           files of every skill, written from the crate — the lint rule table, the pv
+//           surface, the sandbox's removed names, the limits, the permissions and their
+//           plain-language widenings, the framework prefixes, the reserved slugs, the icon
+//           set — and from the spec, whose numbered sections are copied in whole so a
+//           skill's "pinned reference" is the contract's own words at this version. --check
+//           regenerates in memory and fails naming every file that differs, is missing, or
+//           was not written by the generator.
+//           See main README.md for full license information.
 
 use std::collections::BTreeMap;
 use std::fs;

@@ -1,12 +1,13 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lua/limits.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-03  |  Modified: 2026-09-03
-// Summary:  The per-request resource limits of spec/lua-api.md §5, all four from
-//           [lua] in config.toml: the instruction count and the wall clock in one debug hook
+// Summary:  The per-request resource limits of spec/lua-api.md §5, all four from [lua] in
+//           config.toml: the instruction count and the wall clock in one debug hook
 //           installed before any app code runs, the memory limit in the allocator, and the
 //           same deadline handed to SQLite's progress handler for the time a statement
 //           spends in Rust where the hook cannot fire. A tripped limit is remembered here,
 //           so a handler that catches the error with pcall still fails the request.
+//           See main README.md for full license information.
 
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};

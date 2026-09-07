@@ -1,10 +1,11 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/durable.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-05  |  Modified: 2026-09-05
-// Summary:  The last step of making a file exist: after a new file's bytes are on disk,
-//           its directory entry has to be too, or a power cut can lose a file whose
-//           contents were flushed. Unix filesystems ask for an fsync of the directory;
-//           Windows has no such call, and NTFS journals its metadata itself.
+// Summary:  The last step of making a file exist: after a new file's bytes are on disk, its
+//           directory entry has to be too, or a power cut can lose a file whose contents
+//           were flushed. Unix filesystems ask for an fsync of the directory; Windows has
+//           no such call, and NTFS journals its metadata itself.
+//           See main README.md for full license information.
 
 use std::fs;
 use std::io::{self, Write as _};

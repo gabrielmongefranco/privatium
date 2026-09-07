@@ -4,9 +4,10 @@
 // Summary:  What only the owner may do (spec/protocol.md §9.2, §7.1): open and close a
 //           pairing window over /api/v1/pair and from the devices page, name the node,
 //           label and revoke a device. The owner is the node's own standing — a loopback
-//           request or an in-process call — and a channel session is refused whatever
-//           its device: physical presence is the authorization. Every form carries
-//           csrf(); every answer to a refusal names the problem and nothing else.
+//           request or an in-process call — and a channel session is refused whatever its
+//           device: physical presence is the authorization. Every form carries csrf();
+//           every answer to a refusal names the problem and nothing else.
+//           See main README.md for full license information.
 
 use std::collections::BTreeMap;
 use std::time::Duration;

@@ -3,6 +3,7 @@
 // Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  /static/* (spec/protocol.md §9.1): the shell's own assets, embedded from
 //           assets/shell/ — stylesheet, htmx, pv.js, and browser session modules.
+//           See main README.md for full license information.
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use include_dir::{Dir, include_dir};

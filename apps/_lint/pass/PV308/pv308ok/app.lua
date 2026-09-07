@@ -2,6 +2,7 @@
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 -- Created:  2026-09-05  |  Modified: 2026-09-05
 -- Summary:  PV308 pass: the framework's exact sum and SQLite's date modifier.
+--           See main README.md for full license information.
 
 local pv = require 'privatium'
 

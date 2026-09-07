@@ -2,6 +2,7 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-05  |  Modified: 2026-09-05
 // Summary:  PV206 pass: data goes through textContent, never innerHTML.
+//           See main README.md for full license information.
 
 import { pv } from '/static/pv.js';
 

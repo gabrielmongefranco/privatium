@@ -2,6 +2,7 @@
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-05
 # Summary:  PV503 fail: an icon the vendored set lacks.
+#           See main README.md for full license information.
 
 [app]
 slug    = "pv503bad"

@@ -2,6 +2,7 @@
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 -- Created:  2026-09-05  |  Modified: 2026-09-05
 -- Summary:  PV107 pass: three kinds of declaration; a comment may say INSERT.
+--           See main README.md for full license information.
 
 -- A comment is free to mention INSERT, UPDATE or DELETE.
 CREATE TABLE note (

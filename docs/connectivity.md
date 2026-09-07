@@ -4,8 +4,8 @@ File:     docs/connectivity.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
 Modified: 2026-09-06
-Summary:  Per-deployment matrices for bootstrap and reachability, and the
-          resulting decision on peer-to-peer transport.
+Summary:  Per-deployment matrices for bootstrap and reachability, and the resulting decision
+          on peer-to-peer transport. See main README.md for full license information.
 -->
 
 # Connectivity

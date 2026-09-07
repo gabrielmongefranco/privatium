@@ -1,11 +1,12 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/events.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-05
+// Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  The staged log: every sane event of one app, read from data/<slug>/log/*.jsonl
 //           once, and spec/protocol.md §4.5's ranking over it. The materializer, the three
 //           restore tiers and the snapshot writer all work from this one reading, which is
-//           what keeps docs/plans/phase-1.md §2.5's equality structural. Reading only:
-//           nothing here writes or forwards a line (§4.2).
+//           what keeps the incremental apply and the full replay structurally equal.
+//           Reading only: nothing here writes or forwards a line (§4.2).
+//           See main README.md for full license information.
 
 use std::collections::BTreeMap;
 use std::fs;

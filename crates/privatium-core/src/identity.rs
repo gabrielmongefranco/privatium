@@ -1,8 +1,9 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/identity.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-01  |  Modified: 2026-09-06
-// Summary:  Node and cluster keys, canonical membership certificates, startup renewal,
-//           and purpose-separated CSRF and X25519 derivations (spec/protocol.md §2, §8).
+// Summary:  Node and cluster keys, canonical membership certificates, startup renewal, and
+//           purpose-separated CSRF and X25519 derivations (spec/protocol.md §2, §8).
+//           See main README.md for full license information.
 
 use std::fmt;
 use std::fs;

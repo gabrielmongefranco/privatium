@@ -5,6 +5,7 @@
 //           spec/protocol.md §1.1 and §12, and spec/data-dictionary.md §3.4 — refusal per
 //           app and loud, the index as events, the sandboxed cache, the store the
 //           node-level snapshot and restore reopen, and the seed that never loads itself.
+//           See main README.md for full license information.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

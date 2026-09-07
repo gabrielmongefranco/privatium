@@ -1,10 +1,11 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/icons.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-03  |  Modified: 2026-09-03
-// Summary:  Bootstrap Icons, vendored in full under assets/icons/ and embedded in the binary
-//           (docs/icons.md). The one helper that turns a name into an inline <svg>, with
-//           the accessibility attributes the icon system makes mandatory and the fallback
-//           an unknown name renders instead of nothing.
+// Summary:  Bootstrap Icons, vendored in full under assets/icons/ and embedded in the
+//           binary (docs/icons.md). The one helper that turns a name into an inline <svg>,
+//           with the accessibility attributes the icon system makes mandatory and the
+//           fallback an unknown name renders instead of nothing.
+//           See main README.md for full license information.
 
 use include_dir::{Dir, include_dir};
 

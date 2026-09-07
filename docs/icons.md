@@ -5,6 +5,7 @@ Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
 Modified: 2026-09-03
 Summary:  Icon system. Bootstrap Icons, bundled and inlined server-side.
+          See main README.md for full license information.
 -->
 
 # Icons

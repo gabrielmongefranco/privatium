@@ -1,9 +1,10 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/pair/spake2.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-05  |  Modified: 2026-09-05
-// Summary:  SPAKE2 as RFC 9382 specifies it, over edwards25519 with the RFC's M and N,
-//           in the ciphersuite spec/protocol.md §7.4.1 fixes: the password scalar, the
-//           two messages, the transcript, the key schedule and the confirmation MACs.
+// Summary:  SPAKE2 as RFC 9382 specifies it, over edwards25519 with the RFC's M and N, in
+//           the ciphersuite spec/protocol.md §7.4.1 fixes: the password scalar, the two
+//           messages, the transcript, the key schedule and the confirmation MACs.
+//           See main README.md for full license information.
 
 use curve25519_dalek::edwards::{CompressedEdwardsY, EdwardsPoint};
 use curve25519_dalek::scalar::Scalar;

@@ -1,9 +1,11 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/js/pake.test.mjs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-05  |  Modified: 2026-09-05
-// Summary:  The browser's SPAKE2 against the Rust vectors of tests/fixtures/pake-vectors.json
-//           (spec/protocol.md §7.4.1): the password scalar, both messages, the transcript,
-//           the key schedule, the confirmations, a wrong code, and refused points.
+// Summary:  The browser's SPAKE2 against the Rust vectors of
+//           tests/fixtures/pake-vectors.json (spec/protocol.md §7.4.1): the password
+//           scalar, both messages, the transcript, the key schedule, the confirmations, a
+//           wrong code, and refused points.
+//           See main README.md for full license information.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

@@ -1,11 +1,12 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/discover.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-06  |  Modified: 2026-09-06
-// Summary:  spec/protocol.md §6 — the TXT record and its budget (§6.1), the instance
-//           name, the subtype rule, the pair flag from one source, nodes keyed by id; the
-//           UDP responder and probe over loopback with the source check and the rate
-//           limit (§6.4); both mechanisms started together and stopped together (§6.5);
-//           the sys_setting switches; and a real daemon browsing its own registration.
+// Summary:  spec/protocol.md §6 — the TXT record and its budget (§6.1), the instance name,
+//           the subtype rule, the pair flag from one source, nodes keyed by id; the UDP
+//           responder and probe over loopback with the source check and the rate limit
+//           (§6.4); both mechanisms started together and stopped together (§6.5); the
+//           sys_setting switches; and a real daemon browsing its own registration.
+//           See main README.md for full license information.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.
@@ -225,6 +226,106 @@ fn test_spec_6_1_instance_name_is_the_display_name_or_the_node_id() {
     assert_eq!(name.chars().count(), 31);
     // Blank names fall back to the ID.
     assert_eq!(facts("k7m2q9xf", "   ", &[]).instance_name(), "k7m2q9xf");
+}
+
+/// `§6.1` — a record off the wire is judged before it is kept: an `id` or a `cl` that is
+/// not shaped as an ID makes it not a `pv/1` record; a name is cut to what an instance
+/// name may hold, at a character boundary, with control characters dropped; `apps`
+/// keeps slugs alone, at most `APPS_MAX` of them, and the marker of a truncated list; a
+/// `p` that is not a port falls back to the SRV port. Nothing here panics on any input.
+#[test]
+fn test_spec_6_1_a_record_off_the_wire_is_validated_and_bounded() {
+    let record = |pairs: &[(&str, &str)]| -> BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect()
+    };
+    let read = |txt: &BTreeMap<String, String>| {
+        txt::read(
+            txt,
+            vec![IpAddr::V4(Ipv4Addr::new(192, 168, 1, 5))],
+            8420,
+            "",
+            now(),
+        )
+    };
+    let good = record(&[
+        ("v", "1"),
+        ("id", "k7m2q9xf"),
+        ("cl", "q4w8rt2n"),
+        ("nm", "Study"),
+        ("apps", "hello,sketch"),
+        ("p", "8421"),
+    ]);
+    let seen = read(&good).unwrap();
+    assert_eq!(
+        (seen.id.as_str(), seen.cluster.as_str(), seen.port),
+        ("k7m2q9xf", "q4w8rt2n", 8421)
+    );
+    // The empty, the malformed and the oversized ID: not a record.
+    for bad in [
+        "",
+        "k7m2q9x",
+        "k7m2q9xfz",
+        "K7M2Q9XF",
+        "../etc/x",
+        "k7m2q9xi",
+        &"a".repeat(300),
+        "<script>",
+    ] {
+        let mut txt = good.clone();
+        txt.insert("id".into(), bad.into());
+        assert!(read(&txt).is_none(), "id {bad:?}");
+        let mut txt = good.clone();
+        txt.insert("cl".into(), bad.into());
+        assert_eq!(read(&txt).is_some(), bad.is_empty(), "cl {bad:?}");
+    }
+    let mut missing = good.clone();
+    missing.remove("id");
+    assert!(read(&missing).is_none());
+    // The name: bounded, at a character boundary, without control characters.
+    let mut txt = good.clone();
+    txt.insert("nm".into(), format!("  {}\u{7}\n", "é".repeat(200)));
+    let seen = read(&txt).unwrap();
+    assert!(seen.name.len() <= INSTANCE_NAME_MAX, "{}", seen.name.len());
+    assert_eq!(seen.name.chars().count(), 31);
+    assert!(seen.name.chars().all(|c| c == 'é'));
+    txt.insert("nm".into(), String::new());
+    assert_eq!(read(&txt).unwrap().name, "");
+    txt.remove("nm");
+    assert_eq!(read(&txt).unwrap().name, "");
+    // The apps: slugs and the marker only, bounded in number.
+    let mut txt = good.clone();
+    let many: Vec<String> = (0..200).map(|n| format!("app{n}")).collect();
+    txt.insert(
+        "apps".into(),
+        format!("hello,Bad Slug,../x,,{},…", many.join(",")),
+    );
+    let seen = read(&txt).unwrap();
+    assert_eq!(seen.apps.len(), txt::APPS_MAX);
+    assert_eq!(seen.apps[0], "hello");
+    assert!(
+        seen.apps
+            .iter()
+            .all(|s| s != "Bad Slug" && s != "../x" && !s.is_empty())
+    );
+    txt.insert("apps".into(), "hello,…".into());
+    assert_eq!(read(&txt).unwrap().apps, ["hello", "…"]);
+    txt.remove("apps");
+    assert!(read(&txt).unwrap().apps.is_empty());
+    // The port and the version.
+    let mut txt = good.clone();
+    txt.insert("p".into(), "99999".into());
+    assert_eq!(read(&txt).unwrap().port, 8420, "the SRV port stands in");
+    txt.insert("p".into(), "-1".into());
+    assert_eq!(read(&txt).unwrap().port, 8420);
+    txt.insert("v".into(), "2".into());
+    assert!(read(&txt).is_none());
+    txt.remove("v");
+    assert!(read(&txt).is_none());
+    // The same bound applies to this node's own name before it is advertised.
+    assert_eq!(privatium_core::discover::bound_name(" a\u{0}b "), "ab");
 }
 
 /// `§6.1`, `§9.2` — `pair` is `1` while a window is open and `0` once it closes, expires
@@ -486,6 +587,79 @@ fn test_spec_6_4_udp_refuses_a_public_source_and_answers_once_a_second() {
     }
 }
 
+/// `§6.4` — a probe storm from invented private addresses is answered within a budget
+/// and then not at all: at most `GLOBAL_PER_SECOND` answers in any second across every
+/// source, at most `SOURCES_MAX` sources remembered, an unseen source refused while the
+/// table is full of fresh ones, a source already known keeping its one answer a second
+/// throughout, and the table forgetting after a minute. Over a fake clock.
+#[test]
+fn test_spec_6_4_a_probe_storm_is_bounded_by_a_global_budget_and_a_source_cap() {
+    let mut limit = udp::RateLimit::default();
+    let t0 = Instant::now();
+    let at =
+        |secs: u64, millis: u64| t0 + Duration::from_secs(secs) + Duration::from_millis(millis);
+    let stranger = |n: u32| -> IpAddr { Ipv4Addr::from(0x0A00_0000 + n).into() };
+    let household: IpAddr = Ipv4Addr::new(192, 168, 1, 5).into();
+    assert!(limit.allow(household, at(0, 0)));
+    // One second, two thousand sources: the budget answers the first few and no more.
+    let answered = (1..=2000)
+        .filter(|n| limit.allow(stranger(*n), at(0, 1)))
+        .count();
+    assert_eq!(answered, udp::GLOBAL_PER_SECOND as usize - 1);
+    assert!(
+        !limit.allow(household, at(0, 500)),
+        "within its own second, and the budget is spent"
+    );
+    // The next second: another budget's worth, and the household device is answered first.
+    assert!(limit.allow(household, at(1, 0)));
+    let answered = (2001..=4000)
+        .filter(|n| limit.allow(stranger(*n), at(1, 1)))
+        .count();
+    assert_eq!(answered, udp::GLOBAL_PER_SECOND as usize - 1);
+    // Fill the table a budget a second, inside the minute it remembers a source for;
+    // past the cap an unseen source is refused even with budget to spare, while a
+    // known source is still answered.
+    let mut n = 10_000;
+    let mut second = 2;
+    let mut in_second = 0;
+    loop {
+        if in_second == udp::GLOBAL_PER_SECOND {
+            second += 1;
+            in_second = 0;
+        }
+        assert!(
+            second < 60,
+            "the table never filled inside the minute it remembers a source for"
+        );
+        if !limit.allow(stranger(n), at(second, 0)) {
+            break;
+        }
+        n += 1;
+        in_second += 1;
+    }
+    assert!(
+        in_second < udp::GLOBAL_PER_SECOND,
+        "refused by the cap, with budget to spare"
+    );
+    assert!(
+        !limit.allow(stranger(n), at(second, 100)),
+        "refused again: full of fresh entries"
+    );
+    assert!(
+        limit.allow(household, at(second, 200)),
+        "a known source is unaffected"
+    );
+    assert!(
+        limit.allow(stranger(10_000), at(second, 300)),
+        "a remembered stranger too"
+    );
+    // A minute after the first entries were made, they are forgotten and a new source is
+    // answered again.
+    assert!(limit.allow(stranger(n), at(62, 0)));
+    // Empty input: the very first probe of any run is answered.
+    assert!(udp::RateLimit::default().allow(stranger(1), t0));
+}
+
 // ---------------------------------------------------------------------------------------
 // §6.5 — together, never in sequence
 // ---------------------------------------------------------------------------------------
@@ -502,7 +676,7 @@ fn test_spec_6_5_mdns_and_udp_start_together_and_stop_together() {
         udp: Switch::On,
         udp_port: taken_port,
     };
-    let refused = Discovery::start(facts(&unique("t"), &unique("Study"), &["hello"]), both);
+    let refused = Discovery::start(facts(&unique_id(), &unique("Study"), &["hello"]), both);
     assert!(
         matches!(refused.status().udp, Outcome::Failed(_)),
         "{:?}",
@@ -514,7 +688,7 @@ fn test_spec_6_5_mdns_and_udp_start_together_and_stop_together() {
     drop(taken);
 
     let running = Discovery::start(
-        facts(&unique("t"), &unique("Study"), &["hello"]),
+        facts(&unique_id(), &unique("Study"), &["hello"]),
         Options {
             mdns: Switch::On,
             udp: Switch::On,
@@ -628,7 +802,7 @@ fn test_discovery_settings_disable_each_mechanism() {
 fn test_spec_6_1_mdns_registration_is_browsable_and_keyed_by_id() {
     // Tests in this process register on the same host at once, and the stack renames a
     // colliding instance (`§6.1`), so this test's id and name are its own.
-    let id = unique("t");
+    let id = unique_id();
     let study = unique("Study");
     let kitchen = unique("Kitchen");
     let mine = facts(&id, &study, &["hello", "animals"]);
@@ -685,13 +859,25 @@ fn test_spec_6_1_mdns_registration_is_browsable_and_keyed_by_id() {
 
 /// A name no other test in this process registers: the tag, the process and a counter.
 fn unique(tag: &str) -> String {
+    format!("{tag}-{}-{}", std::process::id(), next_counter())
+}
+
+/// A Node ID no other test in this process registers — shaped as one, since a record
+/// whose `id` is not (`§6.1`) is not a `pv/1` record and is never kept: forty bits of the
+/// process and a counter as eight Crockford characters.
+fn unique_id() -> String {
+    const ALPHABET: &[u8] = b"0123456789abcdefghjkmnpqrstvwxyz";
+    let bits = (u64::from(std::process::id()) << 20) ^ u64::from(next_counter());
+    (0..8)
+        .rev()
+        .map(|i| char::from(ALPHABET[((bits >> (i * 5)) & 31) as usize]))
+        .collect()
+}
+
+fn next_counter() -> u32 {
     use std::sync::atomic::{AtomicU32, Ordering};
     static COUNTER: AtomicU32 = AtomicU32::new(0);
-    format!(
-        "{tag}-{}-{}",
-        std::process::id(),
-        COUNTER.fetch_add(1, Ordering::Relaxed)
-    )
+    COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
 fn wait_for(discovery: &Discovery, id: &str, timeout: Duration) -> Option<Discovered> {

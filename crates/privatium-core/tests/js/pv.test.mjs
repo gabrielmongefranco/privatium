@@ -3,13 +3,13 @@
 // Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  pv.js against spec/data-api.md §5 and §6 and spec/protocol.md §10.6, under
 //           `node --test`: the outbox queues while the node is unreachable and replays in
-//           order when it is back; an empty replay leaves the helper able to replay
-//           later; the node's own trouble keeps an entry and a refusal drops it; an
-//           append during a replay is not lost; no storage is still a queue; a replay
-//           carries its mark and each row's rank for the node to judge, and a landed or
-//           conflicting answer is honoured; an entry queued for another app or another
-//           node is refused; two pages share one storage without loss; and the file
-//           stays under the size the spec promises.
+//           order when it is back; an empty replay leaves the helper able to replay later;
+//           the node's own trouble keeps an entry and a refusal drops it; an append during
+//           a replay is not lost; no storage is still a queue; a replay carries its mark
+//           and each row's rank for the node to judge, and a landed or conflicting answer
+//           is honoured; an entry queued for another app or another node is refused; two
+//           pages share one storage without loss; and the file stays under the size the
+//           spec promises. See main README.md for full license information.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

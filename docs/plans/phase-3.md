@@ -4,11 +4,11 @@ File:     docs/plans/phase-3.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-09-05
 Modified: 2026-09-05
-Summary:  Implementation plan for Phase 3 — more than one node: cluster admission, the
-          sync protocol over LAN HTTP, multi-writer materialization, externally synced
-          logs, endpoint failover, attachments, and the always-on node of Phase 3b.
-          Non-normative. Where this plan and spec/ disagree, spec/ wins and this file is
-          wrong.
+Summary:  Implementation plan for Phase 3 — more than one node: cluster admission, the sync
+          protocol over LAN HTTP, multi-writer materialization, externally synced logs,
+          endpoint failover, attachments, and the always-on node of Phase 3b. Non-normative.
+          Where this plan and spec/ disagree, spec/ wins and this file is wrong.
+          See main README.md for full license information.
 -->
 
 # Phase 3 Implementation Plan

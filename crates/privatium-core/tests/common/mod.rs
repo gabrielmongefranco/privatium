@@ -1,10 +1,11 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/common/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-02  |  Modified: 2026-09-03
-// Summary:  What tests/store.rs, tests/snapshot.rs and tests/apps.rs share: a node plus
-//           one app store, the event line of spec/protocol.md §4.1 spelled by hand,
-//           `echo >>`, the digests the §2.5 comparisons are made with, app folders written
-//           into a data root, and the sys tables read back as JSON.
+// Summary:  What tests/store.rs, tests/snapshot.rs and tests/apps.rs share: a node plus one
+//           app store, the event line of spec/protocol.md §4.1 spelled by hand, `echo >>`,
+//           the digests the §2.5 comparisons are made with, app folders written into a data
+//           root, and the sys tables read back as JSON.
+//           See main README.md for full license information.
 
 // AGENTS.md, Style: unwrap() is permitted in tests. Each test binary uses a different
 // subset of these helpers, so the unused ones are not a finding.

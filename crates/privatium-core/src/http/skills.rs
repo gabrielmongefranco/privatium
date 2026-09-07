@@ -5,6 +5,7 @@
 //           the skills/ tree of this build, embedded so an owner gets the contract matching
 //           the version they are running. The bundle is a stored (uncompressed) zip written
 //           by hand — a hundred kilobytes of Markdown does not justify a compression crate.
+//           See main README.md for full license information.
 
 use std::sync::LazyLock;
 

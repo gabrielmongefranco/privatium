@@ -1,10 +1,11 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/build_gates.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-08-31  |  Modified: 2026-09-03
-// Summary:  M0's only tests. Each one retires a build risk from docs/plans/phase-1.md §8
-//           on all three CI platforms, before the milestone that depends on it exists.
-//           They are named for the risk they close, not for a spec section, because none
-//           of them enforces a normative MUST — the spec-named tests start in M1.
+// Created:  2026-08-31  |  Modified: 2026-09-06
+// Summary:  The build gates: each test proves an engine compiled from source — the bundled
+//           SQLite, the vendored Lua 5.4 — links and runs on all three CI platforms, before
+//           anything is built on it. They are named for the risk they close, not for a spec
+//           section, because none of them enforces a normative MUST.
+//           See main README.md for full license information.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

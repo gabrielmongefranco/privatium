@@ -3,8 +3,9 @@
 // Created:  2026-09-03  |  Modified: 2026-09-03
 // Summary:  `cargo xtask icons-verify`. Every icon name the shell, the reference apps, the
 //           skills and docs/icons.md's vocabulary table refer to must exist in the vendored
-//           Bootstrap Icons set, and the vendored VERSION must be the one docs/icons.md pins
-//           (docs/icons.md, PV503). Fails on a name the set lacks rather than falling back.
+//           Bootstrap Icons set, and the vendored VERSION must be the one docs/icons.md
+//           pins (docs/icons.md, PV503). Fails on a name the set lacks rather than falling
+//           back. See main README.md for full license information.
 
 use std::collections::BTreeSet;
 use std::path::Path;

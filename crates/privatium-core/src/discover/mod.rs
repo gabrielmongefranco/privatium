@@ -2,10 +2,10 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-06  |  Modified: 2026-09-06
 // Summary:  LAN discovery (spec/protocol.md §6): the facts a node advertises, the two
-//           mechanisms that carry them — mDNS (§6.1) and the UDP responder (§6.4) —
-//           started together and never in sequence (§6.5), and the nodes seen on the
-//           network keyed by ID. Threads of its own, no async runtime, so an embedder
-//           without tokio can call `Node::serve_discovery`.
+//           mechanisms that carry them — mDNS (§6.1) and the UDP responder (§6.4) — started
+//           together and never in sequence (§6.5), and the nodes seen on the network keyed
+//           by ID. Threads of its own, no async runtime, so an embedder without tokio can
+//           call `Node::serve_discovery`. See main README.md for full license information.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -60,20 +60,8 @@ impl Facts {
     /// trimmed, or the Node ID when the name is empty (`§6.1`).
     #[must_use]
     pub fn instance_name(&self) -> String {
-        let name = self.name.trim();
-        if name.is_empty() {
-            return self.id.clone();
-        }
-        let mut end = name.len().min(INSTANCE_NAME_MAX);
-        while !name.is_char_boundary(end) {
-            end -= 1;
-        }
-        let cut = name[..end].trim_end();
-        if cut.is_empty() {
-            self.id.clone()
-        } else {
-            cut.to_owned()
-        }
+        let cut = bound_name(&self.name);
+        if cut.is_empty() { self.id.clone() } else { cut }
     }
 
     /// The DNS-SD subtypes this node would advertise, one per eligible slug (`§6.1`).
@@ -84,6 +72,20 @@ impl Facts {
             .map(|slug| format!("_{slug}._sub.{}", mdns::SERVICE_TYPE))
             .collect()
     }
+}
+
+/// A display name as an instance name may hold it (`§6.1`): trimmed, control characters
+/// dropped, and cut to [`INSTANCE_NAME_MAX`] bytes at a character boundary. Applied to
+/// this node's own name before it is advertised and to a name read off the network
+/// before it is kept.
+#[must_use]
+pub fn bound_name(name: &str) -> String {
+    let name: String = name.trim().chars().filter(|c| !c.is_control()).collect();
+    let mut end = name.len().min(INSTANCE_NAME_MAX);
+    while !name.is_char_boundary(end) {
+        end -= 1;
+    }
+    name[..end].trim_end().to_owned()
 }
 
 /// A node seen on the network, keyed by `id` and never by instance name (`§6.1`).

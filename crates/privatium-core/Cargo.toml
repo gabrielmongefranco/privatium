@@ -1,8 +1,9 @@
 # Project:  Privatium™  |  File: crates/privatium-core/Cargo.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-08-31  |  Modified: 2026-09-06
-# Summary:  The library. One core crate per ADR 0002 — the server, the shells, and
-#           (later) uniffi all consume this and nothing else.
+# Summary:  The library. One core crate per ADR 0002 — the server, the shells, and (later)
+#           uniffi all consume this and nothing else.
+#           See main README.md for full license information.
 
 [package]
 name        = "privatium-core"

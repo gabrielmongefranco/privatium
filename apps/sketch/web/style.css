@@ -1,9 +1,10 @@
 /* Project: Privatium™ | File: apps/sketch/web/style.css
    Authors: Gabriel Mongefranco (@gabrielmongefranco)
    Created: 2026-08-28 | Modified: 2026-09-06
-   Summary: A white drawing surface with wrapping tools and readable help. The
-            canvas's CSS size drives its backing store; controls never shrink
-            to make room. All colors stay in this external sheet for the CSP. */
+   Summary: A white drawing surface with wrapping tools and readable help. The canvas's CSS
+            size drives its backing store; controls never shrink to make room. All colors
+            stay in this external sheet for the CSP.
+            See main README.md for full license information. */
 :root { --navy:#00274C; --maize:#FFCB05; --charcoal:#333333; --muted:#46515f; --line:#657181; --brand:#17212b; }
 * { box-sizing:border-box; }
 body { margin:0; min-height:100vh; min-height:100svh; display:flex; flex-direction:column; font:16px/1.5 system-ui,sans-serif; background:#f4f6f8; color:var(--brand); overflow-wrap:anywhere; }

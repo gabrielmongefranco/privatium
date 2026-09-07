@@ -4,8 +4,9 @@ File:     docs/README.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-09-06
 Modified: 2026-09-06
-Summary:  Index of every Privatium document — guides for people running a node, guides
-          for people building apps, the normative specification, and decision records.
+Summary:  Index of every Privatium document — guides for people running a node, guides for
+          people building apps, the normative specification, and decision records.
+          See main README.md for full license information.
 -->
 
 # Privatium documentation
@@ -71,6 +72,7 @@ Why a choice was made, kept so it is not argued again from scratch.
 |---|---|
 | [Branding](branding.md) | The logo, colors, typography and asset pack, and how to use them. |
 | [Naming](naming.md) | The name, the tagline, and the tokens that are load-bearing across the code and the wire format. |
+| [Roadmap](roadmap.md) | What exists, what is planned, and the test that holds each finished item. |
 
 ---
 

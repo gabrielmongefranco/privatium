@@ -5,9 +5,9 @@ Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-09-05
 Modified: 2026-09-06
 Summary:  Implementation plan for Phase 2 — other devices on the LAN: cluster identity,
-          session cryptography, pairing, the encrypted browser channel, discovery, and
-          the device registry. Non-normative. Where this plan and spec/ disagree, spec/
-          wins and this file is wrong.
+          session cryptography, pairing, the encrypted browser channel, discovery, and the
+          device registry. Non-normative. Where this plan and spec/ disagree, spec/ wins and
+          this file is wrong. See main README.md for full license information.
 -->
 
 # Phase 2 Implementation Plan
@@ -323,12 +323,16 @@ rule applied.*
 
 ## 3. Spec gaps found
 
-Rows 1–31 are fixed. As in
+Rows 1–35 are fixed. As in
 Phase 1, this records what changed and why;
 `cargo xtask gen-skill-reference` ran with the edits.
 
 | # | Was | Proposed | Files | Milestone |
 |---|---|---|---|---|
+| 35 | `§8.3` refused a `dev` that is not an active row with an X25519 key; the node's own row is one, and nothing said a node never pairs with itself. Neither `§7.4.2` nor `§8.3` bounded a peer that opens a socket and falls silent | The node's own ID is refused before its hello is answered; a node SHOULD bound the handshake and close a silent peer with nothing counted — ten seconds on `/ws`, thirty on `/ws/pair` in the reference node | `protocol.md §7.4.2, §8.3` | **Fixed**; hardening; `test_spec_8_3_the_nodes_own_row_cannot_open_a_channel`, `test_spec_7_4_a_silent_pairing_peer_is_closed_without_an_attempt` |
+| 34 | `§6.1` keyed discovered nodes on `id` and said nothing about a record whose `id` is not an ID, a name past 63 bytes, a value that is not a slug, or a flood of invented records | A record whose `id` or `cl` is not shaped as an ID is not a `pv/1` record; `nm` is read to 63 bytes; `apps` keeps slugs and the marker alone, to a stated bound; the list of nodes seen is bounded | `protocol.md §6.1` | **Fixed**; hardening; `test_spec_6_1_a_record_off_the_wire_is_validated_and_bounded` |
+| 33 | `§6.4` limited answers per source only; a probe is twelve bytes from an unverified address and an answer a kilobyte, so a flood of spoofed private sources was an amplifier | Nodes SHOULD bound the answers sent in any second across every source and the sources remembered; a known source keeps its answer while strangers are refused | `protocol.md §6.4` | **Fixed**; hardening; `test_spec_6_4_a_probe_storm_is_bounded_by_a_global_budget_and_a_source_cap` |
+| 32 | `§7.4.2` said when an attempt is counted and what a peer that leaves is, but not what becomes of an attempt whose `pA` was accepted under a code that was then replaced, or a window that was then consumed or expired, before its `cA`; the node answered such a `cA` and sealed | An accepted `pA` is an attempt against that code and that window alone: refused at `cA` with 4429 after a replacement and 4404 after consumption or expiry, before the message is read and before anything is sealed; a sealed message after the window closed is refused before it is opened; each is one audited failure | `protocol.md §7.4.2` | **Fixed**; hardening; `test_spec_7_5_an_attempt_begun_before_a_rotation_cannot_finish_after_it`, `test_spec_7_4_a_second_attempt_cannot_finish_once_the_window_is_consumed_or_expired` |
 | 31 | `§3.2` had `last_seen_at` "written at the channel handshake" unconditionally; since M17 every full-page navigation opens a channel of its own, so that sentence meant one `sys_device` event per page view | Written at the handshake only when the row holds no mark or one more than an hour old, and by a request an hour or more after the last write — at most hourly, never per request, never per page navigation. The node decides (`Node::note_device_seen`, the instant passed in) and the channel asks at the handshake and on every request | `data-dictionary.md §3.2` | **Fixed**; M19; `test_spec_3_2_last_seen_at_is_written_at_most_hourly` |
 | 30 | The data root was the platform directory or `--data-dir`, nothing else; on Windows that directory is hidden, so owners could not find their apps, and a zip download had no way to keep everything in one folder | Three sources, most explicit first: `--data-dir`; a `privatium-data` folder the owner created beside the executable (portable mode — the program never creates it, and one that cannot be written is a runtime error, never a fall-through); the platform directory. Every start prints the root and the rule that chose it; the data page shows the same. The Windows release gains `privatium-windows-portable.zip` carrying `privatium-data/apps/` with the three examples | `cli.md §1`, `protocol.md §3`, `AGENTS.md` invariant 7, `README.md`, `docs/backup-and-restore.md §1`, Tier 3 skill, `release_tools.py`, `release.yml` | **Fixed**; between M18 and M19 |
 | 29 | `cli.md` had a release binary start with an empty launcher — the reference apps existed only in a checkout — and `new --from hello` failed without one | The binary carries the three example apps; a start whose `apps/` holds no app folder writes them there, whether the data directory is new or was used before the binary carried them, `new --examples` writes them on request, `--from` finds the embedded copy, and a checkout keeps mounting its own `apps/` as `bundled` and writes nothing | `cli.md §2, §4`, `data-dictionary.md §3.4`, `apps/README.md`, `README.md`, overview skill | **Fixed**; M18 |
@@ -723,7 +727,8 @@ where the code proves it wrong.
 ### M16 — Pairing
 
 **Implementation status, 2026-09-05:** implemented on `m16-pairing`; the Windows gates
-pass and the three-platform PR CI is pending. Section 3 rows 22–25 record the spec gaps
+pass, and the three-platform run recorded under "Phase 2 hardening" ticked the checklist.
+Section 3 rows 22–25 record the spec gaps
 the code found. Pairing is data: `Node::pair` opens the window; `Node::pairing_hello`,
 `pairing_begin`, `pairing_confirm`, `pairing_finish` and `pairing_abandon` drive the six
 messages against it under the node's lock and write every audit row of `§7.5`; the Rust
@@ -795,7 +800,7 @@ rendered checks remain a human check.
 
 **Acceptance checklist** — check only after the named tests pass on all three platforms:
 
-- [ ] The code, both renderings and the parser:
+- [x] The code, both renderings and the parser:
   `test_spec_7_2_code_is_16_bits_rendered_as_four_glyphs_and_two_words`,
   `test_spec_7_2_word_input_is_case_and_punctuation_insensitive`,
   `test_spec_7_2_glyph_labels_are_accepted_as_input`,
@@ -803,7 +808,7 @@ rendered checks remain a human check.
   `test_spec_7_2_word_list_has_256_distinct_words_with_unique_three_letter_prefixes`,
   `test_spec_7_2_parse_cases_and_renderings_match_rust` and
   `test_spec_7_2_word_list_and_glyph_table_match_the_spec` (JavaScript).
-- [ ] SPAKE2 agrees across the two languages and refuses what it must:
+- [x] SPAKE2 agrees across the two languages and refuses what it must:
   `test_spec_7_4_spake2_matches_the_checked_in_vectors`,
   `test_spec_7_4_a_wrong_code_derives_nothing`,
   `test_spec_7_4_1_m_and_n_are_the_rfc_9382_edwards25519_points` (Rust unit), and in
@@ -811,20 +816,20 @@ rendered checks remain a human check.
   `test_spec_7_4_1_m_and_n_are_prime_order_points_distinct_from_g`,
   `test_spec_7_4_a_wrong_code_derives_nothing`,
   `test_spec_7_4_1_invalid_points_zero_scalars_and_bad_codes_are_refused`.
-- [ ] The six messages, what the device pins and the row the node writes:
+- [x] The six messages, what the device pins and the row the node writes:
   `test_spec_7_4_pairing_completes_and_writes_the_device_row`,
   `test_spec_7_4_the_client_pins_the_cluster_key_and_the_node_certificate`,
   `test_spec_7_4_2_the_transcript_matches_the_checked_in_vectors`,
   `test_spec_7_0_the_code_never_crosses_the_wire`, and in JavaScript
   `test_spec_7_4_2_client_transcript_matches_rust`,
   `test_spec_2_2_device_id_derivation_matches_rust`.
-- [ ] The window, its limits and its audit rows:
+- [x] The window, its limits and its audit rows:
   `test_spec_7_1_pairing_is_closed_until_opened_and_closes_on_first_success`,
   `test_spec_7_5_code_expires_at_120s_and_five_attempts_issue_a_new_one`,
   `test_spec_7_5_attempts_are_rate_limited_per_source`,
   `test_spec_7_5_every_attempt_writes_an_audit_row_without_the_code`,
   `test_spec_app_contract_6_pair_opens_a_window_and_returns_the_code`.
-- [ ] Every refusal fails closed with its close code and nothing derived:
+- [x] Every refusal fails closed with its close code and nothing derived:
   `test_spec_7_4_a_node_kind_is_refused_naming_phase_3`,
   `test_spec_7_4_2_malformed_messages_and_a_mismatched_device_id_are_refused`,
   `test_spec_7_6_a_registered_device_key_cannot_pair_again`, and in JavaScript
@@ -935,8 +940,8 @@ a capturing loopback proxy with a TEST-NET peer. Its live JavaScript test runs t
 browser modules against that core. Node.js must be on PATH for this test; the test-only
 `PRIVATIUM_TEST_NODE` environment variable may name a portable executable.
 
-Final verification results are recorded with the commit and PR. Three-platform
-completion boxes remain open until those CI results are available.
+Final verification results are recorded with the commit and PR; the checklist below is
+ticked on the three-platform run recorded under "Phase 2 hardening".
 
 The full workspace run exposed a probabilistic assertion in
 `test_spec_7_0_the_code_never_crosses_the_wire`: random base64 could contain a short
@@ -1019,19 +1024,19 @@ against the `pv.test.mjs` harness with a fake channel.
 **Acceptance checklist** — Windows runs are green; check after the named tests pass
 on all three platforms:
 
-- [ ] LAN policy, owner loopback and IPv4/IPv6 bind:
+- [x] LAN policy, owner loopback and IPv4/IPv6 bind:
   `test_spec_8_4_plain_http_on_the_lan_serves_only_the_bootstrap_set`,
   `test_loopback_keeps_phase_1_semantics`, `test_adapter_binds_every_interface`.
-- [ ] Live encrypted routing and streaming:
+- [x] Live encrypted routing and streaming:
   `test_spec_8_2_lan_socket_carries_no_plaintext_app_data`,
   `test_channel_streams_a_response_body_frame_by_frame`,
   `test_spec_8_3_browser_client_against_live_core`.
-- [ ] Response ownership, capacity and expiry:
+- [x] Response ownership, capacity and expiry:
   `test_spec_8_3_1_handoff_survives_disconnect_without_repeating_a_write`,
   `test_spec_8_3_1_wrong_device_cannot_consume_or_release_a_response`,
   `test_spec_8_3_1_capacity_refuses_before_dispatch_and_release_frees_it`,
   `test_spec_8_3_1_idle_expiry_releases_body_without_another_request` (unit).
-- [ ] Destination policy and client integration:
+- [x] Destination policy and client integration:
   `test_spec_8_3_1_bootstrap_uses_destination_app_permissions`,
   `test_spec_8_3_integrity_uses_authenticated_bytes_and_refuses_unpinned_remote_code`,
   `test_spec_8_3_pv_uses_the_channel_for_requests_and_subscriptions`,
@@ -1055,8 +1060,8 @@ the core; `Node::{serve_discovery, discovery_status, discovered, discovery_facts
 publish_facts}` are the node's surface, and `run.rs` starts discovery on the port the
 socket actually bound, so `p` is right under `--port 0`. The twelve tests of
 `tests/discover.rs` and `test_cli_no_discovery_starts_nothing` pass on Windows,
-including the real daemon browsing its own registration; the three-platform CI run
-decides risk R10.
+including the real daemon browsing its own registration; the three-platform run
+recorded under "Phase 2 hardening" passed it on every runner, which closes risk R10.
 
 Four shapes differ from the sketch below. **Subtypes are computed and not advertised:**
 `mdns-sd` keys registrations by full name and carries one subtype per `ServiceInfo`,
@@ -1155,23 +1160,23 @@ IP" becomes "scans the QR").
 **Acceptance checklist** — Windows runs are green; check after the named tests pass on
 all three platforms:
 
-- [ ] The record, its budget, the instance name and the subtype rule:
+- [x] The record, its budget, the instance name and the subtype rule:
   `test_spec_6_1_txt_record_carries_the_full_key_set_and_stays_under_1300_bytes`,
   `test_spec_6_1_apps_is_truncated_with_an_ellipsis_when_over_budget`,
   `test_spec_6_1_instance_name_is_the_display_name_or_the_node_id`,
   `test_spec_6_1_subtypes_only_for_advertised_slugs_of_15_chars_or_less`.
-- [ ] The UDP fallback and its refusals:
+- [x] The UDP fallback and its refusals:
   `test_spec_6_4_udp_probe_is_answered_with_the_txt_key_set`,
   `test_spec_6_4_udp_refuses_a_public_source_and_answers_once_a_second`.
-- [ ] Together, stopped together, switched by settings, and the pair flag from one source:
+- [x] Together, stopped together, switched by settings, and the pair flag from one source:
   `test_spec_6_5_mdns_and_udp_start_together_and_stop_together`,
   `test_discovery_settings_disable_each_mechanism`,
   `test_spec_app_contract_6_serve_discovery_runs_from_the_nodes_facts`,
   `test_spec_6_1_pair_flag_flips_when_pairing_opens`.
-- [ ] Browsing keyed by ID, with a real daemon:
+- [x] Browsing keyed by ID, with a real daemon:
   `test_spec_6_1_two_nodes_with_one_name_are_distinct_by_id`,
   `test_spec_6_1_mdns_registration_is_browsable_and_keyed_by_id` (risk R10).
-- [ ] The CLI: `test_cli_no_discovery_starts_nothing`; the example apps:
+- [x] The CLI: `test_cli_no_discovery_starts_nothing`; the example apps:
   `test_spec_cli_2_first_run_writes_the_example_apps`,
   `test_spec_cli_4_new_examples_writes_all_three_and_never_overwrites`,
   `test_new_from_hello_works_without_a_checkout`,
@@ -1244,7 +1249,8 @@ merged just before this milestone; the spec, the code and this plan keep *node*.
 | `bash .github/scripts/conformance.sh` | Every named test passed, the `devices` binary's included, using Git Bash |
 | `privatium lint apps/hello apps/animals apps/sketch` | 0 findings |
 
-The three-platform CI run decides the checklist below.
+The checklist below is ticked on the three-platform run recorded under "Phase 2
+hardening".
 
 - Settings, node page: a display-name form (§3 row 16) → `sys_node.display_name`;
   "Listening" shows the LAN URL; "Nodes on this network" lists `Node::discovered()` by ID.
@@ -1316,27 +1322,27 @@ they name Phase 2; `spec/protocol.md`'s status line.
 **Acceptance checklist** — Windows runs are green; check after the named tests pass on
 all three platforms:
 
-- [ ] The owner's pairing window and the manifest's flag; a session refused:
+- [x] The owner's pairing window and the manifest's flag; a session refused:
   `test_spec_9_2_manifest_pair_flag_is_true_while_open`,
   `test_spec_9_2_pair_route_refuses_a_session`.
-- [ ] The code page and the bootstrap disclose `§7.7`, and every new page meets the
+- [x] The code page and the bootstrap disclose `§7.7`, and every new page meets the
   PV4xx rules: `test_spec_7_7_plain_http_pairing_page_discloses_the_gap`,
   `test_spec_cli_5_pv4xx_pairing_and_devices_pages`.
-- [ ] Devices listed, labelled and revoked with nothing lost, the channel closed at once,
+- [x] Devices listed, labelled and revoked with nothing lost, the channel closed at once,
   the mark hourly: `test_settings_devices_lists_paired_devices_and_revokes_one`,
   `test_spec_3_2_revocation_is_a_put_never_a_del`,
   `test_spec_3_2_revoking_a_device_closes_its_open_channel_at_once`,
   `test_spec_3_2_last_seen_at_is_written_at_most_hourly`.
-- [ ] The display name reaches the manifest and the discovery facts:
+- [x] The display name reaches the manifest and the discovery facts:
   `test_settings_node_display_name_is_set_by_the_owner_and_reaches_the_manifest`.
-- [ ] The session's device and the paired-node count:
+- [x] The session's device and the paired-node count:
   `test_spec_lua_3_4_device_and_peers_come_from_the_session`,
   `test_channel_requests_carry_the_session_device`.
-- [ ] A re-keyed node refused, the refusal screen without a dismiss, the pad and the
+- [x] A re-keyed node refused, the refusal screen without a dismiss, the pad and the
   field one code: `test_spec_8_1_a_reinitialized_node_is_refused_by_a_paired_client`,
   `test_spec_8_1_refusal_screen_has_no_dismiss`,
   `test_spec_7_2_pad_and_word_field_yield_the_same_sixteen_bits` (JavaScript).
-- [ ] The CLI: `test_spec_cli_8_pair_prints_the_code_and_exits_on_success`,
+- [x] The CLI: `test_spec_cli_8_pair_prints_the_code_and_exits_on_success`,
   `test_spec_cli_8_pair_without_a_node_is_a_runtime_error`,
   `test_spec_cli_2_open_prints_a_qr_and_the_lan_url`,
   `test_spec_cli_2_open_on_an_unpaired_node_opens_one_window`,
@@ -1359,6 +1365,81 @@ reads every path a non-loopback peer can take through `auth.rs` and `channel.rs`
 OWASP ASVS 5.0 V2 and V9, the pairing state machine against `§7.5`'s three limits under
 concurrency, and the client script against the CSP with the browser console open on each
 of the three platforms' browsers plus a phone. Fix the spec in the same PR, as always.
+
+**Phase 2 hardening, 2026-09-06, branch `phase2-hardening`:** the first round. The
+three-platform run of `main` at `8ca618d` (CI run 34069110056) passed every named test
+of M16–M19, and their checklists below are ticked on it; risk R10 closed on the same run,
+since the real-daemon mDNS test passed on all three runners ungated. The review read
+`auth.rs`, `channel.rs`, `owner.rs`, `handoff.rs`, the pairing and session modules, the
+discovery modules, the registry, the CLI's `pair` client and `--open`, and the four
+client scripts, against ASVS 5.0 V2 and V9. What it found, all fixed in this round with
+the spec edited where it was silent (§3 rows 32–35):
+
+- **An accepted `pA` outlived its code and its window.** The node's side of an attempt
+  was not bound to the code generation, and `cA` was verified without looking at the
+  window, so after five failures replaced the code — or after another device consumed
+  the window, or after it expired — a `cA` computed against the old code still verified
+  and the node sealed its message; a sealed message arriving after the window closed was
+  opened before the window was checked. Now the exchange carries the generation, the
+  confirm refuses 4429 after a replacement and 4404 after consumption or expiry before
+  the message is read, the registration checks the window and the registry before the
+  sealed message is opened, and each refusal is one audited failure —
+  `test_spec_7_5_an_attempt_begun_before_a_rotation_cannot_finish_after_it`,
+  `test_spec_7_4_a_second_attempt_cannot_finish_once_the_window_is_consumed_or_expired`.
+- **The devices page put a device ID into an attribute unescaped.** The label and revoke
+  form actions were built from `sys_device.id` as the log holds it, and the log is
+  untrusted input (`AGENTS.md`). A row whose ID is not shaped as a Node ID now gets no
+  form, and the ID is escaped in every attribute —
+  `test_spec_3_2_devices_page_never_trusts_a_device_id_from_the_log`.
+- **A `null` `revoked_at` read as a revocation.** `revoke_device` tested for the key's
+  presence, so a row that spelled the null out — which `spec/data-dictionary.md §2.1`
+  makes the same value as an absent key — could never be revoked. Fixed and held by
+  `test_spec_3_2_last_seen_at_is_written_at_most_hourly`, which now also writes over a
+  mark from the future and an unreadable one.
+- **The UDP responder was an amplifier.** Its per-source table grew without bound for a
+  minute under spoofed private-range sources, each answered once. A budget of 32 answers
+  a second across every source and a cap of 1024 remembered sources, refusing strangers
+  while the table is full of fresh entries and never a source already known —
+  `test_spec_6_4_a_probe_storm_is_bounded_by_a_global_budget_and_a_source_cap`.
+- **Records off the wire were kept unread.** `txt::read` accepted any `id`, `cl`, `nm`
+  and `apps`. An ID or a cluster ID that is not shaped as one is not a record; the name
+  is bounded as an instance name is; `apps` keeps slugs alone, at most 64 —
+  `test_spec_6_1_a_record_off_the_wire_is_validated_and_bounded`. The mDNS tests now
+  register IDs shaped as Node IDs, since the reader refuses everything else.
+- **A silent pairing peer held a task for two minutes.** `/ws/pair` was bounded by the
+  window's TTL alone, where `/ws` had a ten-second bound. Both bounds live in
+  `ChannelTimeouts` on the handler — thirty seconds for pairing — and a test shortens
+  them: `test_spec_7_4_a_silent_pairing_peer_is_closed_without_an_attempt`.
+- **The node's own row could start a `/ws` handshake.** Its `sys_device` row carries an
+  X25519 key since the identity amendment, and nothing refused `dev` equal to the node's
+  ID; without the node's private static nothing could finish, but the check was after
+  the hello rather than before. Refused before the hello —
+  `test_spec_8_3_the_nodes_own_row_cannot_open_a_channel`.
+- **The pairing screen mis-said a close.** `pair.js` rejected every close with "the node
+  closed the connection", which the screen read as *pairing is closed*; an exhausted
+  code at `pA` was therefore told to open pairing. Each close code of `§7.4.2` now has
+  its own sentence and the screen says it —
+  `test_spec_7_4_2_close_codes_are_said_to_the_person_without_the_nodes_words`,
+  `test_spec_7_2_pad_and_word_field_yield_the_same_sixteen_bits`.
+
+Reviewed and found sound, so recorded rather than re-argued: the auth layer's refusal
+before a read on every non-loopback path, with the `Host` check on loopback and the
+cross-site refusal on every route; the WebSocket `Origin` check; the frame decoder's
+bounds and its header allowlist; the handoff's atomic single consumer and its expiry
+timer; the revocation broadcast with the lagged-receiver fallback; the hourly mark
+decided under one lock hold; the rate limit and attempt counter behind the node mutex
+and never across an await (R15); `privatium pair` speaking to loopback alone with a
+bounded answer; `--open` opening a window only while no device has ever paired. Accepted
+risks are R18 and R19 in §8. Deferred as performance rather than security: the channel
+re-checks the device's standing with two registry reads per outbound frame, which the
+revocation broadcast already makes redundant in the common case.
+
+The Windows portable zip: the release workflow has never run — v0.1 was published two
+hours before it reached `main`, and its four assets were uploaded by hand, the portable
+zip last. `release.yml` now also runs on demand against a named tag, so binaries can be
+attached to an existing release without a new one, and the asset list lives in
+`release_tools.py` under test. The README links the v0.1 assets by tag, which resolve;
+the `latest` form does not while v0.1 is a prerelease.
 
 ---
 
@@ -1445,6 +1526,20 @@ implementation makes the fork worth owning.
 **R16 — The Wireshark bullet is a manual claim.** The proxy test proves the socket carries
 no known plaintext; a person with Wireshark still looks, in M19's manual pass, because a
 test only finds the strings it was told to look for.
+
+**R18 — Same-origin app code holds the owner's standing.** Apps share the framework's
+origin (`AGENTS.md`, the CSP note), so a Tier 2 app's JavaScript running in the owner's
+browser on loopback can call `POST /api/v1/pair` with a JSON body, or read the devices
+page and its form token, and so open pairing or revoke a device as the owner. This is
+the posture `docs/security.md §7` already states — an installed app folder is code run
+on the owner's node — and not a gap the owner-standing rule was meant to close; the
+hardening round records it rather than adding a second fence that per-app origins
+(`docs/security.md §7`) would make redundant. Accepted.
+
+**R19 — The browser console pass is still a person's.** The scripts were checked against
+the default CSP by the tests under `node --test` and by the live-core test; the console
+open in Chrome, Firefox, Edge and Safari, and on a phone, remains the manual pass M19
+recorded, since no test here runs a browser. Accepted until that pass is written up.
 
 ---
 

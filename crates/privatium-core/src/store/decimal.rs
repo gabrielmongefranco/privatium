@@ -1,12 +1,13 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/decimal.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
-// Summary:  Exact decimal arithmetic (spec/data-dictionary.md §2.1: money is never a float),
-//           as a Rust type and as the SQL functions and collation registered on every
-//           connection — decimal(), decimal_add/sub/mul/cmp, decimal_sum(), and the
+// Created:  2026-09-03  |  Modified: 2026-09-06
+// Summary:  Exact decimal arithmetic (spec/data-dictionary.md §2.1: money is never a
+//           float), as a Rust type and as the SQL functions and collation registered on
+//           every connection — decimal(), decimal_add/sub/mul/cmp, decimal_sum(), and the
 //           `decimal` collating sequence that sorts a DECIMAL column numerically. The same
-//           type backs pv.dec (M7), through the checked operations, which error where the
-//           SQL functions saturate, and the one explicit-scale division.
+//           type backs pv.dec, through the checked operations, which error where the SQL
+//           functions saturate, and the one explicit-scale division.
+//           See main README.md for full license information.
 
 use std::cmp::Ordering;
 use std::fmt;

@@ -1,7 +1,7 @@
 # Project:  Privatium™  |  File: apps/_lint/pass/PV207/pv207ok/app.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-05
-# Summary:  An external origin, declared.
+# Summary:  An external origin, declared. See main README.md for full license information.
 
 [app]
 slug    = "pv207ok"

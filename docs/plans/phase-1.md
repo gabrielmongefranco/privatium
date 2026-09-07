@@ -4,9 +4,9 @@ File:     docs/plans/phase-1.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-31
 Modified: 2026-09-05
-Summary:  Implementation plan for Phase 1 — a node that works on one machine.
-          Non-normative. Where this plan and spec/ disagree, spec/ wins and this
-          file is wrong.
+Summary:  Implementation plan for Phase 1 — a node that works on one machine. Non-normative.
+          Where this plan and spec/ disagree, spec/ wins and this file is wrong.
+          See main README.md for full license information.
 -->
 
 # Phase 1 Implementation Plan

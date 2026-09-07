@@ -1,10 +1,10 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/pair/handshake.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
-// Summary:  The six messages of /ws/pair (spec/protocol.md §7.4.2) as data, for both
-//           roles: the node's side takes the window and the identity and yields what to
-//           send, the client's side takes a code and yields the same; neither touches a
-//           socket, a log or a store.
+// Created:  2026-09-05  |  Modified: 2026-09-06
+// Summary:  The six messages of /ws/pair (spec/protocol.md §7.4.2) as data, for both roles:
+//           the node's side takes the window and the identity and yields what to send, the
+//           client's side takes a code and yields the same; neither touches a socket, a log
+//           or a store. See main README.md for full license information.
 
 use std::net::IpAddr;
 
@@ -127,6 +127,9 @@ pub struct Exchange {
     device_pub: String,
     kind: String,
     source: IpAddr,
+    /// The window's code generation the attempt was counted against. A `cA` for a code
+    /// the window has since replaced cannot finish (`spec/protocol.md §7.4.2`).
+    generation: u32,
     shared: Shared,
 }
 
@@ -178,6 +181,7 @@ impl Exchange {
         let pa = decode32(&start.pa)?;
 
         let w = pairing.begin_attempt(source, now)?;
+        let generation = pairing.generation();
         let ids = Identities::new(&start.public, &identity.public_key_base64());
         let state = State::start_with(Side::B, &w, secret).map_err(|_| PairError::Format)?;
         let pb = state.message();
@@ -199,6 +203,7 @@ impl Exchange {
                 device_pub: start.public,
                 kind: start.kind,
                 source,
+                generation,
                 shared,
             },
             reply,
@@ -223,16 +228,27 @@ impl Exchange {
         self.source
     }
 
-    /// Verify the device's `cA`. A confirmation that does not verify is the wrong code:
-    /// the failure is recorded on the window and [`PairError::WrongCode`] returned. On
-    /// success the node's sealed message is returned as the bytes to send, and the
-    /// state moves on to the device's sealed message.
+    /// Verify the device's `cA` at `now`. The window is checked before the message is
+    /// read: a code the window has replaced since `pA` is [`PairError::Exhausted`], and a
+    /// window another device has consumed or that has expired is [`PairError::Closed`]
+    /// — neither seals anything (`spec/protocol.md §7.4.2`). A confirmation that does
+    /// not verify is the wrong code: the failure is recorded on the window and
+    /// [`PairError::WrongCode`] returned. On success the node's sealed message is
+    /// returned as the bytes to send, and the state moves on to the device's sealed
+    /// message.
     pub fn confirm(
         self,
         identity: &Identity,
         pairing: &mut Pairing,
         text: &str,
+        now: jiff::Timestamp,
     ) -> Result<(Sealed, Vec<u8>), PairError> {
+        if pairing.generation() != self.generation {
+            return Err(PairError::Exhausted);
+        }
+        if !pairing.is_open(now) {
+            return Err(PairError::Closed);
+        }
         let confirm: ClientConfirm = parse(text)?;
         let ca = decode32(&confirm.ca)?;
         if !self.shared.verify(&ca) {

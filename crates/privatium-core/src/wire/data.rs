@@ -5,8 +5,8 @@
 //           framework reserves there (spec/protocol.md §9.1). Reads run on the sandboxed
 //           connection off the node lock; writes go through Node::append like every other
 //           writer; /api/events hands out log lines byte for byte; /api/stream is SSE
-//           through the streaming Response body, a channel pumped by a task, never a
-//           buffer and never the Lua host (docs/plans/phase-1.md §8, R6).
+//           through the streaming Response body, a channel pumped by a task, never a buffer
+//           and never the Lua host. See main README.md for full license information.
 
 // A refusal is a `Response`, and an early return of one is how every check here reads.
 // Clippy would rather the `Err` were boxed; the allocation would buy nothing on a path

@@ -6,6 +6,7 @@
 //           unauthenticated (§9.2), solo mode at `/` with the framework prefixes winning
 //           (§9.1), Tier 2 served under its own CSP (spec/app-contract.md §5.4), the seed
 //           behind a POST (§9), and bodies that stream. Tier 1 routes are tests/lua.rs.
+//           See main README.md for full license information.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

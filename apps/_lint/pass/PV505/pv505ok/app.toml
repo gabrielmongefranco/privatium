@@ -1,7 +1,7 @@
 # Project:  Privatium™  |  File: apps/_lint/pass/PV505/pv505ok/app.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-05
-# Summary:  No filesystem path anywhere.
+# Summary:  No filesystem path anywhere. See main README.md for full license information.
 
 [app]
 slug    = "pv505ok"

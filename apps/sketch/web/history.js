@@ -1,7 +1,8 @@
 /* Project: Privatium™ | File: apps/sketch/web/history.js
  * Authors: Gabriel Mongefranco (@gabrielmongefranco)
  * Created: 2026-09-06 | Modified: 2026-09-06
- * Summary: Session undo uses compensating events; original stroke order survives restoration.
+ * Summary: Session undo uses compensating events; original stroke order survives
+ *          restoration. See main README.md for full license information.
  */
 /** Retain up to 50 successful local actions. The supplied writer durably appends events. */
 export class SketchHistory {

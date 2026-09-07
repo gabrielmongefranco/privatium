@@ -4,6 +4,7 @@
 // Summary:  app.toml (spec/app-contract.md §3) — the manifest as a type, its validation
 //           against §3.1, protocol §1.1's reserved slugs and §12's api ceiling, and the
 //           [permissions] table of §5.4 with the plain-language widenings it implies.
+//           See main README.md for full license information.
 
 use std::collections::BTreeMap;
 use std::fmt;

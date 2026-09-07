@@ -1,8 +1,9 @@
 -- Project:  Privatium™  |  File: apps/animals/lib/tree.lua
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 -- Created:  2026-08-28  |  Modified: 2026-09-03
--- Summary:  Queries over the decision tree. Kept out of app.lua so the routes
---           stay readable — the same split any growing app should make.
+-- Summary:  Queries over the decision tree. Kept out of app.lua so the routes stay readable
+--           — the same split any growing app should make.
+--           See main README.md for full license information.
 
 local pv = require 'privatium'
 local M  = {}

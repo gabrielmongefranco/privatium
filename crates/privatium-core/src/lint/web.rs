@@ -6,8 +6,9 @@
 //           for PV301, PV207 and PV504, JavaScript through a small lexer — strings,
 //           template literals, comments, identifiers — for PV201, PV206, PV302, PV304,
 //           PV305, PV306, PV301, PV505 and the two origin rules, and stylesheets for
-//           PV406's contrast floors and any origin in a url(). PV506 names a top-level
-//           web/ entry a framework prefix shadows.
+//           PV406's contrast floors and any origin in a url(). PV506 names a top-level web/
+//           entry a framework prefix shadows.
+//           See main README.md for full license information.
 
 use std::collections::BTreeSet;
 use std::fs;
