@@ -69,10 +69,7 @@ Read these files before changing anything, in this order:
 4. docs/roadmap.md — the phases, each with its deliverable and its acceptance bullets.
    Find the phase my request belongs to and confirm it is not already complete.
 
-5. The plan for that phase under docs/plans/ — docs/plans/phase-1.md for what exists,
-   phase-2.md and phase-3.md for what is planned, stubs beyond. A plan's §2 holds the
-   decisions it makes and says whether they are decided; its §3 is the record of spec
-   gaps and where each was fixed; its milestones name the tests that hold them.
+5. The plan for that phase under docs/plans.
 
 6. If my request touches code: spec/protocol.md and spec/app-contract.md, in full, and
    then whichever of spec/lua-api.md, spec/data-api.md, spec/data-dictionary.md and

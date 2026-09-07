@@ -1439,7 +1439,12 @@ hours before it reached `main`, and its four assets were uploaded by hand, the p
 zip last. `release.yml` now also runs on demand against a named tag, so binaries can be
 attached to an existing release without a new one, and the asset list lives in
 `release_tools.py` under test. The README links the v0.1 assets by tag, which resolve;
-the `latest` form does not while v0.1 is a prerelease.
+the `latest` form does not while v0.1 is a prerelease. The first release the workflow
+served, v0.19-beta1, was published under three minutes after its commit reached `main`,
+while push CI for that commit was still running, and the gate refused it; the gate now
+waits for a run in progress (`test_ci_still_running_is_pending_not_refused`,
+`test_wait_for_ci_polls_until_the_run_completes_and_gives_up_at_the_deadline`) and
+refuses only a run that failed, was cancelled, or never existed.
 
 ---
 

@@ -3,7 +3,8 @@
 # Created:  2026-09-05  |  Modified: 2026-09-06
 # Summary:  Package a single executable — and for Windows a portable zip holding the
 #           privatium-data folder with the example apps — name every archive a release
-#           carries, and require successful CI for a release commit.
+#           carries, and require successful CI for a release commit, waiting for a
+#           run still in progress.
 #           See main README.md for full license information.
 
 import argparse
@@ -12,6 +13,7 @@ import os
 import re
 import subprocess
 import tarfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -100,12 +102,40 @@ def package_portable(source, destination, apps):
     return result
 
 
+# How long a release build waits for push CI on its commit, and how often it looks. A
+# release published minutes after its merge finds that CI still running; the full matrix
+# takes well under this, and the job's timeout-minutes in release.yml sits above it.
+CI_WAIT_SECONDS = 25 * 60
+CI_POLL_SECONDS = 30
+
+
+class PendingCI(Exception):
+    """The latest push CI run for the release commit has not finished yet."""
+
+
 def require_ci(runs, sha):
-    """Refuse unless the latest push CI run for this exact commit completed successfully."""
+    """Refuse unless the latest push CI run for this exact commit completed successfully;
+    a run still queued or in progress is pending rather than refused."""
     matching = [run for run in runs if run.get("head_sha") == sha and run.get("event") == "push"]
     latest = max(matching, key=lambda run: run["id"], default={})
-    if latest.get("status") != "completed" or latest.get("conclusion") != "success":
+    if latest and latest.get("status") != "completed":
+        raise PendingCI("Push CI for the release commit is still running.")
+    if latest.get("conclusion") != "success":
         raise ValueError("Release build refused: let push CI pass for the release commit, then rerun this workflow.")
+
+
+def wait_for_ci(fetch_runs, sha, sleep=time.sleep, now=time.monotonic, timeout=CI_WAIT_SECONDS):
+    """Poll `fetch_runs` until require_ci passes, refuses, or the wait runs out."""
+    deadline = now() + timeout
+    while True:
+        try:
+            require_ci(fetch_runs(), sha)
+            return
+        except PendingCI as pending:
+            if now() >= deadline:
+                raise ValueError(f"Release build refused: {pending} Wait for it, then rerun this workflow.")
+            print(f"{pending} Checking again in {CI_POLL_SECONDS} seconds.", flush=True)
+            sleep(CI_POLL_SECONDS)
 
 
 def main():
@@ -131,12 +161,16 @@ def main():
         if not re.fullmatch(r"[0-9a-f]{40}", args.value):
             parser.error("Expected the release commit SHA.")
         repo = os.environ["GITHUB_REPOSITORY"]
-        response = subprocess.check_output([
-            "gh", "api", "--method", "GET", "--paginate", "--slurp",
-            f"repos/{repo}/actions/workflows/ci.yml/runs",
-            "-f", f"head_sha={args.value}", "-f", "event=push", "-f", "per_page=100",
-        ], text=True)
-        require_ci([run for page in json.loads(response) for run in page["workflow_runs"]], args.value)
+
+        def fetch_runs():
+            response = subprocess.check_output([
+                "gh", "api", "--method", "GET", "--paginate", "--slurp",
+                f"repos/{repo}/actions/workflows/ci.yml/runs",
+                "-f", f"head_sha={args.value}", "-f", "event=push", "-f", "per_page=100",
+            ], text=True)
+            return [run for page in json.loads(response) for run in page["workflow_runs"]]
+
+        wait_for_ci(fetch_runs, args.value)
         print("Latest push CI passed for the release commit.")
 
 

@@ -1,7 +1,8 @@
 # Project:  Privatium™  |  File: .github/scripts/test_release_tools.py
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-06
-# Summary:  Verify release archive layout and the exact-commit CI prerequisite.
+# Summary:  Verify release archive layout and the exact-commit CI prerequisite, including
+#           the wait for a run still in progress.
 #           See main README.md for full license information.
 
 import tempfile
@@ -10,7 +11,7 @@ import zipfile
 import tarfile
 from pathlib import Path
 
-from release_tools import ASSETS, EXAMPLE_APPS, package, package_portable, require_ci
+from release_tools import ASSETS, EXAMPLE_APPS, PendingCI, package, package_portable, require_ci, wait_for_ci
 
 
 class ReleaseTests(unittest.TestCase):
@@ -103,10 +104,46 @@ class ReleaseTests(unittest.TestCase):
         good = dict(id=1, head_sha="a" * 40, event="push", status="completed", conclusion="success")
         require_ci([good], "a" * 40)
         for runs in [[], [dict(good, head_sha="b" * 40)], [dict(good, event="pull_request")],
-                     [dict(good, conclusion="failure")], [dict(good, status="in_progress")],
-                     [good, dict(good, id=2, conclusion="cancelled")]]:
+                     [dict(good, conclusion="failure")], [good, dict(good, id=2, conclusion="cancelled")]]:
             with self.subTest(runs=runs), self.assertRaises(ValueError):
                 require_ci(runs, "a" * 40)
+
+    def test_ci_still_running_is_pending_not_refused(self):
+        """A release published minutes after its merge finds push CI in progress; that is a
+        wait, not a refusal, and the latest run decides even when an older one passed."""
+        good = dict(id=1, head_sha="a" * 40, event="push", status="completed", conclusion="success")
+        for runs in [[dict(good, status="in_progress", conclusion=None)],
+                     [dict(good, status="queued", conclusion=None)],
+                     [good, dict(good, id=2, status="in_progress", conclusion=None)]]:
+            with self.subTest(runs=runs), self.assertRaises(PendingCI):
+                require_ci(runs, "a" * 40)
+
+    def test_wait_for_ci_polls_until_the_run_completes_and_gives_up_at_the_deadline(self):
+        pending = dict(id=1, head_sha="a" * 40, event="push", status="in_progress", conclusion=None)
+        passed = dict(pending, status="completed", conclusion="success")
+        failed = dict(pending, status="completed", conclusion="failure")
+        clock = [0]
+        naps = []
+
+        def sleep(seconds):
+            naps.append(seconds)
+            clock[0] += seconds
+
+        pages = iter([[pending], [pending], [passed]])
+        wait_for_ci(lambda: next(pages), "a" * 40, sleep=sleep, now=lambda: clock[0], timeout=600)
+        self.assertEqual(len(naps), 2)
+        self.assertTrue(all(0 < nap <= 60 for nap in naps))
+
+        pages = iter([[pending], [failed]])
+        with self.assertRaises(ValueError):
+            wait_for_ci(lambda: next(pages), "a" * 40, sleep=sleep, now=lambda: clock[0], timeout=600)
+
+        clock[0] = 0
+        naps.clear()
+        with self.assertRaises(ValueError):
+            wait_for_ci(lambda: [pending], "a" * 40, sleep=sleep, now=lambda: clock[0], timeout=120)
+        self.assertLessEqual(sum(naps), 120 + 60)
+        self.assertGreater(len(naps), 0)
 
 
 if __name__ == "__main__":

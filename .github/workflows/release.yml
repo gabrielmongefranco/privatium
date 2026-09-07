@@ -32,9 +32,11 @@ env:
   RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
 
 jobs:
+  # A release published minutes after its merge finds push CI on that commit still
+  # running; release_tools.py waits for it (CI_WAIT_SECONDS), so this timeout sits above.
   ci:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     permissions:
       contents: read
       actions: read
