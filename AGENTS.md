@@ -5,14 +5,15 @@ Guidance for AI coding agents working in this repository.
 ## What this repository is
 
 A specification-first project. `spec/` is normative; `docs/` is explanatory; `apps/` holds
-example applications that double as the reference templates. Phase 1 of `docs/roadmap.md`
-is implemented — docs/plans/phase-1.md is its plan of record, M0 through M13, and the git
-history names the milestones landed; every Phase 1 acceptance bullet names the test that
-holds it. `docs/plans/phase-2.md` and `docs/plans/phase-3.md` are the plans for the next
-two phases. Phase 2's decisions are made and written into `spec/`; Phase 3's are
-confirmed before M20, and its §3 lists the spec edits those milestones make.
-`docs/plans/phase-4.md` onward are stubs to be written from `docs/roadmap.md` when their
-turn comes.
+example applications that double as the reference templates. Phases 1 and 2 of
+`docs/roadmap.md` are implemented — `docs/plans/phase-1.md` and `docs/plans/phase-2.md`
+are their plans of record, M0 through M19 and the hardening rounds, and the git history
+names the milestones landed; every Phase 1 acceptance bullet names the test that holds
+it, and Phase 2's do except the three that wait on a person. `docs/plans/phase-3.md` is
+the plan for the next phase: its decisions are made in its §2, and its §3 lists the
+spec edits its milestones make — nothing under `spec/` says Phase 3 yet, and the
+milestone that meets a row edits it. `docs/plans/phase-4.md` onward are stubs to be
+written from `docs/roadmap.md` when their turn comes.
 
 **If you are asked to write code, read `spec/protocol.md` and `spec/app-contract.md`
 first, in full.** They are the contract. Deviating from them silently is the single worst
@@ -31,6 +32,9 @@ Violating any of these is a bug, regardless of how well the code works:
    erode it into "we compress everything".
 2. **One writer per log file, forever.** A device appends only to its own
    `log/<device-id>.jsonl`. Never write another device's file, not even during a merge.
+   The one exception is the sync receiver of `spec/protocol.md §10.2`, which copies the
+   origin device's own lines into that device's file, byte for byte and in `seq` order,
+   and produces no line of its own; it is still that one device writing, at a distance.
 3. **Append-only.** No line in a log file is ever modified or removed. Corrections are new
    events. Deletions are tombstones.
 4. **Unknown fields are preserved.** A node that reads an event with fields it does not
