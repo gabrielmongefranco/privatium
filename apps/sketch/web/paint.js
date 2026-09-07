@@ -1,11 +1,12 @@
 /* Project: Privatium™ | File: apps/sketch/web/paint.js
  * Authors: Gabriel Mongefranco (@gabrielmongefranco)
  * Created: 2026-09-07 | Modified: 2026-09-07
- * Summary: Painting one mark, and the flood fill. Everything here draws in sheet coordinates;
-          the device scale arrives as k for the two operations that are unavoidably in
-          pixels — the flood, and compositing a translucent stroke. A translucent stroke is
-          painted whole off-screen and composited once, so it does not darken against its
-          own overlapping segments.
+ * Summary: Painting one mark, and the area of a fill. Everything here draws in sheet
+          coordinates; the device scale arrives as k for the one operation that is
+          unavoidably in pixels, compositing a translucent stroke, which is painted whole
+          off-screen and composited once so it does not darken against its own overlapping
+          segments. A fill is a path, not a search: it is the inside of one mark, so it
+          costs a fill() rather than a read and write of the whole surface.
  *          See main README.md for full license information.
  */
 let scratch = null;
@@ -18,9 +19,9 @@ export function dashFor(width, kind) {
   return [];
 }
 
-/** Paint a mark in sheet coordinates. Fills are not painted here — see floodMark. */
+/** Paint a mark in sheet coordinates. Fills are not painted here — see paintArea. */
 export function paintMark(ctx, mark, k) {
-  if (mark.kind === 'fill') return;
+  if (mark.kind === 'fill' || mark.kind === 'page') return;
   if (mark.blend === 'multiply' && mark.kind !== 'eraser' && mark.color !== '#FFFFFF') {
     paintBlended(ctx, mark, k);
     return;
@@ -90,11 +91,7 @@ function stroke(ctx, mark) {
   if (even) {
     ctx.lineWidth = base;
     ctx.beginPath();
-    ctx.moveTo(points[0][0], points[0][1]);
-    for (let i = 1; i < points.length - 1; i++)
-      ctx.quadraticCurveTo(points[i][0], points[i][1],
-        (points[i][0] + points[i + 1][0]) / 2, (points[i][1] + points[i + 1][1]) / 2);
-    ctx.lineTo(points[points.length - 1][0], points[points.length - 1][1]);
+    trace(ctx, points);
     ctx.stroke();
     return;
   }
@@ -110,6 +107,36 @@ function stroke(ctx, mark) {
     ctx.quadraticCurveTo(a[0], a[1], to[0], to[1]);
     ctx.stroke();
   }
+}
+
+/** The curve a freehand mark follows: quadratics through the sample midpoints. The
+ *  outline and the colour inside it are the same path, so they cannot drift apart. */
+function trace(ctx, points) {
+  ctx.moveTo(points[0][0], points[0][1]);
+  for (let i = 1; i < points.length - 1; i++) {
+    ctx.quadraticCurveTo(points[i][0], points[i][1],
+      (points[i][0] + points[i + 1][0]) / 2, (points[i][1] + points[i + 1][1]) / 2);
+  }
+  ctx.lineTo(points[points.length - 1][0], points[points.length - 1][1]);
+}
+
+/** Colour the inside of one mark, given the area from `strokes.areaFilled`. */
+export function paintArea(ctx, area, colour) {
+  if (!area) return;
+  ctx.save();
+  ctx.fillStyle = colour;
+  ctx.beginPath();
+  if (area.shape === 'free') {
+    trace(ctx, area.points);
+    ctx.closePath();
+  } else if (area.shape === 'rect') {
+    ctx.rect(area.a.x, area.a.y, area.b.x - area.a.x, area.b.y - area.a.y);
+  } else {
+    ctx.ellipse((area.a.x + area.b.x) / 2, (area.a.y + area.b.y) / 2,
+      (area.b.x - area.a.x) / 2, (area.b.y - area.a.y) / 2, 0, 0, Math.PI * 2);
+  }
+  ctx.fill();
+  ctx.restore();
 }
 
 function paintBlended(ctx, mark, k) {
@@ -128,49 +155,4 @@ function paintBlended(ctx, mark, k) {
   ctx.globalCompositeOperation = 'multiply';
   ctx.drawImage(scratch, 0, 0);
   ctx.restore();
-}
-
-/**
- * Flood from a seed in sheet coordinates. The seed and the scan are in backing-store
- * pixels, since that is where the pixels are; tolerance is 28 per channel, which keeps
- * an anti-aliased edge from leaking.
- *
- * Returns the region it covered, in sheet coordinates, so a caller can tell what the
- * fill actually landed inside; null when it covered nothing.
- */
-export function floodMark(ctx, seed, hex, k) {
-  const W = ctx.canvas.width, H = ctx.canvas.height;
-  const x = Math.max(0, Math.min(W - 1, Math.round(seed.x * k)));
-  const y = Math.max(0, Math.min(H - 1, Math.round(seed.y * k)));
-  const image = ctx.getImageData(0, 0, W, H);
-  const data = image.data;
-  const start = (y * W + x) * 4;
-  const target = [data[start], data[start + 1], data[start + 2]];
-  const n = parseInt(hex.slice(1), 16);
-  const r = n >> 16 & 255, g = n >> 8 & 255, b = n & 255;
-  if (target[0] === r && target[1] === g && target[2] === b) return null;
-  const stack = [y * W + x];
-  const seen = new Uint8Array(W * H);
-  let x0 = W, y0 = H, x1 = -1, y1 = -1;
-  while (stack.length) {
-    const at = stack.pop();
-    if (seen[at]) continue;
-    seen[at] = 1;
-    const i = at * 4;
-    if (Math.abs(data[i] - target[0]) > 28 || Math.abs(data[i + 1] - target[1]) > 28 ||
-        Math.abs(data[i + 2] - target[2]) > 28) continue;
-    data[i] = r; data[i + 1] = g; data[i + 2] = b; data[i + 3] = 255;
-    const px = at % W, py = (at - px) / W;
-    if (px < x0) x0 = px;
-    if (py < y0) y0 = py;
-    if (px > x1) x1 = px;
-    if (py > y1) y1 = py;
-    if (px > 0) stack.push(at - 1);
-    if (px < W - 1) stack.push(at + 1);
-    if (py > 0) stack.push(at - W);
-    if (py < H - 1) stack.push(at + W);
-  }
-  ctx.putImageData(image, 0, 0);
-  if (x1 < 0) return null;
-  return { x0: x0 / k, y0: y0 / k, x1: x1 / k, y1: y1 / k };
 }

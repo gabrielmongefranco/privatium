@@ -8,7 +8,7 @@
  *          See main README.md for full license information.
  */
 import { SHEET_W, SHEET_H } from './sheet.js';
-import { bounds, moved, textSize } from './strokes.js';
+import { areaFilled, bounds, moved, textSize } from './strokes.js';
 import { dashFor } from './paint.js';
 
 const STAMP = 'data-sketch-clip';
@@ -17,7 +17,7 @@ const round = v => Math.round(v * 10) / 10;
 const escape = text => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /** The curve a freehand mark traces: quadratics through the sample midpoints, the same
- *  path the canvas draws. `close` shuts it, which is what a fill inside it needs. */
+ *  path the canvas draws. `close` shuts it, which is what the colour inside it needs. */
 function freehandPath(points, close) {
   let d = 'M ' + round(points[0][0]) + ' ' + round(points[0][1]);
   for (let i = 1; i < points.length - 1; i++) {
@@ -28,51 +28,42 @@ function freehandPath(points, close) {
   return close ? d + ' Z' : d;
 }
 
-/**
- * A fill that belongs to a mark, as that mark's own area.
- *
- * For a rectangle or an ellipse the flood stops at the inside edge of the outline, so the
- * filled copy is inset by half the stroke width. For a freehand outline — a circle drawn
- * by hand — it is the same closed curve the stroke traces, filled and unstroked, which is
- * as close as a path can come to what the flood covered.
- */
-function filledArea(host, colour) {
-  if (host.kind === 'rect' || host.kind === 'ellipse') {
-    const inset = (host.width || 6) / 2;
-    const x0 = Math.min(host.a.x, host.b.x), x1 = Math.max(host.a.x, host.b.x);
-    const y0 = Math.min(host.a.y, host.b.y), y1 = Math.max(host.a.y, host.b.y);
-    const w = Math.max(0, x1 - x0 - inset * 2), h = Math.max(0, y1 - y0 - inset * 2);
-    if (!w || !h) return null;
-    if (host.kind === 'rect') {
-      return '<rect x="' + round(x0 + inset) + '" y="' + round(y0 + inset) +
-        '" width="' + round(w) + '" height="' + round(h) + '" fill="' + colour + '"/>';
-    }
-    return '<ellipse cx="' + round((x0 + x1) / 2) + '" cy="' + round((y0 + y1) / 2) +
-      '" rx="' + round(w / 2) + '" ry="' + round(h / 2) + '" fill="' + colour + '"/>';
+/** A fill's area, as the element that draws it. The geometry is the fill's own, so this
+ *  is a transcription rather than a reconstruction. */
+function areaElement(area, colour) {
+  if (!area) return null;
+  if (area.shape === 'free') {
+    return '<path d="' + freehandPath(area.points, true) + '" fill="' + colour + '" stroke="none"/>';
   }
-  if (host.kind || !Array.isArray(host.points) || host.points.length < 3) return null;
-  return '<path d="' + freehandPath(host.points, true) + '" fill="' + colour + '" stroke="none"/>';
+  const x0 = Math.min(area.a.x, area.b.x), x1 = Math.max(area.a.x, area.b.x);
+  const y0 = Math.min(area.a.y, area.b.y), y1 = Math.max(area.a.y, area.b.y);
+  if (area.shape === 'rect') {
+    return '<rect x="' + round(x0) + '" y="' + round(y0) + '" width="' + round(x1 - x0) +
+      '" height="' + round(y1 - y0) + '" fill="' + colour + '"/>';
+  }
+  return '<ellipse cx="' + round((x0 + x1) / 2) + '" cy="' + round((y0 + y1) / 2) +
+    '" rx="' + round((x1 - x0) / 2) + '" ry="' + round((y1 - y0) / 2) + '" fill="' + colour + '"/>';
 }
 
 /**
  * Serialise marks as SVG, given as [id, mark] pairs in painting order. Freehand becomes
  * one path of quadratic segments — the same curve the canvas draws — and a translucent
  * mark is wrapped in a group, which composites as a unit so overlaps inside it stay
- * normal. A fill anchored to a mark is written as that mark's own area, which is what the
- * flood actually covers; a fill on the open page is a region of pixels with no outline
- * behind it and cannot be expressed, so it is counted and left out.
+ * normal. A fill is the inside of one mark and carries that area itself, so it transcribes
+ * directly; the one thing that cannot be written is a fill from an older log that named no
+ * mark, and those are counted.
  */
-export function toSvg(entries, stamp) {
+export function toSvg(entries, stamp, page) {
   const out = ['<svg xmlns="http://www.w3.org/2000/svg"' + (stamp ? ' ' + STAMP + '="' + stamp + '"' : '') +
     ' width="' + SHEET_W + '" height="' + SHEET_H + '" viewBox="0 0 ' + SHEET_W + ' ' + SHEET_H + '">',
-    '<rect width="' + SHEET_W + '" height="' + SHEET_H + '" fill="#FFFFFF"/>'];
+    '<rect width="' + SHEET_W + '" height="' + SHEET_H + '" fill="' + (page || '#FFFFFF') + '"/>'];
   let skipped = 0;
   const byId = new Map(entries);
 
   for (const [, mark] of entries) {
+    if (mark.kind === 'page') continue;                  // it is the surface, drawn above
     if (mark.kind === 'fill') {
-      const host = mark.anchor ? byId.get(mark.anchor) : null;
-      const area = host ? filledArea(host, mark.color) : null;
+      const area = areaElement(areaFilled(mark, mark.anchor ? byId.get(mark.anchor) : null), mark.color);
       if (area) out.push(area);
       else skipped++;
       continue;

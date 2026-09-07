@@ -118,9 +118,8 @@ undo presses it now takes.
 New sketch clears the shared canvas with tombstones, rather than creating a sketch
 library. Download PNG first to keep a separate image. PNG export renders the sheet at
 1600 by 1200 whatever the zoom, with an opaque white background and no keyboard
-crosshair. Download SVG writes the marks as shapes; a flood fill is pixels rather than a
-shape. A fill that belongs to a rectangle or an ellipse is written as that shape's own
-area; one on the open page is left out and the count is reported.
+crosshair. Download SVG writes every mark as a shape, the colour inside an outline
+included, since a fill is the inside of one mark rather than a region of pixels.
 
 A correct Animals guess shows “I guessed it!” with a Start over button. The win page
 is a presentation state, available with or without HTMX; it writes no event. Starting

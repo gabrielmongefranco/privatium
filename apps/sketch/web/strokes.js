@@ -2,8 +2,10 @@
  * Authors: Gabriel Mongefranco (@gabrielmongefranco)
  * Created: 2026-09-06 | Modified: 2026-09-07
  * Summary: Geometry for the marks on the sheet: hit testing for selection and the stroke eraser,
-          and bounds for the selection outline, the marquee and a fill's anchor. Independent
-          of display scaling — everything here is in sheet coordinates. Changes no data.
+          bounds for the selection outline and the marquee, and the area a fill covers — a
+          fill is the inside of one mark, so it is geometry like everything else here rather
+          than a region found by searching pixels. Independent of display scaling —
+          everything here is in sheet coordinates. Changes no data.
  *          See main README.md for full license information.
  */
 const SHAPES = ['line', 'rect', 'ellipse'];
@@ -85,44 +87,67 @@ export function inBox(mark, a, b) {
   return box[2] >= x0 && box[0] <= x1 && box[3] >= y0 && box[1] <= y1;
 }
 
-/**
- * The origin a fill anchors to: the top-left of the mark's own geometry, in sheet
- * coordinates. Any mark that encloses a region can host a fill — a circle drawn freehand
- * as readily as one drawn with the ellipse tool — so this is not only for the two-point
- * shapes. Only the delta between two origins is ever used, so the exact corner matters
- * less than its being the same one every time.
- */
-export function origin(mark) {
-  if (!mark) return null;
-  if (isShape(mark)) return { x: Math.min(mark.a.x, mark.b.x), y: Math.min(mark.a.y, mark.b.y) };
-  if (mark.kind === 'text') return finite(mark.x, mark.y) ? { x: mark.x, y: mark.y } : null;
-  if (mark.kind === 'fill') return null;
-  if (!validPoints(mark)) return null;
-  return {
-    x: Math.min(...mark.points.map(p => p[0])),
-    y: Math.min(...mark.points.map(p => p[1]))
-  };
-}
-
-/** Whether a mark encloses an area, and so could be what a fill landed inside. */
+/** Whether a mark encloses an area, and so has an inside that can be coloured. */
 export function encloses(mark) {
-  if (!mark || mark.kind === 'fill' || mark.kind === 'text' || mark.kind === 'line') return false;
+  if (!mark || mark.kind === 'fill' || mark.kind === 'page') return false;
+  if (mark.kind === 'text' || mark.kind === 'line') return false;
   return isShape(mark) || validPoints(mark);
 }
 
-/** Whether a mark's box contains a region given as sheet coordinates. */
-export function contains(mark, region) {
+/** Whether a point is within a mark's box. What decides which shape a click is inside. */
+export function covers(mark, x, y) {
   const box = bounds(mark);
-  return !!box && box[0] <= region.x0 && box[1] <= region.y0 &&
-    box[2] >= region.x1 && box[3] >= region.y1;
+  return !!box && finite(x, y) && x >= box[0] && x <= box[2] && y >= box[1] && y <= box[3];
 }
 
-/** A copy of a mark moved by a delta, including a fill's anchor reference. */
+/**
+ * The inside of a mark, as the geometry a fill of it carries. A rectangle or an ellipse
+ * is inset by half its outline, which is where the colour stops; a freehand outline is
+ * its own samples, closed. Null when the mark encloses nothing, or encloses nothing left
+ * once the outline is taken off it.
+ */
+export function areaOf(mark) {
+  if (!encloses(mark)) return null;
+  if (isShape(mark)) {
+    const inset = (mark.width || 6) / 2;
+    const x0 = Math.min(mark.a.x, mark.b.x) + inset, x1 = Math.max(mark.a.x, mark.b.x) - inset;
+    const y0 = Math.min(mark.a.y, mark.b.y) + inset, y1 = Math.max(mark.a.y, mark.b.y) - inset;
+    if (!(x1 > x0 && y1 > y0)) return null;
+    return { shape: mark.kind, a: { x: x0, y: y0 }, b: { x: x1, y: y1 } };
+  }
+  if (mark.points.length < 3) return null;
+  return { shape: 'free', points: mark.points.map(([x, y]) => [x, y]) };
+}
+
+/**
+ * The area a fill covers.
+ *
+ * A fill written today carries its own geometry, so this is the fill itself and nothing
+ * is looked up. A fill written before that — when a fill was a seed point flooded across
+ * the pixels — is read as the inside of the mark it was anchored to, which is what it was
+ * meant to be; one with no anchor described a region no single mark encloses and can no
+ * longer be drawn.
+ */
+export function areaFilled(mark, host) {
+  if (!mark || mark.kind !== 'fill') return null;
+  if (mark.shape === 'rect' || mark.shape === 'ellipse') {
+    if (!mark.a || !mark.b || !finite(mark.a.x, mark.a.y, mark.b.x, mark.b.y)) return null;
+    return { shape: mark.shape, a: mark.a, b: mark.b };
+  }
+  if (mark.shape === 'free') {
+    return validPoints(mark) && mark.points.length >= 3
+      ? { shape: 'free', points: mark.points }
+      : null;
+  }
+  return host ? areaOf(host) : null;
+}
+
+/** A copy of a mark moved by a delta. Fields this file does not understand — an old
+ *  fill's `anchorAt` among them — are carried over untouched (`spec/protocol.md §4.2`). */
 export function moved(mark, dx, dy) {
   const out = { ...mark };
   if (Array.isArray(mark.points)) out.points = mark.points.map(([x, y, w]) => (w === undefined ? [x + dx, y + dy] : [x + dx, y + dy, w]));
   if (mark.a && mark.b) { out.a = { x: mark.a.x + dx, y: mark.a.y + dy }; out.b = { x: mark.b.x + dx, y: mark.b.y + dy }; }
   if (Number.isFinite(mark.x) && Number.isFinite(mark.y)) { out.x = mark.x + dx; out.y = mark.y + dy; }
-  if (mark.anchorAt) out.anchorAt = { x: mark.anchorAt.x + dx, y: mark.anchorAt.y + dy };
   return out;
 }

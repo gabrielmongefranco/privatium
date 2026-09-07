@@ -58,9 +58,10 @@ No `schema.sql` means no validation and no SQL — `d` is stored as-is:
 await pv.put('stroke', pv.ulid(), { points, color, width });
 ```
 
-A freehand stroke is still exactly that. A shape, a text block or a flood fill adds a
-`kind`, and options add a field each — `dash`, `blend`, and a fill's `anchor` — so every
-log written before those tools existed replays unchanged.
+A freehand stroke is still exactly that. A shape, a text block, the colour inside a shape
+and the sheet's own colour each add a `kind`, and options add a field each — `dash`,
+`blend`, and a fill's `anchor` — so every log written before those tools existed replays
+unchanged.
 
 For a drawing app or a game this is frequently the right call. You still get replication,
 snapshots, and a plain-text backup. Read your own drawing back with no Privatium installed:

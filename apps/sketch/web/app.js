@@ -5,8 +5,8 @@
  * Summary:  Drawing, controls and event replay. Plain ES modules — no build step, no
  *           framework, no SQL. The event log is used directly as a document store, and a
  *           mark is one event: freehand keeps the original { points, color, width }, and
- *           the shapes, text and fills add a `kind`, so every log written before this
- *           redesign still replays. A stroke holds the pointer's capture from down to up,
+ *           the shapes, text, fills and the page colour add a `kind`, so every log written
+ *           before this redesign still replays. A stroke holds the pointer's capture from down to up,
  *           so ending it off the sheet still saves it; the keyboard draws too, and a live
  *           summary says what the sheet holds. Which controls are on show is CSS's job
  *           (data-tool on <body>) — this file owns behaviour, not layout.
@@ -15,8 +15,8 @@
 import { pv } from '/static/pv.js';
 import { batches, SketchHistory } from './history.js';
 import { Sheet, SHEET_W, SHEET_H } from './sheet.js';
-import { bounds, contains, encloses, hits, inBox, isShape, moved, origin } from './strokes.js';
-import { floodMark, paintMark } from './paint.js';
+import { areaFilled, areaOf, bounds, covers, encloses, hits, inBox, isShape, moved } from './strokes.js';
+import { paintArea, paintMark } from './paint.js';
 import { fromSvg, isOurs, toSvg } from './clip.js';
 import {
   BASIC, DASHED, DASHES, DEFAULT_SLOTS, INKING, INKS, SIZES, TOOLS, WIDTHED,
@@ -73,13 +73,20 @@ function anchoredTo(ids) {
   return ordered().filter(([, mark]) => mark.kind === 'fill' && mark.anchor && ids.includes(mark.anchor));
 }
 
-/** Where a fill floods from: its own seed, moved by however far its shape has travelled. */
-function seedOf(fill) {
-  if (!fill.anchor || !fill.anchorAt) return { x: fill.x, y: fill.y };
-  const shape = marks.get(fill.anchor);
-  const now = shape && origin(shape);
-  if (!now) return { x: fill.x, y: fill.y };
-  return { x: fill.x + (now.x - fill.anchorAt.x), y: fill.y + (now.y - fill.anchorAt.y) };
+/** The sheet's own colour: the last page mark laid down, or white. */
+function pageColor() {
+  let colour = '#FFFFFF';
+  for (const [, mark] of ordered()) if (mark.kind === 'page' && mark.color) colour = mark.color;
+  return colour;
+}
+
+/** The area a fill covers, given the marks as they are on screen right now. */
+function areaOnScreen(mark, shift) {
+  const host = mark.anchor ? marks.get(mark.anchor) : null;
+  const carried = shift && (shift.ids.has(mark.anchor) || shift.fills.has(mark));
+  const shown = carried ? moved(mark, shift.dx, shift.dy) : mark;
+  const shownHost = host && carried ? moved(host, shift.dx, shift.dy) : host;
+  return areaFilled(shown, shownHost);
 }
 
 // Anything that can name more marks than the node accepts in one batch — clearing a full
@@ -121,31 +128,24 @@ function commit(events, message) {
 function render() {
   if (!ctx) return;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = '#FFFFFF';
+  ctx.fillStyle = pageColor();
   ctx.fillRect(0, 0, pad.width, pad.height);
   sheet.applyTo(ctx);
 
-  // A drag is drawn as the finished move would look: the selected marks at their offset,
-  // and the fills that belong to them flooding from a seed carried the same distance.
-  // Painting the outline alone left the fill sitting where the shape used to be.
+  // A drag is drawn as the finished move will look: the selected marks at their offset,
+  // and the colour inside them carried the same distance.
   const drag = dragging && (dragging.dx || dragging.dy)
-    ? { ids: new Set(state.selection), dx: dragging.dx, dy: dragging.dy }
+    ? { ids: new Set(state.selection), fills: new Set(), dx: dragging.dx, dy: dragging.dy }
     : null;
-  const carried = (id, mark) => !!drag &&
-    (drag.ids.has(id) || (mark.kind === 'fill' && mark.anchor && drag.ids.has(mark.anchor)));
 
   for (const [id, mark] of ordered()) {
+    if (mark.kind === 'page') continue;                    // it is the surface, not a mark on it
     if (mark.kind === 'fill') {
-      // An anchored fill whose host has not arrived yet waits for it. Live delivery
-      // includes synced events below the current mark, so the fill can land first, and
-      // flooding from a seed that is no longer inside anything would cover the sheet.
-      if (mark.anchor && !marks.has(mark.anchor)) continue;
-      const seed = seedOf(mark);
-      floodMark(ctx, carried(id, mark) ? { x: seed.x + drag.dx, y: seed.y + drag.dy } : seed,
-        mark.color, sheet.k);
+      if (drag && mark.anchor && drag.ids.has(mark.anchor)) drag.fills.add(mark);
+      paintArea(ctx, areaOnScreen(mark, drag), mark.color);
       continue;
     }
-    paintMark(ctx, carried(id, mark) ? moved(mark, drag.dx, drag.dy) : mark, sheet.k);
+    paintMark(ctx, drag && drag.ids.has(id) ? moved(mark, drag.dx, drag.dy) : mark, sheet.k);
   }
 
   if (drawing) paintMark(ctx, drawing, sheet.k);
@@ -154,9 +154,8 @@ function render() {
   drawPen();
 }
 
-// A flood fill reads and writes the whole backing store, so a pointer that reports more
-// often than the display refreshes would queue work it can never finish. One repaint per
-// frame is what the screen can show anyway.
+// A pointer reports more often than the display refreshes, and one repaint per frame is
+// all the screen can show.
 let frame = null;
 function scheduleRender() {
   if (frame !== null) return;
@@ -218,6 +217,7 @@ function summarize() {
   const colours = new Set();
   let count = 0;
   for (const [, mark] of marks) {
+    if (mark.kind === 'page') continue;                        // the surface, not a mark
     if (mark.color === '#FFFFFF' && !mark.kind) continue;      // eraser strokes
     count++;
     colours.add(mark.color);
@@ -280,7 +280,7 @@ function refresh() {
 
   $('options-name').textContent = (TOOLS.find(t => t.id === tool) || {}).label;
   $('tool-note').textContent = {
-    fill: 'Tap an area to flood it with the current colour.',
+    fill: 'Tap a shape to colour inside it, or the sheet to colour the sheet.',
     pick: 'Tap the sheet to pick up a colour, then it hands back.',
     pan: 'Drag the sheet, or use the arrow keys, to move around.'
   }[tool] || '';
@@ -560,25 +560,35 @@ function finishMark() {
 }
 
 /**
- * Flood, then record what the flood landed inside. The host is decided from the region
- * the fill actually covered rather than from the seed alone: the topmost mark that
- * encloses an area and whose own box contains that whole region. A circle drawn freehand
- * qualifies exactly as one drawn with the ellipse tool — before, only the two-point
- * shapes did, so a fill inside a hand-drawn circle kept a bare seed and escaped onto the
- * page as soon as the circle moved.
+ * Colour the inside of the shape under the pointer, or the sheet itself when there is no
+ * shape there.
  *
- * The flood is painted here rather than measured on a copy, because the whole sheet is
- * repainted from the log a moment later anyway.
+ * A fill is the inside of one mark, and it carries that area in its own event. It is not
+ * a seed replayed against the pixels: a seed has no owner, so it could not be moved,
+ * selected or reasoned about, and it changed what it covered every time anything was
+ * drawn near it. `anchor` names the mark the colour belongs to, which is how a move and a
+ * deletion know to carry it along; nothing is looked up to draw it.
  */
 function fillAt(point) {
-  const region = floodMark(ctx, point, state.color, sheet.k);
-  const host = region
-    ? ordered().slice().reverse().find(([, mark]) => encloses(mark) && contains(mark, region))
-    : null;
-  const mark = { kind: 'fill', x: point.x, y: point.y, color: state.color, width: state.size };
-  if (host) { mark.anchor = host[0]; mark.anchorAt = origin(host[1]); }
+  const host = ordered().slice().reverse()
+    .find(([, mark]) => encloses(mark) && covers(mark, point.x, point.y));
+
+  if (!host) {
+    commit([{ op: 'put', tbl: 'stroke', id: pv.ulid(), d: { kind: 'page', color: state.color } }],
+      'Sheet coloured ' + state.color + '. Undo puts it back.');
+    return;
+  }
+
+  const area = areaOf(host[1]);
+  if (!area) {
+    say('That outline is too small to colour inside. Draw a larger one, or a thinner line.');
+    return;
+  }
+  const mark = { kind: 'fill', shape: area.shape, color: state.color, anchor: host[0] };
+  if (area.shape === 'free') mark.points = area.points;
+  else { mark.a = area.a; mark.b = area.b; }
   commit([{ op: 'put', tbl: 'stroke', id: pv.ulid(), d: mark }],
-    host ? 'Filled inside a shape — the fill moves with it.' : 'Filled a region.');
+    'Filled the shape. The colour moves with it.');
 }
 
 function placeText(point) {
@@ -617,11 +627,7 @@ function pickAt(point) {
 function hitsAt(point) {
   const filled = new Set();
   for (const [, mark] of ordered()) if (mark.kind === 'fill' && mark.anchor) filled.add(mark.anchor);
-  const inside = (id, mark) => {
-    if (!filled.has(id)) return false;
-    const box = bounds(mark);
-    return !!box && point.x >= box[0] && point.x <= box[2] && point.y >= box[1] && point.y <= box[3];
-  };
+  const inside = (id, mark) => filled.has(id) && covers(mark, point.x, point.y);
   return ordered().slice().reverse()
     .filter(([id, mark]) => hits(mark, point.x, point.y) || inside(id, mark))
     .map(([id]) => id);
@@ -1333,14 +1339,14 @@ $('png').onclick = () => {
   const output = document.createElement('canvas');
   output.width = SHEET_W;
   output.height = SHEET_H;
-  const target = output.getContext('2d', { willReadFrequently: true });
-  target.fillStyle = '#FFFFFF';
+  const target = output.getContext('2d');
+  target.fillStyle = pageColor();
   target.fillRect(0, 0, SHEET_W, SHEET_H);
   target.lineCap = target.lineJoin = 'round';
   for (const [, mark] of ordered()) {
+    if (mark.kind === 'page') continue;
     if (mark.kind === 'fill') {
-      if (mark.anchor && !marks.has(mark.anchor)) continue;
-      floodMark(target, seedOf(mark), mark.color, 1);
+      paintArea(target, areaOnScreen(mark, null), mark.color);
       continue;
     }
     paintMark(target, mark, 1);
@@ -1359,7 +1365,7 @@ $('png').onclick = () => {
 
 $('svg').onclick = () => {
   closeMenus();
-  const { text, skipped } = toSvg(ordered());
+  const { text, skipped } = toSvg(ordered(), null, pageColor());
   const url = URL.createObjectURL(new Blob([text], { type: 'image/svg+xml' }));
   const link = document.createElement('a');
   link.href = url;

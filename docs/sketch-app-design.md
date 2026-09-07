@@ -49,9 +49,9 @@ This satisfies the Tier 2 rule that a canvas's backing store follows
 device-independent. At fit on a laptop `k` is 1. At 200 % on a 1.125-ratio display the
 store is 3600 × 2700 and `k` is 2.25, so a zoomed sheet is sharp rather than upscaled.
 
-Two operations are unavoidably in device pixels and follow `k` explicitly: the eyedropper
-samples at `p × k`, and the flood fill scans the backing store's real dimensions. A
-translucent mark's offscreen buffer matches the target canvas and its transform.
+One operation is unavoidably in device pixels and follows `k` explicitly: the eyedropper
+samples at `p × k`. A translucent mark's offscreen buffer matches the target canvas and
+its transform.
 
 PNG export renders through the same painter at `k = 1` onto its own 1600 × 1200 canvas,
 so the file is the sheet at its own resolution whatever the zoom, and never carries the
@@ -186,7 +186,7 @@ existed replays unchanged. Everything else is an additive field.
 |---|---|---|
 | Brush | B | `{ points: [[x, y]] or [[x, y, w]], color, width }`, plus `blend: "multiply"` for translucent ink |
 | Eraser | E | the same, with `color: "#FFFFFF"` |
-| Fill | F | `{ kind: "fill", x, y, color }` — a seed point, replayed in log order |
+| Fill | F | `{ kind: "fill", shape, a, b or points, color, anchor }` — the inside of one mark, or `{ kind: "page", color }` for the sheet |
 | Line | L | `{ kind: "line", a: {x, y}, b: {x, y}, color, width }`, plus `dash` |
 | Rectangle | R | `{ kind: "rect", a, b, color, width }`, plus `dash` |
 | Ellipse | O | `{ kind: "ellipse", a, b, color, width }`, plus `dash` |
@@ -199,61 +199,42 @@ existed replays unchanged. Everything else is an additive field.
 restoration, which has to mint a fresh id because a tombstoned id is never the key of
 another row (`spec/protocol.md §4.6`).
 
-### Fills travel with the mark they landed in
+### A fill is the inside of a shape
 
-A fill is a seed point, not a raster snapshot, and replay is deterministic because events
-replay in log order against the same 1600 × 1200 surface at a tolerance of 28 per channel.
+Fill colours the inside of the shape under the pointer. That colour is its own mark,
+carrying its own geometry: a rectangle or an ellipse inset by half its outline, which is
+where the colour stops, or a freehand outline's own samples, closed.
 
-A bare seed is not stable under *editing*, though. A fill dropped inside an outline
-replays after that outline, so moving the outline leaves the seed behind it and the flood
-escapes onto the page — the page and the shape appear to swap colours as you drag. So a
-fill records `anchor`, the id of the mark it landed inside, and `anchorAt`, that mark's
-origin at the time. Its seed is resolved at draw time against the mark's current origin.
-A fill on the open page keeps a plain seed.
+`anchor` names the mark the colour belongs to. It is used for **moving and deleting**, so
+a shape and its colour travel together and go together — nothing is looked up to draw the
+fill. A stale anchor therefore means the colour does not follow its shape, which is a
+visible, boring failure rather than a colour running across the sheet.
 
-**The host is decided from the region the fill actually covered, not from the seed.** The
-flood runs first and reports its bounding box; the host is then the topmost mark that
-encloses an area and whose own box contains that whole region. A fill that escaped onto
-the page covers a region no mark contains, so it correctly keeps a bare seed instead of
-being tied to something it is not inside.
+This is not a flood fill, and the difference is the whole point. A flood is a search
+across the pixels from a seed point, and a seed is not an object: it cannot be selected,
+it cannot be moved, and what it covers changes every time anything is drawn near it. In an
+app where every mark is an event and Select moves whole marks, that was the one thing that
+did not fit the model, and it produced every fill bug in turn — colour escaping onto the
+page when a shape moved, colour jumping between regions as a shape crossed a line, a
+filled shape exporting as a hollow one.
 
-**Any mark that encloses an area can be a host** — a circle drawn freehand with the brush
-as readily as one drawn with the ellipse tool. A line and a text block enclose nothing and
-never host a fill.
+Two things a flood could do and this cannot:
 
-A mark that holds a fill is a filled object, so Select grabs it anywhere inside it. Without
-that rule a hand-drawn circle you have coloured in could only be picked up by its outline,
-because freehand marks are otherwise tested against the painted path rather than the box —
-which is what stops a loose scribble grabbing everything inside its bounding box.
+- **A region no single mark encloses** — the lens between two overlapping circles, or one
+  half of a circle cut by a line. Draw the shape you want coloured instead.
+- **Colouring around the marks on the page.** The sheet has its own colour instead; see
+  below.
 
-While a selection is being dragged, the sheet is drawn as the finished move will look: the
-marks at their offset, and the fills that belong to them flooding from a seed carried the
-same distance. Painting the outline alone left the colour sitting where the shape used to
-be, and the sheet repaints at most once a frame because a flood reads and writes the whole
-backing store.
+Copying a shape brings its colour with it, and paste re-points the copy's anchor at the
+new shape's fresh id. Restoring a deleted shape mints a new id, so every anchor to it is
+re-pointed in the same batch — `history.js` returns the map.
 
-#### What a seed cannot do
+### The sheet has a colour
 
-A fill is replayed, not stored, so it is bounded by whatever is on the sheet when its turn
-comes. If a line was drawn **before** the fill, the flood stops at it, and it goes on
-stopping at it afterwards — move a filled circle onto that line and the colour covers only
-the part of the circle the seed can reach. That is what a flood fill is, and the same thing
-happens in any paint program; a fill drawn *before* the line is unaffected, because the
-line is not yet on the surface when the flood runs.
-
-Two rules follow:
-
-- **An anchored fill whose shape is not in the log is not drawn.** It renders when the
-  shape arrives. Live delivery includes synced events regardless of their Lamport rank
-  (`spec/protocol.md §10.2`), so a fill can reach a device before the shape it belongs to,
-  and flooding from a seed that is no longer inside anything would cover the sheet.
-- **Restoring a mark mints a fresh id, so every anchor to it must be re-pointed** in the
-  same batch, or the fill silently stops drawing. `history.js` returns the map of old ids
-  to new ones for exactly this.
-
-Copying a shape brings its anchored fills with it, and paste re-points each copied anchor
-at the new copy's fresh id, so a pasted circle keeps its fill instead of arriving as a
-bare outline.
+Tapping Fill where there is no shape colours the sheet itself, as `{ kind: 'page', color }`.
+The last one laid down wins; it is the surface every mark is drawn on, not a mark in the
+painting order, and it is never selectable. It is an ordinary event, so it undoes, syncs
+and exports like anything else, and **New sketch** returns the sheet to white.
 
 ### Selecting and moving
 
@@ -346,16 +327,13 @@ line style; Text becomes `text`. A blended mark is wrapped in a group with
 `mix-blend-mode: multiply`, which composites the group as a unit and so matches the
 canvas.
 
-A fill **anchored to a mark** is written as that mark's own area, emitted at the fill's own
-place in painting order so it lands over the outline exactly as it does on the canvas:
+A fill is transcribed rather than reconstructed: it already carries its area, so a
+rectangle becomes a `rect`, an ellipse an `ellipse`, and a freehand outline the same closed
+curve, each filled and unstroked at the fill's own place in painting order. The sheet's
+colour becomes the background rectangle.
 
-- A rectangle or an ellipse becomes the same geometry, filled and unstroked, inset by half
-  the outline's width because that is where the flood stops.
-- A **freehand** outline becomes the same closed curve the stroke traces, filled and
-  unstroked. A circle drawn with the brush exported as an empty ring until this existed.
-
-A fill **on the open page** is a region of pixels with no outline behind it and cannot be
-expressed, so it is left out and the count is reported in `#status`.
+The one thing that cannot be written is a fill from a log old enough to have named no mark
+at all. Those are counted and reported in `#status`.
 
 ### Undo, and the batch ceiling
 
@@ -472,8 +450,9 @@ Neutral surfaces, with the Privatium lilac as the only accent.
 | `--accent-ink` | `#241A22` | `#FFF7F0` | `#000000` |
 
 Dark follows `prefers-color-scheme`. High contrast is a toggle that overrides the tokens
-on `:root`; it is not a theme picker. The sheet itself is always white, because the
-drawing is shared and exported.
+on `:root`; it is not a theme picker. The sheet does not follow either of them: it is
+white until someone colours it, because the drawing is shared and exported and must look
+the same to everyone.
 
 **`--line` separates regions; `--muted` bounds controls.** `--line` is 1.38:1 against the
 panel, which is right for a rule between two areas and never enough for the edge of
@@ -555,7 +534,7 @@ is outstanding.** It is:
 3. At 200 % text zoom and at 320 CSS pixels wide, with no sideways scrolling.
 4. A screen reader on the drawing path, the colour dialog and the status region.
 5. A stylus on a real tablet, for the pressure widths, and a finger on a real phone.
-6. The flood fill and the eyedropper on a HiDPI display, where the device scale is not 1.
+6. The eyedropper on a HiDPI display, where the device scale is not 1.
 
 `fromSvg` in `clip.js` needs the browser's `DOMParser` and so has no test under
 `node --test`; a foreign-SVG paste is part of the manual pass.

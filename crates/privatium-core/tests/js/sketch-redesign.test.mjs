@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Sheet, SHEET_W, SHEET_H } from '../../../../apps/sketch/web/sheet.js';
-import { bounds, contains, encloses, hits, inBox, isShape, moved, origin, textSize } from '../../../../apps/sketch/web/strokes.js';
+import { areaFilled, areaOf, bounds, covers, encloses, hits, inBox, isShape, moved, textSize } from '../../../../apps/sketch/web/strokes.js';
 import { dashFor } from '../../../../apps/sketch/web/paint.js';
 import { toSvg, isOurs } from '../../../../apps/sketch/web/clip.js';
 import { BASIC, DEFAULT_SLOTS, INKING, INKS, SIZES, TOOLS, colorName, contrast, inkOn, isHex, luminance, needsEdge } from '../../../../apps/sketch/web/tools.js';
@@ -179,46 +179,70 @@ test('moving a mark moves every coordinate it has, including a fill\'s anchor po
   assert.deepEqual(moved(pressure, 5, -5).points, [[15, 5, 3], [25, 15]],
     'a per-point width survives, and a two-number point stays two numbers');
   assert.deepEqual(moved(rect, 10, 10).a, { x: 110, y: 110 });
-  const fill = { kind: 'fill', x: 150, y: 150, anchor: 'shape', anchorAt: { x: 100, y: 100 } };
+  const fill = { kind: 'fill', shape: 'rect', a: { x: 100, y: 100 }, b: { x: 200, y: 160 }, anchor: 'shape' };
   const shifted = moved(fill, 30, 40);
-  assert.deepEqual([shifted.x, shifted.y], [180, 190]);
-  assert.deepEqual(shifted.anchorAt, { x: 130, y: 140 }, 'the anchor travels with the fill');
-  assert.equal(shifted.anchor, 'shape', 'the shape it belongs to is unchanged');
-  assert.deepEqual(fill.anchorAt, { x: 100, y: 100 }, 'the original is not mutated');
+  assert.deepEqual(shifted.a, { x: 130, y: 140 });
+  assert.deepEqual(shifted.b, { x: 230, y: 200 });
+  assert.equal(shifted.anchor, 'shape', 'the mark it belongs to is unchanged');
+  assert.deepEqual(fill.a, { x: 100, y: 100 }, 'the original is not mutated');
 });
 
-test('every mark that can hold a fill has an origin, drawn by hand or by a tool', () => {
-  const backwards = { kind: 'rect', a: { x: 300, y: 200 }, b: { x: 100, y: 100 }, width: 6 };
-  assert.deepEqual(origin(backwards), { x: 100, y: 100 }, 'the same corner either way round');
-  // A circle drawn freehand hosts a fill exactly as one drawn with the ellipse tool. It
-  // did not before, so a fill inside a hand-drawn circle kept a bare seed and escaped
-  // onto the page the moment the circle moved.
-  assert.deepEqual(origin({ points: [[40, 90], [10, 20], [70, 50]], width: 6 }), { x: 10, y: 20 });
-  assert.deepEqual(origin(text), { x: 100, y: 100 });
-  assert.equal(origin({ kind: 'fill', x: 1, y: 1 }), null, 'a fill hosts nothing');
-  assert.equal(origin(null), null);
-  assert.equal(origin({ points: [], width: 6 }), null);
-});
-
-test('a mark that encloses an area can host a fill; one that encloses nothing cannot', () => {
+test('a mark that encloses an area can be coloured inside; one that encloses nothing cannot', () => {
   assert.equal(encloses(rect), true);
   assert.equal(encloses({ kind: 'ellipse', a: { x: 0, y: 0 }, b: { x: 9, y: 9 }, width: 6 }), true);
   assert.equal(encloses(freehand), true, 'a hand-drawn outline encloses an area');
   assert.equal(encloses({ kind: 'line', a: { x: 0, y: 0 }, b: { x: 9, y: 9 }, width: 6 }), false);
   assert.equal(encloses(text), false);
-  assert.equal(encloses({ kind: 'fill', x: 1, y: 1 }), false);
+  assert.equal(encloses({ kind: 'fill', shape: 'rect', a: rect.a, b: rect.b }), false);
+  assert.equal(encloses({ kind: 'page', color: '#F6F1EE' }), false, 'the sheet is not a mark on itself');
   assert.equal(encloses(null), false);
 });
 
-test('a fill belongs to the mark whose box holds the whole region it covered', () => {
-  // The seed alone is not enough: a fill that escaped onto the page covers a region no
-  // mark contains, and must keep a bare seed rather than being tied to something it is
-  // not inside.
-  const inside = { x0: 150, y0: 120, x1: 250, y1: 180 };
-  assert.equal(contains(rect, inside), true);
-  assert.equal(contains(rect, { x0: 0, y0: 0, x1: 1600, y1: 1200 }), false, 'the whole page');
-  assert.equal(contains(rect, { x0: 150, y0: 120, x1: 400, y1: 180 }), false, 'spilling out one side');
-  assert.equal(contains({ kind: 'fill', x: 1, y: 1 }, inside), false, 'no box, no claim');
+test('a click is inside a mark when it is inside the box the selection outline shows', () => {
+  assert.equal(covers(rect, 200, 150), true);
+  assert.equal(covers(rect, 400, 150), false);
+  assert.equal(covers(rect, NaN, 150), false);
+  assert.equal(covers({ kind: 'page', color: '#000000' }, 1, 1), false, 'no box, no claim');
+});
+
+test('the inside of a shape stops where its outline does', () => {
+  // The colour goes up to the inner edge of the stroke, not to the path the stroke
+  // straddles, so a thick outline leaves less room inside it.
+  assert.deepEqual(areaOf(rect), { shape: 'rect', a: { x: 103, y: 103 }, b: { x: 297, y: 197 } });
+  assert.deepEqual(
+    areaOf({ kind: 'ellipse', a: { x: 100, y: 60 }, b: { x: 0, y: 0 }, width: 4 }),
+    { shape: 'ellipse', a: { x: 2, y: 2 }, b: { x: 98, y: 58 } },
+    'the same either way round'
+  );
+  // A hand-drawn outline is its own samples, which is what the canvas draws it as.
+  const ring = { points: [[0, 0], [10, 10], [0, 20]], width: 6 };
+  assert.deepEqual(areaOf(ring), { shape: 'free', points: [[0, 0], [10, 10], [0, 20]] });
+  assert.notEqual(areaOf(ring).points, ring.points, 'a copy, so moving the fill cannot move the mark');
+
+  // Nothing left inside once the outline is taken off, and nothing that encloses nothing.
+  assert.equal(areaOf({ kind: 'rect', a: { x: 0, y: 0 }, b: { x: 5, y: 5 }, width: 32 }), null);
+  assert.equal(areaOf({ points: [[0, 0], [9, 9]], width: 6 }), null, 'two samples enclose nothing');
+  assert.equal(areaOf({ kind: 'line', a: { x: 0, y: 0 }, b: { x: 9, y: 9 }, width: 6 }), null);
+});
+
+test('a fill carries its own area, and an older one is read from the mark it named', () => {
+  const carried = { kind: 'fill', shape: 'rect', a: { x: 1, y: 2 }, b: { x: 3, y: 4 }, color: '#FFB703' };
+  assert.deepEqual(areaFilled(carried, null), { shape: 'rect', a: { x: 1, y: 2 }, b: { x: 3, y: 4 } },
+    'nothing is looked up to draw it');
+  const curved = { kind: 'fill', shape: 'free', points: [[0, 0], [9, 0], [9, 9]], color: '#FFB703' };
+  assert.deepEqual(areaFilled(curved, null).points, [[0, 0], [9, 0], [9, 9]]);
+
+  // A fill from a log written when a fill was a seed: it becomes the inside of the mark
+  // it was anchored to, which is what it was meant to be.
+  const legacy = { kind: 'fill', x: 200, y: 150, color: '#FFB703', anchor: 'r', anchorAt: { x: 100, y: 100 } };
+  assert.deepEqual(areaFilled(legacy, rect), areaOf(rect));
+  assert.equal(areaFilled(legacy, null), null, 'and one whose mark is gone draws nothing');
+  assert.equal(areaFilled({ kind: 'fill', x: 5, y: 5, color: '#FFB703' }, null), null,
+    'a seed that named no mark described a region no mark encloses');
+
+  assert.equal(areaFilled(rect, null), null, 'only a fill has a filled area');
+  assert.equal(areaFilled({ kind: 'fill', shape: 'rect', a: { x: NaN, y: 0 }, b: { x: 1, y: 1 } }, null), null);
+  assert.equal(areaFilled({ kind: 'fill', shape: 'free', points: [[0, 0], [1, 1]] }, null), null);
 });
 
 test('one control sets a text mark\'s size, and the size floors so text stays legible', () => {
@@ -312,7 +336,7 @@ test('every kind of mark reaches SVG, and a bare fill is reported rather than gu
     ['f', text],
     ['g', { kind: 'fill', x: 5, y: 5, color: '#FFB703' }]
   ]);
-  assert.equal(skipped, 1, 'a fill on the open page is pixels, not a shape');
+  assert.equal(skipped, 1, 'a seed from an older log that named no mark has no area');
   assert.match(svg, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
   assert.match(svg, new RegExp(`width="${SHEET_W}" height="${SHEET_H}"`));
   for (const element of ['<path ', '<rect ', '<line ', '<ellipse ', '<text ']) {
@@ -356,61 +380,38 @@ test('our own clipboard SVG is recognised by its stamp and nothing else is', () 
   }
 });
 
-test('a fill inside a shape is exported as that shape\'s own area, inset by the outline', () => {
-  // Only the outline reached the file before, so a filled shape came back hollow.
-  const shape = { kind: 'rect', a: { x: 100, y: 100 }, b: { x: 300, y: 200 }, color: '#000000', width: 6 };
-  const { text: svg, skipped } = toSvg([
-    ['shape', shape],
-    ['paint', { kind: 'fill', x: 200, y: 150, color: '#FFB703', anchor: 'shape', anchorAt: { x: 100, y: 100 } }]
-  ]);
-  assert.equal(skipped, 0, 'an anchored fill is expressible');
+test('a fill is exported as the area it carries, whatever drew the outline', () => {
+  const filledRect = { kind: 'fill', shape: 'rect', a: { x: 103, y: 103 }, b: { x: 297, y: 197 }, color: '#FFB703', anchor: 'r' };
+  const { text: svg, skipped } = toSvg([['r', rect], ['paint', filledRect]]);
+  assert.equal(skipped, 0);
   assert.match(svg, /<rect x="103" y="103" width="194" height="94" fill="#FFB703"\/>/);
-  // The outline is still there, and the fill is painted after it, as the log replays.
+  // The outline is still drawn, and the colour lands over it, as the log replays.
   assert.ok(svg.indexOf('stroke="#000000"') < svg.indexOf('fill="#FFB703"'), svg);
 
-  const round = toSvg([
-    ['shape', { kind: 'ellipse', a: { x: 0, y: 0 }, b: { x: 100, y: 60 }, color: '#000000', width: 4 }],
-    ['paint', { kind: 'fill', x: 50, y: 30, color: '#457B9D', anchor: 'shape', anchorAt: { x: 0, y: 0 } }]
-  ]);
+  const round = toSvg([['e', { kind: 'ellipse', a: { x: 0, y: 0 }, b: { x: 100, y: 60 }, color: '#000000', width: 4 }],
+    ['paint', { kind: 'fill', shape: 'ellipse', a: { x: 2, y: 2 }, b: { x: 98, y: 58 }, color: '#457B9D', anchor: 'e' }]]);
   assert.match(round.text, /<ellipse cx="50" cy="30" rx="48" ry="28" fill="#457B9D"\/>/);
 
-  // A fill anchored to a line encloses nothing, and one whose shape is gone has no area.
-  const nothing = toSvg([
-    ['line', { kind: 'line', a: { x: 0, y: 0 }, b: { x: 9, y: 9 }, color: '#000000', width: 2 }],
-    ['p1', { kind: 'fill', x: 1, y: 1, color: '#FFB703', anchor: 'line', anchorAt: { x: 0, y: 0 } }],
-    ['p2', { kind: 'fill', x: 1, y: 1, color: '#FFB703', anchor: 'gone', anchorAt: { x: 0, y: 0 } }]
-  ]);
-  assert.equal(nothing.skipped, 2);
-});
-
-test('a fill inside a hand-drawn outline is exported as that outline, closed and filled', () => {
-  // A circle drawn with the brush exported as an empty ring: only the two-point shapes
-  // could express their area, so the colour inside it was dropped.
-  const circle = {
-    points: [[100, 50], [150, 100], [100, 150], [50, 100], [100, 50]],
-    color: '#000000', width: 6
-  };
-  const { text: svg, skipped } = toSvg([
-    ['ring', circle],
-    ['paint', { kind: 'fill', x: 100, y: 100, color: '#FFB703', anchor: 'ring', anchorAt: { x: 50, y: 50 } }]
-  ]);
-  assert.equal(skipped, 0, 'a hand-drawn outline can hold a fill too');
-  const area = svg.split('\n').find(line => line.includes('fill="#FFB703"'));
-  assert.ok(area, svg);
+  // A circle drawn with the brush exported as an empty ring before fills had an area.
+  const ring = { points: [[100, 50], [150, 100], [100, 150], [50, 100], [100, 50]], color: '#000000', width: 6 };
+  const hand = toSvg([['ring', ring],
+    ['paint', { kind: 'fill', shape: 'free', points: ring.points, color: '#FFB703', anchor: 'ring' }]]);
+  assert.equal(hand.skipped, 0, 'a hand-drawn outline holds colour too');
+  const area = hand.text.split('\n').find(line => line.includes('fill="#FFB703"'));
   assert.match(area, /^<path d="M 100 50 Q /, area);
   assert.match(area, / Z" fill="#FFB703" stroke="none"\/>$/, 'closed, and no outline of its own');
-  // The outline itself is still drawn, and still open.
-  const outline = svg.split('\n').find(line => line.includes('stroke="#000000"'));
-  assert.ok(outline.includes('fill="none"'), outline);
-  assert.ok(!outline.includes(' Z"'), 'the stroke is not closed behind the artist\'s back');
-  assert.ok(svg.indexOf(outline) < svg.indexOf(area), 'the fill lands over it, as it replays');
+  const outline = hand.text.split('\n').find(line => line.includes('stroke="#000000"'));
+  assert.ok(outline.includes('fill="none"') && !outline.includes(' Z"'),
+    'the stroke itself is not closed behind the artist\'s back');
+});
 
-  // Too few samples to enclose anything.
-  const stub = toSvg([
-    ['ring', { points: [[0, 0], [9, 9]], color: '#000000', width: 6 }],
-    ['paint', { kind: 'fill', x: 1, y: 1, color: '#FFB703', anchor: 'ring', anchorAt: { x: 0, y: 0 } }]
-  ]);
-  assert.equal(stub.skipped, 1);
+test('the sheet\'s own colour becomes the background, and is never a shape in the file', () => {
+  const plain = toSvg([['a', freehand]]);
+  assert.match(plain.text, /<rect width="1600" height="1200" fill="#FFFFFF"\/>/, 'white by default');
+  const tinted = toSvg([['p', { kind: 'page', color: '#F6F1EE' }], ['a', freehand]], null, '#F6F1EE');
+  assert.match(tinted.text, /<rect width="1600" height="1200" fill="#F6F1EE"\/>/);
+  assert.equal(tinted.skipped, 0, 'the sheet is the surface, not something left out');
+  assert.equal((tinted.text.match(/<rect /g) || []).length, 1, 'and it is written once');
 });
 
 // ---- writing at the node's ceiling --------------------------------------------------------
@@ -510,13 +511,13 @@ test('a write is never mutated after it has been handed over', async () => {
 test('a fill anchored to a restored shape follows it to its new id', async () => {
   const m = history(async () => {});
   await m.change([put('shape', { kind: 'rect', a: { x: 0, y: 0 }, b: { x: 9, y: 9 }, color: '#000000', width: 6 })]);
-  await m.change([put('paint', { kind: 'fill', x: 4, y: 4, color: '#FFB703', anchor: 'shape', anchorAt: { x: 0, y: 0 } })]);
+  await m.change([put('paint', { kind: 'fill', shape: 'rect', a: { x: 3, y: 3 }, b: { x: 6, y: 6 }, color: '#FFB703', anchor: 'shape' })]);
   await m.change([{ op: 'del', tbl: 'stroke', id: 'shape' }]);
   await m.undo();
   const fresh = [...m.strokes.keys()].find(id => id !== 'paint');
   assert.notEqual(fresh, 'shape');
   assert.equal(m.strokes.get('paint').anchor, fresh,
-    'or the fill would silently stop drawing, since an unknown anchor is not painted');
+    'or a later move of the shape would leave its colour behind');
 });
 
 // ---- a tab's own write, echoed back by the node --------------------------------------------

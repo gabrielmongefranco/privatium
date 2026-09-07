@@ -26,7 +26,8 @@ logs replay unchanged:
 | Freehand, eraser | `{ points:[[x,y]] or [[x,y,w]], color, width }` |
 | Line, rectangle, ellipse | `{ kind, a:{x,y}, b:{x,y}, color, width, dash? }` |
 | Text | `{ kind:'text', x, y, text, color, width }` |
-| Flood fill | `{ kind:'fill', x, y, color, anchor?, anchorAt? }` |
+| Colour inside a shape | `{ kind:'fill', shape:'rect'\|'ellipse'\|'free', a, b or points, color, anchor }` |
+| The sheet's colour | `{ kind:'page', color }` |
 
 `blend: 'multiply'` on any inked mark is translucent ink, and `layer` is the painting-order
 key history.js preserves across restoration. A width per point appears only when a stylus
@@ -49,9 +50,9 @@ varied it; a mouse or a finger leaves the two-number form alone.
 - A refused write reaches `pv.on('rejected')`. Say so in `#status`: it is the person's work.
 - No CDN, no vendored library, no build step. `web/` is an HTML page, a stylesheet and
   seven ES modules: `app.js` (behaviour), `sheet.js` (coordinates, zoom and the device
-  ratio), `paint.js` (drawing one mark, and the flood), `strokes.js` (geometry and hit
-  testing), `clip.js` (clipboard and SVG), `tools.js` (the tool, size, ink and contrast
-  tables), `history.js` (undo and redo).
+  ratio), `paint.js` (drawing one mark and one filled area), `strokes.js` (geometry, hit
+  testing and what a fill covers), `clip.js` (clipboard and SVG), `tools.js` (the tool,
+  size, ink and contrast tables), `history.js` (undo and redo).
 - No inline `<script>` and no `style` attribute — the CSP has neither `script-src`
   `'unsafe-inline'` nor a `style-src`, and `[permissions]` is deliberately all false. Every
   colour lives in `style.css`; the values that follow the person's own choices are set as
@@ -66,7 +67,7 @@ the element is sized in CSS to fit or zoom, its backing store is that box times
 Sizing the sheet from the window is the bug that once put a desktop drawing in the corner
 of a phone; sizing the backing store from `innerWidth` draws past the viewport on every
 HiDPI display. `sheet.js` owns all of it — nothing else needs to know the ratio, except
-the two operations that are unavoidably in pixels, the flood and the eyedropper.
+the one operation that is unavoidably in pixels, the eyedropper.
 
 Zoom is per-device view state in `localStorage` under `sketch.zoom`; it must never reach
 the log. Buttons step 5 points at a time, the percentage is editable, and 0 fits.
@@ -80,20 +81,22 @@ Ten: Select, Brush, Eraser, Eyedropper, Fill, Line, Rectangle, Ellipse, Text, Pa
   overlapping marks on a repeat click; Rectangle mode takes every mark its box touches.
   A move is a tombstone and a fresh put per mark, carrying `layer`, written as one batch
   so one undo returns it.
-- **Fill** is a seed point replayed in log order, not a raster snapshot. It records the id
-  of the mark it landed inside and that mark's origin at the time, and resolves its seed
-  against the mark's current origin, so it travels with it. The host is chosen from the
-  region the flood actually covered — `floodMark` returns it — and is **any** mark that
-  encloses an area, a freehand circle as much as an ellipse; a fill that escaped onto the
-  page covers a region nothing contains and correctly keeps a bare seed. **A fill whose
-  anchor is not in the log is not drawn** — under sync it can arrive before its host, and
-  flooding from a stale seed would cover the sheet. Copying a mark brings its anchored
-  fills; restoring one re-points them (`history.js` returns the id map).
+- **Fill is the inside of one mark, not a flood.** It carries its own geometry —
+  `strokes.areaOf` computes it, `strokes.areaFilled` reads it back — so nothing is looked
+  up to draw it. `anchor` names the mark the colour belongs to and is used only so a move
+  and a deletion carry it along; a stale anchor means the colour does not follow, never
+  colour across the sheet. **Do not reintroduce a seed.** A seed is not an object: it
+  cannot be selected or moved, and what it covers changes whenever anything is drawn near
+  it, which is where every fill bug in this app came from. Copying a shape brings its
+  colour; restoring one re-points it (`history.js` returns the id map).
+- Tapping Fill away from every shape colours the sheet, as `{ kind:'page', color }`. The
+  last one wins, it is the surface rather than a mark in the painting order, and it is
+  never selectable.
 - A mark that holds a fill is grabbed anywhere inside it. Freehand is otherwise hit-tested
   against the painted path, which is what stops a loose scribble grabbing everything in
   its bounding box — but a coloured-in circle you can only grab by the outline is wrong.
-- A drag repaints the sheet as the finished move will look, fills included, at most once a
-  frame. A flood reads and writes the whole backing store, so never repaint per event.
+- A drag repaints the sheet as the finished move will look, colours included, at most once
+  a frame — a pointer reports faster than the display refreshes.
 - **Eyedropper** is momentary: it writes into the selected colour and hands back to the
   tool it interrupted, and it is disabled where there is no colour to pick into.
 - **Translucent ink** is a property of the mark, not a mode, so replay never depends on
