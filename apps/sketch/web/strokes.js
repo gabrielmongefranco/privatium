@@ -47,6 +47,43 @@ export function bounds(mark) {
   return [Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) + pad, Math.max(...ys) + pad];
 }
 
+/**
+ * The mark's own geometry as a box, with no padding. `bounds` adds room for the width of
+ * the stroke, which is right for an outline to grab by and wrong for arithmetic: the pad
+ * is a constant, so scaling a padded box does not scale the mark inside it by the same
+ * amount. Resizing measures with this.
+ */
+export function extent(mark) {
+  if (!mark || mark.kind === 'fill' || mark.kind === 'page') return null;
+  if (isShape(mark)) {
+    if (!mark.a || !mark.b || !finite(mark.a.x, mark.a.y, mark.b.x, mark.b.y)) return null;
+    return [
+      Math.min(mark.a.x, mark.b.x), Math.min(mark.a.y, mark.b.y),
+      Math.max(mark.a.x, mark.b.x), Math.max(mark.a.y, mark.b.y)
+    ];
+  }
+  if (mark.kind === 'text') {
+    const box = bounds(mark);
+    return box ? [box[0] + 8, box[1], box[2], box[3]] : null;
+  }
+  if (!validPoints(mark)) return null;
+  const xs = mark.points.map(p => p[0]);
+  const ys = mark.points.map(p => p[1]);
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+}
+
+/** The box around several marks, or null when none of them has usable geometry. */
+export function extentOf(marks) {
+  let box = null;
+  for (const mark of marks) {
+    const one = extent(mark);
+    if (!one) continue;
+    box = box ? [Math.min(box[0], one[0]), Math.min(box[1], one[1]),
+      Math.max(box[2], one[2]), Math.max(box[3], one[3])] : one.slice();
+  }
+  return box;
+}
+
 /** The type size a text mark is painted at, derived from its width so one control sets both. */
 export function textSize(mark) { return Math.max(28, (mark.width || 6) * 5); }
 
@@ -143,30 +180,59 @@ export function areaFilled(mark, host) {
 }
 
 /**
- * The events that move a selection.
+ * A copy of a mark scaled about a fixed point.
+ *
+ * The outline keeps its thickness: `width` is the pen a mark was drawn with, so a scaled
+ * shape stays drawn with the same pen, and a pressure stroke keeps the width it recorded
+ * at every sample. Text is the exception — its `width` is the type size rather than a
+ * thickness — and it scales uniformly by the smaller factor, since one size cannot follow
+ * two axes.
+ */
+export function scaled(mark, ax, ay, sx, sy) {
+  const out = { ...mark };
+  const px = x => ax + (x - ax) * sx;
+  const py = y => ay + (y - ay) * sy;
+  if (Array.isArray(mark.points)) {
+    out.points = mark.points.map(([x, y, w]) =>
+      (w === undefined ? [px(x), py(y)] : [px(x), py(y), w]));
+  }
+  if (mark.a && mark.b) {
+    out.a = { x: px(mark.a.x), y: py(mark.a.y) };
+    out.b = { x: px(mark.b.x), y: py(mark.b.y) };
+  }
+  if (finite(mark.x, mark.y)) { out.x = px(mark.x); out.y = py(mark.y); }
+  if (mark.kind === 'text' && Number.isFinite(mark.width)) {
+    out.width = Math.max(1, mark.width * Math.min(sx, sy));
+  }
+  return out;
+}
+
+/**
+ * The events that rewrite a selection through a transform.
  *
  * Each mark becomes a tombstone and a fresh put, since an id is never reused, carrying its
- * original layer so painting order survives. A fill that belongs to one of the moved marks
- * travels in the same batch: it holds its own geometry, so it has to be moved by the same
- * delta — it does not follow on its own — and re-pointed at its mark's new id.
+ * original layer so painting order survives. A fill that belongs to one of the marks
+ * travels in the same batch, through the **same** transform — it holds its own geometry,
+ * so it does not follow on its own — and is re-pointed at its mark's new id. Moving and
+ * resizing both come through here so a fill can never be given a transform of its own.
  *
  * Returns the events in groups. A group is written whole, so a tombstone and the put that
  * replaces it are never split across two batches.
  */
-export function moveEvents(entries, ids, dx, dy, mint) {
+export function rewriteEvents(entries, ids, transform, mint) {
   const byId = new Map(entries);
   const chosen = new Set(ids);
   const fresh = new Map();
   for (const id of ids) if (byId.has(id)) fresh.set(id, mint());
 
-  const relocate = (id, mark) => {
-    const d = { ...moved(mark, dx, dy), layer: mark.layer || id };
+  const rewrite = (id, mark) => {
+    const d = { ...transform(mark), layer: mark.layer || id };
     if (d.kind === 'fill' && fresh.has(d.anchor)) d.anchor = fresh.get(d.anchor);
     return d;
   };
   const group = (id, mark) => [
     { op: 'del', tbl: 'stroke', id },
-    { op: 'put', tbl: 'stroke', id: fresh.get(id), d: relocate(id, mark) }
+    { op: 'put', tbl: 'stroke', id: fresh.get(id), d: rewrite(id, mark) }
   ];
 
   const groups = [];
@@ -177,6 +243,33 @@ export function moveEvents(entries, ids, dx, dy, mint) {
     groups.push(group(id, mark));
   }
   return { groups, fresh };
+}
+
+/** The events that move a selection by a delta. */
+export function moveEvents(entries, ids, dx, dy, mint) {
+  return rewriteEvents(entries, ids, mark => moved(mark, dx, dy), mint);
+}
+
+/** The events that scale a selection about a fixed point. */
+export function resizeEvents(entries, ids, ax, ay, sx, sy, mint) {
+  return rewriteEvents(entries, ids, mark => scaled(mark, ax, ay, sx, sy), mint);
+}
+
+/** The smallest a selection may be scaled to, in sheet pixels, so it cannot vanish. */
+export const MIN_EXTENT = 8;
+
+/**
+ * The scale that puts a box's far corner under a point, clamped so nothing collapses or
+ * turns inside out. An axis with no extent — a horizontal line has no height — cannot be
+ * scaled at all and is left alone rather than dividing by zero. `uniform` keeps the
+ * proportions, taking the smaller factor so the shape stays within the pointer.
+ */
+export function scaleTo(box, x, y, uniform) {
+  const w = box[2] - box[0], h = box[3] - box[1];
+  let sx = w > 0 ? Math.max(MIN_EXTENT / w, (x - box[0]) / w) : 1;
+  let sy = h > 0 ? Math.max(MIN_EXTENT / h, (y - box[1]) / h) : 1;
+  if (uniform && w > 0 && h > 0) sx = sy = Math.min(sx, sy);
+  return { sx, sy };
 }
 
 /** A copy of a mark moved by a delta. Fields this file does not understand — an old

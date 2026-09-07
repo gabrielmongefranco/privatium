@@ -76,11 +76,19 @@ the log. Buttons step 5 points at a time, the percentage is editable, and 0 fits
 
 Ten: Select, Brush, Eraser, Eyedropper, Fill, Line, Rectangle, Ellipse, Text, Pan.
 
-- **Select** moves whole marks, never a rectangle of pixels — a pixel marquee cannot be
-  expressed as edits to the log, and the canvas is shared. Stroke mode steps through
-  overlapping marks on a repeat click; Rectangle mode takes every mark its box touches.
-  A move is a tombstone and a fresh put per mark, carrying `layer`, written as one batch
-  so one undo returns it.
+- **Select** moves and resizes whole marks, never a rectangle of pixels — a pixel marquee
+  cannot be expressed as edits to the log, and the canvas is shared. Stroke mode steps
+  through overlapping marks on a repeat click; Rectangle mode takes every mark its box
+  touches. A move or a resize is a tombstone and a fresh put per mark, carrying `layer`,
+  written as one batch so one undo returns it.
+- **Moving and resizing are one operation with different transforms**, both built by
+  `strokes.rewriteEvents`. Keep them there: it is the single place a fill is carried along
+  with its shape, and a second path is how a fill ends up with a transform of its own.
+  Measure a resize with `extent`, never `bounds` — `bounds` pads by the stroke width, and a
+  constant pad does not scale, so the shape drifts away from the pointer. An outline keeps
+  its `width` when scaled; only text scales its size, uniformly by the smaller factor.
+  The handle is a drag, so `Ctrl`/`⌘` with an arrow and the rail's Bigger and Smaller
+  buttons exist beside it (WCAG 2.5.7).
 - **Fill is the inside of one mark, not a flood.** It carries its own geometry —
   `strokes.areaOf` computes it, `strokes.areaFilled` reads it back — so nothing is looked
   up to draw it. `anchor` names the mark the colour belongs to and is used only so a move

@@ -112,6 +112,10 @@
           <button type="button" id="rail-cut" disabled><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-cut"></use></svg><span>Cut</span></button>
         </div>
         <button type="button" id="rail-paste" disabled><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-paste"></use></svg><span>Paste</span></button>
+        <div class="pair">
+          <button type="button" id="rail-smaller" disabled><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-minus"></use></svg><span>Smaller</span></button>
+          <button type="button" id="rail-bigger" disabled><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-plus"></use></svg><span>Bigger</span></button>
+        </div>
         <button type="button" id="rail-delete" disabled><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-delete"></use></svg><span>Delete</span></button>
       </div>
     </div>
@@ -241,6 +245,7 @@
           <p>The sheet is always 1600 by 1200, so a drawing lands in the same place on every device that shares it. Zoom with the controls in the corner of the sheet — type a percentage into the number to set your own — and choose Pan to move around a sheet larger than the window.</p>
           <p id="keys-help">From the keyboard: the letter beside each tool selects it. Focus the sheet, then the arrow keys move the pen and Shift moves it farther; Space or Enter puts the pen down and lifts it again, and Escape discards the stroke in progress. Delete removes a selection. Control or Command with Z, Shift Z, C, X and V undo, redo, copy, cut and paste. Plus and minus zoom, and 0 fits the sheet to the window.</p>
           <p>Select has two modes. Stroke picks the mark under the pointer — click the same place again to step through marks that overlap. Rectangle drags a box and takes every mark it touches. Either way whole marks move, never a rectangle of pixels.</p>
+          <p>A selection has a square handle at its bottom-right corner. Drag it to resize, holding Shift to keep the proportions. Bigger and Smaller in the rail do the same, and so does Control or Command with an arrow key. Outlines keep their thickness; text keeps its proportions.</p>
           <p>Fill colours the inside of the shape you tap — the colour belongs to that shape, so it moves and is deleted with it. Tap where there is no shape and the sheet itself takes the colour.</p>
           <p>The eyedropper picks up the color under the pointer into the color you have selected, then hands back to the tool you were using. Translucent ink darkens where marks overlap, like marker pens; it is a property of each mark, so turning it off later does not change what you already drew.</p>
           <p>Download PNG writes the sheet at 1600 by 1200 whatever the zoom. Download SVG writes every mark as a shape, colour included. New sketch clears the shared canvas and undo restores it.</p>

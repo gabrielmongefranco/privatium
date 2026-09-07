@@ -236,7 +236,7 @@ The last one laid down wins; it is the surface every mark is drawn on, not a mar
 painting order, and it is never selectable. It is an ordinary event, so it undoes, syncs
 and exports like anything else, and **New sketch** returns the sheet to white.
 
-### Selecting and moving
+### Selecting, moving and resizing
 
 Select has two modes, shown in the top bar where the colour row sits.
 
@@ -253,6 +253,31 @@ Both move **whole marks**, never a region of pixels. A pixel marquee cannot be e
 as edits to the log, and the canvas is shared, which is the reason to keep the log clean.
 The selection is outlined with dashed blue boxes and the marquee with a dashed ink
 rectangle. Escape clears it, and changing tools drops it.
+
+A selection also carries a square **resize handle** at the bottom-right of its own box.
+Dragging it scales everything selected about the opposite corner; Shift keeps the
+proportions, taking the smaller factor so the shape stays within the pointer. Because a
+drag may never be the only way to do something, **Bigger** and **Smaller** sit in the rail's
+Select options and `Ctrl`/`⌘` with an arrow key does the same from the keyboard. The handle
+is sized in CSS pixels rather than sheet pixels, so it stays a 24-pixel target at every
+zoom.
+
+Two rules the scale follows:
+
+- **An outline keeps its thickness.** `width` is the pen a mark was drawn with, so a
+  scaled shape is still drawn with the same pen, and a pressure stroke keeps the width it
+  recorded at every sample. Text is the exception, because its `width` *is* the type size:
+  it scales uniformly by the smaller of the two factors, since one size cannot follow two
+  axes.
+- **A group takes one transform.** Every selected mark, and every colour inside one, is
+  scaled about the same corner by the same factors, so the arrangement of a group survives
+  the resize. An axis with no extent — a horizontal line has no height — is left alone
+  rather than divided by; a scale that would collapse or invert a mark is clamped.
+
+Moving and resizing are the same operation with a different transform, and both are built
+by `strokes.rewriteEvents`. That is deliberate: it is the single place a fill can be
+carried along with its shape, and keeping one path is what stops a fill being given a
+transform of its own.
 
 ### Smoothing
 
@@ -390,6 +415,7 @@ text or colour field.
 | `Escape` | Discard the mark in progress, clear the selection, or close an open menu. |
 | `Delete` or `Backspace` | Remove the current selection, from anywhere on the page. |
 | `Ctrl/⌘ Z`, `Ctrl/⌘ Shift Z` | Undo, redo. |
+| `Ctrl/⌘` + arrow | Resize the selection; Shift for a larger step. |
 | `Ctrl/⌘ C`, `X`, `V` | Copy, cut, paste. |
 | `+`, `−`, `0` | Zoom in, zoom out, fit to view. |
 

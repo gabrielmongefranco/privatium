@@ -10,7 +10,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Sheet, SHEET_W, SHEET_H } from '../../../../apps/sketch/web/sheet.js';
-import { areaFilled, areaOf, bounds, covers, encloses, hits, inBox, isShape, moveEvents, moved, textSize } from '../../../../apps/sketch/web/strokes.js';
+import {
+  MIN_EXTENT, areaFilled, areaOf, bounds, covers, encloses, extent, extentOf, hits, inBox,
+  isShape, moveEvents, moved, resizeEvents, scaleTo, scaled, textSize
+} from '../../../../apps/sketch/web/strokes.js';
 import { dashFor } from '../../../../apps/sketch/web/paint.js';
 import { toSvg, isOurs } from '../../../../apps/sketch/web/clip.js';
 import { BASIC, DEFAULT_SLOTS, INKING, INKS, SIZES, TOOLS, colorName, contrast, inkOn, isHex, luminance, needsEdge } from '../../../../apps/sketch/web/tools.js';
@@ -308,6 +311,98 @@ test('a move touches nothing it was not given', () => {
   assert.deepEqual(moveEvents(entries, ['vanished'], 5, 5, mint).groups, []);
   // And a fill whose anchor is not in the selection is not dragged along.
   assert.equal(moveEvents(entries, ['other'], 5, 5, mint).groups.length, 2);
+});
+
+// ---- resizing -----------------------------------------------------------------------------
+test('a mark\'s own box has no padding, because a resize measures with it', () => {
+  // bounds() adds room for the stroke, which is right to grab by and wrong for arithmetic:
+  // the pad is a constant, so scaling a padded box does not scale the mark by the same
+  // amount and the shape drifts away from the pointer.
+  assert.deepEqual(extent(rect), [100, 100, 300, 200]);
+  assert.deepEqual(bounds(rect), [89, 89, 311, 211]);
+  assert.deepEqual(extent(freehand), [100, 100, 200, 200]);
+  assert.equal(extent({ kind: 'fill', shape: 'rect', a: rect.a, b: rect.b }), null);
+  assert.equal(extent({ kind: 'page', color: '#000000' }), null);
+  assert.deepEqual(extentOf([rect, freehand]), [100, 100, 300, 200], 'the box round several');
+  assert.equal(extentOf([]), null);
+  assert.equal(extentOf([{ kind: 'page' }]), null);
+});
+
+test('scaling moves geometry and leaves the pen alone', () => {
+  const box = { kind: 'rect', a: { x: 100, y: 100 }, b: { x: 300, y: 200 }, color: '#000000', width: 6 };
+  const bigger = scaled(box, 100, 100, 2, 3);
+  assert.deepEqual(bigger.a, { x: 100, y: 100 }, 'the fixed corner does not move');
+  assert.deepEqual(bigger.b, { x: 500, y: 400 });
+  assert.equal(bigger.width, 6, 'an outline keeps its thickness');
+  assert.deepEqual(box.b, { x: 300, y: 200 }, 'the original is not mutated');
+
+  // A pressure stroke keeps the width it recorded at each sample.
+  const pressure = { points: [[0, 0, 3], [10, 10, 9]], color: '#000000', width: 6 };
+  assert.deepEqual(scaled(pressure, 0, 0, 2, 2).points, [[0, 0, 3], [20, 20, 9]]);
+  assert.deepEqual(scaled({ points: [[0, 0], [10, 10]], width: 6 }, 0, 0, 2, 2).points,
+    [[0, 0], [20, 20]], 'and a two-number sample stays two numbers');
+
+  // Text takes its size from width, so it scales — uniformly, by the smaller factor,
+  // since one size cannot follow two axes.
+  const words = { kind: 'text', x: 100, y: 100, text: 'Label', color: '#000000', width: 10 };
+  const scaledText = scaled(words, 0, 0, 4, 2);
+  assert.equal(scaledText.width, 20);
+  assert.deepEqual([scaledText.x, scaledText.y], [400, 200], 'but its place follows both axes');
+  assert.equal(scaled(words, 0, 0, 0.01, 0.01).width, 1, 'and never reaches zero');
+});
+
+test('a scale puts the dragged corner under the pointer, and refuses to collapse a shape', () => {
+  const box = [100, 100, 300, 200];
+  assert.deepEqual(scaleTo(box, 500, 400, false), { sx: 2, sy: 3 });
+  assert.deepEqual(scaleTo(box, 300, 200, false), { sx: 1, sy: 1 });
+
+  // Held proportional, the smaller factor wins so the shape stays within the pointer.
+  const even = scaleTo(box, 500, 400, true);
+  assert.equal(even.sx, even.sy);
+  assert.equal(even.sx, 2);
+
+  // Dragged back past the fixed corner: clamped to a minimum rather than inside out.
+  const tiny = scaleTo(box, 0, 0, false);
+  assert.ok(tiny.sx > 0 && tiny.sy > 0, JSON.stringify(tiny));
+  assert.equal(tiny.sx * 200, MIN_EXTENT);
+  assert.equal(tiny.sy * 100, MIN_EXTENT);
+
+  // A horizontal line has no height. Scaling that axis would divide by zero.
+  const flat = scaleTo([0, 50, 100, 50], 200, 400, false);
+  assert.equal(flat.sx, 2);
+  assert.equal(flat.sy, 1, 'an axis with no extent is left alone');
+  const dot = scaleTo([5, 5, 5, 5], 99, 99, true);
+  assert.deepEqual(dot, { sx: 1, sy: 1 });
+});
+
+test('resizing several marks at once scales them all about one corner', () => {
+  // The question a group resize has to answer: every mark takes the group's transform,
+  // not one of its own, or the pieces drift apart.
+  const one = { kind: 'rect', a: { x: 0, y: 0 }, b: { x: 100, y: 100 }, color: '#000000', width: 6 };
+  const two = { kind: 'rect', a: { x: 100, y: 100 }, b: { x: 200, y: 200 }, color: '#000000', width: 6 };
+  const paint = { kind: 'fill', shape: 'rect', a: { x: 3, y: 3 }, b: { x: 97, y: 97 }, color: '#FFB703', anchor: 'one' };
+  const entries = [['one', one], ['two', two], ['paint', paint]];
+  let n = 0;
+  const { groups, fresh } = resizeEvents(entries, ['one', 'two'], 0, 0, 2, 2, () => `new-${n++}`);
+
+  assert.equal(groups.length, 3, 'both marks and the colour inside one of them');
+  const puts = new Map(groups.map(group => [group[0].id, group[1].d]));
+  assert.deepEqual(puts.get('one').b, { x: 200, y: 200 });
+  assert.deepEqual(puts.get('two').a, { x: 200, y: 200 }, 'the group keeps its own arrangement');
+  assert.deepEqual(puts.get('two').b, { x: 400, y: 400 });
+  assert.deepEqual(puts.get('paint').a, { x: 6, y: 6 }, 'the colour takes the group transform');
+  assert.deepEqual(puts.get('paint').b, { x: 194, y: 194 });
+  assert.equal(puts.get('paint').anchor, fresh.get('one'), 'and follows its shape to the new id');
+  for (const group of groups) assert.deepEqual(group.map(e => e.op), ['del', 'put']);
+});
+
+test('a resize leaves a colour on an unselected shape where it is', () => {
+  const one = { kind: 'rect', a: { x: 0, y: 0 }, b: { x: 100, y: 100 }, color: '#000000', width: 6 };
+  const other = { kind: 'rect', a: { x: 400, y: 400 }, b: { x: 500, y: 500 }, color: '#000000', width: 6 };
+  const loose = { kind: 'fill', shape: 'rect', a: { x: 403, y: 403 }, b: { x: 497, y: 497 }, anchor: 'other' };
+  let n = 0;
+  const { groups } = resizeEvents([['one', one], ['other', other], ['loose', loose]], ['one'], 0, 0, 2, 2, () => `new-${n++}`);
+  assert.deepEqual(groups.flat().filter(e => e.op === 'del').map(e => e.id), ['one']);
 });
 
 // ---- the tool and colour tables ---------------------------------------------------------

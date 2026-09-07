@@ -15,7 +15,10 @@
 import { pv } from '/static/pv.js';
 import { batches, SketchHistory } from './history.js';
 import { Sheet, SHEET_W, SHEET_H } from './sheet.js';
-import { areaFilled, areaOf, bounds, covers, encloses, hits, inBox, isShape, moveEvents, moved } from './strokes.js';
+import {
+  areaFilled, areaOf, bounds, covers, encloses, extentOf, hits, inBox, isShape,
+  moveEvents, moved, resizeEvents, scaleTo, scaled
+} from './strokes.js';
 import { paintArea, paintMark } from './paint.js';
 import { fromSvg, isOurs, toSvg } from './clip.js';
 import {
@@ -56,6 +59,7 @@ const state = {
 let drawing = null;         // the mark in progress
 let marquee = null;
 let dragging = null;
+let resizing = null;
 let panning = null;
 let cycle = null;           // where the last click was, for stepping through overlaps
 let longFired = false;
@@ -81,11 +85,11 @@ function pageColor() {
 }
 
 /** The area a fill covers, given the marks as they are on screen right now. */
-function areaOnScreen(mark, shift) {
+function areaOnScreen(mark, live) {
   const host = mark.anchor ? marks.get(mark.anchor) : null;
-  const carried = shift && (shift.ids.has(mark.anchor) || shift.fills.has(mark));
-  const shown = carried ? moved(mark, shift.dx, shift.dy) : mark;
-  const shownHost = host && carried ? moved(host, shift.dx, shift.dy) : host;
+  const carried = live && (live.ids.has(mark.anchor) || live.fills.has(mark));
+  const shown = carried ? live.apply(mark) : mark;
+  const shownHost = host && carried ? live.apply(host) : host;
   return areaFilled(shown, shownHost);
 }
 
@@ -132,24 +136,22 @@ function render() {
   ctx.fillRect(0, 0, pad.width, pad.height);
   sheet.applyTo(ctx);
 
-  // A drag is drawn as the finished move will look: the selected marks at their offset,
-  // and the colour inside them carried the same distance.
-  const drag = dragging && (dragging.dx || dragging.dy)
-    ? { ids: new Set(state.selection), fills: new Set(), dx: dragging.dx, dy: dragging.dy }
-    : null;
+  // A selection being moved or scaled is drawn as the finished change will look, colour
+  // included. Both go through one transform, so a fill can never be given its own.
+  const live = liveTransform();
 
   for (const [id, mark] of ordered()) {
     if (mark.kind === 'page') continue;                    // it is the surface, not a mark on it
     if (mark.kind === 'fill') {
-      if (drag && mark.anchor && drag.ids.has(mark.anchor)) drag.fills.add(mark);
-      paintArea(ctx, areaOnScreen(mark, drag), mark.color);
+      if (live && mark.anchor && live.ids.has(mark.anchor)) live.fills.add(mark);
+      paintArea(ctx, areaOnScreen(mark, live), mark.color);
       continue;
     }
-    paintMark(ctx, drag && drag.ids.has(id) ? moved(mark, drag.dx, drag.dy) : mark, sheet.k);
+    paintMark(ctx, live && live.ids.has(id) ? live.apply(mark) : mark, sheet.k);
   }
 
   if (drawing) paintMark(ctx, drawing, sheet.k);
-  if (state.tool === 'select') outlineSelection();
+  if (state.tool === 'select') { outlineSelection(); drawHandle(); }
   if (marquee) outlineBox(marquee.a, marquee.b, '#241A22', [10, 7]);
   drawPen();
 }
@@ -162,17 +164,70 @@ function scheduleRender() {
   frame = requestAnimationFrame(() => { frame = null; render(); });
 }
 
+/** What is happening to the selection right now, as a transform every mark goes through. */
+function liveTransform() {
+  const ids = new Set(state.selection);
+  if (dragging && (dragging.dx || dragging.dy)) {
+    return { ids, fills: new Set(), apply: mark => moved(mark, dragging.dx, dragging.dy) };
+  }
+  if (resizing && (resizing.sx !== 1 || resizing.sy !== 1)) {
+    return {
+      ids, fills: new Set(),
+      apply: mark => scaled(mark, resizing.ax, resizing.ay, resizing.sx, resizing.sy)
+    };
+  }
+  return null;
+}
+
+/** The selected marks, in painting order. */
+const selected = () => state.selection.map(id => marks.get(id)).filter(Boolean);
+
+/** The box a resize measures and drags by: the selection's own geometry, unpadded. */
+function selectionBox(live) {
+  const list = selected();
+  return extentOf(live ? list.map(mark => live.apply(mark)) : list);
+}
+
 function outlineSelection() {
-  const dx = dragging ? dragging.dx : 0;
-  const dy = dragging ? dragging.dy : 0;
+  const live = liveTransform();
   for (const id of state.selection) {
     const mark = marks.get(id);
-    const box = mark && bounds(mark);
-    if (box) {
-      outlineBox({ x: box[0] + dx, y: box[1] + dy }, { x: box[2] + dx, y: box[3] + dy },
-        '#2459CF', [9, 6]);
-    }
+    const box = mark && bounds(live && live.ids.has(id) ? live.apply(mark) : mark);
+    if (box) outlineBox({ x: box[0], y: box[1] }, { x: box[2], y: box[3] }, '#2459CF', [9, 6]);
   }
+}
+
+/** Half the handle's side, in sheet pixels, so it stays a 24 CSS pixel target at any zoom. */
+const handleReach = () => 12 / Math.max(0.05, sheet.scale);
+
+/** Where the resize handle sits: the bottom-right of the selection's own box. */
+function handleAt() {
+  if (state.tool !== 'select' || !state.selection.length) return null;
+  const box = selectionBox(liveTransform());
+  return box ? { x: box[2], y: box[3] } : null;
+}
+
+function drawHandle() {
+  const at = handleAt();
+  if (!at) return;
+  const r = handleReach();
+  ctx.save();
+  ctx.fillStyle = '#FFFFFF';
+  ctx.strokeStyle = '#2459CF';
+  ctx.lineWidth = Math.max(2, r / 5);
+  ctx.beginPath();
+  ctx.rect(at.x - r / 2, at.y - r / 2, r, r);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Whether a point is on the handle. Generous, because it is a target for a fingertip. */
+function onHandle(point) {
+  const at = handleAt();
+  if (!at) return false;
+  const r = handleReach();
+  return Math.abs(point.x - at.x) <= r && Math.abs(point.y - at.y) <= r;
 }
 
 function outlineBox(a, b, colour, dash) {
@@ -296,7 +351,8 @@ function refresh() {
 
   const chosen = state.selection.length;
   $('bar-note').textContent = tool === 'select'
-    ? (chosen ? chosen + ' selected — drag to move' : (state.selMode === 'rect' ? 'Drag a box to select' : 'Tap a mark to select, again to cycle'))
+    ? (chosen ? chosen + ' selected — drag to move, corner to resize'
+      : (state.selMode === 'rect' ? 'Drag a box to select' : 'Tap a mark to select, again to cycle'))
     : tool === 'eraser' ? 'The eraser paints white ink. Pick a width on the left.'
     : tool === 'pan' ? (sheet.pannable ? 'Drag the sheet to move around it.' : 'Zoom past the window to have something to pan.')
     : '';
@@ -304,7 +360,8 @@ function refresh() {
   paintSlots();
   paintPickChip();
 
-  for (const id of ['bar-copy', 'bar-cut', 'rail-copy', 'rail-cut', 'rail-delete']) $(id).disabled = !chosen;
+  for (const id of ['bar-copy', 'bar-cut', 'rail-copy', 'rail-cut', 'rail-delete',
+    'rail-bigger', 'rail-smaller']) $(id).disabled = !chosen;
   $('bar-paste').disabled = !state.clip;
   $('rail-paste').disabled = !state.clip;
   $('rail-delete').querySelector('span').textContent = chosen > 1 ? 'Delete ' + chosen + ' marks' : 'Delete';
@@ -668,6 +725,33 @@ function moveSelection(dx, dy) {
   commitGroups(groups, 'Moved ' + ids.length + ' mark' + (ids.length === 1 ? '' : 's') + '.');
 }
 
+/**
+ * Scale the selection about the top-left of its own box, so the corner being dragged is
+ * the one that moves. Every mark and every colour inside one goes through the same
+ * transform (`strokes.resizeEvents`), which is what keeps a fill with its shape.
+ */
+function resizeSelection(sx, sy) {
+  const ids = state.selection.slice();
+  const box = selectionBox(null);
+  if (!ids.length || !box || (sx === 1 && sy === 1)) return;
+  const { groups, fresh } = resizeEvents(ordered(), ids, box[0], box[1], sx, sy, () => pv.ulid());
+  state.selection = ids.map(id => fresh.get(id) || id);
+  cycle = null;
+  const percent = Math.round(Math.max(sx, sy) * 100);
+  commitGroups(groups, 'Resized ' + ids.length + ' mark' + (ids.length === 1 ? '' : 's') +
+    ' to ' + percent + ' per cent.');
+}
+
+/** Grow or shrink the selection by a step, for the keyboard and for touch. */
+function stepSize(factor) {
+  if (!state.selection.length) { say('Select something first, then resize it.'); return; }
+  const box = selectionBox(null);
+  if (!box) return;
+  const w = box[2] - box[0], h = box[3] - box[1];
+  const { sx, sy } = scaleTo(box, box[0] + w * factor, box[1] + h * factor, true);
+  resizeSelection(sx, sy);
+}
+
 function deleteSelection() {
   const ids = state.selection.slice();
   if (!ids.length) return;
@@ -770,6 +854,14 @@ pad.addEventListener('pointerdown', event => {
   if (tool === 'text') { placeText(point); return; }
 
   if (tool === 'select') {
+    if (state.selection.length && onHandle(point)) {
+      const box = selectionBox(null);
+      if (box) {
+        resizing = { ax: box[0], ay: box[1], box, sx: 1, sy: 1 };
+        say('Resizing. Hold Shift to keep the proportions.');
+        return;
+      }
+    }
     if (state.selMode === 'rect') {
       if (state.selection.length && state.selection.some(id => {
         const box = bounds(marks.get(id));
@@ -808,6 +900,14 @@ pad.addEventListener('pointermove', event => {
     return;
   }
   if (marquee) { marquee.b = sheet.at(event); scheduleRender(); return; }
+  if (resizing) {
+    const point = sheet.at(event);
+    const next = scaleTo(resizing.box, point.x, point.y, event.shiftKey);
+    resizing.sx = next.sx;
+    resizing.sy = next.sy;
+    scheduleRender();
+    return;
+  }
   if (dragging) {
     const point = sheet.at(event);
     dragging.dx = point.x - dragging.x;
@@ -831,6 +931,13 @@ pad.addEventListener('pointerleave', () => { if (state.hover) { state.hover = ''
 
 function endPointer() {
   if (panning) { panning = null; return; }
+  if (resizing) {
+    const { sx, sy } = resizing;
+    resizing = null;
+    if (Math.abs(sx - 1) < 0.005 && Math.abs(sy - 1) < 0.005) { render(); return; }
+    resizeSelection(sx, sy);
+    return;
+  }
   if (marquee) {
     const box = marquee;
     marquee = null;
@@ -899,6 +1006,17 @@ document.addEventListener('keydown', event => {
   if (mod && key === 'z') { event.preventDefault(); event.shiftKey ? doRedo() : doUndo(); return; }
   if (mod && key === 'c') { event.preventDefault(); copySelection(false); return; }
   if (mod && key === 'x') { event.preventDefault(); copySelection(true); return; }
+  // A drag of the handle needs a path that is not a drag (WCAG 2.5.7).
+  if (mod && (event.key === 'ArrowRight' || event.key === 'ArrowDown')) {
+    event.preventDefault();
+    stepSize(event.shiftKey ? 1.5 : 1.1);
+    return;
+  }
+  if (mod && (event.key === 'ArrowLeft' || event.key === 'ArrowUp')) {
+    event.preventDefault();
+    stepSize(event.shiftKey ? 1 / 1.5 : 1 / 1.1);
+    return;
+  }
   if (mod) return;                                  // leave every other shortcut alone
 
   const tool = TOOLS.find(t => t.key.toLowerCase() === key);
@@ -915,6 +1033,7 @@ document.addEventListener('keydown', event => {
   }
   if (event.key === 'Escape') {
     if (!dialog.hidden) { closeDialog(); refresh(); return; }
+    if (resizing) { resizing = null; say('Resize abandoned.'); render(); return; }
     if (drawing) { drawing = null; say('Stroke discarded.'); render(); return; }
     if (state.selection.length) { state.selection = []; cycle = null; say('Selection cleared.'); refresh(); return; }
   }
@@ -1245,6 +1364,8 @@ $('bar-copy').onclick = $('rail-copy').onclick = () => copySelection(false);
 $('bar-cut').onclick = $('rail-cut').onclick = () => copySelection(true);
 $('bar-paste').onclick = $('rail-paste').onclick = () => pasteMarks(JSON.parse(JSON.stringify(state.clip || [])));
 $('rail-delete').onclick = () => deleteSelection();
+$('rail-bigger').onclick = () => stepSize(1.1);
+$('rail-smaller').onclick = () => stepSize(1 / 1.1);
 
 async function doUndo() {
   if (drawing) { drawing = null; render(); say('Stroke in progress discarded.'); return; }
