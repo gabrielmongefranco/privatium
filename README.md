@@ -105,7 +105,7 @@ requirements, including security and accessibility.
 
 ## About the Author
 
-Privatium is created by [Gabriel Mongefranco](https://gabriel.mongefranco.com), a database,
+Privatium is built by [Gabriel Mongefranco](https://gabriel.mongefranco.com), a database,
 analytics, and software architect with two decades of experience across healthcare,
 research, and enterprise systems.
 
