@@ -45,22 +45,30 @@ widths, reduce padding and stack controls; do not shrink text to make it fit.
   game forms; the same forms work without JavaScript on loopback. Existing Alpine CSP
   components still control disclosures and reset confirmation. After an HTMX swap,
   focus moves to the new question so Tab reaches its answers.
-- **Sketch:** a separate back link and title sit above a compact drawing toolbar and framed
-  white canvas. Bootstrap icons accompany the visible tool labels. Draw and Stroke eraser
-  show their selected mode with text styling and an accessible pressed state. Labelled
-  color presets and the picker live in a native Colors disclosure. Draw, Eraser, Stroke eraser and Undo stay on the toolbar. Help contains instructions;
-  Sketch actions offers Download PNG and New sketch. A `ResizeObserver` matches the canvas backing store
-  to its CSS size when tools or help change height. Keyboard drawing remains available;
-  one finger draws, while the canvas permits pinch zoom. Stored points still use pixel
-  coordinates: a smaller canvas can clip an older, larger drawing without deleting it.
+- **Sketch:** a labelled tool rail down the left, a single-row top bar, the white sheet
+  centred between them, and a status footer. The rail lists all ten tools one per line as
+  an icon, a name and its keyboard letter, with the active tool's own options directly
+  beneath. The top bar carries the tools reached most often, and then whatever the current
+  tool needs — the colour row for the tools that lay ink down, one line of explanation for
+  the ones that do not — with undo, redo, the high-contrast toggle and the Sketch actions
+  menu always on its right. Zoom sits in the sheet's own bottom-right corner. Below
+  820 pixels the rail becomes a strip under the sheet and the tools scroll sideways;
+  nothing drops below a 44-pixel target. Every icon is a vendored Bootstrap Icon inlined
+  into the page's sprite. Keyboard drawing remains available; one finger draws, while the
+  sheet permits pinch zoom.
 
-Sketch offers a native color picker and a labelled hex field alongside its preset
-inks. Stroke eraser removes the topmost stroke at the chosen point using an append-only
-tombstone; Space or Enter performs the same action at the keyboard pen. The Apps link
-returns to the launcher (Settings when run solo).
+The sheet is a fixed 1600 by 1200 coordinate space, sized in CSS and drawn through a
+context transform, so a mark lands on the same pixels on every device that shares it. The
+canvas's backing store still follows its CSS box at the device pixel ratio. Zoom is
+per-device view state kept in `localStorage`, never in the log.
 
 Sketch keeps its white drawing surface in either system theme;
-changing the canvas background would change the appearance of saved strokes.
+changing the sheet background would change the appearance of saved strokes. Its own
+`--muted` token draws the boundary of every control, because the hairline `--line` used
+between regions is 1.38:1 against the panel and does not meet WCAG 1.4.11 on its own.
+Colour swatches compute their real contrast against the current panel and take a ring
+when their fill does not clear 3:1 by itself. The Apps link returns to the launcher
+(Settings when run solo).
 
 ## Check a change
 
@@ -94,26 +102,33 @@ implemented by the sample app refresh.
 
 ## Sketch editing and export
 
-Starting a stroke closes open color and action panels. Eraser paints a 24-pixel white
-stroke on the white canvas; Stroke eraser removes a whole stroke. Both work by keyboard.
-Undo reverses the latest change to the shared canvas, whichever window or device made
-it — a stroke, an erasure or a New sketch — up to 50 changes back; the log replayed at
-load fills that history, so a reload loses nothing undoable. A batch written as one act
-is undone as one. A restoration uses fresh IDs and retains the original layer key,
-because a tombstoned ID cannot be reused. Later changes to a touched stroke can prevent
-undo; the page explains this instead of overwriting them.
+Starting a mark closes open colour and action panels. The eraser paints white ink at the
+chosen width; Select picks whole marks and moves them, and Delete removes them. All of it
+works by keyboard. Undo reverses the latest change to the shared canvas, whichever window
+or device made it — a mark, an erasure, a move, a deletion or a New sketch — up to 50
+changes back; the log replayed at load fills that history, so a reload loses nothing
+undoable. A batch written as one act is undone as one. A restoration uses fresh IDs and
+retains the original layer key, because a tombstoned ID cannot be reused. Later changes
+to a touched mark can prevent undo; the page explains this instead of overwriting them.
+
+An action that would name more events than the node accepts in one batch is written in
+ceiling-sized chunks instead of being refused whole, and the status line says how many
+undo presses it now takes.
 
 New sketch clears the shared canvas with tombstones, rather than creating a sketch
-library. Download PNG first to keep a separate image. PNG export includes saved strokes,
-an opaque white background and no keyboard crosshair, up to 16 million pixels.
+library. Download PNG first to keep a separate image. PNG export renders the sheet at
+1600 by 1200 whatever the zoom, with an opaque white background and no keyboard
+crosshair. Download SVG writes the marks as shapes; a flood fill is pixels rather than a
+shape, so it is left out and the count is reported.
 
 A correct Animals guess shows “I guessed it!” with a Start over button. The win page
 is a presentation state, available with or without HTMX; it writes no event. Starting
 over moves the cursor to the root and keeps the learned animals. The same restart
 control sits beside What I know during play.
 
-Sketch groups its icon-only Apps link and hamburger actions menu in the header.
-Both retain accessible names and 44-pixel targets, using supplied Bootstrap Icons.
+Sketch groups its Apps link and the rest of its actions in one menu on the top bar's
+right. Every icon-only control keeps an accessible name and a 44-pixel target, using
+supplied Bootstrap Icons.
 
 Shell availability notices use end-user language such as “coming soon”, without
 phase numbers or implementation milestones. Technical detail stays in the documentation.

@@ -22,12 +22,18 @@ whichever was drawn last.
 | `schema.sql` | **No.** This app has no tables. |
 | A build step | **No.** Plain ES modules; `app.js` is what ships. |
 
-`web/` contains an HTML page, a stylesheet and three small JavaScript modules.
-Together with `app.toml`, that is the entire app.
+`web/` contains an HTML page, a stylesheet, seven small JavaScript modules and the Pv
+mark in its two schemes. Together with `app.toml`, that is the entire app.
 
-The toolbar wraps on small screens and labels every color. Open **Help** for
-keyboard instructions. Help and status text stay readable when zoomed; see
-[Sample app design](../../docs/sample-app-design.md) for the layout and its limits.
+The sheet is a fixed 1600 × 1200 surface, so a mark lands on the same pixels on every
+device that shares it — sizing the canvas to each window instead is what once put a
+desktop drawing in the corner of a phone. Ten tools sit in a labelled rail with the
+active tool's own options beneath them; the top bar carries the tools reached most often
+and, for the tools that lay ink down, the colour row. Everything is reachable from the
+keyboard, every control keeps its touch size, and on a narrow screen the rail becomes a
+strip below the sheet. Open **Help** for the keyboard map. Help and status text stay
+readable when zoomed; see [Sample app design](../../docs/sample-app-design.md) for the
+layout and its limits.
 
 ## What the framework still gives it
 
@@ -52,6 +58,10 @@ No `schema.sql` means no validation and no SQL — `d` is stored as-is:
 await pv.put('stroke', pv.ulid(), { points, color, width });
 ```
 
+A freehand stroke is still exactly that. A shape, a text block or a flood fill adds a
+`kind`, and options add a field each — `dash`, `blend`, and a fill's `anchor` — so every
+log written before those tools existed replays unchanged.
+
 For a drawing app or a game this is frequently the right call. You still get replication,
 snapshots, and a plain-text backup. Read your own drawing back with no Privatium installed:
 
@@ -67,6 +77,8 @@ The framework's own UI is HTMX and ships no client framework. That is a decision
 blob, whatever the app needs. You pay for it in bytes on a phone, and that is your call.
 
 This app uses vanilla JS because a canvas needs no framework, not because one was forbidden.
+Ten tools, a colour wheel and a clipboard did not change that: the sheet is imperative
+drawing, and the toolbars are buttons with `aria-pressed`.
 
 ## Why this is not a Tier 1 app
 

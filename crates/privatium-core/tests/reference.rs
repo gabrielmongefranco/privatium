@@ -956,8 +956,8 @@ async fn test_animals_works_with_javascript_disabled() {
 // sketch
 // ---------------------------------------------------------------------------------------
 
-/// `apps/sketch` — exactly the calls `app.js` makes, against the log: the page and its
-/// two files plus `pv.js`; the boot read of `/api/events?tbl=stroke`; the stream; a
+/// `apps/sketch` — exactly the calls `app.js` makes, against the log: the page, every
+/// file it loads and `pv.js`; the boot read of `/api/events?tbl=stroke`; the stream; a
 /// `pv.put` whose frame is the log line; a clear as a `del` batch; the boot read again,
 /// which applies the put and then the del; a line appended by hand, which the next read
 /// returns and the stream reports as a resync; `/api/node`. And the page itself: no
@@ -977,9 +977,10 @@ async fn test_sketch_end_to_end() {
     let index = body_of(index).await;
     assert_eq!(index, fs::read_to_string(web.join("index.html")).unwrap());
     assert!(index.contains("<html lang=\"en\">"), "{index}");
+    assert!(index.contains("<canvas id=\"pad\""), "{index}");
     assert!(
-        index.contains("<canvas id=\"pad\" aria-label=\""),
-        "{index}"
+        index.contains("aria-label=\"Drawing sheet"),
+        "the sheet carries its own name"
     );
     assert!(!index.contains("user-scalable=no"), "{index}");
     assert!(index.contains("<meta name=\"viewport\""), "{index}");
@@ -988,7 +989,18 @@ async fn test_sketch_end_to_end() {
         "{index}"
     );
     assert_clean("sketch index.html", &index, Unit::Document);
-    for (file, kind) in [("app.js", "javascript"), ("style.css", "text/css")] {
+    for (file, kind) in [
+        ("app.js", "javascript"),
+        ("sheet.js", "javascript"),
+        ("strokes.js", "javascript"),
+        ("paint.js", "javascript"),
+        ("clip.js", "javascript"),
+        ("tools.js", "javascript"),
+        ("history.js", "javascript"),
+        ("style.css", "text/css"),
+        ("mark.svg", "svg"),
+        ("mark-light.svg", "svg"),
+    ] {
         let response = handler.handle(get(&format!("/a/sketch/{file}"))).await;
         assert_eq!(response.status(), StatusCode::OK, "{file}");
         assert!(header(&response, &CONTENT_TYPE).contains(kind), "{file}");
@@ -1016,14 +1028,67 @@ async fn test_sketch_end_to_end() {
     ] {
         assert!(app_js.contains(call), "app.js no longer calls {call}");
     }
+    // The sheet is a fixed 1600 x 1200 coordinate space; the canvas's own pixel size
+    // still follows its CSS box at the device ratio, which is where sheet.js earns its
+    // place as the Tier 2 worked example.
+    let sheet_js = fs::read_to_string(web.join("sheet.js")).unwrap();
     assert!(
-        app_js.contains("clientWidth"),
+        sheet_js.contains("clientWidth") && sheet_js.contains("devicePixelRatio"),
         "the backing store follows the CSS size"
+    );
+    assert!(
+        !sheet_js.contains("window.innerWidth") && !app_js.contains("window.innerWidth"),
+        "the sheet is never sized from the viewport"
     );
     assert!(
         app_js.contains("aria-pressed"),
         "the current colour is announced"
     );
+    // A batch over `api.max_batch` is refused whole (spec/data-api.md §3), so clearing a
+    // full sheet and pasting a large selection are written in ceiling-sized chunks.
+    let history_js = fs::read_to_string(web.join("history.js")).unwrap();
+    assert!(
+        history_js.contains("export const MAX_BATCH = 1000;"),
+        "the batch ceiling no longer matches spec/data-api.md §3"
+    );
+    assert!(
+        app_js.contains("batches(groups)"),
+        "app.js no longer chunks a write at the ceiling"
+    );
+    // Every glyph is a vendored Bootstrap Icon, inlined into the page's sprite.
+    let index_html = &index;
+    let icons = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("assets")
+        .join("icons");
+    for (symbol, icon) in [
+        ("i-select", "cursor"),
+        ("i-brush", "brush"),
+        ("i-eraser", "eraser"),
+        ("i-pick", "eyedropper"),
+        ("i-fill", "paint-bucket"),
+        ("i-undo", "arrow-90deg-left"),
+        ("i-redo", "arrow-90deg-right"),
+        ("i-apps", "grid-3x3-gap"),
+        ("i-delete", "trash"),
+    ] {
+        let source = fs::read_to_string(icons.join(format!("{icon}.svg"))).unwrap();
+        let body: String = source
+            .split_once('>')
+            .unwrap()
+            .1
+            .rsplit_once("</svg>")
+            .unwrap()
+            .0
+            .lines()
+            .map(str::trim)
+            .collect();
+        assert!(
+            index_html.contains(&format!(
+                "<symbol id=\"{symbol}\" viewBox=\"0 0 16 16\">{body}</symbol>"
+            )),
+            "sprite symbol {symbol} is not the vendored {icon}.svg"
+        );
+    }
 
     // Boot on an empty log.
     let boot = body_of(handler.handle(get("/a/sketch/api/events?tbl=stroke")).await).await;
@@ -1479,36 +1544,64 @@ fn test_spec_cli_5_pv406_declared_tokens_meet_contrast() {
     );
     assert!(css.contains("prefers-reduced-motion"), "the motion guard");
 
-    // sketch: its own sheet, its own colours.
+    // sketch: its own sheet, its own colours, in both schemes. The sheet itself is always
+    // white, so --ink is held against white as well as against the app's own surfaces.
     let sketch =
         fs::read_to_string(repo_apps_dir().join("sketch").join("web").join("style.css")).unwrap();
-    let tokens = &a11y::root_tokens(&sketch)[0];
-    let ink = &tokens["--brand"];
-    let muted = &tokens["--muted"];
+    let schemes = a11y::root_tokens(&sketch);
+    assert_eq!(schemes.len(), 2, "a light and a dark :root");
+    for tokens in &schemes {
+        for surface in ["--bg", "--panel"] {
+            assert!(
+                a11y::contrast(&tokens["--ink"], &tokens[surface]) >= 7.0,
+                "--ink on {surface} is {:.2}:1",
+                a11y::contrast(&tokens["--ink"], &tokens[surface])
+            );
+            assert!(
+                a11y::contrast(&tokens["--muted"], &tokens[surface]) >= 4.5,
+                "--muted on {surface} is {:.2}:1",
+                a11y::contrast(&tokens["--muted"], &tokens[surface])
+            );
+            // --muted is also what draws the boundary of anything a person operates, so
+            // it carries WCAG 1.4.11 as well as its text duty; --line only ever separates
+            // regions, which are not components.
+            assert!(
+                a11y::contrast(&tokens["--muted"], &tokens[surface]) >= 3.0,
+                "control boundaries on {surface}"
+            );
+        }
+        assert!(
+            a11y::contrast(&tokens["--accent-ink"], &tokens["--accent"]) >= 4.5,
+            "the pressed control's own label"
+        );
+        assert!(
+            a11y::contrast(&tokens["--muted"], &tokens["--accent"]) >= 3.0,
+            "a control's boundary survives the pressed fill"
+        );
+    }
     assert!(
-        a11y::contrast(ink, "#ffffff") >= 7.0,
-        "canvas focus and toolbar text"
-    );
-    assert!(
-        a11y::contrast(muted, "#f4f6f8") >= 7.0,
-        "status text on its actual surface"
-    );
-    assert!(
-        a11y::contrast(&tokens["--line"], "#ffffff") >= 3.0,
-        "control boundaries"
+        a11y::contrast(&schemes[0]["--ink"], "#ffffff") >= 7.0,
+        "the keyboard crosshair and the selection outline on the white sheet"
     );
     let rules = a11y::rules(&sketch);
     let focus = rules
         .iter()
         .find(|(selector, _)| selector.contains(":focus-visible"))
         .expect(":focus-visible rule");
-    assert!(focus.1["outline"].contains("var(--brand)"), "{:?}", focus.1);
+    assert!(focus.1["outline"].contains("var(--ink)"), "{:?}", focus.1);
     assert!(
         rules
             .iter()
             .any(|(selector, _)| selector.contains("[aria-pressed=\"true\"]")),
         "the current swatch is drawn from aria-pressed"
     );
+    // Every icon is a <use> of the page's sprite and inherits its control's colour;
+    // without this each one paints black, which vanishes on the dark panel.
+    let icon = rules
+        .iter()
+        .find(|(selector, _)| selector.trim() == ".ic")
+        .expect(".ic rule");
+    assert!(icon.1["fill"].contains("currentColor"), "{:?}", icon.1);
     assert!(!sketch.contains("user-scalable"), "{sketch}");
 }
 
