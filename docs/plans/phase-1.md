@@ -507,8 +507,8 @@ The heart. Get this wrong and nothing above it can be right.
 
 - Privileged DuckDB connection on `cache/<slug>.duckdb`; app-facing connection configured
   per `app-contract.md §7` with `lock_configuration = true` **last**.
-- Learn what `schema.sql` declares from **DuckDB's own catalog**, not from a parser we
-  wrote. Execute the file into a throwaway in-memory instance that is sealed first —
+- Learn what `schema.sql` declares from **DuckDB's own catalog**, not from a
+  hand-written parser. Execute the file into a throwaway in-memory instance that is sealed first —
   external access off, autoload off, `lock_configuration` on — then read `duckdb_tables()`,
   `duckdb_columns()`, `duckdb_constraints()` and `duckdb_views()`, filtered to
   `schema_name = 'main' AND NOT internal`. That gives names, exact types, `NOT NULL` and

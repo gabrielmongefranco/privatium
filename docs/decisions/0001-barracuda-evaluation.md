@@ -54,8 +54,7 @@ addresses, and use an encrypted relay when a direct connection is unavailable.
 The selected peer transport is `iroh`, integrated with the Rust runtime. Adding a second
 server and socket stack would increase the integration work without supplying Privatium's
 sync protocol or append-only storage model. See the
-[transport decision](0002-rust-core.md) and
-[roadmap](../roadmap.md) for the planned work.
+[transport decision](0002-rust-core.md).
 
 **BAS also owns an event loop.** Its `SoDisp` socket dispatcher controls how network
 events are handled. Embedding BAS in a Rust binary would still require deciding which
@@ -91,8 +90,8 @@ decision.
   and the app sandbox.
 - The event log remains the source of truth. SQLite is a rebuildable query cache, not the
   file used as the basis for device sync.
-- Pairing, discovery, and sync belong in the shared core as their roadmap phases are
-  implemented. Platform adapters do not need separate implementations of those features.
+- Pairing, discovery, and sync belong in the shared core. Platform adapters do not need
+  separate implementations of those features.
 - The project remains responsible for testing the integrations and maintaining its chosen
   dependencies.
 

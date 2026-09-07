@@ -11,7 +11,7 @@ Summary:  Decision record. One request/response interface in the core, three
 
 # ADR 0003 — One core interface, three transports
 
-**Status: DECIDED. Phase 1.**
+**Status: DECIDED.**
 
 ## Decision
 
@@ -93,21 +93,21 @@ any exist is an afternoon.
 ## Streaming on custom schemes: spec both, build one
 
 Custom-scheme streaming in a platform webview — particularly WKWebView on iOS — is the
-least-proven part of this design. Rather than gate Phase 1 on it:
+least-proven part of this design. Rather than gate the first working node on it:
 
 - `spec/data-api.md §3` defines **SSE as the required transport** and **long-poll as a
   conformant fallback** a client MAY negotiate.
-- Phase 1 ships SSE over HTTP, which is uncontroversial and covers the daemon and browser.
+- The node ships SSE over HTTP, which is uncontroversial and covers the daemon and browser.
 - The custom-scheme spike belongs to the mobile shell repositories as a **documented open
-  risk**, not a Phase 1 blocker.
+  risk**, not a blocker for the node.
 
 Because `Response` is stream-shaped in the core, the fallback is a transport swap rather
 than a refactor. That is the entire point of paying the design cost early.
 
 ## Consequences
 
-- Phase 1 gains the `Request`/`Response` types and the axum adapter. The other adapters
-  arrive in Phase 4 and add no core work.
+- The core gains the `Request`/`Response` types and the axum adapter. The native shell
+  adapters add no core work when they arrive.
 - The desktop shell gets offline for free — no service worker, no PWA manifest, no
   certificate, no domain, no account.
 - A PWA client replica remains possible for people on a real HTTPS origin, but it is now

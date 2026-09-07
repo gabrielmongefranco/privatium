@@ -113,7 +113,7 @@ Sketch groups its icon-only Apps link and hamburger actions menu in the header.
 Both retain accessible names and 44-pixel targets, using supplied Bootstrap Icons.
 
 Shell availability notices use end-user language such as “coming soon”, without
-phase numbers or implementation milestones. Technical plans remain in the documentation.
+phase numbers or implementation milestones. Technical detail stays in the documentation.
 
 The shell footer links to the repository on the left and displays this space’s name
 (or its ID when unnamed) on the right. The QR icon is a placeholder linking to Space

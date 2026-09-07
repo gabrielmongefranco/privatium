@@ -18,9 +18,8 @@ The node advertises itself on the local network over mDNS and answers UDP probes
 52525 (`spec/protocol.md §6`); `--no-discovery` turns both off for one run, and the
 `discovery.mdns` and `discovery.udp` settings turn each off durably. A phone pairs by
 scanning the QR code `--open` or `privatium pair` prints, or the one on the devices
-page. Multi-node sync is Phase 3. Remote
-transports, tunnels and certificates below describe later phases. See
-[the roadmap](roadmap.md).
+page. Multi-node sync is not built yet, and the remote transports, tunnels and
+certificates below are not either; each is marked where it appears.
 
 ## 1. Topologies
 
@@ -173,7 +172,7 @@ containing folder inside the archive.
 These are native builds on GitHub's `macos-latest`, `windows-latest` and
 `ubuntu-latest` runners, respectively. The shorter names do not imply universal
 architecture support. Apps are separate; the binary includes Lua and SQLite.
-Installers, AppImage, Flatpak and signed or notarized packages remain Phase 6 work.
+Installers, AppImage, Flatpak and signed or notarized packages are not built yet.
 
 ### 6.1 Publishing binaries
 

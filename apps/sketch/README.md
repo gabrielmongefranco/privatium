@@ -36,9 +36,9 @@ The framework provides:
 - **Authentication and encryption** — `pv.js` uses the paired browser's encrypted
   channel on the LAN; no credential code belongs in this app
 
-What arrives with the later phases of `docs/roadmap.md`, with nothing to change here:
+What arrives later, with nothing to change here:
 
-- **Sync** (Phase 3) — strokes reach every paired device over LAN, iroh, or a synced folder
+- **Sync** — strokes reach every paired device over LAN, iroh, or a synced folder
 
 ## The event log as a document store
 

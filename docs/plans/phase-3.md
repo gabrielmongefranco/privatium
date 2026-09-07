@@ -389,8 +389,9 @@ is admitted on B's certificate alone).
   /api/v1/sync/pull?app=&dev=&after=` → NDJSON, the lines with `seq > after` from the
   reader, byte for byte, skipping a short batch; `POST /api/v1/sync/push` → the receiver,
   answering the new heads or 409 naming the first line out of order (§3 row 8).
-- `sync::engine`: a pass per peer per app — heads, pull what they have and we lack into
-  the inbox, push what we have and they lack — over a channel session to the peer's
+- `sync::engine`: a pass per peer per app — heads, pull what the peer holds and this node
+  lacks into the inbox, push what this node holds and the peer lacks — over a channel
+  session to the peer's
   `/ws`; `sync.peer_seen` on the first success. The inbox and `Node::refresh_app`
   draining it (§2.2); `Node::sync_events()`. Triggers per §2.7.
 - `sync::endpoints`: the candidate table, ordering, timeouts, `endpoint.failover`.

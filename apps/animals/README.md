@@ -133,7 +133,7 @@ Every animal you ever taught it, in order, including the ones you reset away.
 
 ## Later: the sync demo
 
-Once `spec/protocol.md §10` lands (roadmap Phase 3), this app becomes the best
+Once sync (`spec/protocol.md §10`) is built, this app becomes the best
 demonstration of sync in the repository. Wire the history fragment to `/api/stream` with the
 HTMX SSE extension — one attribute — and teaching an animal on the desktop updates the
 phone's history live, on screen, with no polling code and no reload. Two devices, one

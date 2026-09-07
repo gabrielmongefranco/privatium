@@ -26,8 +26,8 @@ reference, the invariants, the anti-patterns, and a verification command — so 
 works from the current contract rather than from memory.
 
 This also decouples library choice from LLM familiarity. A pinned reference in a skill
-beats training-data volume, which is why we can ship a smaller, better library instead of
-whichever one has the most Stack Overflow answers.
+beats training-data volume, which is why the framework can ship a smaller, better library
+instead of whichever one has the most Stack Overflow answers.
 
 ## 2. Layout
 

@@ -16,5 +16,5 @@ shell under the default Content-Security-Policy of `spec/protocol.md §9.3` — 
 script, and the shell's `htmx-config` turns `allowEval` and `allowScriptTags` off, so the
 few htmx features that need `eval` are never reached (`AGENTS.md`).
 
-Not htmx 4: it was released while Phase 1 was underway and 2.x is the line the
-documentation and the reference apps were written against.
+Not htmx 4: 2.x is the line the documentation and the reference apps were written
+against.

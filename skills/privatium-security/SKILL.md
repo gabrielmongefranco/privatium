@@ -171,8 +171,8 @@ verification.
 
 A node renews its own certificate at startup only while it is unexpired and fewer than
 ninety days remain (`spec/protocol.md §2.3.1`). An expired certificate requires
-re-admission; do not bypass expiry by signing a replacement. Node admission arrives in
-Phase 3, so the current build refuses an expired certificate.
+re-admission; do not bypass expiry by signing a replacement. Node admission is not built
+yet, so the current build refuses an expired certificate.
 
 The cluster private key lives in `identity/cluster.key` on nodes only. It MUST NOT be sent to
 a phone, tablet, or browser, and MUST NOT appear in any event, log, snapshot, or backup

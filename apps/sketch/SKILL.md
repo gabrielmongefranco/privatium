@@ -21,8 +21,8 @@ a drawing app.
 ## Conventions to preserve
 
 - **Save on stroke end, not on pointer move.** Every append is a durable line in a log
-  file — and, from Phase 3 of `docs/roadmap.md`, one that syncs to every device.
-- `pv.subscribe` handles strokes from *other* windows today and, from Phase 3, from other
+  file — and, once sync is built, one that syncs to every device.
+- `pv.subscribe` handles strokes from *other* windows today and, once sync is built, from other
   devices, including ones that arrived via sync while this tab was closed. Do not assume
   local input is the only source.
 - **The pointer is captured for the stroke.** Releasing it outside the canvas, a
