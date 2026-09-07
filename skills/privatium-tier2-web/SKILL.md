@@ -85,9 +85,11 @@ while disconnected. Re-read state after reconnect and on `resync`.
 - Size a `<canvas>` in CSS and match its backing store to
   `clientWidth × devicePixelRatio` in a resize handler, with `ctx.setTransform(r, 0, 0,
   r, 0, 0)` — sizing from `innerWidth` draws past the viewport on every HiDPI display,
-  which is every Windows laptop at 125 % and every phone. `apps/sketch/web/app.js` is the
-  worked example. Give the canvas an `aria-label`; a keyboard alternative is still yours
-  to build.
+  which is every Windows laptop at 125 % and every phone. `apps/sketch/web/sheet.js` is
+  the worked example, and it shows the harder case too: a fixed coordinate space, so the
+  same drawing lands on the same pixels on a phone and a desktop, carried in the context
+  transform rather than in the canvas's pixel size. Give the canvas an `aria-label`; a
+  keyboard alternative is still yours to build.
 
 ## MUST NOT
 

@@ -3,14 +3,15 @@
   Authors:  Gabriel Mongefranco (@gabrielmongefranco)
   Created:  2026-08-28  |  Modified: 2026-09-07
   Summary:  Tier 2 entry point. The framework serves this file verbatim at the app's mount
-            point and injects nothing. No HTMX, no shell, no opinions. The swatches are
-            classes, not style= attributes: the default CSP (spec/protocol.md §9.3) has no
-            style-src, so default-src 'self' governs styles and an inline one is dropped.
-            The viewport stays zoomable — pinch-zoom is an accessibility feature, not a bug
-            — and the canvas is sized by CSS, with app.js matching the backing store to it
-            at the device's pixel ratio. The canvas is focusable and drawn from the keyboard
-            too, and a live summary says what is on it, so a drawing is never a pointer-only
-            or a sight-only thing. See main README.md for full license information.
+            point and injects nothing. No HTMX, no shell, no opinions. Nothing here carries
+            a style attribute: the default CSP (spec/protocol.md §9.3) has no style-src, so
+            default-src 'self' governs styles and an inline one is dropped — every colour
+            and every layout rule lives in style.css, and the few values that depend on the
+            person's own choices are set as custom properties from app.js. The viewport
+            stays zoomable, the sheet is a fixed 1600 x 1200 coordinate space sized by CSS,
+            and the canvas is focusable and drawn from the keyboard as well as the pointer.
+            Which controls are on show follows data-tool on <body>, in CSS rather than in
+            JavaScript. See main README.md for full license information.
 -->
 <!doctype html>
 <html lang="en">
@@ -19,83 +20,241 @@
 <title>Sketch</title>
 <link rel="stylesheet" href="style.css">
 
-<header class="app-header">
+<body data-tool="brush" data-sel="stroke">
 
-  <h1><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-pencil" viewBox="0 0 16 16">
-  <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325"/>
-</svg>Sketch</h1>
-  <nav class="app-navigation" aria-label="App navigation">
-  <a id="exit" aria-label="Apps" title="Apps" hidden><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-grid-3x3-gap" viewBox="0 0 16 16">
-  <path d="M4 2v2H2V2zm1 12v-2a1 1 0 0 0-1-1H2a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1m0-5V7a1 1 0 0 0-1-1H2a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1m0-5V2a1 1 0 0 0-1-1H2a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1m5 10v-2a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1m0-5V7a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1m0-5V2a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1M9 2v2H7V2zm5 0v2h-2V2zM4 7v2H2V7zm5 0v2H7V7zm5 0h-2v2h2zM4 12v2H2v-2zm5 0v2H7v-2zm5 0v2h-2v-2zM12 1a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zm-1 6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1zm1 4a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1z"/>
-</svg></a>
-  <details id="sketch-actions">
-    <summary aria-label="Sketch actions" title="Sketch actions"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-list" viewBox="0 0 16 16">
-  <path fill-rule="evenodd" d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5"/>
-</svg></summary>
-    <div class="action-panel">
-      <button id="download" type="button">Download PNG</button>
-      <button id="clear" type="button">New sketch</button>
-      <p>New sketch clears the shared canvas. Undo restores it.</p>
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-select" viewBox="0 0 16 16"><path d="M14.082 2.182a.5.5 0 0 1 .103.557L8.528 15.467a.5.5 0 0 1-.917-.007L5.57 10.694.803 8.652a.5.5 0 0 1-.006-.916l12.728-5.657a.5.5 0 0 1 .556.103zM2.25 8.184l3.897 1.67a.5.5 0 0 1 .262.263l1.67 3.897L12.743 3.52z"/></symbol>
+  <symbol id="i-brush" viewBox="0 0 16 16"><path d="M15.825.12a.5.5 0 0 1 .132.584c-1.53 3.43-4.743 8.17-7.095 10.64a6.1 6.1 0 0 1-2.373 1.534c-.018.227-.06.538-.16.868-.201.659-.667 1.479-1.708 1.74a8.1 8.1 0 0 1-3.078.132 4 4 0 0 1-.562-.135 1.4 1.4 0 0 1-.466-.247.7.7 0 0 1-.204-.288.62.62 0 0 1 .004-.443c.095-.245.316-.38.461-.452.394-.197.625-.453.867-.826.095-.144.184-.297.287-.472l.117-.198c.151-.255.326-.54.546-.848.528-.739 1.201-.925 1.746-.896q.19.012.348.048c.062-.172.142-.38.238-.608.261-.619.658-1.419 1.187-2.069 2.176-2.67 6.18-6.206 9.117-8.104a.5.5 0 0 1 .596.04M4.705 11.912a1.2 1.2 0 0 0-.419-.1c-.246-.013-.573.05-.879.479-.197.275-.355.532-.5.777l-.105.177c-.106.181-.213.362-.32.528a3.4 3.4 0 0 1-.76.861c.69.112 1.736.111 2.657-.12.559-.139.843-.569.993-1.06a3 3 0 0 0 .126-.75zm1.44.026c.12-.04.277-.1.458-.183a5.1 5.1 0 0 0 1.535-1.1c1.9-1.996 4.412-5.57 6.052-8.631-2.59 1.927-5.566 4.66-7.302 6.792-.442.543-.795 1.243-1.042 1.826-.121.288-.214.54-.275.72v.001l.575.575zm-4.973 3.04.007-.005zm3.582-3.043.002.001h-.002z"/></symbol>
+  <symbol id="i-eraser" viewBox="0 0 16 16"><path d="M8.086 2.207a2 2 0 0 1 2.828 0l3.879 3.879a2 2 0 0 1 0 2.828l-5.5 5.5A2 2 0 0 1 7.879 15H5.12a2 2 0 0 1-1.414-.586l-2.5-2.5a2 2 0 0 1 0-2.828zm2.121.707a1 1 0 0 0-1.414 0L4.16 7.547l5.293 5.293 4.633-4.633a1 1 0 0 0 0-1.414zM8.746 13.547 3.453 8.254 1.914 9.793a1 1 0 0 0 0 1.414l2.5 2.5a1 1 0 0 0 .707.293H7.88a1 1 0 0 0 .707-.293z"/></symbol>
+  <symbol id="i-pick" viewBox="0 0 16 16"><path d="M13.354.646a1.207 1.207 0 0 0-1.708 0L8.5 3.793l-.646-.647a.5.5 0 1 0-.708.708L8.293 5l-7.147 7.146A.5.5 0 0 0 1 12.5v1.793l-.854.853a.5.5 0 1 0 .708.707L1.707 15H3.5a.5.5 0 0 0 .354-.146L11 7.707l1.146 1.147a.5.5 0 0 0 .708-.708l-.647-.646 3.147-3.146a1.207 1.207 0 0 0 0-1.708zM2 12.707l7-7L10.293 7l-7 7H2z"/></symbol>
+  <symbol id="i-fill" viewBox="0 0 16 16"><path d="M6.192 2.78c-.458-.677-.927-1.248-1.35-1.643a3 3 0 0 0-.71-.515c-.217-.104-.56-.205-.882-.02-.367.213-.427.63-.43.896-.003.304.064.664.173 1.044.196.687.556 1.528 1.035 2.402L.752 8.22c-.277.277-.269.656-.218.918.055.283.187.593.36.903.348.627.92 1.361 1.626 2.068.707.707 1.441 1.278 2.068 1.626.31.173.62.305.903.36.262.05.64.059.918-.218l5.615-5.615c.118.257.092.512.05.939-.03.292-.068.665-.073 1.176v.123h.003a1 1 0 0 0 1.993 0H14v-.057a1 1 0 0 0-.004-.117c-.055-1.25-.7-2.738-1.86-3.494a4 4 0 0 0-.211-.434c-.349-.626-.92-1.36-1.627-2.067S8.857 3.052 8.23 2.704c-.31-.172-.62-.304-.903-.36-.262-.05-.64-.058-.918.219zM4.16 1.867c.381.356.844.922 1.311 1.632l-.704.705c-.382-.727-.66-1.402-.813-1.938a3.3 3.3 0 0 1-.131-.673q.137.09.337.274m.394 3.965c.54.852 1.107 1.567 1.607 2.033a.5.5 0 1 0 .682-.732c-.453-.422-1.017-1.136-1.564-2.027l1.088-1.088q.081.181.183.365c.349.627.92 1.361 1.627 2.068.706.707 1.44 1.278 2.068 1.626q.183.103.365.183l-4.861 4.862-.068-.01c-.137-.027-.342-.104-.608-.252-.524-.292-1.186-.8-1.846-1.46s-1.168-1.32-1.46-1.846c-.147-.265-.225-.47-.251-.607l-.01-.068zm2.87-1.935a2.4 2.4 0 0 1-.241-.561c.135.033.324.11.562.241.524.292 1.186.8 1.846 1.46.45.45.83.901 1.118 1.31a3.5 3.5 0 0 0-1.066.091 11 11 0 0 1-.76-.694c-.66-.66-1.167-1.322-1.458-1.847z"/></symbol>
+  <symbol id="i-line" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M13.854 2.146a.5.5 0 0 1 0 .708l-11 11a.5.5 0 0 1-.708-.708l11-11a.5.5 0 0 1 .708 0"/></symbol>
+  <symbol id="i-rect" viewBox="0 0 16 16"><path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/></symbol>
+  <symbol id="i-ellipse" viewBox="0 0 16 16"><path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/></symbol>
+  <symbol id="i-text" viewBox="0 0 16 16"><path d="m2.244 13.081.943-2.803H6.66l.944 2.803H8.86L5.54 3.75H4.322L1 13.081zm2.7-7.923L6.34 9.314H3.51l1.4-4.156zm9.146 7.027h.035v.896h1.128V8.125c0-1.51-1.114-2.345-2.646-2.345-1.736 0-2.59.916-2.666 2.174h1.108c.068-.718.595-1.19 1.517-1.19.971 0 1.518.52 1.518 1.464v.731H12.19c-1.647.007-2.522.8-2.522 2.058 0 1.319.957 2.18 2.345 2.18 1.06 0 1.716-.43 2.078-1.011zm-1.763.035c-.752 0-1.456-.397-1.456-1.244 0-.65.424-1.115 1.408-1.115h1.805v.834c0 .896-.752 1.525-1.757 1.525"/></symbol>
+  <symbol id="i-pan" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M7.646.146a.5.5 0 0 1 .708 0l2 2a.5.5 0 0 1-.708.708L8.5 1.707V5.5a.5.5 0 0 1-1 0V1.707L6.354 2.854a.5.5 0 1 1-.708-.708zM8 10a.5.5 0 0 1 .5.5v3.793l1.146-1.147a.5.5 0 0 1 .708.708l-2 2a.5.5 0 0 1-.708 0l-2-2a.5.5 0 0 1 .708-.708L7.5 14.293V10.5A.5.5 0 0 1 8 10M.146 8.354a.5.5 0 0 1 0-.708l2-2a.5.5 0 1 1 .708.708L1.707 7.5H5.5a.5.5 0 0 1 0 1H1.707l1.147 1.146a.5.5 0 0 1-.708.708zM10 8a.5.5 0 0 1 .5-.5h3.793l-1.147-1.146a.5.5 0 0 1 .708-.708l2 2a.5.5 0 0 1 0 .708l-2 2a.5.5 0 0 1-.708-.708L14.293 8.5H10.5A.5.5 0 0 1 10 8"/></symbol>
+  <symbol id="i-marquee" viewBox="0 0 16 16"><path d="M2 1a1 1 0 1 0 0 2 1 1 0 0 0 0-2M0 2a2 2 0 0 1 3.937-.5h8.126A2 2 0 1 1 14.5 3.937v8.126a2 2 0 1 1-2.437 2.437H3.937A2 2 0 1 1 1.5 12.063V3.937A2 2 0 0 1 0 2m2.5 1.937v8.126c.703.18 1.256.734 1.437 1.437h8.126a2 2 0 0 1 1.437-1.437V3.937A2 2 0 0 1 12.063 2.5H3.937A2 2 0 0 1 2.5 3.937M14 1a1 1 0 1 0 0 2 1 1 0 0 0 0-2M2 13a1 1 0 1 0 0 2 1 1 0 0 0 0-2m12 0a1 1 0 1 0 0 2 1 1 0 0 0 0-2"/></symbol>
+  <symbol id="i-apps" viewBox="0 0 16 16"><path d="M4 2v2H2V2zm1 12v-2a1 1 0 0 0-1-1H2a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1m0-5V7a1 1 0 0 0-1-1H2a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1m0-5V2a1 1 0 0 0-1-1H2a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1m5 10v-2a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1m0-5V7a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1m0-5V2a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1M9 2v2H7V2zm5 0v2h-2V2zM4 7v2H2V7zm5 0v2H7V7zm5 0h-2v2h2zM4 12v2H2v-2zm5 0v2H7v-2zm5 0v2h-2v-2zM12 1a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zm-1 6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1zm1 4a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1z"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M1.146 4.854a.5.5 0 0 1 0-.708l4-4a.5.5 0 1 1 .708.708L2.707 4H12.5A2.5 2.5 0 0 1 15 6.5v8a.5.5 0 0 1-1 0v-8A1.5 1.5 0 0 0 12.5 5H2.707l3.147 3.146a.5.5 0 1 1-.708.708z"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M14.854 4.854a.5.5 0 0 0 0-.708l-4-4a.5.5 0 0 0-.708.708L13.293 4H3.5A2.5 2.5 0 0 0 1 6.5v8a.5.5 0 0 0 1 0v-8A1.5 1.5 0 0 1 3.5 5h9.793l-3.147 3.146a.5.5 0 0 0 .708.708z"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M2 8a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11A.5.5 0 0 1 2 8"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 16 16"><path d="M0 3.5A1.5 1.5 0 0 1 1.5 2h13A1.5 1.5 0 0 1 16 3.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 12.5zM1.5 3a.5.5 0 0 0-.5.5v9a.5.5 0 0 0 .5.5h13a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5z"/><path d="M2 4.5a.5.5 0 0 1 .5-.5h3a.5.5 0 0 1 0 1H3v2.5a.5.5 0 0 1-1 0zm12 7a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1 0-1H13V8.5a.5.5 0 0 1 1 0z"/></symbol>
+  <symbol id="i-contrast" viewBox="0 0 16 16"><path d="M8 15A7 7 0 1 0 8 1zm0 1A8 8 0 1 1 8 0a8 8 0 0 1 0 16"/></symbol>
+  <symbol id="i-blend" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M7.21.8C7.69.295 8 0 8 0q.164.544.371 1.038c.812 1.946 2.073 3.35 3.197 4.6C12.878 7.096 14 8.345 14 10a6 6 0 0 1-12 0C2 6.668 5.58 2.517 7.21.8m.413 1.021A31 31 0 0 0 5.794 3.99c-.726.95-1.436 2.008-1.96 3.07C3.304 8.133 3 9.138 3 10c0 0 2.5 1.5 5 .5s5-.5 5-.5c0-1.201-.796-2.157-2.181-3.7l-.03-.032C9.75 5.11 8.5 3.72 7.623 1.82z"/><path fill-rule="evenodd" d="M4.553 7.776c.82-1.641 1.717-2.753 2.093-3.13l.708.708c-.29.29-1.128 1.311-1.907 2.87z"/></symbol>
+  <symbol id="i-png" viewBox="0 0 16 16"><path d="M6.502 7a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3"/><path d="M14 14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5zM4 1a1 1 0 0 0-1 1v10l2.224-2.224a.5.5 0 0 1 .61-.075L8 11l2.157-3.02a.5.5 0 0 1 .76-.063L13 10V4.5h-2A1.5 1.5 0 0 1 9.5 3V1z"/></symbol>
+  <symbol id="i-svg" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M14 4.5V14a2 2 0 0 1-2 2v-1a1 1 0 0 0 1-1V4.5h-2A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v9H2V2a2 2 0 0 1 2-2h5.5zM0 14.841a1.13 1.13 0 0 0 .401.823q.194.162.478.252.285.091.665.091.507 0 .858-.158.355-.158.54-.44a1.17 1.17 0 0 0 .187-.656q0-.336-.135-.56a1 1 0 0 0-.375-.357 2 2 0 0 0-.565-.21l-.621-.144a1 1 0 0 1-.405-.176.37.37 0 0 1-.143-.299q0-.234.184-.384.187-.152.513-.152.214 0 .37.068a.6.6 0 0 1 .245.181.56.56 0 0 1 .12.258h.75a1.1 1.1 0 0 0-.199-.566 1.2 1.2 0 0 0-.5-.41 1.8 1.8 0 0 0-.78-.152q-.44 0-.776.15-.337.149-.528.421-.19.273-.19.639 0 .302.123.524t.351.367q.229.143.54.213l.618.144q.31.073.462.193a.39.39 0 0 1 .153.326.5.5 0 0 1-.085.29.56.56 0 0 1-.256.193q-.167.07-.413.07-.176 0-.32-.04a.8.8 0 0 1-.248-.115.58.58 0 0 1-.255-.384zm4.575 1.09h.952l1.327-3.999h-.879l-.887 3.138H5.05l-.897-3.138h-.917zm5.483-3.293q.114.228.14.492h-.776a.8.8 0 0 0-.096-.249.7.7 0 0 0-.17-.19.7.7 0 0 0-.237-.126 1 1 0 0 0-.3-.044q-.427 0-.664.302-.235.3-.235.85v.497q0 .352.097.616a.9.9 0 0 0 .305.413.87.87 0 0 0 .518.146 1 1 0 0 0 .457-.097.67.67 0 0 0 .273-.263q.09-.164.09-.364v-.254h-.823v-.59h1.576v.798q0 .29-.096.55a1.3 1.3 0 0 1-.293.457 1.4 1.4 0 0 1-.495.314q-.296.111-.698.111a2 2 0 0 1-.752-.132 1.45 1.45 0 0 1-.534-.377 1.6 1.6 0 0 1-.319-.58 2.5 2.5 0 0 1-.105-.745v-.507q0-.54.199-.949.202-.406.583-.633.383-.228.926-.228.357 0 .635.1.282.1.48.275.2.176.314.407"/></symbol>
+  <symbol id="i-new" viewBox="0 0 16 16"><path d="M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5zm-3 0A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5z"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1z"/></symbol>
+  <symbol id="i-cut" viewBox="0 0 16 16"><path d="M3.5 3.5c-.614-.884-.074-1.962.858-2.5L8 7.226 11.642 1c.932.538 1.472 1.616.858 2.5L8.81 8.61l1.556 2.661a2.5 2.5 0 1 1-.794.637L8 9.73l-1.572 2.177a2.5 2.5 0 1 1-.794-.637L7.19 8.61zm2.5 10a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0m7 0a1.5 1.5 0 1 0-3 0 1.5 1.5 0 0 0 3 0"/></symbol>
+  <symbol id="i-paste" viewBox="0 0 16 16"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0z"/></symbol>
+  <symbol id="i-delete" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M11.5 2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3M9.05 3a2.5 2.5 0 0 1 4.9 0H16v1h-2.05a2.5 2.5 0 0 1-4.9 0H0V3zM4.5 7a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3M2.05 8a2.5 2.5 0 0 1 4.9 0H16v1H6.95a2.5 2.5 0 0 1-4.9 0H0V8zm9.45 4a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3m-2.45 1a2.5 2.5 0 0 1 4.9 0H16v1h-2.05a2.5 2.5 0 0 1-4.9 0H0v-1z"/></symbol>
+  <symbol id="i-caret" viewBox="0 0 16 16"><path d="M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z"/></symbol>
+</svg>
+
+<div class="shell">
+
+  <nav id="tools" aria-label="Drawing tools">
+    <h1>
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="mark-light.svg">
+        <img src="mark.svg" alt="Privatium" width="26" height="26">
+      </picture>
+      <span>Sketch</span>
+    </h1>
+
+    <div id="tool-list" role="toolbar" aria-label="All drawing tools" aria-orientation="vertical">
+      <button type="button" class="tool" data-tool="select" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-select"></use></svg><span class="tool-name">Select</span><kbd>V</kbd></button>
+      <button type="button" class="tool" data-tool="brush" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-brush"></use></svg><span class="tool-name">Brush</span><kbd>B</kbd></button>
+      <button type="button" class="tool" data-tool="eraser" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-eraser"></use></svg><span class="tool-name">Eraser</span><kbd>E</kbd></button>
+      <button type="button" class="tool" data-tool="pick" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-pick"></use></svg><span class="tool-name">Eyedropper</span><kbd>I</kbd></button>
+      <button type="button" class="tool" data-tool="fill" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-fill"></use></svg><span class="tool-name">Fill</span><kbd>F</kbd></button>
+      <button type="button" class="tool" data-tool="line" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-line"></use></svg><span class="tool-name">Line</span><kbd>L</kbd></button>
+      <button type="button" class="tool" data-tool="rect" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-rect"></use></svg><span class="tool-name">Rectangle</span><kbd>R</kbd></button>
+      <button type="button" class="tool" data-tool="ellipse" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-ellipse"></use></svg><span class="tool-name">Ellipse</span><kbd>O</kbd></button>
+      <button type="button" class="tool" data-tool="text" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-text"></use></svg><span class="tool-name">Text</span><kbd>T</kbd></button>
+      <button type="button" class="tool" data-tool="pan" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-pan"></use></svg><span class="tool-name">Pan</span><kbd>H</kbd></button>
     </div>
-  </details>
+
+    <div id="options">
+      <h2 id="options-name">Brush</h2>
+
+      <div class="opt opt-size" role="group" aria-label="Brush size">
+        <button type="button" class="size" data-size="2" aria-pressed="false"><span class="dot dot-2"></span><span>Fine</span></button>
+        <button type="button" class="size" data-size="6" aria-pressed="false"><span class="dot dot-6"></span><span>Medium</span></button>
+        <button type="button" class="size" data-size="14" aria-pressed="false"><span class="dot dot-14"></span><span>Bold</span></button>
+        <button type="button" class="size" data-size="32" aria-pressed="false"><span class="dot dot-32"></span><span>Broad</span></button>
+      </div>
+
+      <div class="opt opt-dash" role="group" aria-label="Line style">
+        <button type="button" class="dash" data-dash="solid" aria-pressed="false"><span class="rule rule-solid"></span><span>Solid</span></button>
+        <button type="button" class="dash" data-dash="dashed" aria-pressed="false"><span class="rule rule-dashed"></span><span>Dashed</span></button>
+        <button type="button" class="dash" data-dash="dotted" aria-pressed="false"><span class="rule rule-dotted"></span><span>Dotted</span></button>
+      </div>
+
+      <div class="opt opt-sel" role="group" aria-label="Selection mode">
+        <button type="button" class="selmode" data-sel="stroke" aria-pressed="true"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-select"></use></svg><span>Stroke</span></button>
+        <button type="button" class="selmode" data-sel="rect" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-marquee"></use></svg><span>Rectangle</span></button>
+      </div>
+
+      <div class="opt opt-text">
+        <label for="words">Words to place</label>
+        <input id="words" type="text" value="Label" autocomplete="off">
+      </div>
+
+      <p class="opt opt-note" id="tool-note"></p>
+
+      <div class="opt opt-clip" id="rail-clip">
+        <div class="pair">
+          <button type="button" id="rail-copy" disabled><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-copy"></use></svg><span>Copy</span></button>
+          <button type="button" id="rail-cut" disabled><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-cut"></use></svg><span>Cut</span></button>
+        </div>
+        <button type="button" id="rail-paste" disabled><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-paste"></use></svg><span>Paste</span></button>
+        <div class="pair">
+          <button type="button" id="rail-smaller" disabled><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-minus"></use></svg><span>Smaller</span></button>
+          <button type="button" id="rail-bigger" disabled><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-plus"></use></svg><span>Bigger</span></button>
+        </div>
+        <button type="button" id="rail-delete" disabled><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-delete"></use></svg><span>Delete</span></button>
+      </div>
+    </div>
   </nav>
-</header>
-<nav id="tools" aria-label="Drawing tools">
-  <div class="tool-modes" role="group" aria-label="Drawing mode">
-    <button id="draw" type="button" aria-pressed="true"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-pencil" viewBox="0 0 16 16">
-  <path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325"/>
-</svg>Draw</button>
-    <button id="eraser" type="button" aria-pressed="false"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-eraser" viewBox="0 0 16 16">
-  <path d="M8.086 2.207a2 2 0 0 1 2.828 0l3.879 3.879a2 2 0 0 1 0 2.828l-5.5 5.5A2 2 0 0 1 7.879 15H5.12a2 2 0 0 1-1.414-.586l-2.5-2.5a2 2 0 0 1 0-2.828zm2.121.707a1 1 0 0 0-1.414 0L4.16 7.547l5.293 5.293 4.633-4.633a1 1 0 0 0 0-1.414zM8.746 13.547 3.453 8.254 1.914 9.793a1 1 0 0 0 0 1.414l2.5 2.5a1 1 0 0 0 .707.293H7.88a1 1 0 0 0 .707-.293z"/>
-</svg>Eraser</button>
-    <button id="erase-stroke" type="button" aria-pressed="false"><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-node-minus" viewBox="0 0 16 16">
-  <path fill-rule="evenodd" d="M11 4a4 4 0 1 0 0 8 4 4 0 0 0 0-8M6.025 7.5a5 5 0 1 1 0 1H4A1.5 1.5 0 0 1 2.5 10h-1A1.5 1.5 0 0 1 0 8.5v-1A1.5 1.5 0 0 1 1.5 6h1A1.5 1.5 0 0 1 4 7.5zM1.5 7a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5zM8 8a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5A.5.5 0 0 1 8 8"/>
-</svg>Stroke eraser</button>
-  </div>
-  <details id="colors">
-    <summary><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-palette" viewBox="0 0 16 16">
-  <path d="M8 5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3m4 3a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3M5.5 7a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0m.5 6a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3"/>
-  <path d="M16 8c0 3.15-1.866 2.585-3.567 2.07C11.42 9.763 10.465 9.473 10 10c-.603.683-.475 1.819-.351 2.92C9.826 14.495 9.996 16 8 16a8 8 0 1 1 8-8m-8 7c.611 0 .654-.171.655-.176.078-.146.124-.464.07-1.119-.014-.168-.037-.37-.061-.591-.052-.464-.112-1.005-.118-1.462-.01-.707.083-1.61.704-2.314.369-.417.845-.578 1.272-.618.404-.038.812.026 1.16.104.343.077.702.186 1.025.284l.028.008c.346.105.658.199.953.266.653.148.904.083.991.024C14.717 9.38 15 9.161 15 8a7 7 0 1 0-7 7"/>
-</svg>Colors</summary>
-    <div class="color-panel">
-  <div class="palette" role="group" aria-label="Pen color">
-    <button data-color="#00274C" class="swatch swatch-navy" aria-label="Navy" aria-pressed="true">Navy</button>
-    <button data-color="#FFCB05" class="swatch swatch-maize" aria-label="Maize" aria-pressed="false">Maize</button>
-    <button data-color="#B42335" class="swatch swatch-red" aria-label="Red" aria-pressed="false">Red</button>
-    <button data-color="#147D64" class="swatch swatch-green" aria-label="Green" aria-pressed="false">Green</button>
-    <button data-color="#2459CF" class="swatch swatch-blue" aria-label="Blue" aria-pressed="false">Blue</button>
-    <button data-color="#333333" class="swatch swatch-charcoal" aria-label="Charcoal" aria-pressed="false">Charcoal</button>
-  </div>
-  <div class="color-picker">
-    <label for="color">Color</label>
-    <input id="color" type="color" value="#00274c">
-    <label for="hex">Hex color</label>
-    <input id="hex" type="text" value="#00274C" maxlength="7" pattern="#[0-9a-fA-F]{6}" spellcheck="false" aria-describedby="color-error">
-  </div>
-  <p id="color-error" aria-live="polite"></p>
+
+  <div class="column">
+
+    <div id="bar">
+      <div class="group" role="group" aria-label="Basic tools">
+        <span class="quick-wrap"><button type="button" class="quick" data-tool="select" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-select"></use></svg><span class="sr">Select</span></button><button type="button" class="more" data-more="select" aria-haspopup="menu" aria-expanded="false" aria-label="Select options"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-caret"></use></svg></button></span>
+        <span class="quick-wrap"><button type="button" class="quick" data-tool="brush" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-brush"></use></svg><span class="sr">Brush</span></button><button type="button" class="more" data-more="brush" aria-haspopup="menu" aria-expanded="false" aria-label="Brush options"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-caret"></use></svg></button></span>
+        <span class="quick-wrap"><button type="button" class="quick" data-tool="eraser" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-eraser"></use></svg><span class="sr">Eraser</span></button><button type="button" class="more" data-more="eraser" aria-haspopup="menu" aria-expanded="false" aria-label="Eraser options"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-caret"></use></svg></button></span>
+        <span class="quick-wrap"><button type="button" class="quick" id="quick-other" data-tool="fill" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-fill"></use></svg><span class="sr">Fill</span></button><button type="button" class="more" data-more="fill" aria-haspopup="menu" aria-expanded="false" aria-label="Fill options"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-caret"></use></svg></button></span>
+        <div id="quick-menu" role="menu" hidden></div>
+        <template id="icon-template"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-select"></use></svg></template>
+      </div>
+
+      <span class="rule-v" aria-hidden="true"></span>
+
+      <div class="group bar-ink">
+        <div class="group" role="group" aria-label="Pen color">
+          <button type="button" class="slot" data-slot="0" aria-pressed="false" aria-label="Colour 1"><span class="chip"></span></button>
+          <button type="button" class="slot" data-slot="1" aria-pressed="false" aria-label="Colour 2"><span class="chip"></span></button>
+          <button type="button" class="slot" data-slot="2" aria-pressed="false" aria-label="Colour 3"><span class="chip"></span></button>
+          <button type="button" class="slot" data-slot="3" aria-pressed="false" aria-label="Colour 4"><span class="chip"></span></button>
+          <button type="button" class="slot" data-slot="4" aria-pressed="false" aria-label="Colour 5"><span class="chip"></span></button>
+          <button type="button" class="slot" data-slot="5" aria-pressed="false" aria-label="Colour 6"><span class="chip"></span></button>
+          <button type="button" class="slot" data-slot="6" aria-pressed="false" aria-label="Colour 7"><span class="chip"></span></button>
+        </div>
+
+        <div class="picker">
+          <button type="button" id="edit-color" aria-expanded="false" aria-label="Edit the selected colour"><span class="chip chip-edit"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-sliders"></use></svg></span></button>
+
+          <div id="color-dialog" role="dialog" aria-label="Custom color" hidden>
+            <div id="wheel" tabindex="0" role="application" aria-label="Color wheel. Left and right change hue, up and down change saturation.">
+              <span class="wheel-tint" aria-hidden="true"></span>
+              <span class="wheel-dim" aria-hidden="true"></span>
+              <span class="wheel-mark" aria-hidden="true"></span>
+            </div>
+
+            <div class="field">
+              <label for="bright">Brightness</label>
+              <input id="bright" type="range" min="0" max="100" step="1" value="100">
+            </div>
+
+            <div class="field">
+              <span class="field-name">Inks</span>
+              <div id="inks" role="group" aria-label="Named inks"></div>
+            </div>
+
+            <div class="field">
+              <label for="hex">Hex</label>
+              <input id="hex" type="text" maxlength="7" spellcheck="false" autocomplete="off" aria-describedby="color-error">
+            </div>
+
+            <div class="pair">
+              <button type="button" id="apply-color" class="primary" disabled>Apply</button>
+              <button type="button" id="cancel-color">Cancel</button>
+            </div>
+            <p id="color-error" aria-live="polite"></p>
+          </div>
+        </div>
+
+        <span class="rule-v" aria-hidden="true"></span>
+
+        <button type="button" id="blend" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-blend"></use></svg><span>Translucent</span></button>
+      </div>
+
+      <div class="group bar-sel" role="group" aria-label="Selection clipboard">
+        <button type="button" id="bar-copy" disabled><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-copy"></use></svg><span class="sr">Copy</span></button>
+        <button type="button" id="bar-cut" disabled><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-cut"></use></svg><span class="sr">Cut</span></button>
+        <button type="button" id="bar-paste" disabled><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-paste"></use></svg><span class="sr">Paste</span></button>
+      </div>
+
+      <div class="group bar-pick">
+        <span id="pick-chip"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-pick"></use></svg><span id="pick-hex">Hover the sheet</span></span>
+      </div>
+
+      <p id="bar-note"></p>
+
+      <nav class="group bar-nav" aria-label="App navigation">
+        <button type="button" id="undo" disabled><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-undo"></use></svg><span class="sr">Undo</span></button>
+        <button type="button" id="redo" disabled><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-redo"></use></svg><span class="sr">Redo</span></button>
+        <button type="button" id="contrast" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-contrast"></use></svg><span class="sr">High contrast</span></button>
+        <details id="actions">
+          <summary aria-label="Sketch actions"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-menu"></use></svg></summary>
+          <div class="menu">
+            <a id="exit" hidden><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-apps"></use></svg><span>Apps</span></a>
+            <span class="rule-h" aria-hidden="true"></span>
+            <button type="button" id="png"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-png"></use></svg><span>Download PNG</span></button>
+            <button type="button" id="svg"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-svg"></use></svg><span>Download SVG</span></button>
+            <button type="button" id="clear"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-new"></use></svg><span>New sketch</span></button>
+          </div>
+        </details>
+      </nav>
     </div>
-  </details>
-  <button id="undo" type="button" disabled><svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-counterclockwise" viewBox="0 0 16 16">
-  <path fill-rule="evenodd" d="M8 3a5 5 0 1 1-4.546 2.914.5.5 0 0 0-.908-.417A6 6 0 1 0 8 2z"/>
-  <path d="M8 4.466V.534a.25.25 0 0 0-.41-.192L5.23 2.308a.25.25 0 0 0 0 .384l2.36 1.966A.25.25 0 0 0 8 4.466"/>
-</svg>Undo</button>
-</nav>
 
-<main>
-  <canvas id="pad" aria-label="Shared drawing canvas" tabindex="0" aria-describedby="keys summary"></canvas>
-</main>
+    <main>
+      <div id="viewport">
+        <canvas id="pad" width="1600" height="1200" tabindex="0"
+          aria-label="Drawing sheet, 1600 by 1200 pixels" aria-describedby="keys summary"></canvas>
+      </div>
 
-<footer>
-  <p id="summary" aria-live="polite"></p>
-  <p id="status" role="status"></p>
-  <details>
-    <summary>Help</summary>
-    <p>Draw on the canvas with a mouse or one finger. Choose a color above.</p>
-    <p>Use Color to open the color picker, or enter a hex color such as #008080. Choose Eraser to paint with white ink, or Stroke eraser, then tap a stroke to remove it entirely. From the keyboard, move the pen onto a stroke and press Space or Enter. Choose a color to draw again.</p>
-    <p id="keys">Arrow keys move the pen, Shift moves it farther. Space or Enter puts the pen down and lifts it. Escape discards the stroke in progress.</p>
-    <p>Undo reverses the latest change to the shared canvas, whichever window or device made it, up to 50 changes back. Sketch actions offers Download PNG and New sketch. Download before starting over if you want a separate copy.</p>
-  </details>
-</footer>
+      <div id="zoom" role="group" aria-label="Zoom">
+        <button type="button" id="zoom-out"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-minus"></use></svg><span class="sr">Zoom out</span></button>
+        <button type="button" id="zoom-level" aria-label="Set zoom level">100%</button>
+        <label for="zoom-input" class="sr">Zoom percentage</label>
+        <input id="zoom-input" type="text" inputmode="numeric" hidden>
+        <button type="button" id="zoom-in"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-plus"></use></svg><span class="sr">Zoom in</span></button>
+        <button type="button" id="zoom-fit"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-fit"></use></svg><span class="sr">Fit to view</span></button>
+      </div>
+
+      <div id="rotate-hint" hidden>
+        <span>Rotate for more room. The sheet is 4:3.</span>
+        <button type="button" id="dismiss-hint">Got it</button>
+      </div>
+    </main>
+
+    <footer>
+      <p id="summary" aria-live="polite"></p>
+      <p id="status" role="status"></p>
+      <p id="keys">Arrow keys move the pen, Shift moves it farther, Space puts it down, Escape discards.</p>
+      <details id="help">
+        <summary>Help</summary>
+        <div>
+          <p>Pick a tool on the left, a color along the top, and draw on the sheet with a mouse, a finger or a stylus. A stylus varies the width with pressure.</p>
+          <p>The sheet is always 1600 by 1200, so a drawing lands in the same place on every device that shares it. Zoom with the controls in the corner of the sheet — type a percentage into the number to set your own — and choose Pan to move around a sheet larger than the window.</p>
+          <p id="keys-help">From the keyboard: the letter beside each tool selects it. Focus the sheet, then the arrow keys move the pen and Shift moves it farther; Space or Enter puts the pen down and lifts it again, and Escape discards the stroke in progress. Delete removes a selection. Control or Command with Z, Shift Z, C, X and V undo, redo, copy, cut and paste. Plus and minus zoom, and 0 fits the sheet to the window.</p>
+          <p>Select has two modes. Stroke picks the mark under the pointer — click the same place again to step through marks that overlap. Rectangle drags a box and takes every mark it touches. Either way whole marks move, never a rectangle of pixels.</p>
+          <p>A selection has a square handle at its bottom-right corner. Drag it to resize, holding Shift to keep the proportions. Bigger and Smaller in the rail do the same, and so does Control or Command with an arrow key. Outlines keep their thickness; text keeps its proportions.</p>
+          <p>Fill colours the inside of the shape you tap — the colour belongs to that shape, so it moves and is deleted with it. Tap where there is no shape and the sheet itself takes the colour.</p>
+          <p>The eyedropper picks up the color under the pointer into the color you have selected, then hands back to the tool you were using. Translucent ink darkens where marks overlap, like marker pens; it is a property of each mark, so turning it off later does not change what you already drew.</p>
+          <p>Download PNG writes the sheet at 1600 by 1200 whatever the zoom. Download SVG writes every mark as a shape, colour included. New sketch clears the shared canvas and undo restores it.</p>
+        </div>
+      </details>
+    </footer>
+  </div>
+</div>
 
 <script type="module" src="app.js"></script>
+</body>
 </html>
