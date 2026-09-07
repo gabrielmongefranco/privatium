@@ -40,10 +40,11 @@ One milestone per branch, one PR per milestone, in order — M20 to M26, continu
 green on all three platforms and its checklist is ticked on that run, not when it
 compiles. Write the named tests first. Do not start M(n+1) before M(n) merges.
 
-Section 2 lists the decisions this plan makes. Some are **decided** because Phase 2's
-code and spec already fix them; the ones that would change the architecture, the
-security posture, or how data is stored, shared or identified are marked **confirm
-before M20** and end with the choice this plan recommends and why. Section 3 is a fresh
+Section 2 lists the decisions this plan makes. **All thirteen are decided.** Most follow
+from what Phase 2's code and spec already fix; the ones that change the wire, the
+security posture, or how data is stored, shared or identified — §2.1, §2.2, §2.11 and
+§2.12 — were made by the owner on 2026-09-06 after this plan was reviewed, and each
+records the alternative it rejected so it is not re-litigated. Section 3 is a fresh
 record of the spec gaps Phase 3 will hit, one row per gap with the file and the milestone
 that closes it. **This plan edits no `spec/` file**; the milestone that hits a row edits
 it, regenerates `skills/` with `cargo xtask gen-skill-reference` in the same change, and
@@ -86,70 +87,115 @@ URL the owner typed, it is Phase 5's.
 
 ---
 
-## 2. Decisions this plan makes — confirm the marked ones before M20
+## 2. Decisions this plan makes — all decided
 
-Thirteen. Each starts from a Phase 2 fact — a line of code, a `spec/` section Phase 2
-wrote, or a row of `docs/plans/phase-2.md §3` — and says what Phase 3 adds. §2.1, §2.2,
-§2.4, §2.11 and §2.12 change the wire, the posture or what is stored, and are to be
-confirmed; the rest follow from what exists and are decided.
+Thirteen, all decided. Each starts from a Phase 2 fact — a line of code, a `spec/`
+section Phase 2 wrote, or a row of `docs/plans/phase-2.md §3` — and says what Phase 3
+adds. §2.1, §2.2, §2.11 and §2.12 change the wire, the posture or what is stored, and
+were the owner's call; §2.4 and §2.12 were reshaped by one fact found while making them
+— a home node behind its router can dial a VPS and cannot be dialed by it — which is
+why admission negotiates its direction and why either side may start the first pass.
+The rest follow from what exists. Each ends with the rows that carry it.
 
-### 2.1 A node is admitted over `/ws/pair` with `kind = "node"`; the cluster key crosses once, under `K_pair`, after the joiner proves its key — CONFIRM BEFORE M20
+### 2.1 A node is admitted over `/ws/pair` with `kind = "node"`, in whichever direction the network allows; both sides prove their keys, and the cluster key crosses once, under `K_pair`, from the established node to the disposable one — DECIDED
 
 **Phase 2 facts.** `pair::handshake::Exchange::begin_with` refuses `kind: "node"` with
 `PairError::NodeKind` and close code 4403 naming Phase 3 (`docs/plans/phase-2.md §2.7`,
 `spec/protocol.md §7.4.2`). An accepted `pA` is bound to its code generation and its
 window (row 32). The node's sealed message carries its X25519 static, its certificate,
 the cluster ID and the cluster *public* key; the client's sealed message carries its
-X25519 key, a label and a user agent. Nothing in the six messages proves that the client
-holds the Ed25519 key its `dev` derives from: a browser's row is written from the key it
-claims, and possession is proven later by the `/ws` handshake over the X25519 key. A
+X25519 key, a label and a user agent. Nothing in the six messages proves that either
+side holds the Ed25519 key its ID derives from: a browser's row is written from the key
+it claims, and possession is proven later by the `/ws` handshake over the X25519 key. A
 node's X25519 static is derived from its node key (`docs/plans/phase-2.md §2.6`) and
 cannot be computed from its public key, so a peer learns it only from a message.
-`Certificate::verify` binds
-`node_id`, `node_pub`, `cluster_id` and the 180-day lifetime, and the certificate's
-canonical bytes are row 4's.
+`Certificate::verify` binds `node_id`, `node_pub`, `cluster_id` and the 180-day
+lifetime, and the certificate's canonical bytes are row 4's. `§7.4` calls the side
+whose owner opened the window the node and the side that dialed the client; a PAKE is
+symmetric, so which side is *admitted* is a fact the messages have to carry. A window
+opens by the owner's standing alone, one code at a time, and is consumed by the first
+success (`docs/plans/phase-2.md §2.7, §2.8`).
 
-**The design.** A joining node runs the client side of `§7.4.2` — `pair::handshake::Client`,
-already written for the framework's own tests and a native client — with `kind: "node"`,
-its node ID as `dev`, its node Ed25519 key as `pub`, and in its sealed message its
-derived X25519 static as `x25519`, `sys_node.display_name` (or nothing) as `label`, no
-`ua`. The code, the TTL, the five attempts and the per-source rule apply unchanged: the
-owner opens pairing on the existing node and reads the code to the joining machine.
+**Why the direction is negotiated.** A laptop on the LAN can dial the desktop and the
+desktop can dial the laptop. A VPS can be dialed by a home node and cannot dial it back
+through the home router. If the side that dials were always the side admitted, the
+Phase 3b bullet — a VPS admitted with the same flow as a laptop — would need a tunnel.
+So the exchange decides who joins whom from a fact each side already holds.
 
-What is added for `kind = "node"` alone, and nowhere for a browser:
+**Disposable.** A node is disposable while it has paired nothing and admitted nobody
+since it entered its current cluster (`§2.3`), judged from its own `_sys` segments
+alone: no `sys_device` put for another ID after the event that last set its own
+`sys_node.cluster_id`. A restored or synced row another device wrote counts for
+nothing (row 20's principle), which is what lets a rebuilt node join with its data
+restored, and a re-founded node join after the procedure of `§2.3.5`. A node whose own
+certificate has expired is judged the same way, and may re-join its own cluster without
+the check (re-admission, below).
 
-1. The client's sealed message carries `sig`: the joiner's Ed25519 signature over the
-   PAKE transcript `TT` of `§7.4.1`. The admitting node verifies it against `pub` before
-   anything else happens; a missing or failing `sig` is 4403 and one audited failure.
-   This is proof of possession: the certificate the joiner is about to receive names
-   that key, and the `sys_device` row about to be written is keyed by it.
-2. A seventh message, sealed by the node, `admit`: `{"cluster_key": "<base64 of the
+**The design.** The owner opens a window *for a node* on one machine — `privatium pair
+--node`, the devices page's *Admit a node*, or `POST /api/v1/pair` with `{"ttl": …,
+"node": true}` — and runs `privatium pair --join <url>` on the other (§2.12). A window
+opened for a node answers `kind = "node"` alone; a window opened for devices refuses it
+with 4403 exactly as today, so a window the owner opened for a phone can never hand out
+the cluster key, and `PairingSnapshot` says which kind of window it is. The code, the
+TTL, the five attempts and the per-source rule apply unchanged.
+
+Messages 1–4 of `§7.4.2` are unchanged: the dialer sends `kind: "node"`, its node ID as
+`dev` and its node Ed25519 key as `pub`. What is added for `kind = "node"` alone, and
+nowhere for a browser:
+
+1. **Both sealed messages carry `sig` and `disposable`.** The node's sealed message
+   (message 5) adds `sig` — its Ed25519 signature over the PAKE transcript `TT` of
+   `§7.4.1` — and `disposable`. The client's sealed message (message 6) carries its
+   derived X25519 static as `x25519`, `sys_node.display_name` (or nothing) as `label`,
+   no `ua`, and the same `sig` and `disposable`. Each side verifies the other's `sig`
+   against the `pub` it already holds — the hello's for the node, the client start's
+   for the client — and a missing or failing signature is 4403 and one audited
+   failure. This is proof of possession: the certificate about to be issued names that
+   key, and the `sys_device` row about to be written is keyed by it.
+2. **The established side admits the disposable side.** After message 6 both sides
+   hold both flags. One disposable and one not: the disposable side joins. Both
+   disposable — two fresh machines — the dialer joins the node whose owner opened the
+   window. Neither: the node refuses with 4403 after message 6, one audited failure
+   naming the procedure of `§2.3.5`; two clusters are never merged.
+3. **Message 7, sealed by the admitter: `admit`.** `{"cluster_key": "<base64 of the
    32-byte Ed25519 seed>", "cert": "<the joiner's certificate, base64>", "paired_at":
-   "<RFC 3339 UTC>"}`. It is sent only after the signature verified and the row was
-   written, so the cluster private key never crosses to a peer that failed any check.
-   The certificate is `Identity::sign_certificate(&joiner_pub, now)`, `paired_at` is the
-   instant of the same row.
-3. The joiner verifies `cert` against the cluster public key it was sent, checks that
-   `cluster_key`'s public half is that key and that `cert.node_id` is its own, and only
-   then writes anything (§2.2).
+   "<RFC 3339 UTC>", "lam": <the admitter's _sys Lamport counter>}`. Sent only after
+   the joiner's `sig` verified and, when the node is the admitter, after the registry
+   check of `§7.4.2` — so the cluster private key never crosses to a peer that failed
+   any check. The certificate is `Identity::sign_certificate(&joiner_pub, now)`;
+   `paired_at` is the instant the admitter will write in the row; `lam` is folded by
+   the joiner as `§4.3` folds a received counter, so everything the joiner writes from
+   here is causally after its admission.
+4. **Message 8, sealed by the joiner: `{"joined": true}`**, sent once it has verified
+   `admit` — `cert` against the public half of `cluster_key`, that half against the
+   `cluster_pub` it was sent when the node is the admitter, `cert.node_id` its own —
+   and adopted the cluster (§2.2). The admitter then writes the joiner's `sys_device`
+   row and `node.admitted` as one batch and closes 1000. An `admit` that draws no
+   `joined` writes no row: the joiner, still disposable, runs `pair --join` again, and
+   the owner opens a new window, since the window was consumed at message 6 as it is
+   for every kind.
 
-**Why the seventh message rather than the node's existing sealed message.** `§7.4.2`
-has the node seal first, before the client's sealed message. For a browser that order is
-right: the node sends public material. For a node it would send the cluster private key
-to a peer that has proven the code and nothing else, and before the registry refused a
-key it already holds. The extra message costs one round trip on a machine-paced
-exchange and keeps `§7.4.2`'s six messages exactly as they are for every other kind.
+**Re-admission.** A node offline past its certificate's expiry (`§2.3.1`) dials, or is
+dialed, like any joiner. The admitter finds the joiner's key already in `sys_device`,
+active, with `sys_node.cluster_id` its own cluster and `sys_node.cert_expires_at` at or
+before now: that is re-admission, allowed without the disposability check and without a
+new row — `admit` carries a fresh certificate and the key the node already holds,
+`node.admitted` says so, and the joiner replaces `node.cert` alone. A registered key
+whose certificate has not expired, or whose row is revoked, is refused with 4403 as
+`§7.4.2` says; a node that wants another cluster re-founds first.
 
-**The alternative, so it is not re-litigated:** carry `cluster_key` and the joiner's
-certificate in the node's existing sealed message and skip `sig`. Two fewer fields, one
-fewer message, and the cluster private key leaves the node before the joiner has proven
-its key or been checked against the registry. This plan recommends against it.
+**The alternative, so it is not re-litigated:** one direction only — the dialer joins,
+the node's existing sealed message carries the cluster key, no `sig` — with an SSH
+reverse tunnel in the Phase 3b quickstart so the VPS can dial home. Fewer fields and one
+fewer message; but the cluster private key would leave the node before the joiner had
+proven its key or been checked against the registry, a window opened for a phone could
+admit a node, and the VPS flow would not be the laptop's.
 
-*Confirm before M20: this changes the wire for `kind = "node"` (§3 row 1) and is the
-one place the cluster private key crosses a network, which `§2.3.3` and invariant 10
-make a posture decision. Recommended: the design above.*
+*Decided: the negotiated form above. It changes the wire for `kind = "node"` (§3 rows 1,
+5 and 30) and is the one place the cluster private key crosses a network, which `§2.3.3`
+and invariant 10 make a posture decision; M20 writes it into `§2.3.1` and `§7.4.2`.*
 
-### 2.2 What each side writes at admission, and the two writers of a node's registry rows — CONFIRM BEFORE M20
+### 2.2 What each side writes at admission, and the two writers of a node's registry rows — DECIDED
 
 **Phase 2 facts.** Every node writes its own `sys_device` row at bootstrap (`kind =
 'node'`, `replica = true`, both public keys; `sys::DeviceRow::this_node`,
@@ -158,48 +204,65 @@ make a posture decision. Recommended: the design above.*
 this node, and audits `cluster.created` — correct for a founder and wrong for a joiner.
 `registry.rs` amends a row by reading the winner across every segment of the `_sys` log,
 applying the edit and putting the whole row, so owner-set and unknown fields survive
-(`§4.2`). The admitting node writes a paired device's row (`pair/node.rs`,
+(`§4.2`); the keys of a row it writes are sorted, where `sys::DeviceRow` writes them in
+declaration order. The admitting node writes a paired device's row (`pair/node.rs`,
 `pairing_finish`) as `§7.4` step 5 says. Restore preserves other nodes' and clusters'
-records and local keys select the current ones (row 20).
+records and local keys select the current ones (row 20). The channel's lookup
+(`wire/channel.rs`, `pins`) reads a device's `x25519_pub` and `revoked_at` from
+`sys_device` and nothing else. `local/state.jsonl` holds one record per app, is never
+synced and is not required for restore (`§3`).
 
 **The problem.** Once nodes admit nodes, a node's `sys_device` row has two writers by
 construction — the node itself at bootstrap and the admitting node at admission — and
 `§4.5` picks between them by `(lam, ts, dev)`, where the two `lam` counters have never
 met. A long-lived node whose founding cluster was empty could out-rank the admission row
 with its own, which carries no `paired_at`. The same holds for `sys_cluster` if a joiner
-writes one.
+writes one. And a joiner holds nothing in `sys_device` for its admitter until `_sys`
+has synced, so an admitter that dials first — a home node driving the VPS it admitted
+— would be refused at the joiner's `/ws` for want of pins.
 
 **The design.**
 
-- The admitting node writes the joiner's `sys_device` row — `kind = 'node'`, `replica =
-  true`, both public keys, `paired_at`, `paired_via = 'lan'`, `label`, no `user_agent` —
-  and `node.admitted` (alert, `spec/data-dictionary.md §3.10`) as one batch, exactly as a browser's row is
-  written, and then sends `admit` (§2.1). It writes nothing else.
-- The joiner, having verified `admit`, re-asserts its own `sys_device` row with the same
-  facts — the `paired_at` from `admit`, `paired_via = 'lan'`, the label it sent, cleaned
-  by the same rule — through `amend_sys_row`, so the two writers write identical `d` and
-  `§4.5`'s choice between them is invisible. Every later amendment by either side reads
-  the winner and carries every field forward, as today.
+- The admitter writes the joiner's `sys_device` row — `kind = 'node'`, `replica =
+  true`, both public keys, `paired_at`, `paired_via = 'lan'`, `label`, no `user_agent`
+  — and `node.admitted` (alert, `spec/data-dictionary.md §3.10`) as one batch, on
+  message 8 (§2.1), as a browser's row is written on message 6. It writes nothing else.
+  `paired_via` is `lan` for a URL the owner typed beyond the LAN too: `§3.2`'s list has
+  no value for one, and adding one is not this phase's.
+- The joiner, having verified `admit`, folds `lam` and re-asserts its own `sys_device`
+  row with the same facts — the `paired_at` from `admit`, `paired_via = 'lan'`, the
+  label it sent, cleaned by the same rule — through `amend_sys_row`, so the two writers'
+  rows materialize to the same columns whichever `§4.5` picks. The re-assertion outranks
+  the joiner's own bootstrap row by construction, being the same device at a higher
+  `lam`. Every later amendment by either side reads the winner and carries every field
+  forward, as today. Byte-for-byte equality of the two `d` values is not promised —
+  the two writers order keys differently — and is not needed.
 - The joiner replaces `identity/cluster.key`, `cluster.pub` and `node.cert` in a swap a
   crash cannot leave half done (row 4): the three new files are written and flushed
   beside their targets, the directory flushed, then each renamed into place;
   `Identity::load_or_create_at` finishes a swap it finds part way through before it reads
   anything, and never founds a cluster while such files exist. It tombstones the
   `sys_cluster` row of the cluster it founded, as `§2.3` allows a node that has paired
-  nothing and admitted nobody, amends its `sys_node` with the new `cluster_id`, `cert`
-  and `cert_expires_at`, and records the admitting node's URL as its first endpoint
-  (§2.8). It writes no `sys_cluster` row for the cluster it joined.
+  nothing and admitted nobody; amends its `sys_node` with the new `cluster_id`, `cert`
+  and `cert_expires_at`; publishes its discovery facts again, so `cl` changes on the
+  wire; and records the admitter as a **peer hint** in `local/state.jsonl` — its ID,
+  its X25519 public key and, when the joiner dialed, the URL — which the channel's
+  lookup accepts for a `kind = 'node'` peer while `sys_device` holds no row for it, and
+  which the row supersedes the moment it arrives, revocation included (§2.4, row 14). It
+  writes no `sys_cluster` row for the cluster it joined. A re-admitted node replaces
+  `node.cert` and amends `sys_node` alone.
 - `bootstrap_sys` writes a `sys_cluster` row and audits `cluster.created` only when this
   start generated the cluster key — `Identity` reports it — never merely because the log
-  holds no row. A joined node's log holds the founder's row after the first pass (§2.4),
-  and until then `discovery_facts` and the manifest read the cluster ID from `identity/`,
-  as they already do.
-- Who may join: a node that has paired a device or admitted a node refuses to join
-  another cluster, before the code is entered; a lone node joins and discards what it
-  founded. Re-founding (`§2.3.5`) is the documented procedure for everything else.
+  holds no row. A joined node's log holds the founder's row after its first pass
+  (§2.4), and until then `discovery_facts` and the manifest read the cluster ID from
+  `identity/`, as they already do.
+- Who may join is §2.1's disposability rule. Re-founding (`§2.3.5`) is the documented
+  procedure for everything else, and the procedure ends by revoking the old cluster's
+  device rows, since a row's pins are accepted by every node that holds it (row 31,
+  R30).
 
-*Confirm before M20: the second and fourth bullets decide how a replicated row is
-written and by whom (§3 row 3). Recommended: as above.*
+*Decided: rows 3, 4 and 14 carry it; M20 writes it into `§2.3.1`, `§3`,
+`data-dictionary.md §3.1b, §3.2, §3.7`.*
 
 ### 2.3 Certificates renew after a completed pass; an expired node starts for its owner alone and syncs nothing until re-admitted — DECIDED
 
@@ -221,11 +284,12 @@ An expired certificate no longer refuses `Node::open`. The node starts in a stat
 reports on the node page and on standard error: it answers loopback and in-process
 callers as the owner, presents no certificate on `/ws` — every non-loopback handshake
 is refused with 4403 — opens no channel to a peer, advertises with `pair = 0`, and
-audits `cert.expired` (warn) once. The owner re-admits it with `pair --join` or the
-settings form (§2.5), which is the only way out; the joiner-side refusal of §2.2 does
-not apply, since an expired node has no cluster it can still act for. `§2.3.1` is
-edited to say so (row 2), because "MUST be re-admitted" is unreachable from a node that
-cannot start.
+audits `cert.expired` (warn) once. The owner re-admits it — `pair --join` from it
+against a window a cluster node opened with `pair --node`, or the other way round when
+only the cluster node can dial — which is the only way out; re-admission keeps the
+node's key, its row and its cluster and issues a fresh certificate (§2.1). `§2.3.1` is
+edited to say so (rows 2 and 30), because "MUST be re-admitted" is unreachable from a
+node that cannot start.
 
 A node that verifies a peer's certificate — as the client of a pass, or as a device's
 node — refuses an expired one and audits `cert.expired` (warn) naming the peer, once
@@ -258,16 +322,18 @@ requests of `§9.2` through `handle`, answered under the peer's lock like every 
 
 Three consequences to state, because they shape the tests:
 
-- **A node reaches a peer only once it holds that peer's row.** The admitting node has
-  the joiner's row from admission; the joiner has the admitting node's row only after
-  its first pass, so **the first pass after admission is the joiner's, to its admitting
-  node, and `_sys` is synced before any other app in every pass.** A third node meets a
-  peer it was not admitted by once `_sys` has carried both rows both ways, which is one
-  pass with any node that has met both. The roadmap's first bullet — the phone reaches
-  the second node without re-pairing — holds when that node has synced `_sys`: the phone
-  verifies the node's certificate against its pinned cluster key, and the node admits
-  the phone because the phone's row has arrived. Both halves are needed; neither is
-  "the certificate alone".
+- **A node reaches a peer only once it holds that peer's pins.** The admitter holds the
+  joiner's row from admission; the joiner holds the admitter's pins as the peer hint of
+  §2.2 until `_sys` brings the row, so **either side may start the first pass** — which
+  is what lets a home node behind its router drive the VPS it admitted — **and `_sys`
+  is synced before any other app in every pass.** The channel's lookup answers a `kind
+  = 'node'` peer from the hint only while `sys_device` holds no row for it; a row,
+  revoked or not, supersedes the hint. A third node meets a peer it was not admitted by
+  once `_sys` has carried both rows both ways, which is one pass with any node that has
+  met both. The roadmap's first bullet — the phone reaches the second node without
+  re-pairing — holds when that node has synced `_sys`: the phone verifies the node's
+  certificate against its pinned cluster key, and the node admits the phone because the
+  phone's row has arrived. Both halves are needed; neither is "the certificate alone".
 - **A node session is confined.** A `Session` whose device row has `kind = 'node'` may
   use `/api/v1/sync/*`, `/api/v1/health` and `/api/v1/manifest` and nothing else; every
   other route answers 403. A node holds the cluster key and the owner's data already,
@@ -404,14 +470,15 @@ deliberately holds none of them; `local/state.jsonl` holds one record per app an
 
 **The design.** The engine keeps the candidate list in memory: one entry per address
 discovery reported (`lan-mdns`, `lan-udp`), plus the join URL and any URL the owner
-typed on the settings node page (`lan-ip`), ordered by `last_ok` then kind, connect
+typed on the settings node page (`static`, the kind row 15 adds for a URL the owner
+typed, since `lan-ip` would misname a VPS), ordered by `last_ok` then kind, connect
 timeout 2500 ms, ten seconds across all candidates, `endpoint.failover` audited through
 the inbox when the first candidate fails and another answers. What survives a restart is
 the join URL and the owner's URLs, written by the node into `local/state.jsonl` as a
 `peers` record — "cached hints; may be stale, never authoritative", which is what
 `data-dictionary.md §3.7` calls them (row 14). `sys_sync_state` is not persisted:
 `their_seq` is one `heads` request away and `our_seq` is the file. `§10.4` and
-`data-dictionary.md §3.7b` get one list of kinds
+`data-dictionary.md §3.7b` get one list of kinds, `static` added,
 (row 15). The network-change and foreground re-attempts of `§10.4` are a native
 client's; a node re-attempts on discovery, on the timer and on `sync_now`, and the
 plan says which half of that checklist line Phase 3 claims (row 27).
@@ -446,13 +513,14 @@ reachable in effect and not as written; §6 M23 proposes the wording.
 read and validated (row 34); `Node::discovered` returns every node seen; the node page
 lists them by ID; `docs/plans/phase-2.md §7` says the `cl` filter needs a second node.
 
-**The design.** `Node::peers()` is `discovered()` filtered to this node's cluster ID and
-`Node::strangers()` the rest, both by ID; the engine syncs with `peers()` alone and the
+**The design.** `Node::peers()` is `discovered()` filtered to this node's cluster ID,
+never this node's own ID, and `Node::strangers()` the rest, both by ID; the engine syncs
+with `peers()` alone and the
 node page shows both lists under their own headings, so a stranger's node on the LAN is
 visible and never offered a pass. `§6.1`'s "a client that has paired MUST filter" gains
 the node's own case (row 8).
 
-### 2.11 Attachments: immutable, content-addressed files beside the log, streamed through the channel — CONFIRM BEFORE M20
+### 2.11 Attachments: immutable, content-addressed files beside the log, streamed through the channel — DECIDED
 
 **Phase 2 facts.** `§14` item 8 and the roadmap fix the constraints: `data/<slug>/blob/
 <sha256>`, immutable, referenced from `d` by hash, a set union, inside the same backup,
@@ -483,13 +551,15 @@ logical types to controls (`spec/data-dictionary.md §2`).
   the length says so,
   answering the reference. `GET <mount>api/blob/<hex>?type=<mime>` serves the bytes as
   `application/octet-stream` with `Content-Disposition: attachment` unless `type` is one
-  of `image/*`, `audio/*`, `video/*`, `application/pdf`, `text/plain`, in which case
-  inline under `nosniff`; the type is the URL's, never stored, so nothing on disk is
-  trusted for it. `POST <mount>api/blob` as `multipart/form-data` with one file part and
+  of `image/*` (never `image/svg+xml`, which is a document that can carry script),
+  `audio/*`, `video/*`, `application/pdf`, `text/plain`, in which case inline under
+  `nosniff`; the type is the URL's, never stored, so nothing on disk is trusted for it. `POST <mount>api/blob` as `multipart/form-data` with one file part and
   a `next` field answers 303 to `next` with `blob`, `type`, `bytes` and `name` in the
   query — the no-JavaScript path for a Tier 1 form, whose handler then writes the event.
   `pv.js` gains `pv.blob(file)` and `pv.blobUrl(reference)`; the outbox never queues a
-  blob, since a file is not an event.
+  blob, since a file is not an event. `pv.js` stands a few bytes under the 12 KB
+  `data-api.md §5` promises, so the two helpers move that sentence to 16 KB rather than
+  split the one helper an app author imports (row 32).
 - **The channel.** A `req` may carry `streaming: true` and no payload, followed by `chunk`
   frames from the client in order and a client `end`, mirroring the response side; the
   node feeds them to the request body as they arrive, bounded by `api.max_blob` for the
@@ -508,37 +578,49 @@ logical types to controls (`spec/data-dictionary.md §2`).
 - **Not decided, deliberately:** garbage collection of blobs no event references, and a
   size quota per app. `§14` item 8 becomes those two questions.
 
-*Confirm before M20: this is new normative surface — `protocol.md §4.7`, the `blob/`
-directory in `§3`, the `attachment` type, `api.max_blob`, `data-api.md §8`, three sync
-routes, `PV408`, and the client `chunk` direction of `§8.3` (rows 22 and 23). Reject it
-and M25 needs rewriting; accept it and nothing before M25 changes.*
+*Decided. It is new normative surface — `protocol.md §4.7`, the `blob/` directory in
+`§3`, the `attachment` type, `api.max_blob`, `data-api.md §8`, three sync routes,
+`PV408`, the client `chunk` direction of `§8.3` and the `pv.js` bound (rows 22, 23 and
+32) — and nothing before M25 depends on it. The alternative for the channel — capping
+a blob at `api.max_body` and streaming only on loopback — would make an attachment
+saved from a phone a different feature from one saved at the desk.*
 
-### 2.12 A node joins with `privatium pair --join <url>`, or from the settings node page — CONFIRM BEFORE M20
+### 2.12 A node joins with `privatium pair --join <url>` against a window opened with `privatium pair --node`, or from the settings pages — DECIDED
 
 **Phase 2 facts.** `cli.md §8` gives `pair` two flags, `--open` and `--timeout`, and no
-way for the *joining* machine to present a code. `privatium pair` talks to the running
-node over loopback through `/api/v1/pair` (`docs/plans/phase-2.md §2.8`) because a data root is one
-process's. The owner's standing — a loopback request or an in-process call, never a
-session — is what opens pairing, names the node, labels and revokes (M19 status,
-`wire/owner.rs`). `spec/app-contract.md §6` lists the areas of the core's API and `join`
-is not among them.
+way for a machine to present a code or to say the window is for a node. `privatium pair`
+talks to the running node over loopback through `/api/v1/pair`
+(`docs/plans/phase-2.md §2.8`) because a data root is one process's. The owner's standing
+— a loopback request or an in-process call, never a session — is what opens pairing,
+names the node, labels and revokes (M19 status, `wire/owner.rs`).
+`spec/app-contract.md §6` lists the areas of the core's API and `join` is not among them.
 
-**The design.** `--join <url>` is the smallest addition to a surface `cli.md §10` keeps
-narrow: the command takes the URL the admitting node printed, prompts on the terminal for
-the code — the two words, or the four glyph labels typed — and asks the running node
-over loopback to join: `POST /api/v1/join` with `{"url": ..., "code": ...}`, the owner's
-alone like `/api/v1/pair`, answering the outcome. The settings node page gets the same as
-a form, *Join a cluster*, for an owner without a terminal. Both reach `Node::join(url,
-code)`, which runs the client of §2.1 inside the node — the only writer of `identity/`
-and `_sys` — under the root's lock, and refuses before the code is entered when this
-node has paired a device or admitted a node (§2.2). The code never crosses loopback in
-a URL or a log; the request body is read as `application/json` and bounded as
-`/api/v1/pair`'s is.
+**The design.** Two commands, one on each machine, in the order reachability allows:
 
-*Confirm before M20: it widens `cli.md §8`, `§9.2` and `app-contract.md §6` (row 5).
-Recommended: as above; the alternative — a joining node that opens its own pairing
-window and the admitting node that dials it — inverts `§7.1`, where the node being
-joined is the one whose owner authorizes.*
+- On the machine that will be dialed: `privatium pair --node` — or the devices page's
+  *Admit a node*, or `POST /api/v1/pair` with `"node": true` — opens a window that
+  answers `kind = "node"` alone and prints the code as `pair` does.
+- On the machine that can reach it: `privatium pair --join <url>` takes the URL the
+  first machine printed, prompts on the terminal for the code — the two words, or the
+  four glyph labels typed — and asks the running node over loopback to join: `POST
+  /api/v1/join` with `{"url": …, "code": …}`, the owner's alone like `/api/v1/pair`,
+  read as `application/json` and bounded as that route's body is, answering the outcome
+  by name. The settings node page gets the same as *Join a cluster*, for an owner
+  without a terminal. `--join` with `--node`, or with `--open`, is a usage error.
+
+Which machine joins is decided by §2.1, not by which command it ran: on a LAN the fresh
+laptop joins the desktop whichever was dialed; for Phase 3b the owner runs `pair --node`
+on the VPS over SSH and `pair --join http://<vps>:8420` at home, and the VPS joins the
+home cluster. `Node::join(url, code)` runs the client of §2.1 for an embedder; in the
+daemon the socket work runs on a task outside the node's lock, as `serve_ws_pair` keeps
+its own, and the lock is taken for the steps that read or write the node —
+disposability, the identity, the adoption. The code never crosses loopback in a URL or a
+log.
+
+*Decided: it widens `cli.md §8`, `§9.2` and `app-contract.md §6` (row 5). The
+alternative — a joining node that opens its own window and an admitting node that dials
+it under a flag of its own — needs four flags where two and a negotiated direction do
+the same, and lets the owner get the pair wrong.*
 
 ### 2.13 Two small shapes: what `--version` claims, and what the four methods do — DECIDED
 
@@ -574,11 +656,11 @@ rows 1, 2 and 7 below.
 
 | # | Was | Proposed | Files | Milestone |
 |---|---|---|---|---|
-| 1 | `§2.3.1` says the admitting node sends the cluster private key and a certificate, and `§7.4.2` shows six messages whose sealed payloads carry neither; nothing says what a joining node puts in `dev`, `pub` and `x25519`, and nothing proves it holds the key its certificate will name | For `kind = "node"`: the joiner's `dev` and `pub` are its node identity, its `x25519` the derived static of `§8`, `label` its display name; its sealed message carries `sig`, an Ed25519 signature over `TT`; a seventh sealed message from the node, `admit`, carries `cluster_key`, the joiner's `cert` and `paired_at`, sent only after `sig` verified and the row was written (§2.1) | `protocol.md §2.3.1, §7.4.2` | M20 |
+| 1 | `§2.3.1` says the admitting node sends the cluster private key and a certificate, and `§7.4.2` shows six messages whose sealed payloads carry neither; nothing says what a joining node puts in `dev`, `pub` and `x25519`, nothing proves either side holds the key its ID derives from, and `§7.4`'s node and client are the window's side and the dialer, which says nothing about which of two nodes is admitted | For `kind = "node"`: the dialer's `dev` and `pub` are its node identity and its `x25519` the derived static of `§8`; both sealed messages carry `sig`, an Ed25519 signature over `TT`, and `disposable`; the established side admits the disposable one, two disposable sides admit toward the window, two established sides are refused naming `§2.3.5`; a seventh sealed message, `admit`, from the admitter carries `cluster_key`, the joiner's `cert`, `paired_at` and the admitter's `_sys` `lam`; an eighth, `joined`, from the joiner precedes the row; *disposable* is defined from the node's own `_sys` segments (§2.1) | `protocol.md §2.3, §2.3.1, §7.4.2` | M20 |
 | 2 | `§2.3.1` "A node offline longer than 180 days MUST be re-admitted", and the reference node refuses to open with an expired certificate, so re-admission — which needs a running node — is unreachable | An expired node starts for its owner alone: loopback and in-process callers are served, every non-loopback handshake is refused with 4403, it opens no channel to a peer, advertises `pair = 0`, audits `cert.expired` (warn) once, and says so on the node page; re-admission is the only way out (§2.3) | `protocol.md §2.3.1`, `docs/backup-and-restore.md §1` | M20 |
-| 3 | `data-dictionary.md §3.1` has every node write its own `sys_device` row and `§7.4` step 5 has the admitting node write the joiner's, so a node's row has two writers that `§4.5` ranks by counters that have never met; `data-dictionary.md §3.1b` says who tombstones a founding cluster's row and not who writes the joined cluster's | The admitting node writes the joiner's row and `node.admitted`; the joiner re-asserts its own row with the same facts from `admit`, so the two writers agree; a `sys_cluster` row is written by the founding node alone, at founding, and `cluster.created` is audited then and never again; an admitted node writes none and receives the founder's by sync (§2.2) | `protocol.md §2.3.1`, `data-dictionary.md §3.1b, §3.2` | M20 |
+| 3 | `data-dictionary.md §3.1` has every node write its own `sys_device` row and `§7.4` step 5 has the admitting node write the joiner's, so a node's row has two writers that `§4.5` ranks by counters that have never met; `data-dictionary.md §3.1b` says who tombstones a founding cluster's row and not who writes the joined cluster's | The admitter writes the joiner's row and `node.admitted` once `joined` arrives; the joiner folds the `lam` it was sent and re-asserts its own row with the same facts from `admit`, so the two writers agree column for column; a `sys_cluster` row is written by the founding node alone, at founding, and `cluster.created` is audited then and never again; an admitted node writes none and receives the founder's by sync (§2.2) | `protocol.md §2.3.1, §4.3`, `data-dictionary.md §3.1b, §3.2` | M20 |
 | 4 | `§2.3` says a node admitted elsewhere "discards the one it founded" and not how; the reference node refuses an `identity/` whose three files disagree, which a crash mid-swap leaves | The swap writes the three files beside their targets, flushes them and the directory, then renames each; startup completes a swap it finds part way through before it reads anything and never founds a cluster while such files exist (§2.2) | `protocol.md §2.3` | M20 |
-| 5 | `cli.md §8` has no way for a joining node to present a code; `§9.2` has no route that joins; `app-contract.md §6` lists no `join` | `pair --join <url>`, prompting for the code; `POST /api/v1/join`, the owner's alone; the settings form; `join(url, code)` in the `§6` table (§2.12) | `cli.md §8`, `protocol.md §9.2`, `app-contract.md §6` | M20 |
+| 5 | `cli.md §8` has no way for a machine to present a code or to open a window for a node; `§9.2`'s `/api/v1/pair` body is `{"ttl"}` alone and no route joins; `app-contract.md §6` lists no `join` | `pair --node` and `pair --join <url>`, the latter prompting for the code; `"node": true` in `POST /api/v1/pair`'s body and `node` in the window it answers with; a window opened for a node answers `kind = "node"` alone and one opened for devices refuses it; `POST /api/v1/join`, the owner's alone; the two settings surfaces; `join(url, code)` in the `§6` table (§2.12) | `cli.md §8`, `protocol.md §7.1, §9.2`, `data-dictionary.md §3.3`, `app-contract.md §6` | M20 |
 | 6 | `§2.3.4` "A device that has synced since the revocation refuses that node" — a browser never syncs, so it trusts a revoked node's certificate until expiry; nothing says what a revoked node does when the revocation reaches it | The refusal is a replica's — a node, and a native replica when one exists; a browser holds the cluster public key alone and is covered by the 180-day bound `§2.3.4` already states; a node that finds its own ID in `sys_node_revocation` stops syncing, refuses every channel, and tells the owner (alert); a revoked node's key is never re-admitted, since a registered key is refused at pairing (`§7.4.2`), and it re-initializes instead (`§2.4`) | `protocol.md §2.3.4`, `docs/security.md §8` | M20 |
 | 7 | `§2.3.1` "after every completed sync" — completed is undefined, and `data-dictionary.md §3.10` gives `cert.expired` no severity or subject | Completed per §2.4: heads exchanged for every app, every requested range arrived whole, every offered range accepted or refused with a reason; `cert.expired` is `warn`, its subject the node whose certificate expired, written once per peer per start by the refusing side and once by an expired node about itself | `protocol.md §2.3.1`, `data-dictionary.md §3.10` | M20 |
 | 8 | `§6.1` "a client that has paired MUST filter discovery results by `cl`" — a node browsing is a client here, and nothing says its own list is filtered or what becomes of the rest | The node offers a pass to nodes whose `cl` is its own cluster and to no other; strangers are kept by ID, shown apart on the node page, and never contacted (§2.10) | `protocol.md §6.1` | M20 |
@@ -587,8 +669,8 @@ rows 1, 2 and 7 below.
 | 11 | `§4.1` "MUST NOT materialize, serve or forward the lines of such a batch" against `§10.2`'s byte-for-byte copy: not forwarding a short batch leaves the receiver a permanent `seq` gap and a file that is not a prefix of the origin's; a line that is not an envelope has the same effect | Sync copies the segment as the origin holds it, short batches and non-envelope lines included, and every reader on every node skips them by the same rule; `§10.2`'s "envelope parses" applies to the lines that carry a `seq`; a non-envelope line is bounded by the reader's line limit, which the milestone states (§2.6) | `protocol.md §4.1, §10.2` | M21 |
 | 12 | `§4.4` "reject on ingest" against `§10.2`'s "write received events to the origin's file" and `§3.1`'s "never modify": a rejected line is a permanent gap the receiver re-requests forever | A sync receiver stores the line as received; the rejection is the materializer's and is audited once as `event.rejected` (§2.6) | `protocol.md §4.4, §10.2` | M21 |
 | 13 | Nothing says what a receiver does with a foreign segment that ends mid-line; `§3.1` forbids truncating | Completed by its suffix from the origin when the torn tail is a prefix of what arrives; otherwise refused and reported with the file name and offset, nothing written (§2.6) | `protocol.md §10.2` | M21 |
-| 14 | `data-dictionary.md §3.7, §3.7b, §3.8` describe local tables nothing in `local/state.jsonl` holds; `§3` shows `local/` with two files | `sys_peer`'s hints are a `peers` record in `state.jsonl` — the join URL and the owner's URLs; endpoints and sync state are held in memory and rebuilt at start; the three sections say so and `§3`'s layout is unchanged (§2.8) | `data-dictionary.md §3.7–§3.8`, `protocol.md §3` | M21 |
-| 15 | `§10.4` lists `kind` as six values; `data-dictionary.md §3.7b` lists ten | One list, `data-dictionary.md §3.7b`'s, in both places | `protocol.md §10.4`, `data-dictionary.md §3.7b` | M21 |
+| 14 | `data-dictionary.md §3.7, §3.7b, §3.8` describe local tables nothing in `local/state.jsonl` holds; `§3` shows `local/` with two files | `sys_peer`'s hints are a `peers` record in `state.jsonl` — the join URL, the owner's URLs, and for the node that admitted this one its ID and X25519 public key, which `§8.3`'s lookup accepts for a `kind = 'node'` peer while `sys_device` holds no row for it (§2.2, §2.4); endpoints and sync state are held in memory and rebuilt at start; the three sections say so and `§3`'s layout is unchanged (§2.8) | `data-dictionary.md §3.7–§3.8`, `protocol.md §3, §8.3` | M20 writes the hint; M21 the lookup and the rest |
+| 15 | `§10.4` lists `kind` as six values; `data-dictionary.md §3.7b` lists ten; neither has a value for a URL the owner typed, which a join URL and a VPS's address are | One list, `data-dictionary.md §3.7b`'s plus `static`, in both places (§2.8) | `protocol.md §10.4`, `data-dictionary.md §3.7b` | M21 |
 | 16 | `§13` "Never writes to a log file for a device other than as specified in §10.2" — `§10.2` never says the receiver is the *only* such writer | It is: `log::foreign` is the one module that opens another device's file, `Writer` still refuses one, and `restore --from` copies a file rather than writing a line (§2.6) | `protocol.md §10.2` | M21 |
 | 17 | `lua-api.md §3.4` "when sync exists it fires for events arriving from other devices too" and `data-api.md §3` "including events arriving via sync" are promises in the future tense, and neither says in which VM a handler runs for a synced event | Both true; the tense changes; `lua-api.md §3.4` says the handler runs in a VM checked out by the drain that landed the event, with `pv.device()` the origin device, and never in a request's own VM | `lua-api.md §3.4`, `data-api.md §3` | M21 |
 | 18 | `§10.5` "A node MUST watch `data/` for externally-appeared files and re-materialize" reads as a watcher; `docs/backup-and-restore.md §2` says every file syncer works with no configuration, and with network sync on, two writers of one foreign file can exist | The watching is the stat every request and every stream ping already makes (§2.9); a folder is under file sync or network sync, never both, said in both documents with how to tell which is in use | `protocol.md §10.5`, `docs/backup-and-restore.md §2`, `docs/deployment.md §1, §2.3` | M23 |
@@ -603,13 +685,16 @@ rows 1, 2 and 7 below.
 | 27 | `§10.4` "Re-attempt on: network-change events, application foreground, and explicit user action" is written for a client with a UI; `§13`'s line bundles the timeout and the re-attempt | A node re-attempts on discovery, on the sixty-second timer and on `sync_now`; the network-change and foreground halves are a native client's (Phase 4), and the checklist line says which half a node satisfies (§2.8) | `protocol.md §10.4, §13` | M21 |
 | 28 | `docs/deployment.md §2` and `docs/connectivity.md §2, §4.4` describe an always-on node in the future tense, and neither says that a VPS reached over plain HTTP from the public internet is `§7.7`'s exposure on an untrusted network | The quickstart of M26; node-to-node sync with a VPS is encrypted by `§8`; a browser pairing to it over plain HTTP across the internet carries `§7.7`'s gap, said plainly, and the certificate host that closes it is Phase 5 | `docs/deployment.md §2`, `docs/connectivity.md §2, §4.4` | M26 |
 | 29 | `cli.md §1`'s example and `protocol.md`'s status line say `phase 2` | `pv/1 (partial: phase 3)` (§2.13) | `cli.md §1`, `protocol.md` status line | M26 |
+| 30 | `§7.4.2` refuses a device key already in `sys_device`, active or revoked, and `§2.3.1` requires a node offline past 180 days to be re-admitted — with the key it has, since `§2.4` reserves re-initialization for a compromised key | A registered, active node key whose `sys_node.cert_expires_at` is at or before now and whose `sys_node.cluster_id` is the admitter's is re-admitted: no disposability check, no new row, a fresh certificate in `admit`, `node.admitted` saying so; a registered key that is revoked, or whose certificate has not expired, is refused as before (§2.1) | `protocol.md §2.3.1, §7.4.2` | M20 |
+| 31 | `§2.3.5` says rotation invalidates every certificate and "All devices must re-pair", and `docs/security.md §8` says a node key is re-initialized; neither says that a `sys_device` row's pins are accepted by every node that holds the row whatever cluster it was paired into, so an old cluster's rows carried by a re-founded node keep admitting old devices | The procedure is written out: on each node delete `identity/cluster.*` and restart, open `pair --node` on one, `pair --join` from the others, then revoke every device row of the old cluster from the devices page; a `pv/1` node cannot tell an old row from a new one by itself (R30) | `protocol.md §2.3.5`, `docs/security.md §8` | M20 |
+| 32 | `data-api.md §5` promises `pv.js` "under 12 KB" and the file stands a few bytes under it; `pv.blob` and `pv.blobUrl` pass it | 16 KB, unminified and meant to be read as before (§2.11) | `data-api.md §5` | M25 |
 
-Four are additions rather than corrections and deserve to be called out: **`admit`, `sig`
-and the seventh message** widen `§7.4.2` (row 1); **`pair --join` and `/api/v1/join`**
-widen `cli.md §8` and `§9.2` (row 5); **`§4.7`, `data-api.md §8`, `api.max_blob`,
-`PV408` and the three sync-blob routes** are new normative surface for attachments
-(row 22); and **the client `chunk` direction** is wire meaning (row 23). Each is decided
-in §2 and confirmed before M20.
+Four are additions rather than corrections and deserve to be called out: **`sig`,
+`disposable`, `admit` and `joined`** widen `§7.4.2` (rows 1 and 30); **`pair --node`,
+`pair --join`, the `node` field of `/api/v1/pair` and `/api/v1/join`** widen `cli.md
+§8` and `§9.2` (row 5); **`§4.7`, `data-api.md §8`, `api.max_blob`, `PV408` and the
+three sync-blob routes** are new normative surface for attachments (row 22); and **the
+client `chunk` direction** is wire meaning (row 23). Each is decided in §2.
 
 **The rule from Phase 1 stands:** when implementation reveals a further gap, fix the spec
 in the PR that found it. Do not accumulate a list and do not code around it.
@@ -655,7 +740,8 @@ crates/privatium-core/
 │   ├── discover/mod.rs, txt.rs, mdns.rs, udp.rs
 │   ├── wire/
 │   │   ├── mod.rs            Handler, dispatch, fire_append; + the node-session confinement (M21)
-│   │   ├── channel.rs        /ws and /ws/pair; + the seventh message, client chunks (M20, M25)
+│   │   ├── channel.rs        /ws and /ws/pair; + messages 7 and 8 either way, the hint in the
+│   │                         lookup, client chunks (M20, M21, M25)
 │   │   ├── owner.rs          the owner's acts; + /api/v1/join, the join form (M20)
 │   │   ├── handoff.rs, router.rs, data.rs
 │   │   └── blobs.rs          PUT, POST and GET api/blob beneath a mount (M25)
@@ -705,7 +791,7 @@ Every Phase 2 addition carried its reason and its `cargo deny` result in
 | Middleware, `ServeDir` | `tower`, `tower-http` | 0.5.3, 0.7.1, MIT | unchanged |
 | Runtime, channels, timers | `tokio` | 1.53.1, MIT | the engine's current-thread runtime is the `rt` feature already on; `sync` and `time` already on |
 | Stream and sink helpers | `futures-core`, `futures-util` | 0.3.34, MIT OR Apache-2.0 | unchanged |
-| WebSocket engine | `tokio-tungstenite` | 0.29.0, MIT | **promoted from a dev-dependency of the binary to a dependency of the core** for the engine's client side (§2.5); the same crate `axum`'s `ws` feature already compiles, so the graph gains no package |
+| WebSocket engine | `tokio-tungstenite` | 0.29.0, MIT | **promoted from a dev-dependency of the binary to a dependency of the core** at M20, for `join`'s client side (§2.12), and used by the engine from M21 (§2.5); the same crate `axum`'s `ws` feature already compiles, so the graph gains no package |
 | Separate IPv6 socket, interface list | `socket2`, `if-addrs` | 0.6.5, MIT OR Apache-2.0; 0.15.0, MIT OR BSD-3-Clause | unchanged |
 | Lua 5.4 | `mlua` | 0.12.1, MIT | unchanged |
 | SQLite | `rusqlite` | 0.40.2, MIT | unchanged; `pv_rank` is a table, not a feature |
@@ -739,36 +825,47 @@ covers the empty input, the missing configuration, the invalid value, the bounda
 the unauthorized caller where the surface has one; the test that holds each is named in
 the checklist. A checklist is ticked only on a three-platform run.
 
-### M20 — Admission, the expired state, renewal at runtime, revocation of a node, discovery filtered to the cluster
+### M20 — Admission in either direction, the expired state, renewal at runtime, revocation of a node, discovery filtered to the cluster
 
-Depends on §2.1, §2.2 and §2.12 confirmed.
-
-- `pair::handshake`: `Exchange::begin_with` accepts `kind: "node"`; `Sealed::finish`
-  reads `sig` for a node and verifies it over `TT` against `pub`, refusing 4403 without
-  it; `Client::start` for a node signs `TT` and sends its derived static; a new
-  `Admitted` state produces the seventh message `admit` (§2.1) and the client's
-  `Client::admitted(ciphertext)` verifies `cert` against `cluster_pub`, checks the seed's
-  public half, checks `cert.node_id` is its own, and yields `ClientAdmitted { cluster_key,
-  certificate, paired_at }` — a `Zeroizing` seed, wiped on drop, `Debug` printing none of
-  it. `pair/node.rs`: `pairing_finish` writes the joiner's row (`kind = 'node'`,
-  `replica = true`, `paired_via = 'lan'`, no `user_agent`) and `node.admitted` (alert)
-  as one batch, then `pairing_admit` seals `admit` — the one place the cluster private
-  key ever leaves a node, and the test that proves a browser never gets it stays.
-  `wire/channel.rs` sends it as the seventh frame for a node and closes 1000.
+- The window: `Pairing` gains `node: bool` (`pair --node`, *Admit a node*, `"node":
+  true` in `POST /api/v1/pair`), `PairingSnapshot` reports it, and
+  `Exchange::begin_with` accepts `kind: "node"` on a node window alone — a device
+  window keeps refusing it with 4403, and a node window refuses every other kind the
+  same way.
+- `pair::handshake`: for a node client the node's sealed message adds `sig` and
+  `disposable` and the client's carries `sig` and `disposable` in place of `ua`; each
+  side verifies the other's `sig` over `TT` against the `pub` it holds and refuses 4403
+  without it. A new `Admission` state holds both flags and decides the direction (§2.1
+  item 2); `Admitter::admit(...)` seals message 7 and `Joiner::verify(ciphertext)` yields
+  `ClientAdmitted { cluster_key, certificate, paired_at, lam }` — a `Zeroizing` seed,
+  wiped on drop, `Debug` printing none of it — for whichever side joins;
+  `Joiner::joined()` seals message 8. `pair/node.rs`: `pairing_finish` returns the
+  node's decision for a node client instead of writing a row; `pairing_admit` seals
+  message 7 — the one place the cluster private key ever leaves a node, and the test
+  that proves a browser never gets it stays — and `pairing_admitted` writes the row
+  (`kind = 'node'`, `replica = true`, `paired_via = 'lan'`, no `user_agent`) and
+  `node.admitted` (alert) as one batch on message 8; `pairing_adopt` is the node side's
+  adoption when the client admits. `wire/channel.rs` drives messages 7 and 8 in either
+  direction within the existing pairing bound and closes 1000.
+- `Node::is_disposable()` from this node's own `_sys` segments (§2.1); re-admission from
+  the registry (§2.1, row 30): a registered, active node key with an expired
+  `sys_node.cert_expires_at` in this cluster is re-admitted without a row.
 - `identity::Identity::adopt(dir, seed, certificate)` — the crash-safe swap of §2.2 —
-  and `load_or_create_at` completing a half-done swap; `Identity::renew(now)` writing
+  and `load_or_create_at` completing a half-done swap; `Identity::founded()` reporting a
+  key generated in this start, which is the only case `bootstrap_sys` writes a
+  `sys_cluster` row and audits `cluster.created`; `Identity::renew(now)` writing
   `node.cert` as startup does; the expired state: `load_or_create_at` returns an identity
   whose `certificate()` is `Expired`, `Node::open` succeeds, `pairing_hello`, the `/ws`
   handshake and `discovery_facts` read the state and refuse or advertise accordingly,
   and `bootstrap_sys` audits `cert.expired` once (§2.3).
-- `Node::join(&mut self, url: &str, code: &Code) -> Result<Joined>`: refuses while a
-  device has paired or a node was admitted; runs the client over a WebSocket to
-  `<url>/ws/pair` on the engine's runtime (a current-thread runtime for the call,
-  since `start_sync` may not have run); on `admit`, adopts the cluster, tombstones the
-  founded cluster's row, amends `sys_node`, re-asserts its own `sys_device` row from
-  `admit`'s facts, records the URL as an endpoint hint, and audits nothing about the
-  founder's cluster. `bootstrap_sys` writes `sys_cluster` only when `Identity` reports
-  the key was generated in this start.
+- `Node::join(&mut self, url: &str, code: &Code) -> Result<Joined>`: the client of §2.1
+  over a WebSocket to `<url>/ws/pair`, run on a current-thread runtime the call creates;
+  on `admit`, folds `lam`, adopts the cluster, tombstones the founded cluster's row,
+  amends `sys_node`, re-asserts its own `sys_device` row from `admit`'s facts, records
+  the admitter's hint in `local/state.jsonl` (ID, X25519 key, the URL), publishes the
+  discovery facts, and sends `joined`. The daemon's `POST /api/v1/join` runs the same
+  steps with the socket outside the lock (§2.12). `local::PeersRecord` and
+  `Node::peer_hints()`, which M21's lookup reads.
 - `Node::renew_certificate_if_due(&mut self, now)`: renewal at runtime with the
   amendment and the audit; called by M21 after a completed pass, by nothing here.
 - Revoking a node: `Node::revoke_node(id, reason, now)` — `revoke_device` plus a
@@ -780,36 +877,54 @@ Depends on §2.1, §2.2 and §2.12 confirmed.
 - `POST /api/v1/join` in `wire/owner.rs`, the owner's alone, `application/json`, bounded
   as `/api/v1/pair`'s body is, answering `Joined` or the refusal by name; the settings
   node page's *Join a cluster* form (`http/join.rs`), `csrf()`, a URL field and a code
-  field, both labelled; `privatium pair --join <url>` in `crates/privatium/src/pair.rs`,
-  prompting for the code on the terminal and posting it over loopback (§2.12).
+  field, both labelled; the devices page's *Admit a node* beside *Open pairing*;
+  `privatium pair --node` and `privatium pair --join <url>` in
+  `crates/privatium/src/pair.rs`, the latter prompting for the code on the terminal and
+  posting it over loopback (§2.12). `tokio-tungstenite` becomes a dependency of the core
+  (§5).
 - `Node::peers()` and `Node::strangers()` (§2.10); the node page lists both under their
-  own headings, by ID.
+  own headings, by ID. `docs/security.md §8` gains the rotation procedure of row 31.
 
-**Produces:** `pair::handshake::{Admitted, ClientAdmitted, Client::admitted}`,
-`Node::{join, pairing_admit, renew_certificate_if_due, revoke_node, peers, strangers}`,
-`identity::Identity::{adopt, renew, is_expired}`, `pair::Joined`,
-`sys::{KIND_NODE_ADMITTED, KIND_NODE_REVOKED, KIND_CERT_EXPIRED}`, `OwnerAction::Join`.
+**Produces:** `pair::handshake::{Admission, Admitter, Joiner, ClientAdmitted}`,
+`Node::{join, is_disposable, pairing_admit, pairing_admitted, pairing_adopt,
+renew_certificate_if_due, revoke_node, peers, strangers, peer_hints}`,
+`identity::Identity::{adopt, renew, founded, is_expired}`, `pair::Joined`,
+`Pairing::node`, `local::PeersRecord`, `sys::{KIND_NODE_ADMITTED, KIND_NODE_REVOKED,
+KIND_CERT_EXPIRED}`, `OwnerAction::{Join, AdmitNode}`.
 
 **Tests** (`tests/admission.rs`; two nodes in one process, each in its own data root,
 the handshake driven as data through `pair::handshake` and `Node::pairing_*`):
 `test_spec_2_3_1_a_node_is_admitted_by_pairing_and_receives_the_cluster_key_and_a_certificate`,
+`test_spec_2_3_1_the_established_node_admits_the_disposable_one_whichever_dialed` (the
+fresh node dials the established one, and the established one dials the fresh one; the
+same outcome, `admit` from the established side both times),
+`test_spec_2_3_1_two_fresh_nodes_join_toward_the_window_and_two_established_ones_are_refused`,
 `test_spec_2_3_1_admit_is_sent_only_after_the_joiners_signature_verifies` (a missing
-`sig`, a signature by another key, and a signature over other bytes: 4403, one audited
-failure each, nothing sealed),
+`sig`, a signature by another key, and a signature over other bytes, on each side:
+4403, one audited failure each, nothing sealed after it),
+`test_spec_2_3_disposability_is_judged_from_this_nodes_own_segments` (a paired browser
+makes a node non-disposable; a restored `_sys` full of other devices' rows does not; a
+re-founded node is disposable again; an empty log is),
+`test_spec_7_1_a_device_window_refuses_a_node_and_a_node_window_refuses_a_device`,
 `test_spec_2_3_3_the_cluster_key_goes_to_a_node_and_never_to_a_browser`,
 `test_spec_2_3_3_cluster_private_key_is_absent_from_every_event_snapshot_and_backup`
 (Phase 2's test, run again over both nodes' roots after admission — the key crossed
-the wire once, under `K_pair`, and landed only in `identity/`),
-`test_spec_2_3_1_the_joiner_and_the_admitting_node_write_the_same_device_row` (the two
-`d` values equal byte for byte, whichever wins),
+the wire once, under `K_pair`, and landed only in `identity/`; the hint holds no
+secret),
+`test_spec_2_3_1_the_joiner_and_the_admitter_write_the_same_device_facts` (the two rows
+materialize to the same columns whichever wins; the joiner's re-assertion outranks its
+bootstrap row; the folded `lam` is past the admitter's),
+`test_spec_2_3_1_a_lost_joined_leaves_no_row_and_the_join_is_retried` (the connection
+cut after `admit`: no row, no audit of success, the joiner holds the key, a second
+`pair --join` against a new window succeeds),
 `test_spec_2_3_1_a_joined_node_writes_no_cluster_row_and_audits_no_founding`,
-`test_spec_2_3_a_node_in_a_cluster_refuses_to_join_another` (a paired browser, then an
-admitted node: refused before the code is read),
 `test_spec_2_3_a_join_interrupted_mid_swap_completes_at_the_next_start` (each of the
 three renames cut short, the node opens with the joined cluster, never the founded one,
 and never a third),
 `test_spec_2_3_1_an_expired_node_starts_for_its_owner_and_refuses_every_channel`
 (loopback answered, `/ws` 4403 before the hello, `pair = 0`, `cert.expired` once),
+`test_spec_2_3_1_an_expired_node_is_readmitted_with_its_own_key_and_no_new_row` (row
+30; an unexpired registered key and a revoked one are refused),
 `test_spec_2_3_1_certificate_renews_at_runtime_under_ninety_days_and_never_at_expiry`
 (a fake clock at 91, 89 and 180 days),
 `test_spec_2_3_4_revoking_a_node_writes_the_revocation_row_and_closes_its_channel`,
@@ -817,35 +932,45 @@ and never a third),
 `test_spec_2_3_4_a_node_that_finds_itself_revoked_stops_and_tells_the_owner`,
 `test_spec_7_4_2_a_revoked_nodes_key_cannot_be_admitted_again`,
 `test_spec_6_1_peers_are_the_clusters_nodes_and_strangers_are_kept_apart_by_id` (a
-stranger's record with another `cl`, an invalid `cl`, and an empty table),
-`test_spec_9_2_join_route_is_the_owners_alone_and_bounds_its_body` (a session refused,
-an oversized body refused before it is read, a malformed URL and an empty code refused
-by name),
-`test_spec_cli_5_pv4xx_join_form_and_node_page` (`tests/common/a11y.rs`). In
-`crates/privatium/tests/cluster.rs`: `test_spec_cli_8_pair_join_admits_this_node` (two
-binaries, two roots, the code on standard input, exit 0 naming the cluster),
-`test_spec_cli_8_pair_join_with_a_wrong_code_exits_1_without_writing_identity`.
+stranger's record with another `cl`, an invalid `cl`, this node's own registration,
+and an empty table),
+`test_spec_9_2_join_and_node_windows_are_the_owners_alone_and_bound_their_bodies` (a
+session refused on both routes, an oversized body refused before it is read, a
+malformed URL, an empty code and a `node` that is not a boolean refused by name),
+`test_spec_cli_5_pv4xx_join_form_admit_button_and_node_page` (`tests/common/a11y.rs`).
+In `crates/privatium/tests/cluster.rs`: `test_spec_cli_8_pair_join_admits_this_node`
+(two binaries, two roots, `pair --node` on one, the code on the other's standard input,
+exit 0 naming the cluster), `test_spec_cli_8_pair_join_from_the_established_node_admits_the_dialed_one`
+(the Phase 3b direction), `test_spec_cli_8_pair_join_with_a_wrong_code_exits_1_without_writing_identity`,
+`test_spec_cli_8_pair_node_and_join_together_are_a_usage_error`.
 
-**Documentation:** rows 1–8; `docs/deployment.md §3`; `docs/security.md §8`;
-`docs/backup-and-restore.md §1` (what `identity/` holds after a join, and the expired
-state); `skills/privatium-tier3-rust` (`join`); `apps/*/README.md` where they name
-Phase 3.
+**Documentation:** rows 1–8, 30, 31 and the hint of row 14; `docs/deployment.md §3`
+(the two commands, in either order); `docs/security.md §8` (revoking a node, the
+rotation procedure); `docs/backup-and-restore.md §1` (what `identity/` holds after a
+join, and the expired state); `skills/privatium-tier3-rust` (`join`);
+`apps/*/README.md` where they name Phase 3.
 
 **Acceptance checklist** — check only after the named tests pass on all three platforms:
 
-- [ ] Admission with the key crossing once, after proof, and never to a browser:
+- [ ] Admission in either direction, the key crossing once, after proof, and never to a
+  browser:
   `test_spec_2_3_1_a_node_is_admitted_by_pairing_and_receives_the_cluster_key_and_a_certificate`,
+  `test_spec_2_3_1_the_established_node_admits_the_disposable_one_whichever_dialed`,
+  `test_spec_2_3_1_two_fresh_nodes_join_toward_the_window_and_two_established_ones_are_refused`,
   `test_spec_2_3_1_admit_is_sent_only_after_the_joiners_signature_verifies`,
   `test_spec_2_3_3_the_cluster_key_goes_to_a_node_and_never_to_a_browser`,
   `test_spec_2_3_3_cluster_private_key_is_absent_from_every_event_snapshot_and_backup`.
-- [ ] The registry rows agree and the founder alone founds:
-  `test_spec_2_3_1_the_joiner_and_the_admitting_node_write_the_same_device_row`,
-  `test_spec_2_3_1_a_joined_node_writes_no_cluster_row_and_audits_no_founding`.
-- [ ] Who may join, and a swap a crash cannot spoil:
-  `test_spec_2_3_a_node_in_a_cluster_refuses_to_join_another`,
+- [ ] Windows by kind, disposability from the node's own log, and the retry:
+  `test_spec_7_1_a_device_window_refuses_a_node_and_a_node_window_refuses_a_device`,
+  `test_spec_2_3_disposability_is_judged_from_this_nodes_own_segments`,
+  `test_spec_2_3_1_a_lost_joined_leaves_no_row_and_the_join_is_retried`.
+- [ ] The registry rows agree, the founder alone founds, and a swap a crash cannot
+  spoil: `test_spec_2_3_1_the_joiner_and_the_admitter_write_the_same_device_facts`,
+  `test_spec_2_3_1_a_joined_node_writes_no_cluster_row_and_audits_no_founding`,
   `test_spec_2_3_a_join_interrupted_mid_swap_completes_at_the_next_start`.
-- [ ] The expired state and renewal at runtime:
+- [ ] The expired state, re-admission and renewal at runtime:
   `test_spec_2_3_1_an_expired_node_starts_for_its_owner_and_refuses_every_channel`,
+  `test_spec_2_3_1_an_expired_node_is_readmitted_with_its_own_key_and_no_new_row`,
   `test_spec_2_3_1_certificate_renews_at_runtime_under_ninety_days_and_never_at_expiry`.
 - [ ] Revocation of a node, both ways, and no second admission of its key:
   `test_spec_2_3_4_revoking_a_node_writes_the_revocation_row_and_closes_its_channel`,
@@ -854,14 +979,17 @@ Phase 3.
   `test_spec_7_4_2_a_revoked_nodes_key_cannot_be_admitted_again`.
 - [ ] The cluster filter and the owner's surfaces:
   `test_spec_6_1_peers_are_the_clusters_nodes_and_strangers_are_kept_apart_by_id`,
-  `test_spec_9_2_join_route_is_the_owners_alone_and_bounds_its_body`,
-  `test_spec_cli_5_pv4xx_join_form_and_node_page`,
+  `test_spec_9_2_join_and_node_windows_are_the_owners_alone_and_bound_their_bodies`,
+  `test_spec_cli_5_pv4xx_join_form_admit_button_and_node_page`,
   `test_spec_cli_8_pair_join_admits_this_node`,
-  `test_spec_cli_8_pair_join_with_a_wrong_code_exits_1_without_writing_identity`.
+  `test_spec_cli_8_pair_join_from_the_established_node_admits_the_dialed_one`,
+  `test_spec_cli_8_pair_join_with_a_wrong_code_exits_1_without_writing_identity`,
+  `test_spec_cli_8_pair_node_and_join_together_are_a_usage_error`.
 
 **Manual pass, recorded in the PR:** a second machine joined from its terminal and from
-the settings form; the join form keyboard-only at 200 % zoom with a screen reader on the
-code field; the node page's two lists read in order.
+the settings form, dialing and dialed; the join form and the *Admit a node* button
+keyboard-only at 200 % zoom with a screen reader on the code field; the node page's two
+lists read in order.
 
 ---
 
@@ -940,7 +1068,11 @@ the desktop restarts and converges with no lost line and no duplicate),
 `test_spec_10_4_killing_the_active_endpoint_fails_over_in_under_five_seconds` (two
 listeners for one peer, the first closed mid-pass, a clock on the second's first answer),
 `test_spec_10_3_no_node_is_primary` (every node's `data/` digests equal after the passes,
-whichever started first), `test_spec_2_3_1_certificate_renews_after_a_completed_pass`.
+whichever started first), `test_spec_2_3_1_certificate_renews_after_a_completed_pass`,
+`test_spec_8_3_either_side_can_start_the_first_pass_after_admission` (the admitter
+dials the joiner before any `_sys` has crossed and is admitted from the hint; after the
+pass the row has arrived and a revocation of the admitter, synced in, is honoured over
+the hint; a stranger's ID with no row and no hint is refused).
 
 **Documentation:** rows 9–17, 21, 26, 27; `docs/architecture.md §6`;
 `docs/deployment.md §1, §3`; `skills/privatium-tier1-lua` and `-tier2-web`
@@ -965,9 +1097,10 @@ whichever started first), `test_spec_2_3_1_certificate_renews_after_a_completed_
   `test_spec_data_3_stream_carries_synced_events`,
   `test_spec_lua_3_4_on_append_fires_for_synced_events_with_the_origin_device`,
   `test_spec_app_contract_6_start_sync_and_sync_now_are_real`.
-- [ ] The routes confined to node sessions, the union over sockets, the unmet node:
-  `test_spec_9_2_sync_routes_answer_a_node_session_alone`,
+- [ ] The routes confined to node sessions, the union over sockets, the first pass from
+  either side, the unmet node: `test_spec_9_2_sync_routes_answer_a_node_session_alone`,
   `test_spec_10_1_heads_pull_and_push_are_a_set_union`,
+  `test_spec_8_3_either_side_can_start_the_first_pass_after_admission`,
   `test_spec_2_3_2_a_device_pinned_to_the_cluster_reaches_an_unmet_node`.
 - [ ] No primary, the power cut, offline edits, failover under five seconds, renewal
   after a pass: `test_spec_10_3_no_node_is_primary`,
@@ -1114,7 +1247,7 @@ page shows.
 
 ### M25 — Attachments
 
-Depends on §2.11 confirmed. The design is there; this is its checklist.
+The design is §2.11; this is its checklist.
 
 - `blob::Store::open(paths, slug)`; `write(&mut self, body: impl Stream) ->
   Result<Reference>` hashing as it streams to `.part`, renaming on match, refusing a
@@ -1129,8 +1262,8 @@ Depends on §2.11 confirmed. The design is there; this is its checklist.
   channel's client `chunk` direction (row 23) in `channel.rs` and `channel.js`, bounded
   before a byte is buffered.
 - `pv.js`: `blob(file)`, `blobUrl(reference)`; the outbox does not queue a blob — a `PUT`
-  that fails offline is reported and retried by the app; `pv.js` stays under
-  `spec/data-api.md §5`'s 12 KB.
+  that fails offline is reported and retried by the app; `spec/data-api.md §5`'s bound
+  becomes 16 KB (row 32) and `pv.js` stays under it.
 - Sync: the three routes and the engine's blob leg after the lines; the receiver's hash
   check; a peer's listing paged by hash.
 - `restore --from` copies and verifies; `backup::Plan` lists blobs to copy and refuses a
@@ -1164,7 +1297,7 @@ the channel),
 builds beneath the mount, a blob is never queued; `channel.test.mjs` — the client
 streams a body as chunks and ends it.
 
-**Documentation:** rows 22 and 23 in full; `docs/backup-and-restore.md §1` (`blob/` is
+**Documentation:** rows 22, 23 and 32 in full; `docs/backup-and-restore.md §1` (`blob/` is
 inside `data/`, so nothing changes for the owner — said explicitly);
 `docs/architecture.md §2.1` (one paragraph: what is not text, and why it still copies);
 `apps/sketch/README.md`; `skills/privatium-tier1-lua`, `-tier2-web`, `-accessibility`
@@ -1221,9 +1354,12 @@ phone; the file input and the pictures list keyboard-only with a screen reader, 
 **Tests:** `test_spec_cli_1_version_qualifies_protocol` (now `phase 3`);
 `test_spec_10_3_a_node_destroyed_and_rebuilt_from_a_backup_rejoins_and_loses_nothing`
 (`crates/privatium/tests/cluster.rs`: a root deleted, `data/` restored from a copy, a
-fresh `identity/`, re-joined, converged — attachments included);
-`test_spec_10_3_a_node_rebuilt_with_its_old_identity_is_refused_until_readmitted` (the
-old key was revoked when the machine was destroyed; the copy with it cannot rejoin).
+fresh `identity/`, joined from the home node's side as §2.12 has a VPS joined,
+converged — attachments included; the restored `_sys` rows other devices wrote do not
+make the rebuilt node non-disposable);
+`test_spec_2_3_4_the_destroyed_nodes_old_row_is_revoked_and_a_copy_with_its_key_is_refused`
+(the owner revokes the destroyed node from the devices page; a copy that still holds
+the old `identity/` is refused at every peer's `/ws` and cannot be re-admitted).
 
 **Documentation:** rows 28 and 29; `docs/deployment.md §2`; `docs/connectivity.md §2,
 §4.4`; `docs/roadmap.md` Phase 3 and 3b; `README.md`.
@@ -1232,7 +1368,7 @@ old key was revoked when the machine was destroyed; the copy with it cannot rejo
 
 - [ ] The claim and the rebuild: `test_spec_cli_1_version_qualifies_protocol`,
   `test_spec_10_3_a_node_destroyed_and_rebuilt_from_a_backup_rejoins_and_loses_nothing`,
-  `test_spec_10_3_a_node_rebuilt_with_its_old_identity_is_refused_until_readmitted`.
+  `test_spec_2_3_4_the_destroyed_nodes_old_row_is_revoked_and_a_copy_with_its_key_is_refused`.
 - [ ] The review item recorded, and the quickstart read once on a VPS by a person.
 
 **Roadmap wording, proposed and not applied.** Phase 3b's bullet "Phone on cellular, both
@@ -1274,7 +1410,7 @@ tests:
 | Discovery filters by TXT `cl` once paired (§6.1) | M20 | `test_spec_6_1_peers_are_the_clusters_nodes_and_strangers_are_kept_apart_by_id` |
 | No node is designated primary or authoritative (§10.3) | M21 | `test_spec_10_3_no_node_is_primary`, `test_spec_10_3_power_cut_desktop_catches_up_through_the_laptop` |
 | Endpoint failover uses ≤2500 ms connect timeouts (§10.4) — the timeout half; re-attempt on network change is a native client's, Phase 4 (row 27) | M21 | `test_spec_10_4_killing_the_active_endpoint_fails_over_in_under_five_seconds`, `test_spec_10_4_candidates_are_ordered_by_last_ok_then_kind_and_bounded` |
-| `sys_device.replica` declared accurately (§10.7) — nodes | M20 | `test_spec_2_3_1_the_joiner_and_the_admitting_node_write_the_same_device_row` |
+| `sys_device.replica` declared accurately (§10.7) — nodes | M20 | `test_spec_2_3_1_the_joiner_and_the_admitter_write_the_same_device_facts` |
 | Cluster private key never leaves nodes; devices receive the public key only (§2.3.3) — with admission, the key crossing once | M20 | `test_spec_2_3_3_the_cluster_key_goes_to_a_node_and_never_to_a_browser`, `test_spec_2_3_3_cluster_private_key_is_absent_from_every_event_snapshot_and_backup` |
 | Row-granularity LWW ordered by `(lam, ts, dev)` (§4.5) — with more than one writer | M22 | `test_spec_4_5_incremental_apply_of_interleaved_devices_equals_replay` |
 | Deleting `cache/` and all `snap/` loses no data (§3.1, §5) — with attachments | M25 | `test_spec_3_1_delete_cache_loses_nothing_with_blobs` |
@@ -1300,7 +1436,7 @@ criteria; M26 ticks them in `docs/roadmap.md` naming these tests.
 | Killing the active endpoint fails over in under 5 seconds, not 30 | M21 | `test_spec_10_4_killing_the_active_endpoint_fails_over_in_under_five_seconds` |
 | An attachment reaches every node and every restore; a mismatch is refused, never served | M25 | `test_spec_4_7_blobs_sync_as_a_set_union_and_a_corrupt_copy_is_refused`, `test_spec_cli_7_restore_copies_missing_blobs_and_refuses_a_mismatch` |
 | `rm -rf cache/ data/*/snap/` then restart → identical state, attachments included | M25 | `test_spec_3_1_delete_cache_loses_nothing_with_blobs` |
-| 3b: a VPS node is admitted with the same flow as a laptop | M20, M26 | `test_spec_cli_8_pair_join_admits_this_node`, and the quickstart read on a VPS |
+| 3b: a VPS node is admitted with the same flow as a laptop | M20, M26 | `test_spec_cli_8_pair_join_from_the_established_node_admits_the_dialed_one`, and the quickstart read on a VPS |
 | 3b: phone on cellular, both home machines off, reads and writes still work | M26 | manual, with the exposure row 28 states |
 | 3b: destroying and rebuilding the VPS node loses nothing | M26 | `test_spec_10_3_a_node_destroyed_and_rebuilt_from_a_backup_rejoins_and_loses_nothing` |
 | 3b: nothing in the codebase distinguishes it from any other node | M26 | the review item and its `grep`, recorded in the PR |
@@ -1319,11 +1455,13 @@ is "until you ask", which the Tier 3 skill says. If the review finds a path wher
 can wait forever, the fix is a tick in the daemon's maintenance loop calling
 `refresh_app`, not a shared node.
 
-**R21 — Two writers of a registry row.** §2.2 makes the admitting node and the joiner
-write identical `sys_device` facts so that `§4.5`'s choice is invisible. The window
-between admission and the joiner's re-assertion is one request; a crash inside it leaves
-the joiner's bootstrap row able to win until any amendment carries the fields forward.
-The named test covers the ordinary case; the hardening round reads the crash case.
+**R21 — Two writers of a registry row.** §2.2 makes the admitter and the joiner write
+the same `sys_device` facts so that `§4.5`'s choice is invisible, and has the joiner
+adopt and re-assert before it sends `joined`, so the admitter's row is never written
+for a node that did not join. What remains is a joiner that adopted and then lost the
+connection before `joined` arrived: it holds the cluster key with no row anywhere, and
+the fix is to run `pair --join` again, which the plan says and the named test drives.
+The hardening round reads the crash inside `adopt` itself.
 
 **R22 — Rank in the cache.** `pv_rank` doubles the writes of an apply. Measure against
 Phase 1's numbers in M22; if a 50,000-line log's rebuild slows by more than a third,
@@ -1365,6 +1503,16 @@ the owner typed across the public internet, where `§7.7`'s exposure is at its w
 Row 28 says so in the quickstart; the certificate host is Phase 5, and nothing in this
 phase pretends otherwise.
 
+**R30 — The registry is a set union, and a row's pins are good everywhere.** A node that
+joins brings its `_sys` segments with it, and every `sys_device` row they hold becomes a
+pin every node of the cluster accepts, whatever cluster the row was paired into.
+§2.1's disposability rule keeps a node's own admissions out of another cluster; it
+cannot keep out rows the owner restored or synced in, and a `pv/1` node has no way to
+tell an old cluster's row from a new one — `sys_device` carries no cluster and clocks
+across machines are not comparable. Accepted for this phase: the rows are the owner's
+own act, the rotation procedure of row 31 ends by revoking them, and a row-level
+cluster binding, if one is ever wanted, is a `pv/2` question beside `§14` item 5.
+
 ---
 
 ## 9. PR sequence
@@ -1372,12 +1520,12 @@ phase pretends otherwise.
 | # | Branch | Depends on | Spec edits |
 |---|---|---|---|
 | 40 | `phase3-plan-revision` | PR #38 | none — this plan |
-| 41 | `m20-admission` | §2.1, §2.2, §2.12 confirmed | §3 rows 1–8 |
+| 41 | `m20-admission` | PR #40 | §3 rows 1–8, 30, 31, and the hint of row 14 |
 | 42 | `m21-sync` | M20 | rows 9–17, 21, 26, 27 |
 | 43 | `m22-rank` | M21 | rows 19, 24 |
 | 44 | `m23-filesync` | M22 | rows 18, 20 |
 | 45 | `m24-animals-live` | M23 | row 25 |
-| 46 | `m25-attachments` | M24, §2.11 confirmed | rows 22, 23 |
+| 46 | `m25-attachments` | M24 | rows 22, 23, 32 |
 | 47 | `m26-always-on` | M25 | rows 28, 29; roadmap: tick Phase 3 and 3b |
 | 48 | `phase3-hardening` | M26 | as found |
 
