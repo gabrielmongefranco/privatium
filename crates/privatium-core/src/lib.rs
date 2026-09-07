@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lib.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-08-31  |  Modified: 2026-09-06
+// Created:  2026-08-31  |  Modified: 2026-09-07
 // Summary:  Crate root. The error type, the engine linkage probe, `Node::open` and the
 //           bootstrap order it follows, the sink that turns what a log scan found into
 //           sys_audit rows (spec/protocol.md §4.4), and the node-level API of
@@ -345,6 +345,50 @@ pub enum Error {
         /// Why.
         reason: String,
     },
+
+    /// A join (`spec/protocol.md §2.3.1`) did not complete: the URL, the socket, or the
+    /// other node's refusal by name. Never the code.
+    #[error("cannot join the cluster at {url}: {problem}")]
+    Join {
+        /// The URL that was dialed, as given.
+        url: String,
+        /// What went wrong, for the owner.
+        problem: String,
+    },
+
+    /// This node's certificate has expired, so it serves its owner alone until it is
+    /// re-admitted (`spec/protocol.md §2.3.1`); what was asked needs a member.
+    #[error(
+        "this node's certificate has expired; it serves its owner alone until it is re-admitted with `privatium pair --join` (spec/protocol.md §2.3.1)"
+    )]
+    CertificateExpired,
+
+    /// This node's ID is in `sys_node_revocation` (`spec/protocol.md §2.3.4`): it syncs
+    /// nothing and admits nobody, and the owner re-initializes it.
+    #[error(
+        "this node has been revoked from its cluster; re-initialize it with a fresh identity (spec/protocol.md §2.3.4, §2.4)"
+    )]
+    NodeRevoked,
+
+    /// A node named in `sys_node_revocation` asked to be admitted, or to admit
+    /// (`spec/protocol.md §2.3.4`).
+    #[error("node {node} is revoked from this cluster (spec/protocol.md §2.3.4)")]
+    PeerRevoked {
+        /// The revoked node's ID.
+        node: String,
+    },
+}
+
+/// What this node may do for the cluster it belongs to (`spec/protocol.md §2.3.1`,
+/// `§2.3.4`). A member does everything; the other two serve the owner alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Standing {
+    /// A node with a valid certificate that no revocation names.
+    Member,
+    /// The certificate has expired; re-admission is the only way back.
+    Expired,
+    /// `sys_node_revocation` names this node; it is re-initialized, never re-admitted.
+    Revoked,
 }
 
 /// The crate's result type.
@@ -492,7 +536,7 @@ impl Node {
         store.save_to(&mut state);
         state.flush()?;
 
-        Ok(Self {
+        let mut node = Self {
             paths,
             config,
             identity,
@@ -503,7 +547,79 @@ impl Node {
             pairing: None,
             discovery: None,
             lock,
-        })
+        };
+        // An expired or revoked node says so once, in the audit table the owner reads
+        // (spec/protocol.md §2.3.1, §2.3.4) — after the tables exist, since the check
+        // reads them, and refreshed once more so the row is visible.
+        if node.audit_standing(jiff::Timestamp::now())? {
+            node.refresh()?;
+        }
+        Ok(node)
+    }
+
+    /// This node's standing in its cluster (`spec/protocol.md §2.3.1`, `§2.3.4`):
+    /// revoked when `sys_node_revocation` names it, expired when its certificate is,
+    /// otherwise a member.
+    pub fn standing(&self, now: jiff::Timestamp) -> Result<Standing> {
+        if self.node_revoked(self.identity.id().as_str())? {
+            return Ok(Standing::Revoked);
+        }
+        if self.identity.is_expired(now) {
+            return Ok(Standing::Expired);
+        }
+        Ok(Standing::Member)
+    }
+
+    /// Whether `sys_node_revocation` holds `node` (`spec/data-dictionary.md §3.1c`).
+    pub fn node_revoked(&self, node: &str) -> Result<bool> {
+        let sql = format!("SELECT count(*) FROM {} WHERE id = ?", sys::REVOCATION);
+        self.store
+            .conn()
+            .query_row(&sql, rusqlite::params![node], |row| row.get::<_, i64>(0))
+            .map(|count| count > 0)
+            .map_err(|error| boxed(StoreError::Sql(error)))
+    }
+
+    /// Write `cert.expired` or `node.revoked` about this node, once per certificate and
+    /// once per revocation rather than once per start: the row is skipped while the
+    /// audit table already holds one naming the same expiry. Returns whether a row was
+    /// written.
+    fn audit_standing(&mut self, now: jiff::Timestamp) -> Result<bool> {
+        let id = self.identity.id().as_str().to_owned();
+        let (kind, detail, warn) = match self.standing(now)? {
+            Standing::Member => return Ok(false),
+            Standing::Expired => (
+                sys::KIND_CERT_EXPIRED,
+                serde_json::json!({ "expires_at": self.identity.certificate().expires_at }),
+                true,
+            ),
+            Standing::Revoked => (
+                sys::KIND_NODE_REVOKED,
+                serde_json::json!({ "self": true }),
+                false,
+            ),
+        };
+        let detail = serde_json::to_string(&detail)?;
+        let sql = format!(
+            "SELECT count(*) FROM {} WHERE kind = ? AND subject = ? AND detail = ?",
+            sys::AUDIT
+        );
+        let already: i64 = self
+            .store
+            .conn()
+            .query_row(&sql, rusqlite::params![kind, id, detail], |row| row.get(0))
+            .map_err(|error| boxed(StoreError::Sql(error)))?;
+        if already > 0 {
+            return Ok(false);
+        }
+        let at = log::now();
+        let row = if warn {
+            sys::AuditRow::warn(&at, kind, Some(&id), &detail)
+        } else {
+            sys::AuditRow::alert(&at, kind, Some(&id), &detail)
+        };
+        self.sys.put(sys::AUDIT, &new_ulid(), &row)?;
+        Ok(true)
     }
 
     /// Write `local/state.jsonl` if anything has changed since it was last written.
@@ -857,6 +973,51 @@ impl Node {
             .unwrap_or_default()
     }
 
+    /// Record a node learned by any means — a record another mechanism or an embedder
+    /// obtained — under its ID, as discovery's own records are (`spec/protocol.md §6.1`).
+    /// Returns `false` while discovery is not running, since there is no table to hold
+    /// it.
+    pub fn absorb_discovered(&self, seen: discover::Discovered) -> bool {
+        match &self.discovery {
+            Some(discovery) => {
+                discovery.absorb(seen);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The cluster's other nodes discovery has seen (`spec/protocol.md §6.1`): every
+    /// record whose `cl` is this node's cluster and whose `id` is not its own, by ID.
+    /// The only nodes a sync pass is ever offered to.
+    #[must_use]
+    pub fn peers(&self) -> Vec<discover::Discovered> {
+        let cluster = self.identity.cluster_id().as_str();
+        let own = self.identity.id().as_str();
+        let mut peers: Vec<_> = self
+            .discovered()
+            .into_iter()
+            .filter(|seen| seen.cluster == cluster && seen.id != own)
+            .collect();
+        peers.sort_by(|a, b| a.id.cmp(&b.id));
+        peers
+    }
+
+    /// The nodes discovery has seen that are not this cluster's (`spec/protocol.md
+    /// §6.1`), by ID: shown to the owner, never contacted.
+    #[must_use]
+    pub fn strangers(&self) -> Vec<discover::Discovered> {
+        let cluster = self.identity.cluster_id().as_str();
+        let own = self.identity.id().as_str();
+        let mut strangers: Vec<_> = self
+            .discovered()
+            .into_iter()
+            .filter(|seen| seen.cluster != cluster && seen.id != own)
+            .collect();
+        strangers.sort_by(|a, b| a.id.cmp(&b.id));
+        strangers
+    }
+
     /// The facts this node advertises (`spec/protocol.md §6.1`) as they stand: the IDs,
     /// `sys_node.display_name` or the Node ID, the mounted slugs and the ones eligible
     /// for a subtype, the build, the open pairing window's expiry, the port. The TXT
@@ -876,10 +1037,13 @@ impl Node {
             .map(|(_, app)| app.slug().to_owned())
             .collect();
         advertised.sort();
+        // An expired or revoked node advertises `pair = 0` whatever window it holds
+        // (spec/protocol.md §2.3.1): the node re-admitting it dials it by URL.
+        let member = self.standing(jiff::Timestamp::now())? == Standing::Member;
         let pair_until = self
             .pairing
             .as_ref()
-            .filter(|window| window.consumed_by().is_none())
+            .filter(|window| member && window.consumed_by().is_none())
             .map(Pairing::expires_at);
         Ok(discover::Facts {
             id: self.identity.id().as_str().to_owned(),
@@ -904,7 +1068,7 @@ impl Node {
     }
 
     /// This installation's `display_name` (empty is unset) and `build` from `sys_node`.
-    fn node_row_public_facts(&self) -> Result<(Option<String>, String)> {
+    pub(crate) fn node_row_public_facts(&self) -> Result<(Option<String>, String)> {
         let sql = format!("SELECT display_name, build FROM {} WHERE id = ?", sys::NODE);
         match self.store.conn().query_row(
             &sql,
@@ -1210,30 +1374,39 @@ fn bootstrap_sys(sys_log: &mut AppLog, identity: &Identity) -> Result<()> {
         if changed(node.as_ref(), &next_node) {
             batch.put(sys::NODE, &id, &next_node)?;
         }
-        let mut next_cluster = cluster.clone().unwrap_or(row(&sys::ClusterRow {
-            pubkey: base64::engine::general_purpose::STANDARD
-                .encode(identity.cluster_public().as_bytes()),
-            pkarr_name: identity::pkarr_name(&identity.cluster_public()),
-            created_at: &created_at,
-            created_by: &id,
-        })?);
-        next_cluster.insert(
-            "pubkey".into(),
-            to_raw_value(
-                &base64::engine::general_purpose::STANDARD
+        // The cluster's row is the founder's to write, at founding (spec/data-dictionary.md
+        // §3.1b): an admitted node holds none until sync brings the founder's. A first
+        // bootstrap — a log with no record of this node at all — is a founding too, which
+        // is what a zero-byte log left by a crash before the first append comes back as.
+        // An existing current row is corrected from the verified keys, as the node's own
+        // rows are.
+        let founding = cluster.is_none() && (identity.founded() || node.is_none());
+        if founding || cluster.is_some() {
+            let mut next_cluster = cluster.clone().unwrap_or(row(&sys::ClusterRow {
+                pubkey: base64::engine::general_purpose::STANDARD
                     .encode(identity.cluster_public().as_bytes()),
-            )?,
-        );
-        next_cluster.insert(
-            "pkarr_name".into(),
-            to_raw_value(&identity::pkarr_name(&identity.cluster_public()))?,
-        );
-        if changed(cluster.as_ref(), &next_cluster) {
-            batch.put(sys::CLUSTER, identity.cluster_id().as_str(), &next_cluster)?;
+                pkarr_name: identity::pkarr_name(&identity.cluster_public()),
+                created_at: &created_at,
+                created_by: &id,
+            })?);
+            next_cluster.insert(
+                "pubkey".into(),
+                to_raw_value(
+                    &base64::engine::general_purpose::STANDARD
+                        .encode(identity.cluster_public().as_bytes()),
+                )?,
+            );
+            next_cluster.insert(
+                "pkarr_name".into(),
+                to_raw_value(&identity::pkarr_name(&identity.cluster_public()))?,
+            );
+            if changed(cluster.as_ref(), &next_cluster) {
+                batch.put(sys::CLUSTER, identity.cluster_id().as_str(), &next_cluster)?;
+            }
         }
         Ok(())
     })?;
-    let kind = if cluster.is_none() {
+    let kind = if cluster.is_none() && (identity.founded() || node.is_none()) {
         Some(sys::KIND_CLUSTER_CREATED)
     } else if renewed {
         Some(sys::KIND_CERT_RENEWED)

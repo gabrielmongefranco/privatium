@@ -84,6 +84,11 @@ pub enum Route {
     /// `POST /settings/devices/pair` — open a pairing window from the settings page
     /// (`spec/cli.md §8`).
     PairOpen,
+    /// `POST /settings/devices/admit` — open a pairing window for a node
+    /// (`spec/protocol.md §7.1`).
+    AdmitNode,
+    /// `POST /settings/join` — join another node's cluster (`spec/protocol.md §2.3.1`).
+    Join,
     /// `GET /settings/devices/pairing` — the code page (`spec/protocol.md §7.2`).
     PairPage,
     /// `POST /settings/devices/pairing/close` — close the open window.
@@ -106,6 +111,8 @@ pub enum Route {
     /// `POST` and `GET /api/v1/pair` — the pairing window, for the owner alone
     /// (`spec/protocol.md §9.2`).
     PairApi,
+    /// `POST /api/v1/join` — join a cluster, for the owner alone (`§9.2`).
+    JoinApi,
     /// `/skills/<name>.md`.
     Skill {
         /// The skill's folder name.
@@ -182,7 +189,9 @@ impl Router {
                 "/data" | "/data/" => Route::Settings(SettingsPage::Data),
                 "/devices" | "/devices/" => Route::Settings(SettingsPage::Devices),
                 "/name" => Route::NodeName,
+                "/join" => Route::Join,
                 "/devices/pair" => Route::PairOpen,
+                "/devices/admit" => Route::AdmitNode,
                 "/devices/pairing" => Route::PairPage,
                 "/devices/pairing/close" => Route::PairClose,
                 _ => {
@@ -215,6 +224,7 @@ impl Router {
                 "/v1/health" => Route::Health,
                 "/v1/manifest" => Route::Manifest,
                 "/v1/pair" => Route::PairApi,
+                "/v1/join" => Route::JoinApi,
                 // In solo mode the mount is `/`, so `/api/…` is also the solo app's data
                 // API (`spec/data-api.md`); `§9.2`'s `/api/v1/*` stays the framework's.
                 _ if self.mode == Mode::Solo && rest.len() > 1 && !rest.starts_with("/v1") => {
@@ -409,7 +419,9 @@ mod tests {
             );
             assert_eq!(router.resolve("/settings/apps/Bad/seed"), Route::NotFound);
             assert_eq!(router.resolve("/settings/name"), Route::NodeName);
+            assert_eq!(router.resolve("/settings/join"), Route::Join);
             assert_eq!(router.resolve("/settings/devices/pair"), Route::PairOpen);
+            assert_eq!(router.resolve("/settings/devices/admit"), Route::AdmitNode);
             assert_eq!(router.resolve("/settings/devices/pairing"), Route::PairPage);
             assert_eq!(
                 router.resolve("/settings/devices/pairing/close"),
@@ -444,6 +456,7 @@ mod tests {
             assert_eq!(router.resolve("/api/v1/health"), Route::Health);
             assert_eq!(router.resolve("/api/v1/manifest"), Route::Manifest);
             assert_eq!(router.resolve("/api/v1/pair"), Route::PairApi);
+            assert_eq!(router.resolve("/api/v1/join"), Route::JoinApi);
             assert_eq!(router.resolve("/api/v1/nope"), Route::NotFound);
             assert_eq!(router.resolve("/api"), Route::NotFound);
             assert_eq!(router.resolve("/api/"), Route::NotFound);

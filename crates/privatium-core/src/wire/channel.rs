@@ -1,7 +1,9 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/wire/channel.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-06
-// Summary:  Encrypted WebSocket adapter over core::handle and live pairing (§7.4, §8.3).
+// Created:  2026-09-05  |  Modified: 2026-09-07
+// Summary:  Encrypted WebSocket adapter over core::handle and live pairing (§7.4, §8.3),
+//           including a node's admission in either direction (§2.3.1) and the refusal an
+//           expired or revoked node gives every channel.
 //           See main README.md for full license information.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -20,6 +22,7 @@ use tokio::task::{AbortHandle, JoinSet};
 
 use super::{ApiSettings, Body, Handler, Peer, Request, Response};
 use crate::http::{auth::Session, headers};
+use crate::pair::PairOutcome;
 use crate::session::handshake::{DevicePins, Handshake};
 use crate::{Node, identity::NodeId};
 
@@ -392,7 +395,8 @@ fn pins(node: &Node, dev: &str) -> Option<DevicePins> {
         return None;
     }
     registered_device(node, dev)?;
-    node.store()
+    let mut pins = node
+        .store()
         .conn()
         .query_row(
             "SELECT x25519_pub, revoked_at IS NOT NULL FROM sys_device WHERE id = ?",
@@ -406,7 +410,13 @@ fn pins(node: &Node, dev: &str) -> Option<DevicePins> {
         )
         .optional()
         .ok()
-        .flatten()
+        .flatten()?;
+    // A node named in `sys_node_revocation` is refused even if its device row has not
+    // caught up (§2.3.4): the two rows travel separately.
+    if node.node_revoked(dev).unwrap_or(true) {
+        pins.revoked = true;
+    }
+    Some(pins)
 }
 
 pub(super) async fn upgrade(handler: Handler, request: Request, pairing: bool) -> Response {
@@ -517,6 +527,21 @@ async fn close(socket: &mut WebSocket, code: u16, reason: &str) {
 /// Drive a node's session handshake, then dispatch concurrently through `handle`.
 /// Every error closes the socket and drops all pending responses and encryption keys.
 pub async fn serve_ws(handler: Handler, peer: Peer, host: HeaderValue, mut socket: WebSocket) {
+    // An expired or revoked node presents no certificate and answers nobody on `/ws`
+    // (spec/protocol.md §2.3.1, §2.3.4): refused before the hello is read.
+    let member = handler
+        .lock()
+        .standing(jiff::Timestamp::now())
+        .is_ok_and(|standing| standing == crate::Standing::Member);
+    if !member {
+        close(
+            &mut socket,
+            4403,
+            "this node serves its owner alone until it is re-admitted",
+        )
+        .await;
+        return;
+    }
     let handshake = async {
         let Message::Text(hello) = receive(&mut socket).await? else {
             return Err(());
@@ -704,10 +729,11 @@ async fn send_response(response: Response, id: u64, tx: mpsc::Sender<Frame>) -> 
     tx.send(Frame::new(id, Kind::End)).await.map_err(|_| ())
 }
 
-/// Drive the six pairing messages with one bounded lifetime. A counted attempt whose peer
-/// disconnects or falls silent is audited through the node as abandoned, including on
-/// task cancellation; an outcome the node itself audited — a wrong code, a replaced code,
-/// a closed window, a refused registration, a success — is not audited twice.
+/// Drive the pairing messages with one bounded lifetime — six for a device, eight for a
+/// node, in whichever direction §2.3.1 decided. A counted attempt whose peer disconnects
+/// or falls silent is audited through the node as abandoned, including on task
+/// cancellation; an outcome the node itself audited — a wrong code, a replaced code, a
+/// closed window, a refused registration, a success — is not audited twice.
 pub async fn serve_ws_pair(handler: Handler, peer: Peer, mut socket: WebSocket) {
     struct Attempt {
         handler: Handler,
@@ -785,15 +811,71 @@ pub async fn serve_ws_pair(handler: Handler, peer: Peer, mut socket: WebSocket) 
         let outcome = handler
             .lock()
             .pairing_finish(sealed, &bytes, jiff::Timestamp::now());
-        // Every outcome of a registration is audited by the node itself.
-        attempt.device = None;
-        outcome.map(|_| ())
+        // Every outcome of a registration is audited by the node itself. A node's
+        // admission keeps the guard until its row is written or its adoption done, so
+        // a peer that leaves between its sealed message and `joined` is audited once.
+        let outcome = match outcome {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                attempt.device = None;
+                return Err(error);
+            }
+        };
+        match outcome {
+            PairOutcome::Device(_) => {
+                attempt.device = None;
+                Ok("paired")
+            }
+            PairOutcome::Admit(admission) => {
+                let (pending, bytes) = handler
+                    .lock()
+                    .pairing_admit(admission, jiff::Timestamp::now())?;
+                socket
+                    .send(Message::Binary(bytes.into()))
+                    .await
+                    .map_err(|_| crate::pair::PairError::Format)?;
+                let Message::Binary(joined) = receive(&mut socket)
+                    .await
+                    .map_err(|_| crate::pair::PairError::Format)?
+                else {
+                    return Err(crate::pair::PairError::Format.into());
+                };
+                let written =
+                    handler
+                        .lock()
+                        .pairing_admitted(pending, &joined, jiff::Timestamp::now());
+                attempt.device = None;
+                written.map(|_| "admitted")
+            }
+            PairOutcome::Join(admission) => {
+                let Message::Binary(admit) = receive(&mut socket)
+                    .await
+                    .map_err(|_| crate::pair::PairError::Format)?
+                else {
+                    return Err(crate::pair::PairError::Format.into());
+                };
+                let adopted =
+                    handler
+                        .lock()
+                        .pairing_adopt(admission, &admit, jiff::Timestamp::now());
+                attempt.device = None;
+                let (_, bytes) = adopted?;
+                socket
+                    .send(Message::Binary(bytes.into()))
+                    .await
+                    .map_err(|_| crate::pair::PairError::Format)?;
+                Ok("joined")
+            }
+        }
     };
-    let result: Result<crate::Result<()>, _> =
+    let result: Result<crate::Result<&str>, _> =
         tokio::time::timeout(handler.timeouts.pairing, run).await;
     let (code, reason) = match result {
-        Ok(Ok(())) => (1000, "paired".to_owned()),
+        Ok(Ok(outcome)) => (1000, outcome.to_owned()),
         Ok(Err(crate::Error::Pair(e))) => (e.close_code(), e.to_string()),
+        Ok(Err(error @ (crate::Error::CertificateExpired | crate::Error::NodeRevoked))) => {
+            (4403, error.to_string())
+        }
         _ => (
             4400,
             "pairing could not finish; open pairing on the node and try again".to_owned(),

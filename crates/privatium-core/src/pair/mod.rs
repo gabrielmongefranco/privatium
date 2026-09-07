@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/pair/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-06
+// Created:  2026-09-05  |  Modified: 2026-09-07
 // Summary:  The pairing window (spec/protocol.md §7.1, §7.5): one code at a time, held in
 //           memory beside its PAKE secret and never written, with its TTL, its attempt cap,
 //           its per-source rate limit and the refusals each produces.
@@ -16,11 +16,30 @@ use zeroize::Zeroizing;
 
 pub mod code;
 pub mod handshake;
+pub mod join;
 mod node;
 pub mod qr;
 pub mod spake2;
 
 pub use code::{Code, CodeError, GLYPHS, Glyph, WORDS};
+pub use join::{JoinClient, JoinNode, JoinOutcome};
+pub use node::{Admission, AdmitPending, PairOutcome};
+
+/// The outcome of a join (`spec/protocol.md §2.3.1`, `spec/app-contract.md §6`): the
+/// cluster this node now belongs to, the node on the other side, whether this node was
+/// the one that joined, and whether that was a re-admission of its own key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct Joined {
+    /// The cluster both nodes now belong to.
+    pub cluster_id: String,
+    /// The other node's ID.
+    pub peer: String,
+    /// `true` when this node adopted the peer's cluster; `false` when it admitted the
+    /// peer into its own.
+    pub joined: bool,
+    /// Whether the joiner was re-admitted with the key it already held.
+    pub readmitted: bool,
+}
 
 /// `spec/protocol.md §7.5`: a code lives 120 seconds. A window may be opened for less,
 /// never for more.
@@ -51,11 +70,37 @@ pub enum PairError {
     /// A message was malformed, or the device ID did not derive from its key (`§7.4.2`).
     #[error("cannot pair: the other side sent an invalid message")]
     Format,
-    /// A node asked to be admitted (`§2.3.1`), which this build does not do.
+    /// The open window was not opened for this kind of client (`§7.1`): `node` is the
+    /// kind of the window, not of the client.
     #[error(
-        "cannot admit a node: node admission is Phase 3 of docs/roadmap.md; spec/protocol.md §2.3.1 is its contract"
+        "this pairing window is for {}; open one with {} to pair this",
+        if *.node { "a node" } else { "devices" },
+        if *.node { "`privatium pair`" } else { "`privatium pair --node`" }
     )]
-    NodeKind,
+    WindowKind {
+        /// Whether the window is for a node.
+        node: bool,
+    },
+    /// A node's signature over the transcript was missing or did not verify (`§7.4.2`).
+    #[error("cannot admit: the other node did not prove it holds its key")]
+    Signature,
+    /// Two established nodes met (`§2.3.1`): two clusters are never merged.
+    #[error(
+        "cannot admit: both nodes already belong to a cluster; to move one, rotate the cluster (spec/protocol.md §2.3.5)"
+    )]
+    TwoClusters,
+    /// The two nodes' states leave nobody able to admit (`§2.3.1`): an expired node is
+    /// re-admitted by an established member of its cluster and never by a fresh node,
+    /// and two expired nodes cannot admit each other.
+    #[error("cannot admit: {0}")]
+    NoAdmitter(&'static str),
+    /// The `admit` message could not be verified: a certificate that does not verify
+    /// under the key it came with, or that names another node (`§7.4.2`).
+    #[error("cannot join: the admission could not be verified")]
+    Admit,
+    /// The other node's key is in `sys_node_revocation` (`§2.3.4`).
+    #[error("cannot admit: this node's key is revoked from the cluster (spec/protocol.md §2.3.4)")]
+    Revoked,
     /// The device's key is already in `sys_device`, active or revoked. A key is never
     /// re-registered: a device that lost its pairing generates a new one (`§7.6`).
     #[error(
@@ -75,8 +120,13 @@ impl PairError {
             Self::Closed => 4404,
             Self::RateLimited | Self::Exhausted => 4429,
             Self::WrongCode => 4401,
-            Self::Format | Self::Ttl => 4400,
-            Self::NodeKind | Self::DeviceKnown => 4403,
+            Self::Format | Self::Ttl | Self::Admit => 4400,
+            Self::WindowKind { .. }
+            | Self::Signature
+            | Self::TwoClusters
+            | Self::NoAdmitter(_)
+            | Self::Revoked
+            | Self::DeviceKnown => 4403,
         }
     }
 }
@@ -102,6 +152,9 @@ pub struct Pairing {
     /// The last attempt each source began, for the two-second rule. Entries older than
     /// the interval are dropped on every call, so the map never outgrows the window.
     sources: BTreeMap<IpAddr, jiff::Timestamp>,
+    /// Whether the window was opened for a node (`spec/protocol.md §7.1`): it then
+    /// answers `kind = "node"` alone, and a window for devices refuses that kind.
+    node: bool,
 }
 
 impl std::fmt::Debug for Pairing {
@@ -111,6 +164,7 @@ impl std::fmt::Debug for Pairing {
             .field("expires_at", &self.expires_at)
             .field("attempts", &self.attempts)
             .field("generation", &self.generation)
+            .field("node", &self.node)
             .finish_non_exhaustive()
     }
 }
@@ -138,6 +192,8 @@ pub struct PairingSnapshot {
     pub attempts: u8,
     /// How many times the code has been replaced after exhaustion.
     pub generation: u32,
+    /// Whether the window is for a node rather than for devices (`§7.1`).
+    pub node: bool,
     /// The device that paired, once one has.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub consumed_by: Option<String>,
@@ -169,6 +225,7 @@ impl Pairing {
             consumed_at: None,
             generation: 0,
             sources: BTreeMap::new(),
+            node: false,
         })
     }
 
@@ -179,6 +236,20 @@ impl Pairing {
         window.code = code;
         window.w = spake2::password(code).map_err(|_| PairError::Format)?;
         Ok(window)
+    }
+
+    /// The same window opened for a node (`spec/protocol.md §7.1`): it answers `kind =
+    /// "node"` alone.
+    #[must_use]
+    pub fn for_node(mut self) -> Self {
+        self.node = true;
+        self
+    }
+
+    /// Whether the window is for a node rather than for devices.
+    #[must_use]
+    pub fn is_for_node(&self) -> bool {
+        self.node
     }
 
     /// The window's ULID — the `subject` of its audit rows.
@@ -244,6 +315,7 @@ impl Pairing {
             expires_at: crate::log::format_ts(self.expires_at),
             attempts: self.attempts,
             generation: self.generation,
+            node: self.node,
             consumed_by: self.consumed_by.clone(),
             consumed_at: self.consumed_at.map(crate::log::format_ts),
         }

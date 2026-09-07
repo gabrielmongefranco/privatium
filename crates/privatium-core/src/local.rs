@@ -1,10 +1,10 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/local.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-06
+// Created:  2026-09-01  |  Modified: 2026-09-07
 // Summary:  local/state.jsonl — the node-local state of spec/protocol.md §3. Never synced,
-//           never backed up, and never required for restore. It holds one record per app:
-//           the Lamport counter and the highest `seq` seen per device.
-//           See main README.md for full license information.
+//           never backed up, and never required for restore. It holds one record per app —
+//           the Lamport counter and the highest `seq` seen per device — and the peer hints
+//           of spec/data-dictionary.md §3.7. See main README.md for full license information.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -60,16 +60,43 @@ pub struct Record {
     pub at: String,
 }
 
+/// One remembered peer (`spec/data-dictionary.md §3.7`): the node that admitted this one,
+/// or one the owner named. A hint and never authority — a `sys_device` row for the peer
+/// supersedes it — and it holds no secret.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PeerHint {
+    /// The peer's Node ID.
+    pub id: String,
+    /// The peer's X25519 static public key, base64, which a channel to it is keyed on.
+    pub x25519_pub: String,
+    /// The URL it was joined at or the owner typed, when one is known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+/// The `peers` line of `local/state.jsonl`: every hint, in one record apart from the
+/// per-app ones.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+struct PeersLine {
+    peers: Vec<PeerHint>,
+    /// When the line was written. For a human reading the file; nothing parses it.
+    #[serde(default)]
+    at: String,
+}
+
 /// `local/state.jsonl`, loaded.
 ///
 /// One JSON object per line, last record wins per app — which is what the extension means.
 /// Rewritten whole on [`flush`](Self::flush) rather than appended to: the file holds one
 /// line per app, a full rewrite compacts it for free, and `AGENTS.md` invariant 3's
-/// append-only rule governs **log files** under `data/`, not this.
+/// append-only rule governs **log files** under `data/`, not this. One further line,
+/// present only once a peer is known, holds the peer hints of
+/// `spec/data-dictionary.md §3.7`.
 #[derive(Debug, Clone)]
 pub struct State {
     path: PathBuf,
     records: BTreeMap<String, Record>,
+    peers: Vec<PeerHint>,
     dirty: bool,
 }
 
@@ -83,6 +110,7 @@ impl State {
         let mut state = Self {
             path: path.to_path_buf(),
             records: BTreeMap::new(),
+            peers: Vec::new(),
             dirty: false,
         };
 
@@ -93,16 +121,20 @@ impl State {
         };
 
         let mut lines = 0usize;
+        let mut peer_lines = 0usize;
         for line in text.lines().filter(|line| !line.trim().is_empty()) {
             lines += 1;
             if let Ok(record) = serde_json::from_str::<Record>(line) {
                 state.records.insert(record.app.clone(), record);
+            } else if let Ok(peers) = serde_json::from_str::<PeersLine>(line) {
+                state.peers = peers.peers;
+                peer_lines += 1;
             }
         }
 
         // More lines than records means an older build appended rather than rewrote, or a
         // record was dropped. Marking it dirty makes the next flush compact the file.
-        state.dirty = lines != state.records.len();
+        state.dirty = lines != state.records.len() + peer_lines.min(1);
         Ok(state)
     }
 
@@ -110,6 +142,31 @@ impl State {
     #[must_use]
     pub fn get(&self, app: &str) -> Option<&Record> {
         self.records.get(app)
+    }
+
+    /// The remembered peers (`spec/data-dictionary.md §3.7`), by ID.
+    #[must_use]
+    pub fn peers(&self) -> &[PeerHint] {
+        &self.peers
+    }
+
+    /// Remember a peer, replacing what was held for its ID; a hint with a URL keeps it
+    /// when the new one names none.
+    pub fn remember_peer(&mut self, hint: PeerHint) {
+        let mut hint = hint;
+        if let Some(index) = self.peers.iter().position(|p| p.id == hint.id) {
+            if hint.url.is_none() {
+                hint.url.clone_from(&self.peers[index].url);
+            }
+            if self.peers[index] == hint {
+                return;
+            }
+            self.peers[index] = hint;
+        } else {
+            self.peers.push(hint);
+            self.peers.sort_by(|a, b| a.id.cmp(&b.id));
+        }
+        self.dirty = true;
     }
 
     /// Record what is now known about one app's log.
@@ -172,6 +229,13 @@ impl State {
         let mut out = String::new();
         for record in self.records.values() {
             out.push_str(&serde_json::to_string(record)?);
+            out.push('\n');
+        }
+        if !self.peers.is_empty() {
+            out.push_str(&serde_json::to_string(&PeersLine {
+                peers: self.peers.clone(),
+                at: crate::log::now(),
+            })?);
             out.push('\n');
         }
 
@@ -254,6 +318,44 @@ mod tests {
 
         let state = State::load(&path).unwrap();
         assert_eq!(state.get("hello").unwrap().lam, 3);
+    }
+
+    /// The peers line rides beside the app records, survives a reload, and is replaced
+    /// per ID rather than appended to (`spec/data-dictionary.md §3.7`).
+    #[test]
+    fn peer_hints_round_trip_beside_the_app_records() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.jsonl");
+        let mut state = State::load(&path).unwrap();
+        state.set("_sys", 3, BTreeMap::new());
+        state.remember_peer(PeerHint {
+            id: "as3nn9tm".into(),
+            x25519_pub: "AAAA".into(),
+            url: Some("http://192.0.2.5:8420".into()),
+        });
+        state.flush().unwrap();
+
+        let mut reloaded = State::load(&path).unwrap();
+        assert_eq!(reloaded.get("_sys").unwrap().lam, 3);
+        assert_eq!(reloaded.peers().len(), 1);
+        assert_eq!(
+            reloaded.peers()[0].url.as_deref(),
+            Some("http://192.0.2.5:8420")
+        );
+        assert!(!reloaded.dirty, "a clean reload must not rewrite the file");
+
+        // A later hint without a URL keeps the one held; a new key replaces the old.
+        reloaded.remember_peer(PeerHint {
+            id: "as3nn9tm".into(),
+            x25519_pub: "BBBB".into(),
+            url: None,
+        });
+        assert_eq!(reloaded.peers()[0].x25519_pub, "BBBB");
+        assert_eq!(
+            reloaded.peers()[0].url.as_deref(),
+            Some("http://192.0.2.5:8420")
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap().lines().count(), 2);
     }
 
     #[test]

@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/sample-app-design.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-09-06
-Modified: 2026-09-06
+Modified: 2026-09-07
 Summary:  How the reference apps keep their presentation small and responsive.
           See main README.md for full license information.
 -->
@@ -96,10 +96,12 @@ implemented by the sample app refresh.
 
 Starting a stroke closes open color and action panels. Eraser paints a 24-pixel white
 stroke on the white canvas; Stroke eraser removes a whole stroke. Both work by keyboard.
-Undo remembers up to 50 local actions in the current tab, including New sketch. Reloading
-clears that undo history. A restoration uses fresh IDs and retains the original layer
-key, because a tombstoned ID cannot be reused. Later changes to a touched stroke can
-prevent undo; the page explains this instead of overwriting them.
+Undo reverses the latest change to the shared canvas, whichever window or device made
+it — a stroke, an erasure or a New sketch — up to 50 changes back; the log replayed at
+load fills that history, so a reload loses nothing undoable. A batch written as one act
+is undone as one. A restoration uses fresh IDs and retains the original layer key,
+because a tombstoned ID cannot be reused. Later changes to a touched stroke can prevent
+undo; the page explains this instead of overwriting them.
 
 New sketch clears the shared canvas with tombstones, rather than creating a sketch
 library. Download PNG first to keep a separate image. PNG export includes saved strokes,

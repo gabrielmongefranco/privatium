@@ -1,10 +1,13 @@
 /* Project: Privatium™ | File: apps/sketch/web/history.js
  * Authors: Gabriel Mongefranco (@gabrielmongefranco)
- * Created: 2026-09-06 | Modified: 2026-09-06
- * Summary: Session undo uses compensating events; original stroke order survives
- *          restoration. See main README.md for full license information.
+ * Created: 2026-09-06 | Modified: 2026-09-07
+ * Summary: Undo over the shared canvas: every change the tab sees — its own, another
+ *          window's, another device's, and the log replayed at load — joins one bounded
+ *          history in the order it arrived, and undo reverses the latest with compensating
+ *          events. Original stroke order survives restoration.
+ *          See main README.md for full license information.
  */
-/** Retain up to 50 successful local actions. The supplied writer durably appends events. */
+/** Retain up to 50 changes to the canvas. The supplied writer durably appends events. */
 export class SketchHistory {
   constructor(write, mint) {
     this.write = write;
@@ -14,13 +17,35 @@ export class SketchHistory {
     this.undoStack = [];
     this.busy = false;
   }
-  /** Apply an event from replay, subscription or a successful local write. */
-  apply(ev) {
-    if (ev.op === 'del') this.strokes.delete(ev.id);
-    else {
+  /**
+   * Apply an event from replay, subscription or a successful local write, and remember
+   * how to reverse it. An event that changes nothing — this tab's own write echoed back
+   * by the stream, a replayed line already applied — is not remembered. Events that
+   * share one `ts` and one `dev` were written as one batch and are undone as one.
+   */
+  apply(ev, remember = true) {
+    const before = this.strokes.has(ev.id) ? this.strokes.get(ev.id) : undefined;
+    if (ev.op === 'del') {
+      if (before === undefined) return;
+      this.strokes.delete(ev.id);
+    } else {
+      if (before !== undefined && JSON.stringify(before) === JSON.stringify(ev.d)) return;
       const layer = ev.d.layer || ev.id;
       if (!this.order.has(layer)) this.order.set(layer, this.order.size);
       this.strokes.set(ev.id, ev.d);
+    }
+    if (!remember) return;
+    const inverse = before === undefined
+      ? {op:'del', tbl:'stroke', id:ev.id}
+      : {op:'put', tbl:'stroke', id:ev.id, d:before};
+    const applied = {op:ev.op, tbl:'stroke', id:ev.id, ...(ev.op === 'del' ? {} : {d:ev.d})};
+    const batch = ev.ts && ev.dev ? `${ev.dev}/${ev.ts}` : null;
+    const top = this.undoStack.at(-1);
+    if (batch && top && top.batch === batch) {
+      top.events.push(applied);
+      top.inverse.unshift(inverse);
+    } else {
+      this.remember({events:[applied], inverse:[inverse], batch});
     }
   }
   /** Read visible strokes in their original painting order, including restored strokes. */
@@ -28,7 +53,11 @@ export class SketchHistory {
     return [...this.strokes].sort(([a, x], [b, y]) =>
       this.order.get(x.layer || a) - this.order.get(y.layer || b));
   }
-  /** Append an action and remember its inverse only after success; reject concurrent writes. */
+  remember(entry) {
+    this.undoStack.push(entry);
+    if (this.undoStack.length > 50) this.undoStack.shift();
+  }
+  /** Append an action from this tab and remember its inverse only after success; reject concurrent writes. */
   async change(events) {
     if (this.busy) throw new Error('Wait for the current action to finish.');
     if (!events.length) return;
@@ -38,13 +67,12 @@ export class SketchHistory {
     this.busy = true;
     try {
       const result = await this.write(events);
-      events.forEach(ev => this.apply(ev));
-      this.undoStack.push({events, inverse});
-      if (this.undoStack.length > 50) this.undoStack.shift();
+      events.forEach(ev => this.apply(ev, false));
+      this.remember({events, inverse, batch:null});
       return result;
     } finally { this.busy = false; }
   }
-  /** Undo one local action without overwriting a later change to its strokes. */
+  /** Undo the latest change to the canvas, wherever it came from, without overwriting a later change to its strokes. */
   async undo() {
     if (this.busy) throw new Error('Wait for the current action to finish.');
     const action = this.undoStack.at(-1);
@@ -63,8 +91,8 @@ export class SketchHistory {
         return replacement;
       });
       const result = await this.write(inverse);
-      inverse.forEach(ev => this.apply(ev));
       this.undoStack.pop();
+      inverse.forEach(ev => this.apply(ev, false));
       // Older undo entries must follow a restored stroke's new, never-reused ID.
       for (const entry of this.undoStack) {
         for (const list of [entry.events, entry.inverse]) {

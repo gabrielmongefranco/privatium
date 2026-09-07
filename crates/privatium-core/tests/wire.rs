@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/wire.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-06
+// Created:  2026-09-03  |  Modified: 2026-09-07
 // Summary:  core::handle against spec/protocol.md §9 and ADR 0003 — every route reachable
 //           with no listener, the headers of §9.3 on every response, nothing leaked
 //           unauthenticated (§9.2), solo mode at `/` with the framework prefixes winning
@@ -890,4 +890,94 @@ async fn test_settings_pages_render_the_node() {
     assert!(devices.contains(&id), "{devices}");
     assert!(devices.contains("this space"), "{devices}");
     assert!(devices.contains("Pair a device"), "{devices}");
+}
+
+/// `spec/protocol.md §8.4` — a request from this machine's own interface address is the
+/// owner's, exactly as loopback is: a browser opened on the node's LAN address from the
+/// node's own keyboard sees the settings page and no pairing screen. The `Host` rule
+/// still holds — a name that is not this machine's is refused — and a peer on another
+/// machine still gets the bootstrap set alone.
+#[tokio::test]
+async fn test_spec_8_4_a_request_from_this_machines_own_address_is_the_owner() {
+    let root = tempfile::tempdir().unwrap();
+    let handler = handler(&root);
+    let own: Vec<std::net::IpAddr> = if_addrs::get_if_addrs()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|interface| interface.ip())
+        .filter(|ip| !ip.is_loopback() && !ip.is_unspecified())
+        .collect();
+    let page = |peer: std::net::IpAddr, host: &str| {
+        let mut request = axum::http::Request::builder()
+            .method(Method::GET)
+            .uri("/settings")
+            .header("host", host)
+            .header("accept", "text/html")
+            .body(Body::empty())
+            .unwrap();
+        request
+            .extensions_mut()
+            .insert(Peer(SocketAddr::new(peer, 4000)));
+        request
+    };
+    for ip in &own {
+        let host = match ip {
+            std::net::IpAddr::V4(v4) => format!("{v4}:8420"),
+            std::net::IpAddr::V6(v6) => format!("[{v6}]:8420"),
+        };
+        let response = handler.handle(page(*ip, &host)).await;
+        assert_eq!(response.status(), StatusCode::OK, "{ip}");
+        let body = String::from_utf8(
+            to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap()
+                .to_vec(),
+        )
+        .unwrap();
+        assert!(
+            body.contains("<h2>Settings</h2>"),
+            "{ip}: the page, not the bootstrap"
+        );
+        assert!(!body.contains("id=\"pv-pair\""), "{ip}");
+        // The same address with a Host that is not this machine's: DNS rebinding.
+        let rebound = handler.handle(page(*ip, "attacker.example:8420")).await;
+        assert_eq!(rebound.status(), StatusCode::FORBIDDEN, "{ip}");
+        let named = handler.handle(page(*ip, "localhost:8420")).await;
+        assert_eq!(
+            named.status(),
+            StatusCode::OK,
+            "{ip}: loopback names are this machine"
+        );
+    }
+    // A peer that is not this machine — TEST-NET-1 — gets the bootstrap, whatever it
+    // sends as Host.
+    let stranger = handler
+        .handle(page("192.0.2.10".parse().unwrap(), "192.0.2.1:8420"))
+        .await;
+    let body = String::from_utf8(
+        to_bytes(stranger.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(
+        body.contains("id=\"pv-pair\""),
+        "a stranger gets the bootstrap"
+    );
+    assert!(!body.contains("<h2>Settings</h2>"));
+    assert!(
+        privatium_core::http::auth::is_this_machine("127.0.0.1".parse().unwrap())
+            && !privatium_core::http::auth::is_this_machine("192.0.2.10".parse().unwrap())
+    );
+    assert!(privatium_core::http::auth::host_names_this_machine(
+        "localhost:8420"
+    ));
+    assert!(privatium_core::http::auth::host_names_this_machine("[::1]"));
+    assert!(!privatium_core::http::auth::host_names_this_machine(
+        "192.0.2.10:8420"
+    ));
+    assert!(!privatium_core::http::auth::host_names_this_machine(
+        "attacker.example"
+    ));
 }

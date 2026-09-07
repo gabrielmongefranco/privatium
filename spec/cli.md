@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/cli.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-30
-Modified: 2026-09-06
+Modified: 2026-09-07
 Summary:  NORMATIVE. The command-line interface, including the linter that makes the skills
           system enforceable rather than advisory.
           See main README.md for full license information.
@@ -395,7 +395,7 @@ is ordinarily "copy the folder back" (`docs/backup-and-restore.md`).
 ## 8. `privatium pair`
 
 ```
-privatium pair [--open] [--timeout 120]
+privatium pair [--open] [--timeout 120] [--node] [--join <url>]
 ```
 
 Opens pairing mode and prints the code as four emoji with their labels, two words, and a
@@ -407,6 +407,20 @@ running node over loopback — `POST /api/v1/pair` to open the window, `GET /api
 to follow it (`spec/protocol.md §9.2`) — reports the device that paired and exits 0, or
 the expiry and exits 1; with no node running it is a runtime error saying to start one.
 `--open` opens the devices page in a browser.
+
+`--node` opens the window **for a node** instead of for devices (`spec/protocol.md
+§7.1`): the code is printed the same way, beside the command to run on the other
+machine, and the command reports the node that was admitted and exits 0. A window of
+the other kind already open is reported and exits 1.
+
+`--join <url>` is the other machine's half: it prompts on the terminal for the code the
+first machine shows — the two words, or the four glyph labels — and asks the running
+node over loopback to join, `POST /api/v1/join` (`spec/protocol.md §9.2`, `§2.3.1`).
+Which node joins which is decided by the exchange, not by which command ran; the
+command says which it was, names the cluster and the peer, and exits 0, or names the
+refusal and exits 1 with this node's identity untouched. The code is read from standard
+input, never taken as an argument, so it appears in no shell history and no process
+list. `--join` with `--node` or with `--open` is a usage error.
 
 Pairing mode MUST NOT open without this command, its equivalent in the settings UI, or
 the first-run window of `§2` (`spec/protocol.md §7.1`).

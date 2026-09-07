@@ -233,7 +233,10 @@ impl Handler {
                 .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
                 .map(|p| p.0)
         });
-        if peer.is_none_or(|p| p.ip().is_loopback()) {
+        // This machine's own request — loopback, or the node's LAN address opened from
+        // its own keyboard — is the owner's (spec/protocol.md §8.4); the layer holds it
+        // to the Host rule below.
+        if peer.is_none_or(|p| http::auth::is_this_machine(p.ip())) {
             return true;
         }
         if request.method() != Method::GET && request.method() != Method::HEAD {
@@ -390,8 +393,19 @@ impl Handler {
                     .owner_action(owner::OwnerAction::DeviceRevoke(id), &path, request)
                     .await;
             }
+            Route::AdmitNode => {
+                return self
+                    .owner_action(owner::OwnerAction::AdmitNode, &path, request)
+                    .await;
+            }
+            Route::Join => {
+                return self
+                    .owner_action(owner::OwnerAction::Join, &path, request)
+                    .await;
+            }
             Route::PairPage => return self.pairing_page(&request),
             Route::PairApi => return self.pair_api(request).await,
+            Route::JoinApi => return self.join_api(request).await,
             Route::Health => {
                 if !get {
                     return headers::method_not_allowed("GET, HEAD");

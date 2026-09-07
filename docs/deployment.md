@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/deployment.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-06
+Modified: 2026-09-07
 Summary:  Topologies, the always-on node, and per-OS firewall behaviour.
           See main README.md for full license information.
 -->
@@ -19,7 +19,8 @@ The node advertises itself on the local network over mDNS and answers UDP probes
 52525 (`spec/protocol.md §6`); `--no-discovery` turns both off for one run, and the
 `discovery.mdns` and `discovery.udp` settings turn each off durably. A phone pairs by
 scanning the QR code `--open` or `privatium pair` prints, or the one on the devices
-page. Multi-node sync is not built yet, and the remote transports, tunnels and
+page. A second node is admitted with one pairing (§3.1); sync between nodes is not built
+yet, and the remote transports, tunnels and
 certificates below are not either; each is marked where it appears.
 
 ## 1. Topologies
@@ -97,6 +98,33 @@ Adding a second node is one pairing, and it buys more than a second copy:
   `cl` TXT field, so a LAN carrying several households' nodes still shows you only your own.
 
 Do not add nodes for performance. Add them for availability.
+
+### 3.1 Admitting a node
+
+Two commands, one on each machine, in whichever order the network allows:
+
+1. On one machine, open a window for a node: `privatium pair --node`, or **Settings ›
+   Devices › Admit a space**. It prints a code — four emoji with their labels, and two
+   words — and the address to use, and waits up to two minutes.
+2. On the other, run `privatium pair --join http://<that address>` and type the code
+   when asked, or open **Settings › Space › Join a cluster** and enter the address and
+   the code there.
+
+Which machine joins which is decided by the exchange, not by which command you ran: a
+machine that has paired nothing and admitted nobody joins the other's cluster and gives
+up the empty cluster it founded; two machines that both already have devices are
+refused, since two clusters are never merged. So on a home network it does not matter
+which of the desktop and the laptop opens the window. A machine behind a router — a
+laptop on hotel Wi-Fi, a rented server — can dial home and cannot be dialed, so it runs
+the `--join` half.
+
+Both sides prove they hold their keys before anything is handed over, and the cluster
+private key crosses the network once, encrypted under the pairing code's key, to the
+machine being admitted. The admitting node lists the new one on its devices page, with
+a **Revoke** button that removes it from the cluster on every node that hears of it
+(`docs/security.md §8`). Sync between the two nodes is Phase 3's next milestone; until
+it lands, each node holds what it held before, plus the cluster key and the certificate
+that let one pairing cover both.
 
 ## 4. Firewalls
 

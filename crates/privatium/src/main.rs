@@ -110,7 +110,15 @@ fn main() -> ExitCode {
         Command::Restore { from, app, dry_run } => {
             data::restore(&invocation.global, &from, app.as_deref(), dry_run)
         }
-        Command::Pair { open, timeout } => pair::pair(&invocation.global, open, timeout),
+        Command::Pair {
+            open,
+            timeout,
+            node,
+            join,
+        } => match join {
+            Some(url) => pair::join(&invocation.global, &url),
+            None => pair::pair(&invocation.global, open, timeout, node),
+        },
         Command::Firewall { .. } => not_in_this_build(
             "firewall",
             "the firewall helper is Phase 6 of docs/roadmap.md; spec/cli.md §9 is its contract",

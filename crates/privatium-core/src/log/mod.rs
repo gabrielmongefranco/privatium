@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/log/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-06
+// Created:  2026-09-01  |  Modified: 2026-09-07
 // Summary:  The append-only event log (spec/protocol.md §4). This module is the timestamp
 //           printer, the `op` and envelope types, and AppLog — one app's log, which owns
 //           the §4.3 Lamport counter and the single writer §3.1 allows this node.
@@ -231,6 +231,13 @@ impl AppLog {
     #[must_use]
     pub fn lam(&self) -> u64 {
         self.lamport.get()
+    }
+
+    /// Fold a counter received from a peer into this app's (`§4.3`): the admitter's at
+    /// admission, so that everything this node writes as a member is causally after it.
+    /// Monotonic; a lower value changes nothing.
+    pub fn observe_lam(&mut self, seen: u64) {
+        self.lamport.observe(seen);
     }
 
     /// The highest `seq` seen per device.

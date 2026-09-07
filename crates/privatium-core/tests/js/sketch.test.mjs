@@ -1,7 +1,8 @@
 // Project: Privatium™ | File: crates/privatium-core/tests/js/sketch.test.mjs
 // Authors: Gabriel Mongefranco (@gabrielmongefranco)
-// Created: 2026-09-06 | Modified: 2026-09-06
-// Summary: Stroke erasing respects segment edges and rejects malformed geometry.
+// Created: 2026-09-06 | Modified: 2026-09-07
+// Summary: Stroke erasing respects segment edges and rejects malformed geometry; undo is
+//          shared across windows and devices, batched, bounded, and never reuses an ID.
 //          See main README.md for full license information.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -42,9 +43,18 @@ test('failed writes and remote edits preserve undo and visible strokes', async()
  await m.change([stroke('a')]); fail=true;
  await assert.rejects(m.change([stroke('b')])); await assert.rejects(m.undo());
  assert.equal(m.strokes.has('b'),false); assert.equal(m.undoStack.length,1);
- fail=false; m.apply(stroke('a','#FFFFFF'));
+ fail=false;
+ // A change to the same stroke from another window is the latest change, so undo
+ // reverses it — back to what this tab drew — rather than refusing.
+ m.apply({...stroke('a','#FFFFFF'), ts:'2026-09-07T10:00:00.000Z', dev:'k7m2q9xf'});
+ assert.equal(m.undoStack.length,2);
+ await m.undo();
+ assert.equal(m.strokes.get('a').color,'#00274C');
+ // A later change this history did not see — a stroke edited underneath an entry —
+ // still makes that entry unavailable rather than overwritten.
+ m.strokes.set('a', {...m.strokes.get('a'), color:'#333333'});
  await assert.rejects(m.undo(),/another window/);
- assert.equal(m.strokes.get('a').color,'#FFFFFF');
+ assert.equal(m.strokes.get('a').color,'#333333');
 });
 test('history is bounded and simultaneous actions are refused',async()=>{
  const m=makeHistory(async()=>{});
@@ -71,4 +81,45 @@ test('undo never reuses tombstoned IDs and earlier undo follows restored strokes
  assert.equal(m.strokes.size,1);
  await m.undo();
  assert.equal(m.strokes.size,0);
+});
+
+test('changes from other windows and devices join the shared undo, batches as one', async () => {
+ const writes = []; const m = makeHistory(async e => { writes.push(e); });
+ // Two strokes from another device, one batch: undone together.
+ m.apply({...stroke('r1'), ts: '2026-09-07T10:00:00.000Z', dev: 'k7m2q9xf'});
+ m.apply({...stroke('r2', '#FFFFFF'), ts: '2026-09-07T10:00:00.000Z', dev: 'k7m2q9xf'});
+ assert.equal(m.undoStack.length, 1);
+ assert.equal(m.strokes.size, 2);
+ await m.undo();
+ assert.equal(m.strokes.size, 0);
+ assert.deepEqual(writes.at(-1).map(e => [e.op, e.id]), [['del', 'r2'], ['del', 'r1']]);
+ // A remote erasure: undo restores the stroke under a fresh ID and its original layer.
+ m.apply({...stroke('r3'), ts: '2026-09-07T10:00:01.000Z', dev: 'k7m2q9xf'});
+ m.apply({op: 'del', tbl: 'stroke', id: 'r3', ts: '2026-09-07T10:00:02.000Z', dev: 'b3nn8t2q'});
+ assert.equal(m.strokes.size, 0);
+ await m.undo();
+ assert.equal(m.strokes.size, 1);
+ const [[id, restored]] = m.entries();
+ assert.notEqual(id, 'r3');
+ assert.equal(restored.layer, 'r3');
+});
+
+test('a tab\'s own write echoed by the stream and a replay of what is drawn are not remembered twice', async () => {
+ const m = makeHistory(async () => {});
+ await m.change([stroke('a')]);
+ assert.equal(m.undoStack.length, 1);
+ // The stream echoes the write; nothing changes, nothing is remembered.
+ m.apply({...stroke('a'), ts: '2026-09-07T10:00:00.000Z', dev: 'as3nn9tm'});
+ assert.equal(m.undoStack.length, 1);
+ // A tombstone for a stroke that is not there changes nothing either.
+ m.apply({op: 'del', tbl: 'stroke', id: 'never', ts: '2026-09-07T10:00:03.000Z', dev: 'as3nn9tm'});
+ assert.equal(m.undoStack.length, 1);
+ // A replay at load fills the history in log order, oldest first.
+ const replay = makeHistory(async () => {});
+ for (let i = 0; i < 3; i++) {
+  replay.apply({...stroke(`s${i}`), ts: `2026-09-07T10:00:0${i}.000Z`, dev: 'as3nn9tm'});
+ }
+ assert.equal(replay.undoStack.length, 3);
+ await replay.undo();
+ assert.deepEqual([...replay.strokes.keys()], ['s0', 's1']);
 });

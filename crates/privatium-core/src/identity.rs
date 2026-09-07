@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/identity.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-06
+// Created:  2026-09-01  |  Modified: 2026-09-07
 // Summary:  Node and cluster keys, canonical membership certificates, startup renewal, and
 //           purpose-separated CSRF and X25519 derivations (spec/protocol.md §2, §8).
 //           See main README.md for full license information.
@@ -34,6 +34,20 @@ const MAX_CERT_BYTES: u64 = 4096;
 
 /// `spec/protocol.md §2.1` takes the first 40 bits of the digest, which is 8 groups of 5.
 const ID_CHARS: usize = 8;
+
+/// The three files an admission replaces together (`spec/protocol.md §2.3`).
+const CLUSTER_FILES: [&str; 3] = ["cluster.key", "cluster.pub", "node.cert"];
+
+/// Where the replacement files are written before the swap is committed; discarded at
+/// the next start if the commit never happened.
+const ADOPT_STAGING: &str = "adopt.tmp";
+
+/// The staging directory once renamed — the commit point of the swap. A start that finds
+/// it moves what it still holds into place before reading anything.
+const ADOPT_COMMITTED: &str = "adopt";
+
+/// A certificate with fewer than this many days left is renewed (`§2.3.1`).
+const RENEWAL_WINDOW: jiff::SignedDuration = jiff::SignedDuration::from_secs(90 * 86_400);
 
 /// A Node ID: the first 40 bits of `SHA-256(public_key)` rendered as 8 characters of
 /// lowercase Crockford Base32 (`spec/protocol.md §2.1`).
@@ -101,21 +115,26 @@ pub struct Identity {
     cluster_id: ClusterId,
     certificate: Certificate,
     renewed: bool,
+    founded: bool,
 }
 
 impl Identity {
     /// Load node and cluster identities using the current UTC clock.
     /// Requires exclusive ownership of `dir`; founds absent identities and renews valid
-    /// certificates near expiry. Refuses malformed or expired material and I/O failures.
+    /// certificates near expiry. Refuses malformed material and I/O failures; an expired
+    /// certificate loads and is reported by [`is_expired`](Self::is_expired).
     pub fn load_or_create(dir: &Path) -> Result<Self> {
         Self::load_or_create_at(dir, jiff::Timestamp::now())
     }
 
     /// Load or found an identity in `dir`, evaluating certificate validity at `now`.
-    /// The caller must exclusively own the directory. Writes keys and public files on
-    /// first use, and renews a valid certificate with fewer than ninety days left.
-    /// Refuses malformed keys, invalid or expired certificates, and filesystem failures.
+    /// The caller must exclusively own the directory. Completes a swap a crash left half
+    /// done (`spec/protocol.md §2.3`), writes keys and public files on first use, and
+    /// renews a valid certificate with fewer than ninety days left. Refuses malformed
+    /// keys, invalid certificates and filesystem failures; an expired certificate is
+    /// kept, since re-admission needs a running node (`§2.3.1`).
     pub fn load_or_create_at(dir: &Path, now: jiff::Timestamp) -> Result<Self> {
+        complete_adoption(dir)?;
         let key_path = dir.join("node.key");
 
         let signing = if key_path.try_exists().map_err(io_at(&key_path))? {
@@ -134,6 +153,7 @@ impl Identity {
 
         let id = NodeId::derive(&signing.verifying_key());
         let cluster_path = dir.join("cluster.key");
+        let mut founded = false;
         let cluster = if cluster_path.try_exists().map_err(io_at(&cluster_path))? {
             load_signing_key(&cluster_path)?
         } else {
@@ -145,6 +165,7 @@ impl Identity {
             }
             let cluster = SigningKey::generate(&mut rand::rng());
             write_private(&cluster_path, cluster.as_bytes())?;
+            founded = true;
             cluster
         };
         let cluster_id = ClusterId::derive(&cluster.verifying_key());
@@ -168,14 +189,20 @@ impl Identity {
         let (certificate, renewed, write) = match read_bounded(&path, MAX_CERT_BYTES) {
             Ok(bytes) => {
                 let old = Certificate::from_json(&bytes)?;
-                old.verify(&public, now)?;
+                // Expiry alone does not refuse the node: it starts for its owner and is
+                // re-admitted from there (spec/protocol.md §2.3.1). Anything else wrong
+                // with the certificate still does.
+                let expired = match old.verify(&public, now) {
+                    Ok(()) => false,
+                    Err(CertificateError::Expired) => true,
+                    Err(error) => return Err(error.into()),
+                };
                 if old.node_id != id.as_str()
                     || old.node_pub != STANDARD.encode(signing.verifying_key().as_bytes())
                 {
                     return Err(CertificateError::Identity.into());
                 }
-                if old.expires()?.duration_since(now) < jiff::SignedDuration::from_secs(90 * 86_400)
-                {
+                if !expired && old.expires()?.duration_since(now) < RENEWAL_WINDOW {
                     (
                         Certificate::issue(&cluster, &signing.verifying_key(), now)?,
                         true,
@@ -193,13 +220,7 @@ impl Identity {
             Err(error) => return Err(io_at(&path)(error)),
         };
         if write {
-            // Replace only after the new bytes are durable: a crash must leave a complete
-            // certificate, whose expiry still governs renewal (spec/protocol.md §2.3.1).
-            let temp = dir.join("node.cert.tmp");
-            crate::durable::write_synced(&temp, &serde_json::to_vec(&certificate)?)
-                .map_err(io_at(&temp))?;
-            fs::rename(&temp, &path).map_err(io_at(&path))?;
-            crate::durable::sync_dir(dir).map_err(io_at(dir))?;
+            write_certificate(dir, &certificate)?;
         }
         Ok(Self {
             signing,
@@ -208,7 +229,117 @@ impl Identity {
             cluster_id,
             certificate,
             renewed,
+            founded,
         })
+    }
+
+    /// Whether this start generated the cluster key — the one case a node founds a
+    /// cluster and writes its `sys_cluster` row (`spec/data-dictionary.md §3.1b`).
+    #[must_use]
+    pub fn founded(&self) -> bool {
+        self.founded
+    }
+
+    /// Whether this node's certificate has expired at `now` (`spec/protocol.md §2.3.1`):
+    /// the node then serves its owner alone until it is re-admitted.
+    #[must_use]
+    pub fn is_expired(&self, now: jiff::Timestamp) -> bool {
+        self.certificate
+            .expires()
+            .is_ok_and(|expires| now >= expires)
+    }
+
+    /// Renew this node's own certificate at runtime when fewer than ninety days remain
+    /// (`spec/protocol.md §2.3.1`), writing `node.cert` as startup does. `Ok(false)` when
+    /// it is not due; refused with [`CertificateError::Expired`] at or after expiry, since
+    /// possession of the cluster key does not permit self-renewal then.
+    pub fn renew(&mut self, dir: &Path, now: jiff::Timestamp) -> Result<bool> {
+        if self.is_expired(now) {
+            return Err(CertificateError::Expired.into());
+        }
+        if self.certificate.expires()?.duration_since(now) >= RENEWAL_WINDOW {
+            return Ok(false);
+        }
+        let certificate = Certificate::issue(&self.cluster, &self.signing.verifying_key(), now)?;
+        write_certificate(dir, &certificate)?;
+        self.certificate = certificate;
+        self.renewed = true;
+        Ok(true)
+    }
+
+    /// Adopt the cluster an admitter handed this node (`spec/protocol.md §2.3.1`): its
+    /// private key as the 32-byte seed and the certificate it issued for this node. The
+    /// certificate is verified under that key and against this node's own key before a
+    /// byte is written. The same cluster as now — re-admission — replaces `node.cert`
+    /// alone; another cluster replaces the three files in the swap of `§2.3`, which a
+    /// crash cannot leave half done. The in-memory identity changes only once the disk has.
+    pub fn adopt(
+        &mut self,
+        dir: &Path,
+        seed: &zeroize::Zeroizing<[u8; KEY_LEN]>,
+        certificate: Certificate,
+        now: jiff::Timestamp,
+    ) -> Result<()> {
+        let cluster = SigningKey::from_bytes(seed);
+        let public = cluster.verifying_key();
+        certificate.verify(&public, now)?;
+        if certificate.node_id != self.id.as_str()
+            || certificate.node_pub != STANDARD.encode(self.signing.verifying_key().as_bytes())
+        {
+            return Err(CertificateError::Identity.into());
+        }
+        let cluster_id = ClusterId::derive(&public);
+        if cluster_id.as_str() == self.id.as_str() {
+            return Err(CertificateError::Identity.into());
+        }
+        if cluster.as_bytes() == self.cluster.as_bytes() {
+            write_certificate(dir, &certificate)?;
+        } else {
+            let staging = dir.join(ADOPT_STAGING);
+            if staging.try_exists().map_err(io_at(&staging))? {
+                fs::remove_dir_all(&staging).map_err(io_at(&staging))?;
+            }
+            fs::create_dir(&staging).map_err(io_at(&staging))?;
+            write_private(&staging.join("cluster.key"), cluster.as_bytes())?;
+            let public_path = staging.join("cluster.pub");
+            crate::durable::write_synced(&public_path, public.as_bytes())
+                .map_err(io_at(&public_path))?;
+            let cert_path = staging.join("node.cert");
+            crate::durable::write_synced(&cert_path, &serde_json::to_vec(&certificate)?)
+                .map_err(io_at(&cert_path))?;
+            crate::durable::sync_dir(&staging).map_err(io_at(&staging))?;
+            // The commit point: one rename, after which a start completes the swap.
+            let committed = dir.join(ADOPT_COMMITTED);
+            fs::rename(&staging, &committed).map_err(io_at(&committed))?;
+            crate::durable::sync_dir(dir).map_err(io_at(dir))?;
+            complete_adoption(dir)?;
+        }
+        self.cluster = cluster;
+        self.cluster_id = cluster_id;
+        self.certificate = certificate;
+        self.renewed = false;
+        self.founded = false;
+        Ok(())
+    }
+
+    /// Sign `message` with this node's own key — the proof of possession a node gives
+    /// at admission (`spec/protocol.md §7.4.2`).
+    #[must_use]
+    pub fn sign(&self, message: &[u8]) -> Signature {
+        self.signing.sign(message)
+    }
+
+    /// The node key's seed, wiped on drop, for a clone that lives as long as a join.
+    pub(crate) fn signing_bytes(&self) -> zeroize::Zeroizing<[u8; KEY_LEN]> {
+        zeroize::Zeroizing::new(*self.signing.as_bytes())
+    }
+
+    /// The cluster private key as its 32-byte seed, wiped on drop. Read in exactly one
+    /// place: the `admit` message a node seals for a node it admits
+    /// (`spec/protocol.md §2.3.1`, `§2.3.3`). Nothing else has a reason to look.
+    #[must_use]
+    pub(crate) fn cluster_seed(&self) -> zeroize::Zeroizing<[u8; KEY_LEN]> {
+        zeroize::Zeroizing::new(*self.cluster.as_bytes())
     }
 
     /// This node's ID.
@@ -318,7 +449,7 @@ pub enum CertificateError {
     Signature,
     /// Certificate lifetime ended; possession of the key does not permit self-renewal.
     #[error(
-        "cannot use node certificate: expired; re-admit the node (node admission arrives in Phase 3)"
+        "node certificate expired; re-admit the node to its cluster with `privatium pair --join` (spec/protocol.md §2.3.1)"
     )]
     Expired,
     /// The certificate is bound to a different node or cluster key.
@@ -346,6 +477,17 @@ pub struct Certificate {
 }
 
 impl Certificate {
+    /// Issue a certificate for `node` under the cluster key given as its seed — what a
+    /// node admitting another signs when it is the client of the exchange and holds no
+    /// `Identity` of the peer's (`spec/protocol.md §2.3.1`).
+    pub(crate) fn issue_with(
+        seed: &zeroize::Zeroizing<[u8; KEY_LEN]>,
+        node: &VerifyingKey,
+        now: jiff::Timestamp,
+    ) -> std::result::Result<Self, CertificateError> {
+        Self::issue(&SigningKey::from_bytes(seed), node, now)
+    }
+
     fn issue(
         cluster: &SigningKey,
         node: &VerifyingKey,
@@ -472,6 +614,42 @@ fn decode<const N: usize>(value: &str) -> std::result::Result<[u8; N], Certifica
         return Err(CertificateError::Format);
     }
     bytes.try_into().map_err(|_| CertificateError::Format)
+}
+
+/// Replace `node.cert` only after the new bytes are durable: a crash must leave a
+/// complete certificate, whose expiry still governs renewal (spec/protocol.md §2.3.1).
+fn write_certificate(dir: &Path, certificate: &Certificate) -> Result<()> {
+    let path = dir.join("node.cert");
+    let temp = dir.join("node.cert.tmp");
+    crate::durable::write_synced(&temp, &serde_json::to_vec(certificate)?).map_err(io_at(&temp))?;
+    fs::rename(&temp, &path).map_err(io_at(&path))?;
+    crate::durable::sync_dir(dir).map_err(io_at(dir))?;
+    Ok(())
+}
+
+/// Finish a swap a crash interrupted (`spec/protocol.md §2.3`): a staging directory that
+/// was never committed is discarded, and a committed one has whatever it still holds
+/// moved into place. Runs before any identity file is read, so a node opens with the
+/// cluster it joined and never with the one it discarded.
+fn complete_adoption(dir: &Path) -> Result<()> {
+    let staging = dir.join(ADOPT_STAGING);
+    if staging.try_exists().map_err(io_at(&staging))? {
+        fs::remove_dir_all(&staging).map_err(io_at(&staging))?;
+    }
+    let committed = dir.join(ADOPT_COMMITTED);
+    if !committed.try_exists().map_err(io_at(&committed))? {
+        return Ok(());
+    }
+    for file in CLUSTER_FILES {
+        let from = committed.join(file);
+        if from.try_exists().map_err(io_at(&from))? {
+            let to = dir.join(file);
+            fs::rename(&from, &to).map_err(io_at(&to))?;
+        }
+    }
+    fs::remove_dir_all(&committed).map_err(io_at(&committed))?;
+    crate::durable::sync_dir(dir).map_err(io_at(dir))?;
+    Ok(())
 }
 
 fn read_bounded(path: &Path, limit: u64) -> std::io::Result<Vec<u8>> {

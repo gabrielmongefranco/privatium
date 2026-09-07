@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/pair.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-06
+// Created:  2026-09-05  |  Modified: 2026-09-07
 // Summary:  Pairing against spec/protocol.md §7: the code and its renderings, the SPAKE2
 //           vectors both languages read, the six messages of /ws/pair through the node, the
 //           window's TTL, attempt cap and rate limit, the audit rows, and the device row a
@@ -15,9 +15,9 @@ use std::time::Duration;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use common::{at, sys_row};
-use privatium_core::pair::handshake::{Client, Exchange, Paired};
+use privatium_core::pair::handshake::{Client, Exchange, Finished, Paired};
 use privatium_core::pair::spake2::{self, Identities, Side, State};
-use privatium_core::pair::{self, Code, CodeError, GLYPHS, PairError, Pairing, WORDS};
+use privatium_core::pair::{self, Code, CodeError, GLYPHS, PairError, PairOutcome, Pairing, WORDS};
 use privatium_core::{Error, Identity, Node};
 use serde_json::{Value, json};
 use x25519_dalek::StaticSecret;
@@ -101,7 +101,9 @@ fn run(
         jiff::Timestamp::now(),
     )?;
     wire.sealed.push(client_sealed.clone());
-    let paired = node.pairing_finish(sealed, &client_sealed, when)?;
+    let PairOutcome::Device(paired) = node.pairing_finish(sealed, &client_sealed, when)? else {
+        panic!("a browser pairs as a device");
+    };
     Ok((paired, wire))
 }
 
@@ -418,7 +420,10 @@ fn test_spec_7_4_the_client_pins_the_cluster_key_and_the_node_certificate() {
     let (pins, client_sealed) = client
         .finish(&node_sealed, None, None, jiff::Timestamp::now())
         .unwrap();
-    let paired = node.pairing_finish(sealed, &client_sealed, now()).unwrap();
+    let PairOutcome::Device(paired) = node.pairing_finish(sealed, &client_sealed, now()).unwrap()
+    else {
+        panic!("a device outcome");
+    };
     assert_eq!(paired.kind, "mobile");
     assert_eq!(paired.label, None);
     assert_eq!(paired.user_agent, None);
@@ -682,7 +687,12 @@ fn test_spec_7_5_attempts_are_rate_limited_per_source() {
     assert_eq!(PairError::Closed.close_code(), 4404);
     assert_eq!(PairError::WrongCode.close_code(), 4401);
     assert_eq!(PairError::Format.close_code(), 4400);
-    assert_eq!(PairError::NodeKind.close_code(), 4403);
+    assert_eq!(PairError::WindowKind { node: false }.close_code(), 4403);
+    assert_eq!(PairError::WindowKind { node: true }.close_code(), 4403);
+    assert_eq!(PairError::Signature.close_code(), 4403);
+    assert_eq!(PairError::TwoClusters.close_code(), 4403);
+    assert_eq!(PairError::Revoked.close_code(), 4403);
+    assert_eq!(PairError::Admit.close_code(), 4400);
 }
 
 #[test]
@@ -757,16 +767,19 @@ fn walkdir(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
 }
 
 #[test]
-fn test_spec_7_4_a_node_kind_is_refused_naming_phase_3() {
+fn test_spec_7_1_a_device_window_refuses_a_node_and_a_node_window_refuses_a_device() {
     let root = tempfile::tempdir().unwrap();
     let mut node = open(&root);
     node.pair_at(Duration::from_secs(120), now()).unwrap();
+    assert!(!node.pairing().unwrap().is_for_node());
     let code = code_of(&node);
     let (_, start) = Client::start(&node.pairing_hello(now()), code, "node").unwrap();
     let refused = node.pairing_begin(source(1), now(), &start).unwrap_err();
-    assert!(matches!(refused, Error::Pair(PairError::NodeKind)));
-    assert!(refused.to_string().contains("Phase 3"));
-    assert!(refused.to_string().contains("spec/protocol.md §2.3.1"));
+    assert!(matches!(
+        refused,
+        Error::Pair(PairError::WindowKind { node: false })
+    ));
+    assert!(refused.to_string().contains("--node"));
     // Not an attempt: nothing counted, nothing audited, the window untouched.
     assert_eq!(node.refresh_pairing(now()).unwrap().unwrap().attempts, 0);
     assert!(audit_rows(&mut node, "pair.attempt").is_empty());
@@ -782,6 +795,52 @@ fn test_spec_7_4_a_node_kind_is_refused_naming_phase_3() {
     let (_, start) = Client::start(&node.pairing_hello(now()), code, "toaster").unwrap();
     let refused = node.pairing_begin(source(9), later(9), &start).unwrap_err();
     assert!(matches!(refused, Error::Pair(PairError::Format)));
+
+    // A window for a node answers `kind = "node"` alone (spec/protocol.md §7.1); one is
+    // reported as such, and opening another kind while it is open returns it unchanged.
+    node.close_pairing(later(10)).unwrap();
+    let window = node
+        .pair_node_at(Duration::from_secs(120), later(11))
+        .unwrap();
+    assert!(window.node);
+    assert!(node.pairing().unwrap().is_for_node());
+    let again = node.pair_at(Duration::from_secs(120), later(12)).unwrap();
+    assert_eq!(again, window);
+    let code = code_of(&node);
+    for (n, kind) in ["browser", "desktop", "mobile"].into_iter().enumerate() {
+        let when = later(13 + n as i64);
+        let (_, start) = Client::start(&node.pairing_hello(when), code, kind).unwrap();
+        let refused = node
+            .pairing_begin(source(20 + n as u8), when, &start)
+            .unwrap_err();
+        assert!(
+            matches!(refused, Error::Pair(PairError::WindowKind { node: true })),
+            "{kind}"
+        );
+    }
+    assert_eq!(
+        node.refresh_pairing(later(20)).unwrap().unwrap().attempts,
+        0
+    );
+    assert_eq!(
+        audit_rows(&mut node, "pair.attempt").len(),
+        3,
+        "the node window counted no attempt"
+    );
+    let (_, start) = Client::start(&node.pairing_hello(later(21)), code, "node").unwrap();
+    node.pairing_begin(source(30), later(21), &start).unwrap();
+    assert_eq!(
+        node.refresh_pairing(later(22)).unwrap().unwrap().attempts,
+        1
+    );
+    let opened = audit_rows(&mut node, "pair.opened");
+    assert_eq!(opened.len(), 2);
+    assert!(
+        opened[1]["detail"]
+            .as_str()
+            .unwrap()
+            .contains("\"node\":true")
+    );
 }
 
 #[test]
@@ -900,7 +959,10 @@ fn test_spec_7_6_a_registered_device_key_cannot_pair_again() {
         let confirm = client.reply(&reply)?;
         let (sealed, node_sealed) = node.pairing_confirm(exchange, &confirm, when)?;
         let (_, client_sealed) = client.finish(&node_sealed, None, None, jiff::Timestamp::now())?;
-        node.pairing_finish(sealed, &client_sealed, when)
+        match node.pairing_finish(sealed, &client_sealed, when)? {
+            PairOutcome::Device(paired) => Ok(paired),
+            other => panic!("a browser pairs as a device, not {other:?}"),
+        }
     };
     let first = pair_with_key(&mut node, now(), code).unwrap();
     // A new window, the same key: refused, audited, and the row unchanged.
@@ -959,9 +1021,12 @@ fn test_spec_app_contract_6_pair_opens_a_window_and_returns_the_code() {
         "created_at",
         "expires_at",
         "attempts",
+        "generation",
+        "node",
     ] {
         assert!(json.get(key).is_some(), "{key}");
     }
+    assert_eq!(json["node"], false);
     assert!(json.get("consumed_by").is_none());
     // One window at a time: a second call while it is open returns the same window.
     let again = node.pair_at(Duration::from_secs(30), later(5)).unwrap();
@@ -1225,14 +1290,16 @@ fn test_spec_7_4_2_the_transcript_matches_the_checked_in_vectors() {
     let confirm = client.reply(&reply).unwrap();
     assert_eq!(confirm, t["client_confirm"]);
     let (sealed, node_sealed) = exchange
-        .confirm(&identity, &mut window, &confirm, when)
+        .confirm(&identity, &mut window, &confirm, when, None)
         .unwrap();
     assert_eq!(STANDARD.encode(&node_sealed), t["node_sealed"]);
     let (pins, client_sealed) = client
         .finish(&node_sealed, v["label"].as_str(), v["ua"].as_str(), when)
         .unwrap();
     assert_eq!(STANDARD.encode(&client_sealed), t["client_sealed"]);
-    let paired = sealed.finish(&identity, &client_sealed).unwrap();
+    let Finished::Device(paired) = sealed.finish(&identity, &client_sealed).unwrap() else {
+        panic!("a device outcome");
+    };
     assert_eq!(paired.device, v["device_id"]);
     assert_eq!(paired.label.as_deref(), v["label"].as_str());
     assert_eq!(pins.cluster_id, identity.cluster_id().as_str());
@@ -1292,7 +1359,7 @@ fn generate_pake_vectors() {
         Exchange::begin_with(&identity, &mut window, source(1), when, &start, &y).unwrap();
     let confirm = client.reply(&reply).unwrap();
     let (sealed, node_sealed) = exchange
-        .confirm(&identity, &mut window, &confirm, when)
+        .confirm(&identity, &mut window, &confirm, when, None)
         .unwrap();
     let (_, client_sealed) = client
         .finish(
@@ -1302,7 +1369,10 @@ fn generate_pake_vectors() {
             when,
         )
         .unwrap();
-    sealed.finish(&identity, &client_sealed).unwrap();
+    assert!(matches!(
+        sealed.finish(&identity, &client_sealed).unwrap(),
+        Finished::Device(_)
+    ));
 
     let parse_cases = json!([
         {"input": "fox pizza lightning die", "code": 0x728E},

@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/devices.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-06  |  Modified: 2026-09-06
+// Created:  2026-09-06  |  Modified: 2026-09-07
 // Summary:  The owner's surfaces through core::handle: the pairing API of spec/protocol.md
 //           §9.2 and the manifest's pair flag, the code page with the §7.7 disclosure, the
 //           devices page with its label and revoke forms, the display-name form of §6.1,
@@ -650,7 +650,8 @@ async fn test_settings_node_display_name_is_set_by_the_owner_and_reaches_the_man
     let id = h.node().lock().unwrap().id().as_str().to_owned();
     let page = body_of(h.handle(owner(Method::GET, "/settings")).await).await;
     assert!(page.contains("<label for=\"display-name\">"), "{page}");
-    assert!(page.contains("Spaces on this network"), "{page}");
+    assert!(page.contains("Your other spaces on this network"), "{page}");
+    assert!(page.contains("<label for=\"join-url\">"), "{page}");
     assert!(page.contains("http://"), "the LAN URL is on the page");
     assert_clean("node page", &page);
 
@@ -761,4 +762,264 @@ async fn test_spec_cli_5_pv4xx_pairing_and_devices_pages() {
         assert!(key.attr("aria-label").is_none());
         assert!(!key.all_text().trim().is_empty());
     }
+}
+
+// ---------------------------------------------------------------------------------------
+// §9.2, §7.1 — a window for a node, and /api/v1/join, for the owner alone
+// ---------------------------------------------------------------------------------------
+
+/// `spec/protocol.md §9.2`, `§7.1` — `POST /api/v1/pair` with `"node": true` opens a
+/// window for a node, reported as such; `POST /api/v1/join` and the two forms are the
+/// owner's alone; a session is refused on every one of them; an oversized body is
+/// refused before it is read; a malformed URL, an empty code and a `node` that is not a
+/// boolean are refused by name and dial nothing.
+#[tokio::test]
+async fn test_spec_9_2_join_and_node_windows_are_the_owners_alone_and_bound_their_bodies() {
+    let root = tempfile::tempdir().unwrap();
+    let h = handler(&root);
+    // A node window, reported as one, and the code page that describes it.
+    let (status, window) = json_of(
+        h.handle(json_post(
+            "/api/v1/pair",
+            "application/json",
+            "{\"ttl\": 90, \"node\": true}",
+        ))
+        .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{window}");
+    assert_eq!(window["node"], true);
+    let (_, again) = json_of(h.handle(owner(Method::GET, "/api/v1/pair")).await).await;
+    assert_eq!(again["node"], true);
+    let page = body_of(
+        h.handle(owner(Method::GET, "/settings/devices/pairing"))
+            .await,
+    )
+    .await;
+    assert!(page.contains("Admit a space"), "{page}");
+    assert!(page.contains("privatium pair --join"), "{page}");
+    assert_clean("code page for a node window", &page);
+    let devices = body_of(h.handle(owner(Method::GET, "/settings/devices")).await).await;
+    assert!(devices.contains("for another space"), "{devices}");
+    let close = h
+        .handle(form(&h, "/settings/devices/pairing/close", ""))
+        .await;
+    assert_eq!(close.status(), StatusCode::SEE_OTHER);
+
+    // `node` that is not a boolean, and a body past the bound, are refused by name.
+    for (body, expected) in [
+        ("{\"ttl\": 90, \"node\": \"yes\"}", StatusCode::BAD_REQUEST),
+        ("{\"ttl\": 90, \"node\": 1}", StatusCode::BAD_REQUEST),
+    ] {
+        let response = h
+            .handle(json_post("/api/v1/pair", "application/json", body))
+            .await;
+        assert_eq!(response.status(), expected, "{body}");
+        assert!(
+            !h.node()
+                .lock()
+                .unwrap()
+                .pairing_open(jiff::Timestamp::now())
+        );
+    }
+    let mut oversized = json_post("/api/v1/pair", "application/json", "{\"ttl\": 90}");
+    oversized
+        .headers_mut()
+        .insert("content-length", "4096".parse().unwrap());
+    assert_eq!(
+        h.handle(oversized).await.status(),
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
+
+    // The join route: the owner's alone, JSON alone, bounded, and checked by shape
+    // before anything is dialed.
+    for (content_type, body, expected, needle) in [
+        (
+            "application/x-www-form-urlencoded",
+            "url=http://192.0.2.5:8420&code=amber+otter",
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "application/json",
+        ),
+        (
+            "application/json",
+            "not json",
+            StatusCode::BAD_REQUEST,
+            "url",
+        ),
+        (
+            "application/json",
+            "{\"url\": \"http://192.0.2.5:8420\"}",
+            StatusCode::BAD_REQUEST,
+            "code",
+        ),
+        (
+            "application/json",
+            "{\"url\": \"http://192.0.2.5:8420\", \"code\": \"\"}",
+            StatusCode::BAD_REQUEST,
+            "code",
+        ),
+        (
+            "application/json",
+            "{\"url\": \"http://192.0.2.5:8420\", \"code\": \"not a code at all\"}",
+            StatusCode::BAD_REQUEST,
+            "code",
+        ),
+        (
+            "application/json",
+            "{\"url\": \"https://192.0.2.5:8420\", \"code\": \"abyss acid\"}",
+            StatusCode::BAD_REQUEST,
+            "http://",
+        ),
+        (
+            "application/json",
+            "{\"url\": \"http://192.0.2.5:8420/settings\", \"code\": \"abyss acid\"}",
+            StatusCode::BAD_REQUEST,
+            "host and a port",
+        ),
+        (
+            "application/json",
+            "{\"url\": \"http://192.0.2.5:8420\", \"code\": \"abyss acid\", \"ttl\": 5}",
+            StatusCode::BAD_REQUEST,
+            "nothing else",
+        ),
+    ] {
+        let (status, body_text) = json_of(
+            h.handle(json_post("/api/v1/join", content_type, body))
+                .await,
+        )
+        .await;
+        assert_eq!(status, expected, "{content_type} {body}: {body_text}");
+        assert!(
+            body_text.as_str().unwrap_or_default().contains(needle),
+            "{body}: {body_text}"
+        );
+    }
+    let mut oversized = json_post(
+        "/api/v1/join",
+        "application/json",
+        "{\"url\": \"http://192.0.2.5:8420\", \"code\": \"abyss acid\"}",
+    );
+    oversized
+        .headers_mut()
+        .insert("content-length", "4096".parse().unwrap());
+    assert_eq!(
+        h.handle(oversized).await.status(),
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
+    for method in [Method::GET, Method::POST] {
+        let response = h.handle(lan(method.clone(), "/api/v1/join")).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::FORBIDDEN,
+            "{method} from the LAN"
+        );
+    }
+    assert_eq!(
+        h.handle(owner(Method::GET, "/api/v1/join")).await.status(),
+        StatusCode::METHOD_NOT_ALLOWED
+    );
+    // The two forms carry a token and are the owner's; a LAN caller is refused.
+    for path in ["/settings/devices/admit", "/settings/join"] {
+        let response = h.handle(lan(Method::POST, path)).await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{path}");
+    }
+    let admit = h.handle(form(&h, "/settings/devices/admit", "")).await;
+    assert_eq!(admit.status(), StatusCode::SEE_OTHER);
+    assert_eq!(location(&admit), "/settings/devices/pairing");
+    assert!(h.node().lock().unwrap().pairing().unwrap().is_for_node());
+    // A join form with a code that is not one is refused on the node page, by name.
+    let refused = h
+        .handle(form(
+            &h,
+            "/settings/join",
+            "url=http%3A%2F%2F192.0.2.5%3A8420&code=nonsense",
+        ))
+        .await;
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    let page = body_of(refused).await;
+    assert!(page.contains("code"), "{page}");
+    assert_clean("node page with a refusal", &page);
+    // The identity is untouched by every refusal above.
+    assert!(h.node().lock().unwrap().is_disposable().unwrap());
+}
+
+/// `spec/protocol.md §2.3.4` — the devices page's *Revoke* on a node's row revokes it as
+/// a node: the device row, the `sys_node_revocation` row and `node.revoked`.
+#[tokio::test]
+async fn test_spec_2_3_4_the_devices_page_revokes_a_node_as_a_node() {
+    let root = tempfile::tempdir().unwrap();
+    let h = handler(&root);
+    let node_id = "k7m2q9xf";
+    {
+        let mut node = h.node().lock().unwrap();
+        node.sys_log_mut()
+            .put(
+                sys::DEVICE,
+                node_id,
+                &json!({
+                    "kind": "node",
+                    "replica": true,
+                    "ed25519_pub": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+                    "x25519_pub": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+                    "paired_at": "2026-09-06T10:00:00.000Z",
+                    "paired_via": "lan",
+                }),
+            )
+            .unwrap();
+        node.refresh().unwrap();
+    }
+    let page = body_of(h.handle(owner(Method::GET, "/settings/devices")).await).await;
+    assert!(page.contains("Revoking a space"), "{page}");
+    assert_clean("devices page with a node row", &page);
+    let revoked = h
+        .handle(form(&h, &format!("/settings/devices/{node_id}/revoke"), ""))
+        .await;
+    assert_eq!(revoked.status(), StatusCode::SEE_OTHER);
+    let node = h.node().lock().unwrap();
+    assert!(node.node_revoked(node_id).unwrap());
+    assert!(sys_row(&node, "sys_node_revocation", node_id).is_some());
+    assert!(sys_row(&node, "sys_device", node_id).unwrap()["revoked_at"].is_string());
+    assert_eq!(audit_rows(&node, "node.revoked").len(), 1);
+}
+
+/// `spec/cli.md §5.1` PV401–PV407, over the join form, the *Admit a space* button and
+/// the node page's two lists (`tests/common/a11y.rs`): the node page for the owner and
+/// for a session, the devices page with the button, and the code page for a node window.
+#[tokio::test]
+async fn test_spec_cli_5_pv4xx_join_form_admit_button_and_node_page() {
+    let root = tempfile::tempdir().unwrap();
+    let h = handler(&root);
+    with_device(&h, "Pixel 9", "synthetic agent");
+    let page = body_of(h.handle(owner(Method::GET, "/settings")).await).await;
+    assert!(page.contains("<label for=\"join-url\">"), "{page}");
+    assert!(page.contains("<label for=\"join-code\">"), "{page}");
+    assert!(page.contains("Your other spaces on this network"), "{page}");
+    assert!(page.contains("Other spaces on this network"), "{page}");
+    assert!(page.contains("Cluster ID"), "{page}");
+    assert_clean("node page, owner", &page);
+    let devices = body_of(h.handle(owner(Method::GET, "/settings/devices")).await).await;
+    assert!(devices.contains("Admit a space"), "{devices}");
+    assert_clean("devices page with the admit button", &devices);
+    h.node()
+        .lock()
+        .unwrap()
+        .pair_node(Duration::from_secs(120))
+        .unwrap();
+    for path in [
+        "/settings",
+        "/settings/devices",
+        "/settings/devices/pairing",
+    ] {
+        let html = body_of(h.handle(owner(Method::GET, path)).await).await;
+        assert_clean(&format!("{path} with a node window"), &html);
+    }
+    // The pad keys and the QR code are the device window's; a node window shows the
+    // command and the labels to type instead, and stays polling.
+    let code_page = body_of(
+        h.handle(owner(Method::GET, "/settings/devices/pairing"))
+            .await,
+    )
+    .await;
+    assert!(code_page.contains("id=\"pv-pairing\""), "{code_page}");
+    assert!(code_page.contains("hx-trigger=\"every 5s\""), "{code_page}");
 }

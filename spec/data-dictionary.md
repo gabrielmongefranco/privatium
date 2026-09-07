@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/data-dictionary.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-06
+Modified: 2026-09-07
 Summary:  NORMATIVE. System tables, app index, type mappings, and field definitions.
           See main README.md for full license information.
 -->
@@ -148,6 +148,13 @@ node a member. Startup preserves them. A node admitted to another cluster tombst
 only its own empty founding cluster, under `spec/protocol.md §2.3`'s conditions. Losing
 local keys is not evidence that another cluster has ceased to exist.
 
+The row is written by the founding node alone — at the start that generated the cluster
+key, or at a first start whose log holds no record of the node at all — and
+`cluster.created` is recorded then and never again; a row absent from a log that already
+records the node is not founding. A node admitted to a cluster writes no row for it —
+the founder's row reaches it by sync — and until then reads its cluster ID from
+`identity/`.
+
 | Column | Type | Notes |
 |---|---|---|
 | `id` | `VARCHAR` | Cluster ID (8-char Crockford Base32) |
@@ -196,6 +203,15 @@ kind holds the public key only (`spec/protocol.md §2.3.3`). Revoking a node als
 `sys_node_revocation` entry (§3.1c), because a node's certificate is presented to devices that
 may not have synced `sys_device` recently.
 
+A node's row has two writers by construction: the node itself, at every start, and the
+node that admitted it (`spec/protocol.md §2.3.1`). Both write the same facts — `kind =
+'node'`, `replica = true`, both public keys, the `paired_at` the admitter sent,
+`paired_via = 'lan'`, the label the joiner offered, no `user_agent` — so the two rows
+materialize to the same columns whichever `spec/protocol.md §4.5` picks; the joiner
+writes its own after folding the admitter's counter, so that row outranks its bootstrap
+row. `paired_via` is `lan` for a URL the owner typed beyond the LAN too. Every later
+amendment by either side carries every field forward (`§4.2`).
+
 Revocation is a `put` with `revoked_at` set, never a `del`. The historical record of what
 was paired MUST survive.
 
@@ -210,6 +226,7 @@ was paired MUST survive.
 | `consumed_by` | `VARCHAR` | Device ID, nullable |
 | `consumed_at` | `TIMESTAMPTZ` | Nullable |
 | `generation` | `INTEGER` | Codes issued after the first, when five attempts exhausted one (`spec/protocol.md §7.5`); a surface showing the code compares it to notice a new one |
+| `node` | `BOOLEAN` | Whether the window was opened for a node (`spec/protocol.md §7.1`); `false` is a window for devices |
 
 Never written — neither to `data/` nor to `local/`, which keeps its two files
 (`spec/protocol.md §3`). The node holds the one open window in memory: the code, which
@@ -332,6 +349,14 @@ data directory, tunnel credentials) live in `config.toml` and the OS keyring, no
 | `last_sync_at` | `TIMESTAMPTZ` | |
 | `transport` | `VARCHAR` | `lan` \| `p2p` \| `file` |
 
+The reference node keeps these hints as one `peers` line in `local/state.jsonl`
+(`spec/protocol.md §3`), never as a table and never as an event: for each hint the
+peer's ID, its X25519 public key, and the URL it was joined at or the owner typed, when
+one is known. The line is written at admission (`§2.3.1`) — the joiner records its
+admitter, so it can reach it before `_sys` has carried the admitter's `sys_device` row —
+and it holds no secret. A `sys_device` row for the peer, revoked or not, supersedes the
+hint the moment it arrives.
+
 ### 3.7b `sys_endpoint` — **local store only**
 
 The candidate endpoint list (`spec/protocol.md §10.4`). Node-local because a good address on
@@ -412,8 +437,16 @@ was measured.
 log holds the batch, and its `detail` names the app, the first line's `seq`, the count
 announced and the count found, the segment and the byte offset. Written once per batch.
 
-`key.mismatch`, `node.admitted`, `cluster.rotated`, and `restore.tier3` MUST be `alert` and MUST surface in the UI, not only in
-the log.
+`key.mismatch`, `node.admitted`, `node.revoked`, `cluster.rotated`, and `restore.tier3`
+MUST be `alert` and MUST surface in the UI, not only in the log.
+
+`node.admitted` (`spec/protocol.md §2.3.1`) is written by the admitting node once the
+joiner has answered `joined`; its `subject` is the joiner and its `detail` says whether
+this was a re-admission. `node.revoked` (`§2.3.4`) is written by the node that revoked,
+with the revoked node as `subject`, and once by a node that finds itself revoked, about
+itself. `cert.expired` (`§2.3.1`) is `warn`: its `subject` is the node whose certificate
+expired, written once per peer per start by a node that refused that peer's certificate,
+and once by an expired node about itself.
 
 ### 3.11 `sys_migration` — reserved
 
