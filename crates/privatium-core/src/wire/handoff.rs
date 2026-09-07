@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/wire/handoff.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
+// Created:  2026-09-05  |  Modified: 2026-09-07
 // Summary:  Bounded, single-consumer response ownership across browser navigation (§8.3.1).
 //           See main README.md for full license information.
 
@@ -148,6 +148,7 @@ mod tests {
             device: id.clone(),
             node: id,
             x25519: "synthetic".into(),
+            kind: crate::http::auth::SessionKind::Device,
         }
     }
 

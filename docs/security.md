@@ -118,13 +118,19 @@ paths.
 | Browser ↔ node, Tailscale | WireGuard + TLS on `ts.net` | Tailnet identity |
 | Browser ↔ node, DuckDNS + LE | TLS | webPKI |
 | Tor Browser ↔ node | Tor | Onion address is the key |
-| Node ↔ node, direct | QUIC (TLS 1.3), then session layer | Pinned key |
+| Node ↔ node, LAN | X25519 + HKDF + ChaCha20-Poly1305 inside `/ws` | Pinned cluster certificate and static key |
 | Node ↔ node, via relay | Same — the relay forwards ciphertext | Pinned key |
 | `data/` at rest | **None.** Plain text, deliberately. | — |
 
 The at-rest decision is the whole product. Encrypting the logs would defeat the restore
 story, which is the reason the project exists. The correct place for at-rest encryption is
 the filesystem, where the OS already does it well.
+
+Node sessions can use only the sync routes, health and manifest; they cannot browse
+apps, settings, skills or pairing routes. Sync carries whole log streams, including
+apps that are not mounted locally. Every cluster member therefore holds all data that
+has reached the cluster. Revocation overrides remembered peer hints and is checked
+again before queued incoming app ranges are written.
 
 ### 3.1 Full-page response handoff
 

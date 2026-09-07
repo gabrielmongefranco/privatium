@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium/src/run.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-06
+// Created:  2026-09-04  |  Modified: 2026-09-07
 // Summary:  Bare `privatium` (spec/cli.md §2) and `privatium dev` (§3): write the example
 //           apps on a first run, open the node, apply the run's overrides, load every app,
 //           bind the LAN, start discovery on the bound port, and serve `core::handle` until
@@ -120,6 +120,19 @@ pub fn run(global: &Global, options: Options) -> Result<u8> {
             // The port is settled only now (`--port 0` asks the OS), and it is what the
             // pairing URL and the TXT record's `p` key carry; discovery starts on it.
             start_discovery(&handler, addr.port(), options.no_discovery, global.verbose)?;
+            // A space that cannot sync still serves its owner, so a refusal here is
+            // reported and nothing more (`spec/protocol.md §2.3.1`).
+            let wake = {
+                let mut node = handler
+                    .node()
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if let Err(error) = node.start_sync() {
+                    eprintln!("privatium: synchronization did not start: {error}");
+                }
+                node.sync_events()
+            };
+            let drain = tokio::spawn(drain_on_sync(Arc::clone(&handler), wake));
             let origin = format!("http://127.0.0.1:{}", addr.port());
             let url = match &dev_mount {
                 Some(mount) => format!("{origin}{mount}"),
@@ -150,10 +163,48 @@ pub fn run(global: &Global, options: Options) -> Result<u8> {
                 }
             };
             maintenance.abort();
+            drain.abort();
             flush(&handler);
             served
         })?;
     Ok(0)
+}
+
+/// Socket arrivals need a drain even while every app is idle (spec/protocol.md §10.2).
+async fn drain_on_sync(handler: Arc<Handler>, mut wake: Option<tokio::sync::watch::Receiver<u64>>) {
+    loop {
+        if wake.is_none() {
+            // Re-admission can make a node that started expired a member again.
+            // The daemon owns automatic startup; an embedder opts in with start_sync.
+            {
+                let mut node = handler
+                    .node()
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if node
+                    .standing(jiff::Timestamp::now())
+                    .is_ok_and(|s| s == privatium_core::Standing::Member)
+                {
+                    if let Err(error) = node.start_sync() {
+                        eprintln!("privatium: synchronization did not start: {error}");
+                    }
+                    wake = node.sync_events();
+                }
+            }
+            if wake.is_none() {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                continue;
+            }
+        }
+        if let Err(error) = handler.drain_sync().await {
+            eprintln!("privatium: synchronized data could not be applied: {error}");
+        }
+        if let Some(receiver) = &mut wake
+            && receiver.changed().await.is_err()
+        {
+            wake = None;
+        }
+    }
 }
 
 /// The first run of `§2`: an `apps/` that holds no app folder gets the example apps

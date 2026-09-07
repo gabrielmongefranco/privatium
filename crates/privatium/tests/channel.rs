@@ -598,13 +598,13 @@ async fn test_spec_8_4_websocket_refuses_a_cross_origin_upgrade() {
 }
 
 #[tokio::test]
-async fn test_channel_refuses_a_request_chunk_naming_phase_3() {
+async fn test_channel_refuses_a_request_chunk_naming_the_capability() {
     let f = Fixture::new().await;
     let paired = f.pair().await;
     let mut c = f.connect(&paired).await;
     c.send(Frame::new(1, Kind::Chunk)).await;
     assert!(
-        matches!(next(&mut c.socket).await, Message::Close(Some(c)) if c.code == 4400.into() && c.reason.contains("Phase 3"))
+        matches!(next(&mut c.socket).await, Message::Close(Some(c)) if c.code == 4400.into() && c.reason.contains("streamed request bodies"))
     );
 }
 

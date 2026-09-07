@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/log/reader.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-06
+// Created:  2026-09-01  |  Modified: 2026-09-07
 // Summary:  Reading an app's log: the segment list of spec/protocol.md §3.2, a line
 //           iterator per segment, and the one startup scan that recovers `seq` and the
 //           Lamport counter and applies §4.4's clock hygiene.
@@ -284,8 +284,8 @@ pub struct Rejected {
 ///
 /// Not audited. `§4.4` requires a *clock* rejection to reach `sys_audit`; a line that does
 /// not parse is `§10.2`'s "envelope parses" validation, which belongs to the sync receiver
-/// in Phase 3 and can only be acted on there. Reporting it and carrying on is what a reader
-/// is allowed to do (`§4.1`).
+/// and can be acted on only there. Reporting it and carrying on is what a reader is
+/// allowed to do (`§4.1`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Malformed {
     /// The segment the line is in.
@@ -392,7 +392,13 @@ pub(crate) fn recover(
     for segment in reader.segments() {
         let mut parsed: Vec<Parsed> = Vec::new();
         for line in segment.lines()? {
-            let line = line?;
+            // Another device's torn tail is a line its origin has not finished; the
+            // receiver completes it when the rest arrives (`§10.2`), so the scan stops
+            // there. This node's own torn tail is its own failed append (`§4.1`).
+            let line = match line {
+                Err(Error::PartialLine { .. }) if segment.dev() != own.as_str() => break,
+                other => other?,
+            };
             let meta: Meta<'_> = match serde_json::from_slice(line.raw()) {
                 Ok(meta) => meta,
                 Err(error) => {

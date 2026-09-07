@@ -68,6 +68,7 @@ mod tests {
             device: id.clone(),
             node: id,
             x25519: "synthetic".into(),
+            kind: crate::http::auth::SessionKind::Device,
         }
     }
 
@@ -203,7 +204,7 @@ pub enum ChannelError {
     #[error("invalid channel frame; reconnect")]
     Format,
     /// An upload attempted the reserved request chunk direction.
-    #[error("streamed request chunks require Phase 3; send one bounded request")]
+    #[error("streamed request bodies are not accepted on this channel; send one bounded request")]
     Upload,
     /// The complete request body exceeded the current setting.
     #[error("request exceeds api.max_body; send a smaller request")]
@@ -363,60 +364,79 @@ impl Frame {
     }
 }
 
-pub(super) fn active(node: &Node, session: &Session) -> bool {
-    pins(node, session.device.as_str())
-        .is_some_and(|p| !p.revoked && p.x25519.as_deref() == Some(&session.x25519))
+/// Recheck a channel's original pins and kind against current local membership.
+pub(crate) fn active(node: &Node, session: &Session) -> bool {
+    node.standing(jiff::Timestamp::now())
+        .is_ok_and(|s| s == crate::Standing::Member)
+        && peer_pins(node, session.device.as_str()).is_some_and(|(_, p, kind)| {
+            !p.revoked && p.x25519.as_deref() == Some(&session.x25519) && kind == session.kind
+        })
 }
 
 fn registered_device(node: &Node, dev: &str) -> Option<NodeId> {
+    peer_pins(node, dev).map(|(id, _, _)| id)
+}
+
+/// Registry rows supersede bootstrap hints even when their keys or kind are invalid.
+pub(crate) fn peer_pins(
+    node: &Node,
+    dev: &str,
+) -> Option<(NodeId, DevicePins, crate::http::auth::SessionKind)> {
+    use crate::http::auth::SessionKind;
     use base64::Engine as _;
-    let key: String = node
+    if dev == node.id().as_str() || !NodeId::is_valid(dev) {
+        return None;
+    }
+    let row = node
         .store()
         .conn()
         .query_row(
-            "SELECT ed25519_pub FROM sys_device WHERE id = ?",
+            "SELECT ed25519_pub, x25519_pub, kind, revoked_at IS NOT NULL FROM sys_device WHERE id = ?",
             rusqlite::params![dev],
-            |r| r.get(0),
+            |r| {
+                Ok((
+                    r.get::<_, Option<String>>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, bool>(3)?,
+                ))
+            },
         )
-        .ok()?;
+        .optional().ok()?;
+    let Some((key, x25519, kind, revoked)) = row else {
+        let hint = node.peer_hints().into_iter().find(|hint| hint.id == dev)?;
+        return Some((
+            NodeId::from_peer(dev)?,
+            DevicePins {
+                x25519: Some(hint.x25519_pub),
+                revoked: node.node_revoked(dev).unwrap_or(true),
+            },
+            SessionKind::Node,
+        ));
+    };
+    let kind = match kind.as_str() {
+        "node" => SessionKind::Node,
+        "browser" | "desktop" | "mobile" => SessionKind::Device,
+        _ => return None,
+    };
     let bytes: [u8; 32] = base64::engine::general_purpose::STANDARD
-        .decode(key)
+        .decode(key?)
         .ok()?
         .try_into()
         .ok()?;
     let id = NodeId::derive(&ed25519_dalek::VerifyingKey::from_bytes(&bytes).ok()?);
-    (id.as_str() == dev).then_some(id)
+    (id.as_str() == dev).then_some((
+        id,
+        DevicePins {
+            x25519,
+            revoked: revoked || node.node_revoked(dev).unwrap_or(true),
+        },
+        kind,
+    ))
 }
 
 fn pins(node: &Node, dev: &str) -> Option<DevicePins> {
-    // A node never pairs with itself: its own row carries keys for other purposes, and a
-    // channel that claimed them would run under the node's own device (§8.3).
-    if dev == node.id().as_str() {
-        return None;
-    }
-    registered_device(node, dev)?;
-    let mut pins = node
-        .store()
-        .conn()
-        .query_row(
-            "SELECT x25519_pub, revoked_at IS NOT NULL FROM sys_device WHERE id = ?",
-            rusqlite::params![dev],
-            |row| {
-                Ok(DevicePins {
-                    x25519: row.get(0)?,
-                    revoked: row.get(1)?,
-                })
-            },
-        )
-        .optional()
-        .ok()
-        .flatten()?;
-    // A node named in `sys_node_revocation` is refused even if its device row has not
-    // caught up (§2.3.4): the two rows travel separately.
-    if node.node_revoked(dev).unwrap_or(true) {
-        pins.revoked = true;
-    }
-    Some(pins)
+    peer_pins(node, dev).map(|(_, pins, _)| pins)
 }
 
 pub(super) async fn upgrade(handler: Handler, request: Request, pairing: bool) -> Response {
@@ -572,6 +592,7 @@ pub async fn serve_ws(handler: Handler, peer: Peer, host: HeaderValue, mut socke
         let crypto = pending.confirm(&confirm).map_err(|_| ())?;
         let device = registered_device(&handler.lock(), &crypto.device).ok_or(())?;
         let session = Session {
+            kind: peer_pins(&handler.lock(), &crypto.device).ok_or(())?.2,
             device,
             node: node_id,
             x25519: authenticated_key.ok_or(())?,
@@ -621,6 +642,7 @@ pub async fn serve_ws(handler: Handler, peer: Peer, host: HeaderValue, mut socke
                         if running.len() >= IN_FLIGHT || seen.len() >= IDS || !seen.insert(id) { return Err(ChannelError::Format); }
                         let h = handler.clone(); let sender = tx.clone();
                         if matches!(frame.kind, Kind::Resume | Kind::Release) {
+                            if session.is_node() { return Err(ChannelError::Format); }
                             if !frame.payload.is_empty() || frame.method.is_some() || frame.path.is_some() || frame.status.is_some() || frame.headers.is_some() || frame.navigation.is_some() { return Err(ChannelError::Format); }
                             let reference = frame.handoff.ok_or(ChannelError::Format)?;
                             let authorized = { let mut node = handler.lock(); node.refresh().is_ok() && active(&node, &session) };
@@ -634,7 +656,20 @@ pub async fn serve_ws(handler: Handler, peer: Peer, host: HeaderValue, mut socke
                         } else {
                             let navigation = frame.navigation == Some(true);
                             let limit = ApiSettings::read(&handler.lock()).max_body;
-                            let request = frame.request(peer, host.clone(), session.clone(), limit)?;
+                            // A request too large is the client's mistake, not a broken
+                            // channel: it is answered so the page can say so, where a
+                            // malformed frame closes the connection (§8.3).
+                            let request = match frame.request(peer, host.clone(), session.clone(), limit) {
+                                Ok(request) => request,
+                                Err(ChannelError::BodyLimit) => {
+                                    running.insert(id, jobs.spawn(async move {
+                                        send_response(headers::text(StatusCode::PAYLOAD_TOO_LARGE,
+                                            "413 Payload Too Large — request exceeds api.max_body; send a smaller request\n"), id, sender).await
+                                    }));
+                                    continue;
+                                }
+                                Err(error) => return Err(error),
+                            };
                             let slot = if navigation { h.handoffs.reserve(&session) } else { None };
                             running.insert(id, jobs.spawn(async move {
                                 if navigation && slot.is_none() {

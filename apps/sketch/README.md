@@ -9,6 +9,10 @@ canvas, move the pen with the arrow keys, put it down with Space.
 
 It exists to prove one thing: **the framework does not impose an application model.**
 
+One canvas means one canvas. If you drew on your desktop and your laptop before joining
+them, both drawings are there afterwards, merged, every stroke kept — and undo reverses
+whichever was drawn last.
+
 ## What is not here
 
 | File | Present? |
@@ -36,10 +40,9 @@ The framework provides:
   undo reverses the latest change to the shared canvas whichever window or device made it
 - **Authentication and encryption** — `pv.js` uses the paired browser's encrypted
   channel on the LAN; no credential code belongs in this app
+- **Sync** — a stroke drawn on one machine reaches the others on your network
 
-What arrives later, with nothing to change here:
-
-- **Sync** — strokes reach every paired device over LAN, iroh, or a synced folder
+Reaching them from outside your home, and over a synced folder, is still to come.
 
 ## The event log as a document store
 

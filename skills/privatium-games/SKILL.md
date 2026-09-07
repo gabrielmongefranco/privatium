@@ -42,12 +42,11 @@ await pv.append([{ op:'put', tbl:'score', id: pv.ulid(),
                    d:{ points: 9001, at: new Date().toISOString() } }]);
 ```
 
-Snapshots and plain-text backup today, replication once sync is built, with no schema to
+Snapshots, plain-text backup and replication across your machines, with no schema to
 maintain.
 
 **Save on meaningful boundaries** — level complete, checkpoint, quit — not every frame. Each
-append is a durable line in a log file — and, once sync is built, one that syncs to every
-device.
+append is a durable line in a log file, and one that syncs to every device.
 
 Use `pv.subscribe` to notice a save written on another device mid-session, and offer to
 reload rather than silently overwriting; handle `pv.on('resync', …)` the same way — the

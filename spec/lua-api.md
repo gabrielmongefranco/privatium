@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/lua-api.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-06
+Modified: 2026-09-07
 Summary:  NORMATIVE. Tier 1 — the Lua application API and LSP template engine.
           See main README.md for full license information.
 -->
@@ -181,7 +181,9 @@ same batch may reference it. A `pv.batch` either appends every event or none; th
 assigns contiguous `seq` values to the batch, under one `ts`, writes it in one write with
 its first line carrying the count, and a batch a crash landed short is skipped whole by
 every reader (`spec/protocol.md §4.1`), so "every event or none" holds on the way out of
-the log as well as on the way in.
+the log as well as on the way in. A batch whose lines together exceed `api.max_body` is
+an error and writes nothing: a batch reaches another node whole or not at all, so one
+that large could never leave this node (`spec/protocol.md §4.1`, `§10.2`).
 
 **Encoding `data`.** `data` is a Lua table with string keys, written as the JSON object
 `d`: a string as a string, an integer as an integer, a boolean as a boolean, a `pv.dec` as
@@ -255,12 +257,13 @@ with `d` decoded — for **every event this node appends**: a handler's `pv.appe
 `pv.delete` or `pv.batch`, and the owner loading `sample/seed.jsonl`
 (`spec/app-contract.md §9`). It fires synchronously after the write, in the VM that wrote
 (any VM, for the seed), once per event in order; a handler that appends fires it again,
-bounded only by the request's limits, so guard against loops. When sync exists it fires
-for events arriving from other devices too, which is how you write "when a fill lands,
-recompute the refill window."
+bounded only by the request's limits, so guard against loops. It also fires for accepted
+events arriving from other devices, in a VM checked out by the drain that landed them,
+with `pv.device()` the origin device. It never runs in a request's own VM or under the
+node lock. Short batches and rejected future events do not fire it.
 
 Routes and `pv.on` register only while `app.lua` loads; `pv.query`, `pv.append`,
-`pv.node`, `pv.setting` and their kin run only inside a request. Calling either at the
+`pv.node`, `pv.setting` and their kin run only inside a request or append callback. Calling either at the
 wrong time is an error.
 
 ---

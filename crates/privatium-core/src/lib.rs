@@ -6,8 +6,8 @@
 //           sys_audit rows (spec/protocol.md §4.4), and the node-level API of
 //           spec/app-contract.md §6 — snapshot, restore, verify, prune and maintenance
 //           routed to every loaded app's store, auth_layer, query, close, the discovery and
-//           pairing methods, and the sync methods, which are present and never Ok until
-//           sync is built. core::handle itself is wire::Handler; the Lua host behind a Tier
+//           pairing methods, and LAN synchronization through a bounded receive inbox.
+//           core::handle itself is wire::Handler; the Lua host behind a Tier
 //           1 mount is `lua`; append, append_batch, open_app and subscribe are `app`'s.
 //           See main README.md for full license information.
 
@@ -41,6 +41,8 @@ pub mod pair;
 pub mod registry;
 pub mod session;
 pub mod store;
+/// LAN synchronization over the encrypted channel, with a durable bounded inbox.
+pub mod sync;
 pub mod sys;
 pub mod wire;
 
@@ -76,6 +78,70 @@ pub const PROTOCOL: &str = "pv/1";
 /// all want a single thing to match on.
 #[derive(Debug, Error)]
 pub enum Error {
+    /// Synchronization could not complete an internal operation; no peer input is echoed.
+    #[error("synchronization: {problem}; retry after checking peer reachability and node storage")]
+    Sync {
+        /// Fixed operation diagnostic.
+        problem: &'static str,
+    },
+    /// A foreign range does not continue its origin's sequence (`spec/protocol.md §10.2`).
+    #[error(
+        "receiving {app}/{dev}: expected seq {expected}, found {found}; pull the missing range"
+    )]
+    ForeignSeq {
+        /// Validated app slug.
+        app: String,
+        /// Validated origin device ID.
+        dev: String,
+        /// Next sequence required by the file.
+        expected: u64,
+        /// First sequence that failed validation.
+        found: u64,
+    },
+    /// A foreign line or destination fails validation without exposing row contents.
+    #[error("receiving a log: {problem}; check the origin's log")]
+    ForeignLine {
+        /// A fixed diagnostic, never text supplied by a peer.
+        problem: &'static str,
+    },
+    /// A sequence-bearing line has an invalid envelope; no part of its range is written.
+    #[error("cannot receive envelope {seq}: {problem}")]
+    ForeignEnvelope {
+        /// Sequence of the first invalid envelope.
+        seq: u64,
+        /// Fixed diagnostic, without row contents.
+        problem: &'static str,
+    },
+    /// One append would write more than a peer's request body can carry.
+    ///
+    /// A batch reaches a peer whole or not at all and a line reaches it whole
+    /// (`spec/protocol.md §4.1`, `§10.2`), so bytes past `api.max_body` could never
+    /// leave this node. Split the batch, or shrink the row.
+    #[error(
+        "appending to {app}: {bytes} bytes in one append; the most is {limit} (api.max_body) — split the batch or store less in one row"
+    )]
+    AppendTooLarge {
+        /// The app whose log refused the append.
+        app: String,
+        /// Bytes the append would have written, newlines included.
+        bytes: usize,
+        /// The bound in force.
+        limit: usize,
+    },
+    /// A line exceeds the caller's configured receive bound.
+    #[error("receiving a log: line exceeds {limit} bytes; check the origin's log")]
+    ForeignLineTooLong {
+        /// Maximum bytes including the newline.
+        limit: usize,
+    },
+    /// A torn foreign line is not a prefix of the line offered by its origin.
+    #[error("{path}: foreign log differs at byte {offset}; restore a matching log copy")]
+    ForeignDiverged {
+        /// Foreign segment, available only to the owner-facing diagnostic.
+        path: PathBuf,
+        /// Byte offset of the incomplete line.
+        offset: u64,
+    },
     /// A system identity row cannot be safely amended from its log representation.
     #[error("cannot initialize node identity: invalid system row; restore a valid data backup")]
     IdentityRow,
@@ -170,7 +236,7 @@ pub enum Error {
     ///
     /// `AGENTS.md` 2 and `spec/protocol.md §3.1`: a device appends only to
     /// `data/<slug>/log/<its-own-node-id>.jsonl`. The one exception is `§10.2`'s sync
-    /// receiver, which does not exist until Phase 3 and will not come through `log::Writer`.
+    /// receiver, which is [`log::foreign::Receiver`] and never comes through `log::Writer`.
     #[error("{path}: not this node's log — expected app {app} and device {dev}")]
     LogNotOurs {
         /// The file that was refused.
@@ -443,6 +509,16 @@ pub struct Node {
     /// The discovery mechanisms (`spec/protocol.md §6`) while they run; stopped when
     /// the node drops.
     discovery: Option<discover::Discovery>,
+    /// Engine-owned sockets and threads; no writer crosses this boundary.
+    sync: Option<sync::SyncHandle>,
+    /// Bounded received pages waiting for the root-lock owner to land them.
+    inbox: Option<sync::Inbox>,
+    /// Recursive refreshes during a drain must not overtake its queued pages.
+    draining: bool,
+    /// Stable wake source across identity adoption and engine restarts in this process.
+    sync_wake: Option<tokio::sync::watch::Sender<u64>>,
+    sync_seen: std::collections::BTreeSet<String>,
+    sync_expired: std::collections::BTreeSet<String>,
     /// The root's lock (`spec/protocol.md §3.1`). Last, so it is released after every
     /// log and store above it has closed.
     lock: DataLock,
@@ -530,6 +606,7 @@ impl Node {
             store.refresh(&store::cutoff_now()).map_err(boxed)?;
         }
         note_health(&store, &store, sys::SLUG)?;
+        store.reset_peers().map_err(boxed)?;
 
         // 7. Record what we now know.
         sys.save_to(&mut state);
@@ -546,6 +623,12 @@ impl Node {
             apps: BTreeMap::new(),
             pairing: None,
             discovery: None,
+            sync: None,
+            inbox: None,
+            draining: false,
+            sync_wake: None,
+            sync_seen: std::collections::BTreeSet::new(),
+            sync_expired: std::collections::BTreeSet::new(),
             lock,
         };
         // An expired or revoked node says so once, in the audit table the owner reads
@@ -640,7 +723,10 @@ impl Node {
     /// Rematerialize `_sys` if its log has grown behind the tables — the check the read
     /// path makes per request. Returns whether it rebuilt.
     pub fn refresh(&mut self) -> Result<bool> {
-        self.store.refresh(&store::cutoff_now()).map_err(boxed)
+        let drained = self.drain()?;
+        let refreshed = self.store.refresh(&store::cutoff_now()).map_err(boxed)?;
+        self.publish_peers()?;
+        Ok(drained || refreshed)
     }
 
     // -----------------------------------------------------------------------------------
@@ -910,6 +996,8 @@ impl Node {
     /// the root's lock. Dropping the node releases the lock too; what `close` adds is
     /// the flush and its result, which a drop cannot report.
     pub fn close(mut self) -> Result<()> {
+        self.sync.take();
+        self.drain()?;
         self.flush()
     }
 
@@ -1110,25 +1198,6 @@ impl Node {
             Some(true) => discover::Switch::On,
             Some(false) => discover::Switch::Off,
             None => discover::Switch::Refused(format!("{key} is not true or false")),
-        })
-    }
-
-    /// Sync with the cluster over iroh and the LAN (`spec/protocol.md §10`) — Phase 3.
-    /// Never `Ok` here.
-    pub fn start_sync(&mut self) -> Result<()> {
-        Err(Error::Unimplemented {
-            feature: "start_sync",
-            phase: "3",
-            spec: "spec/protocol.md §10",
-        })
-    }
-
-    /// One sync pass, now (`spec/protocol.md §10`) — Phase 3. Never `Ok` here.
-    pub fn sync_now(&mut self) -> Result<()> {
-        Err(Error::Unimplemented {
-            feature: "sync_now",
-            phase: "3",
-            spec: "spec/protocol.md §10",
         })
     }
 

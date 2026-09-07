@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/wire/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-06
+// Created:  2026-09-03  |  Modified: 2026-09-07
 // Summary:  core::handle(Request) -> Response (ADR 0003): the one entry point for
 //           application traffic. Bodies are streams in both directions. The router is built
 //           from Node::mounts(); the auth layer runs here so every adapter gets it; the
@@ -209,7 +209,7 @@ impl Handler {
         })
     }
 
-    fn lock(&self) -> MutexGuard<'_, Node> {
+    pub(crate) fn lock(&self) -> MutexGuard<'_, Node> {
         self.node.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
@@ -225,7 +225,23 @@ impl Handler {
             {
                 return false;
             }
-            return true;
+            // A node session belongs to a peer copying logs, not to a person browsing:
+            // it reaches the sync routes and the two public facts, and answers 403
+            // everywhere else (`spec/protocol.md §8.4`).
+            let route = Router::new(
+                self.mode,
+                node.mounts().map(|(mount, app)| (mount, app.slug())),
+            )
+            .resolve(request.uri().path());
+            return !session.is_node()
+                || matches!(
+                    route,
+                    Route::SyncHeads
+                        | Route::SyncPull
+                        | Route::SyncPush
+                        | Route::Health
+                        | Route::Manifest
+                );
         }
         let peer = request.extensions().get::<Peer>().map(|p| p.0).or_else(|| {
             request
@@ -259,6 +275,7 @@ impl Handler {
                 })
             });
         let public = match &route {
+            Route::SyncHeads | Route::SyncPull | Route::SyncPush => None,
             Route::Ws | Route::WsPair | Route::Health | Route::Manifest | Route::Static { .. } => {
                 Some(Public::Asset)
             }
@@ -344,6 +361,9 @@ impl Handler {
         };
 
         let response = match route {
+            Route::SyncHeads => return self.sync_heads(request).await,
+            Route::SyncPull => return self.sync_pull(request).await,
+            Route::SyncPush => return self.sync_push(request).await,
             Route::Ws | Route::WsPair => {
                 return channel::upgrade(self.clone(), request, route == Route::WsPair).await;
             }
@@ -586,6 +606,7 @@ impl Handler {
                 }
             }
         };
+        self.fire_pending(slug).await;
         match plan {
             Plan::Api => self.data_api(slug, rest, request).await,
             Plan::Web { web_dir, csp } => {
@@ -868,6 +889,37 @@ impl Handler {
             Ok(Err(error)) => eprintln!("privatium: {slug}: pv.on('append'): {error}"),
             Err(join) => eprintln!("privatium: {slug}: pv.on('append'): thread panicked: {join}"),
         }
+    }
+
+    /// Deliver received `pv.on('append')` callbacks for `slug`, with the origin device.
+    /// Takes pending batches under the node lock and releases it before running Lua;
+    /// callbacks may append. Callback failures follow the normal Lua audit path.
+    pub async fn fire_pending(&self, slug: &str) {
+        let pending = self.lock().take_unfired(slug);
+        for (appended, origin) in pending {
+            self.fire_append(slug, appended, Some(origin)).await;
+        }
+    }
+
+    /// Drain synchronized logs for every loaded app, then run Lua callbacks outside
+    /// the node lock. Returns storage failures without exposing received row contents.
+    pub async fn drain_sync(&self) -> crate::Result<()> {
+        let slugs = {
+            let mut node = self.lock();
+            node.refresh()?;
+            let slugs = node
+                .apps()
+                .map(|app| app.slug().to_owned())
+                .collect::<Vec<_>>();
+            for slug in &slugs {
+                node.refresh_app(slug)?;
+            }
+            slugs
+        };
+        for slug in slugs {
+            self.fire_pending(&slug).await;
+        }
+        Ok(())
     }
 
     /// `POST /settings/apps/<slug>/seed`: the owner's explicit act

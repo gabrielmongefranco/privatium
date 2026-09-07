@@ -85,6 +85,8 @@ pub enum JoinOutcome {
     },
     /// This node admitted the other: write its row and `node.admitted`.
     Admitted {
+        /// Origin dialed, retained as a local peer address (`spec/data-dictionary.md §3.7`).
+        url: String,
         /// The other node's facts, as its device row carries them.
         paired: Paired,
         /// The `paired_at` sent in `admit`.
@@ -242,6 +244,7 @@ impl Node {
                 readmission,
             } => self.adopt_cluster(admitted, peer, readmission, now),
             JoinOutcome::Admitted {
+                url,
                 paired,
                 paired_at,
                 readmission,
@@ -280,6 +283,12 @@ impl Node {
                         ),
                     )
                 })?;
+                self.state.remember_peer(PeerHint {
+                    id: paired.device.clone(),
+                    x25519_pub: paired.x25519_pub.clone(),
+                    url: Some(url),
+                });
+                self.state.flush()?;
                 self.refresh()?;
                 self.publish_facts()?;
                 Ok(Joined {
@@ -527,6 +536,7 @@ impl JoinAdmitting {
                 problem: error.to_string(),
             })?;
         Ok(JoinOutcome::Admitted {
+            url: self.url,
             paired: self.paired,
             paired_at: self.paired_at,
             readmission: self.readmission,

@@ -60,6 +60,8 @@ pub struct Writer {
     durability: Durability,
     /// Why the last append failed, while it stands.
     poisoned: Option<String>,
+    /// The most one append may write, so sync can carry it whole (`spec/protocol.md §10.2`).
+    append_bound: usize,
 }
 
 /// What the writer needs of its file, so a test can hand it one that fails part-way.
@@ -167,7 +169,15 @@ impl Writer {
             seq,
             durability,
             poisoned: None,
+            append_bound: crate::wire::ApiSettings::default().max_body,
         }
+    }
+
+    /// Lower or raise what one append may write, from the setting the peer reads too.
+    /// The default is the setting's own default, so a caller that never calls this still
+    /// writes only what a peer will accept.
+    pub(crate) fn set_append_bound(&mut self, bound: usize) {
+        self.append_bound = bound;
     }
 
     /// Append one `put`.
@@ -298,6 +308,16 @@ impl Writer {
             return Err(Error::WriterPoisoned {
                 path: self.path.clone(),
                 reason: reason.clone(),
+            });
+        }
+        // A batch crosses to a peer whole or not at all, and a line crosses whole
+        // (`spec/protocol.md §4.1`, `§10.2`). Bytes a peer's request body cannot hold
+        // would sit in this log forever, so they are refused before they are written.
+        if bytes.len() > self.append_bound {
+            return Err(Error::AppendTooLarge {
+                app: self.app.clone(),
+                bytes: bytes.len(),
+                limit: self.append_bound,
             });
         }
         if let Err(error) = self.sink.write_all(bytes) {

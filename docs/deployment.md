@@ -19,9 +19,9 @@ The node advertises itself on the local network over mDNS and answers UDP probes
 52525 (`spec/protocol.md §6`); `--no-discovery` turns both off for one run, and the
 `discovery.mdns` and `discovery.udp` settings turn each off durably. A phone pairs by
 scanning the QR code `--open` or `privatium pair` prints, or the one on the devices
-page. A second node is admitted with one pairing (§3.1); sync between nodes is not built
-yet, and the remote transports, tunnels and
-certificates below are not either; each is marked where it appears.
+page. A second node is admitted with one pairing (§3.1). Admitted nodes sync over the
+LAN on discovery, on a timer, and one second after writes settle. Remote transports,
+tunnels and certificates below remain planned; each is marked where it appears.
 
 ## 1. Topologies
 
@@ -122,9 +122,15 @@ Both sides prove they hold their keys before anything is handed over, and the cl
 private key crosses the network once, encrypted under the pairing code's key, to the
 machine being admitted. The admitting node lists the new one on its devices page, with
 a **Revoke** button that removes it from the cluster on every node that hears of it
-(`docs/security.md §8`). Sync between the two nodes is Phase 3's next milestone; until
-it lands, each node holds what it held before, plus the cluster key and the certificate
-that let one pairing cover both.
+(`docs/security.md §8`). Each node holds every device's log after synchronization;
+one pairing lets a phone use either node once their system logs have crossed.
+
+Joining keeps every node's data, and sync is a union. Admission replaces three identity
+files and nothing under `data/`. After the first pass both nodes hold both devices'
+logs. What you see depends on the app: Sketch has one shared canvas, so drawings started
+separately on desktop and laptop are merged on one canvas after joining, each stroke
+intact and undo reversing the latest change from either. Nothing is lost, and the
+drawings are not kept apart.
 
 ## 4. Firewalls
 

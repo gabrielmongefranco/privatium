@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-06
+// Created:  2026-09-01  |  Modified: 2026-09-07
 // Summary:  One app's cache/<slug>.sqlite: the framework's connection that materializes it
 //           from the log or from a snapshot (spec/protocol.md §5.3), the read-only
 //           sandboxed connection app SQL gets (spec/app-contract.md §7), the watermark that
@@ -540,7 +540,10 @@ impl Store {
                      restored_at  TEXT,
                      log_bytes    INTEGER
                  );
+                 -- One row per peer remembered during this process, including an own-node marker.
+                 CREATE TABLE IF NOT EXISTS pv_peer (id TEXT PRIMARY KEY, synced INTEGER NOT NULL);
                  DROP VIEW IF EXISTS v_health;
+                 -- One row per app whose cache has restore facts.
                  CREATE VIEW v_health AS
                  SELECT h.app_id,
                         h.restore_tier,
@@ -550,13 +553,66 @@ impl Store {
                         CAST(julianday('now') - julianday(s.last_snapshot_at) AS INTEGER)
                             AS snapshot_age_days,
                         h.log_bytes,
-                        NULL AS unsynced_peers
+                        CASE WHEN EXISTS (SELECT 1 FROM pv_peer)
+                             THEN (SELECT count(*) FROM pv_peer WHERE synced = 0)
+                             ELSE NULL END AS unsynced_peers
                  FROM {HEALTH_TABLE} h
                  LEFT JOIN (SELECT app_id, max(created_at) AS last_snapshot_at
                             FROM sys_snapshot GROUP BY app_id) s
                    ON h.app_id = s.app_id;"
             ))
             .map_err(StoreError::Sql)
+    }
+
+    /// Clear process-local peer observations at node open. Source logs are untouched.
+    pub(crate) fn reset_peers(&self) -> Result<(), StoreError> {
+        self.ensure_health()?;
+        self.conn
+            .execute("DELETE FROM pv_peer", [])
+            .map_err(StoreError::Sql)?;
+        Ok(())
+    }
+
+    /// Reconcile active peers while preserving completed marks through cache rebuilds.
+    pub(crate) fn note_peers(&self, own: &str, peers: &[String]) -> Result<(), StoreError> {
+        let existing = self
+            .conn
+            .prepare("SELECT id FROM pv_peer")
+            .map_err(StoreError::Sql)?
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(StoreError::Sql)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::Sql)?;
+        for id in existing {
+            if id != own && !peers.contains(&id) {
+                self.conn
+                    .execute("DELETE FROM pv_peer WHERE id = ?", [&id])
+                    .map_err(StoreError::Sql)?;
+            }
+        }
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO pv_peer (id,synced) VALUES (?,1)",
+                [own],
+            )
+            .map_err(StoreError::Sql)?;
+        for id in peers {
+            self.conn
+                .execute(
+                    "INSERT OR IGNORE INTO pv_peer (id,synced) VALUES (?,0)",
+                    [id],
+                )
+                .map_err(StoreError::Sql)?;
+        }
+        Ok(())
+    }
+
+    /// Mark an existing peer only after a complete durable pass.
+    pub(crate) fn note_peer_synced(&self, id: &str) -> Result<(), StoreError> {
+        self.conn
+            .execute("UPDATE pv_peer SET synced = 1 WHERE id = ?", [id])
+            .map_err(StoreError::Sql)?;
+        Ok(())
     }
 
     /// Record one app's restore facts in `v_health`. Only the `_sys` store has the table;

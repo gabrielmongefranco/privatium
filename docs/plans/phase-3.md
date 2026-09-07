@@ -40,7 +40,7 @@ One milestone per branch, one PR per milestone, in order — M20 to M26, continu
 green on all three platforms and its checklist is ticked on that run, not when it
 compiles. Write the named tests first. Do not start M(n+1) before M(n) merges.
 
-Section 2 lists the decisions this plan makes. **All thirteen are decided.** Most follow
+Section 2 lists the decisions this plan makes. **All fourteen are decided.** Most follow
 from what Phase 2's code and spec already fix; the ones that change the wire, the
 security posture, or how data is stored, shared or identified — §2.1, §2.2, §2.11 and
 §2.12 — were made by the owner on 2026-09-06 after this plan was reviewed, and each
@@ -89,7 +89,7 @@ URL the owner typed, it is Phase 5's.
 
 ## 2. Decisions this plan makes — all decided
 
-Thirteen, all decided. Each starts from a Phase 2 fact — a line of code, a `spec/`
+Fourteen, all decided. Each starts from a Phase 2 fact — a line of code, a `spec/`
 section Phase 2 wrote, or a row of `docs/plans/phase-2.md §3` — and says what Phase 3
 adds. §2.1, §2.2, §2.11 and §2.12 change the wire, the posture or what is stored, and
 were the owner's call; §2.4 and §2.12 were reshaped by one fact found while making them
@@ -636,6 +636,30 @@ peers that have not completed a pass since this node started (row 21).
 
 ---
 
+### 2.14 Cluster succession carries a paired device across a join — DECIDED, scheduled separately
+
+A phone pins a cluster key, so copying its device row does not carry its pairing across
+an adoption of another cluster. The chosen follow-up is cluster succession: a node
+that founded its current cluster and has admitted no other node may join while keeping
+its paired devices. Before discarding its old cluster key, it signs an amendment naming
+the successor cluster and public key, using the old key and the certificate's canonical
+encoding rule. The channel hello carries the chain; a client verifies each link from
+its existing pin, then replaces that pin with the successor. Unverified mismatches
+remain refused, and the chain has a small fixed bound, proposed as four links.
+
+Only a cluster's founder may sign its succession. A node may not sign for a cluster it
+joined, and two nodes that have each admitted nodes remain unable to merge clusters.
+Rotation stays a hard cut requiring revocation and re-pairing. The old key already
+could certify any node to its pinned devices; succession adds a verifiable transition,
+not another holder of authority.
+
+This is a separate milestone after M21, with its own spec rows and tests. It will touch
+`protocol.md §2.3, §2.3.1, §2.3.2, §7.4.2, §8.1`,
+`data-dictionary.md §3.1b`, admission, and browser and native pin verification. M21
+adds no succession code, wire field, or normative text. Existing admission rules remain.
+
+---
+
 ## 3. Spec gaps found — fixed in the milestone that meets them
 
 Read against the sections §0 names, as the code stands after PR #38. Nothing here is
@@ -664,25 +688,25 @@ rows 1, 2 and 7 below.
 | 6 | `§2.3.4` "A device that has synced since the revocation refuses that node" — a browser never syncs, so it trusts a revoked node's certificate until expiry; nothing says what a revoked node does when the revocation reaches it | The refusal is a replica's — a node, and a native replica when one exists; a browser holds the cluster public key alone and is covered by the 180-day bound `§2.3.4` already states; a node that finds its own ID in `sys_node_revocation` stops syncing, refuses every channel, and tells the owner (alert); a revoked node's key is never re-admitted, since a registered key is refused at pairing (`§7.4.2`), and it re-initializes instead (`§2.4`) | `protocol.md §2.3.4`, `docs/security.md §8` | **Fixed**; M20; `test_spec_2_3_4_a_node_refuses_a_peer_named_in_its_revocation_table`, `test_spec_2_3_4_a_node_that_finds_itself_revoked_stops_and_tells_the_owner` |
 | 7 | `§2.3.1` "after every completed sync" — completed is undefined, and `data-dictionary.md §3.10` gives `cert.expired` no severity or subject | Completed per §2.4: heads exchanged for every app, every requested range arrived whole, every offered range accepted or refused with a reason; `cert.expired` is `warn`, its subject the node whose certificate expired, written once per peer per start by the refusing side and once by an expired node about itself | `protocol.md §2.3.1`, `data-dictionary.md §3.10` | **Fixed**; M20; the definition is in `§2.3.1` and the severities in `data-dictionary.md §3.10`; the audit rows are held by `test_spec_2_3_1_an_expired_node_starts_for_its_owner_and_refuses_every_channel` and `test_spec_2_3_4_revoking_a_node_writes_the_revocation_row_and_closes_its_channel` |
 | 8 | `§6.1` "a client that has paired MUST filter discovery results by `cl`" — a node browsing is a client here, and nothing says its own list is filtered or what becomes of the rest | The node offers a pass to nodes whose `cl` is its own cluster and to no other; strangers are kept by ID, shown apart on the node page, and never contacted (§2.10) | `protocol.md §6.1` | **Fixed**; M20; `test_spec_6_1_peers_are_the_clusters_nodes_and_strangers_are_kept_apart_by_id` |
-| 9 | `§9.2` gives the three sync routes the auth `session`, which today admits any paired device, and `§8.4` says nothing about what a node session may reach | The sync routes answer a session whose device row is active with `kind = 'node'` and nothing else — not a browser session, not the owner's loopback standing; such a session may use the sync routes, `/api/v1/health` and `/api/v1/manifest`, and every other route answers 403 (§2.4) | `protocol.md §9.2, §8.4` | M21 |
-| 10 | `§10.1` shows the exchange and `§9.2` the routes; neither says what `heads` answers for a device the node has never seen, what `pull`'s `after` means at zero, how a long `pull` is paged, what `push` answers, or how a node learns which apps a peer holds when its own `apps/` differs | `heads` without `app` answers `{slug: {dev: seq}}` for every slug under `data/`, mounted or not, `_sys` included, and omits devices it has never seen; `after=0` is the whole stream; `pull` answers a bounded batch of raw lines and a `next` equal to the last `seq` sent, and the client asks again until `next` equals the head; `push` answers the new head per device, or 409 naming the first line that did not follow `head + 1` with nothing of that batch written; a slug the receiver has no folder for gets `data/<slug>/log/` and is not mounted | `protocol.md §9.2, §10.1, §10.2` | M21 |
-| 11 | `§4.1` "MUST NOT materialize, serve or forward the lines of such a batch" against `§10.2`'s byte-for-byte copy: not forwarding a short batch leaves the receiver a permanent `seq` gap and a file that is not a prefix of the origin's; a line that is not an envelope has the same effect | Sync copies the segment as the origin holds it, short batches and non-envelope lines included, and every reader on every node skips them by the same rule; `§10.2`'s "envelope parses" applies to the lines that carry a `seq`; a non-envelope line is bounded by the reader's line limit, which the milestone states (§2.6) | `protocol.md §4.1, §10.2` | M21 |
-| 12 | `§4.4` "reject on ingest" against `§10.2`'s "write received events to the origin's file" and `§3.1`'s "never modify": a rejected line is a permanent gap the receiver re-requests forever | A sync receiver stores the line as received; the rejection is the materializer's and is audited once as `event.rejected` (§2.6) | `protocol.md §4.4, §10.2` | M21 |
-| 13 | Nothing says what a receiver does with a foreign segment that ends mid-line; `§3.1` forbids truncating | Completed by its suffix from the origin when the torn tail is a prefix of what arrives; otherwise refused and reported with the file name and offset, nothing written (§2.6) | `protocol.md §10.2` | M21 |
-| 14 | `data-dictionary.md §3.7, §3.7b, §3.8` describe local tables nothing in `local/state.jsonl` holds; `§3` shows `local/` with two files | `sys_peer`'s hints are a `peers` record in `state.jsonl` — the join URL, the owner's URLs, and for the node that admitted this one its ID and X25519 public key, which `§8.3`'s lookup accepts for a `kind = 'node'` peer while `sys_device` holds no row for it (§2.2, §2.4); endpoints and sync state are held in memory and rebuilt at start; the three sections say so and `§3`'s layout is unchanged (§2.8) | `data-dictionary.md §3.7–§3.8`, `protocol.md §3, §8.3` | **Fixed** for the hint; M20; `test_spec_2_3_1_a_node_is_admitted_by_pairing_and_receives_the_cluster_key_and_a_certificate` (the `peers` line, no secret in it); M21 the lookup and the rest |
-| 15 | `§10.4` lists `kind` as six values; `data-dictionary.md §3.7b` lists ten; neither has a value for a URL the owner typed, which a join URL and a VPS's address are | One list, `data-dictionary.md §3.7b`'s plus `static`, in both places (§2.8) | `protocol.md §10.4`, `data-dictionary.md §3.7b` | M21 |
-| 16 | `§13` "Never writes to a log file for a device other than as specified in §10.2" — `§10.2` never says the receiver is the *only* such writer | It is: `log::foreign` is the one module that opens another device's file, `Writer` still refuses one, and `restore --from` copies a file rather than writing a line (§2.6) | `protocol.md §10.2` | M21 |
-| 17 | `lua-api.md §3.4` "when sync exists it fires for events arriving from other devices too" and `data-api.md §3` "including events arriving via sync" are promises in the future tense, and neither says in which VM a handler runs for a synced event | Both true; the tense changes; `lua-api.md §3.4` says the handler runs in a VM checked out by the drain that landed the event, with `pv.device()` the origin device, and never in a request's own VM | `lua-api.md §3.4`, `data-api.md §3` | M21 |
+| 9 | `§9.2` gives the three sync routes the auth `session`, which today admits any paired device, and `§8.4` says nothing about what a node session may reach | The sync routes answer a session whose device row is active with `kind = 'node'` and nothing else — not a browser session, not the owner's loopback standing; such a session may use the sync routes, `/api/v1/health` and `/api/v1/manifest`, and every other route answers 403 (§2.4) | `protocol.md §9.2, §8.4` | **Fixed**; M21; `test_spec_9_2_sync_routes_answer_a_node_session_alone` |
+| 10 | `§10.1` shows the exchange and `§9.2` the routes; neither says what `heads` answers for a device the node has never seen, what `pull`'s `after` means at zero, how a long `pull` is paged, what `push` answers, or how a node learns which apps a peer holds when its own `apps/` differs | `heads` without `app` answers `{slug: {dev: seq}}` for every slug under `data/`, mounted or not, `_sys` included, and omits devices it has never seen; `after=0` is the whole stream; `pull` answers a bounded batch of raw lines and a `next` equal to the last `seq` sent, and the client asks again until `next` equals the head; `push` answers the new head per device, or 409 naming the first line that did not follow `head + 1` with nothing of that batch written; a slug the receiver has no folder for gets `data/<slug>/log/` and is not mounted; `§2.3.1`'s definition of a completed pass says a refused range is not a completion, since a 409 means the peer's head moved and the next trigger starts from fresh heads | `protocol.md §2.3.1, §9.2, §10.1, §10.2` | **Fixed**; M21; `test_spec_10_1_heads_pull_and_push_are_a_set_union` |
+| 11 | `§4.1` "MUST NOT materialize, serve or forward the lines of such a batch" against `§10.2`'s byte-for-byte copy: not forwarding a short batch leaves the receiver a permanent `seq` gap and a file that is not a prefix of the origin's; a line that is not an envelope has the same effect | Sync copies the segment as the origin holds it, short batches included. Every short-batch line carries a `seq` and counts in heads; every reader skips the batch by the same rule. A complete line without a `seq` after the last envelope travels with the next envelope; a torn partial line waits until terminated. Non-envelope lines pass through in position and count toward `api.max_body` per line. Pages never split a batch; the client bounds a page at twice `api.max_body` plus the head allowance. No byte cursor is added (§2.6) | `protocol.md §4.1, §10.2` | **Fixed**; M21; `test_spec_10_2_a_short_batch_and_a_non_envelope_line_are_copied_and_skipped_everywhere` |
+| 12 | `§4.4` "reject on ingest" against `§10.2`'s "write received events to the origin's file" and `§3.1`'s "never modify": a rejected line is a permanent gap the receiver re-requests forever | A sync receiver stores the line as received; the rejection is the materializer's and is audited once as `event.rejected` (§2.6) | `protocol.md §4.4, §10.2` | **Fixed**; M21; `test_spec_4_4_a_future_dated_synced_line_is_stored_skipped_and_audited_once` |
+| 13 | Nothing says what a receiver does with a foreign segment that ends mid-line; `§3.1` forbids truncating | Completed by its suffix from the origin when the torn tail is a prefix of what arrives; otherwise refused and reported with the file name and offset, nothing written (§2.6) | `protocol.md §10.2` | **Fixed**; M21; `test_spec_10_2_a_torn_foreign_segment_is_completed_by_its_suffix_never_truncated` |
+| 14 | `data-dictionary.md §3.7, §3.7b, §3.8` describe local tables nothing in `local/state.jsonl` holds; `§3` shows `local/` with two files | `sys_peer`'s hints are a `peers` record in `state.jsonl` — the join URL, the owner's URLs, and for the node that admitted this one its ID and X25519 public key, which `§8.3`'s lookup accepts for a `kind = 'node'` peer while `sys_device` holds no row for it (§2.2, §2.4); endpoints and sync state are held in memory and rebuilt at start; the three sections say so and `§3`'s layout is unchanged (§2.8) | `data-dictionary.md §3.7–§3.8`, `protocol.md §3, §8.3` | **Fixed** for the hint; M20; `test_spec_2_3_1_a_node_is_admitted_by_pairing_and_receives_the_cluster_key_and_a_certificate` (the `peers` line, no secret in it); **Fixed** at M21 for lookup and in-memory state; `test_spec_8_3_either_side_can_start_the_first_pass_after_admission`, `test_spec_10_2_sync_state_is_never_an_event` |
+| 15 | `§10.4` lists `kind` as six values; `data-dictionary.md §3.7b` lists ten; neither has a value for a URL the owner typed, which a join URL and a VPS's address are | One list, `data-dictionary.md §3.7b`'s plus `static`, in both places (§2.8) | `protocol.md §10.4`, `data-dictionary.md §3.7b` | **Fixed**; M21; `test_spec_10_4_candidates_are_ordered_by_last_ok_then_kind_and_bounded` |
+| 16 | `§13` "Never writes to a log file for a device other than as specified in §10.2" — `§10.2` never says the receiver is the *only* such writer | It is: `log::foreign` is the one module that opens another device's file, `Writer` still refuses one, and `restore --from` copies a file rather than writing a line (§2.6) | `protocol.md §10.2` | **Fixed**; M21; `test_spec_10_2_the_receiver_is_the_only_writer_of_another_devices_file` |
+| 17 | `lua-api.md §3.4` "when sync exists it fires for events arriving from other devices too" and `data-api.md §3` "including events arriving via sync" are promises in the future tense, and neither says in which VM a handler runs for a synced event | Both true; the tense changes; `lua-api.md §3.4` says the handler runs in a VM checked out by the drain that landed the event, with `pv.device()` the origin device, and never in a request's own VM | `lua-api.md §3.4`, `data-api.md §3` | **Fixed**; M21; `test_spec_lua_3_4_on_append_fires_for_synced_events_with_the_origin_device` |
 | 18 | `§10.5` "A node MUST watch `data/` for externally-appeared files and re-materialize" reads as a watcher; `docs/backup-and-restore.md §2` says every file syncer works with no configuration, and with network sync on, two writers of one foreign file can exist | The watching is the stat every request and every stream ping already makes (§2.9); a folder is under file sync or network sync, never both, said in both documents with how to tell which is in use | `protocol.md §10.5`, `docs/backup-and-restore.md §2`, `docs/deployment.md §1, §2.3` | M23 |
 | 19 | `§4.5` describes a replay and says nothing about an incremental apply with more than one writer | One sentence: an implementation that applies events incrementally MUST compare `(lam, ts, dev)` against the row's current winner and apply only a later event (§2.7) | `protocol.md §4.5` | M22 |
 | 20 | `app-contract.md §6` says `query` reads the sandboxed connection and nothing about a segment that appeared on disk since the last request | `query` stats the app first, as a request does, so a log another machine delivered is seen (§2.9) | `app-contract.md §6` | M23 |
-| 21 | `data-dictionary.md §4` `v_health` carries `unsynced peer count` with no definition, and the reference view answers NULL | The count of active `kind = 'node'` peers other than this node that have not completed a pass since this node started; NULL while `start_sync` has not run (§2.13) | `data-dictionary.md §4` | M21 |
+| 21 | `data-dictionary.md §4` `v_health` carries `unsynced peer count` with no definition, and the reference view answers NULL | The count of active `kind = 'node'` peers other than this node that have not completed a pass since this node started; NULL while `start_sync` has not run (§2.13) | `data-dictionary.md §4` | **Fixed**; M21; `test_spec_10_2_sync_state_is_never_an_event` |
 | 22 | `§14` item 8 and the roadmap fix constraints for attachments and no shape | A new `protocol.md §4.7` for the blob directory, the write-verify-rename rule, the `.part` file and the reference; `blob/` in `§3`'s tree; `data-dictionary.md §2` gains `attachment` and `data-dictionary.md §3.6` gains `api.max_blob`; `data-api.md §8` the three routes; `§9.2` the three sync routes; `cli.md §5.1` `PV408` and `cli.md §7` restore copying blobs; `app-contract.md §4, §5` show `blob/` (§2.11) | those files | M25 |
 | 23 | `§8.3` "A `chunk` from the client — a streamed request body — is reserved and refused in `pv/1`" — a 32 MiB blob cannot cross the channel in one `req` bounded by `api.max_body` | A `req` with `streaming: true` and no payload, then client `chunk`s in order and a client `end`; bounded by `api.max_blob` on the blob routes and `api.max_body` elsewhere (§2.11) | `protocol.md §8.3` | M25 |
 | 24 | `§10.6` and `data-api.md §2` have the conditional append read "the row's events ranked past its `base`" from the log | It may read the row's current rank from the cache, provided the answer is the same, which the milestone proves (§2.7) | `protocol.md §10.6`, `data-api.md §2` | M22 |
 | 25 | `apps/animals/README.md` says the live demo is "one attribute"; `docs/frameworks.md §3` has no row for the htmx SSE extension | The honest count once the file is open (M24), and the extension's row: version, size, no build step | `apps/animals/README.md`, `docs/frameworks.md §3` | M24 |
-| 26 | `app-contract.md §6` `start_sync` / `sync_now` "iroh + LAN peers"; iroh is Phase 5's (`§14` item 6); `sync_now` returns `()` and a program cannot learn what a pass did | LAN peers in `pv/1 (partial: phase 3)`; `sync_now` answers a report; `Error::Unimplemented` is gone from both (§2.13) | `app-contract.md §6` | M21 |
-| 27 | `§10.4` "Re-attempt on: network-change events, application foreground, and explicit user action" is written for a client with a UI; `§13`'s line bundles the timeout and the re-attempt | A node re-attempts on discovery, on the sixty-second timer and on `sync_now`; the network-change and foreground halves are a native client's (Phase 4), and the checklist line says which half a node satisfies (§2.8) | `protocol.md §10.4, §13` | M21 |
+| 26 | `app-contract.md §6` `start_sync` / `sync_now` "iroh + LAN peers"; iroh is Phase 5's (`§14` item 6); `sync_now` returns `()` and a program cannot learn what a pass did | LAN peers in `pv/1 (partial: phase 3)`; `sync_now` answers a report; `Error::Unimplemented` is gone from both (§2.13) | `app-contract.md §6` | **Fixed**; M21; `test_spec_app_contract_6_start_sync_and_sync_now_are_real` |
+| 27 | `§10.4` "Re-attempt on: network-change events, application foreground, and explicit user action" is written for a client with a UI; `§13`'s line bundles the timeout and the re-attempt | A node re-attempts on discovery, on the sixty-second timer and on `sync_now`; the network-change and foreground halves are a native client's (Phase 4), and the checklist line says which half a node satisfies (§2.8) | `protocol.md §10.4, §13` | **Fixed**; M21; `test_sync_wakes_an_idle_drain_and_debounces_local_appends` |
 | 28 | `docs/deployment.md §2` and `docs/connectivity.md §2, §4.4` describe an always-on node in the future tense, and neither says that a VPS reached over plain HTTP from the public internet is `§7.7`'s exposure on an untrusted network | The quickstart of M26; node-to-node sync with a VPS is encrypted by `§8`; a browser pairing to it over plain HTTP across the internet carries `§7.7`'s gap, said plainly, and the certificate host that closes it is Phase 5 | `docs/deployment.md §2`, `docs/connectivity.md §2, §4.4` | M26 |
 | 29 | `cli.md §1`'s example and `protocol.md`'s status line say `phase 2` | `pv/1 (partial: phase 3)` (§2.13) | `cli.md §1`, `protocol.md` status line | M26 |
 | 30 | `§7.4.2` refuses a device key already in `sys_device`, active or revoked, and `§2.3.1` requires a node offline past 180 days to be re-admitted — with the key it has, since `§2.4` reserves re-initialization for a compromised key | A registered, active node key whose `sys_node.cert_expires_at` is at or before now and whose `sys_node.cluster_id` is the admitter's is re-admitted: no disposability check, no new row, a fresh certificate in `admit`, `node.admitted` saying so; a registered key that is revoked, or whose certificate has not expired, is refused as before (§2.1) | `protocol.md §2.3.1, §7.4.2` | **Fixed**; M20; `test_spec_2_3_1_an_expired_node_is_readmitted_with_its_own_key_and_no_new_row` |
@@ -690,6 +714,8 @@ rows 1, 2 and 7 below.
 | 32 | `data-api.md §5` promises `pv.js` "under 12 KB" and the file stands a few bytes under it; `pv.blob` and `pv.blobUrl` pass it | 16 KB, unminified and meant to be read as before (§2.11) | `data-api.md §5` | M25 |
 | 33 | §2.1's direction rule decides from `disposable` alone, and an expired node that ever paired a device is not disposable — so under that rule an expired node with a paired phone could never be re-admitted: both sides established, 4403 | Both node-kind sealed messages carry `expired` beside `sig` and `disposable`; an expired side never admits; exactly one expired side is the joiner and the other must be established, which then applies row 30's registry check; two expired sides are refused; `disposable` stays honest | `protocol.md §2.3.1, §7.4.2` | **Fixed**; M20; `test_spec_2_3_1_an_expired_node_is_readmitted_with_its_own_key_and_no_new_row` (B pairs a phone before it expires), `test_spec_2_3_1_direction_rule_over_every_flag_combination` |
 | 34 | `§8.4` made the owner's standing a loopback peer with a loopback `Host`, so a browser opened on the node's own LAN address from the node's keyboard was shown the pairing screen and would have paired the machine with itself (issue #46) | The owner is a request from this machine — loopback, or a peer address that is one of the node's own interface addresses — whose `Host` names this machine the same way; the `Host` rule is what defeats DNS rebinding; a peer on another machine is unchanged | `protocol.md §8.4, §9.2` | **Fixed**; M20; `test_spec_8_4_a_request_from_this_machines_own_address_is_the_owner` |
+| 36 | `§10.2`'s page rule assumes a batch fits one page and `api.max_batch` bounds only the count, so `append_batch` — Lua, an embedder, or `sample/seed.jsonl` loaded whole — can write a batch no page can offer and no peer's request body can hold, which never converges | `§4.1` bounds one append at `api.max_body`, refused before anything is written (413 on the data API); `§10.2` says a range that still cannot be offered is refused for that log alone, the pass carries on with the rest and does not complete | `protocol.md §4.1, §10.2`, `data-api.md §2`, `app-contract.md §6`, `lua-api.md §3.3` | **Fixed**; M21; `test_spec_10_2_an_append_past_the_page_bound_is_refused_before_it_is_written`, `test_spec_10_2_a_log_that_cannot_be_offered_does_not_stop_the_apps_after_it` |
+| 35 | `data-api.md §3` promises gap-free reconnect from a scalar Lamport mark, but a synced event can arrive below it | Live delivery includes every accepted synced event regardless of `lam`; the high-water mark never decreases. `after=` replays greater Lamport values only; clients re-read after reconnect and on `resync` | `data-api.md §3` | **Fixed**; M21; `test_spec_data_3_live_sse_delivers_below_the_resume_mark` |
 
 Four are additions rather than corrections and deserve to be called out: **`sig`,
 `disposable`, `admit` and `joined`** widen `§7.4.2` (rows 1 and 30); **`pair --node`,
@@ -1049,6 +1075,19 @@ three-platform run of CI, which the PR that carries this paragraph requests.
 
 ### M21 — The sync protocol, the receiver, the engine, failover, and the routes
 
+**Implementation status.** LAN synchronization, node-only routes, byte-preserving
+reception, whole-batch paging, the bounded engine and drain, endpoint failover, and
+certificate renewal after complete passes are implemented. Caches use full replay on
+foreign receipt; incremental rank maintenance remains M22. The seq cursor is unchanged.
+Real TCP fixtures exercise browser access on an unmet node, three peers, restart after a
+power cut, route refusals, and ciphertext-only failover. The original child-binary
+admission tests remain. Unit tests hold expiry, inbox ordering and revocation during a
+drain. `ChannelError::Upload` names the capability rather than a phase now, so
+`test_channel_refuses_a_request_chunk_naming_phase_3` is renamed
+`test_channel_refuses_a_request_chunk_naming_the_capability`; the reserved client
+`chunk` direction itself is unchanged and is still row 23's. Windows verification is recorded below; three-platform CI and the two-machine
+human demonstration are still owed, so the acceptance boxes remain unchecked.
+
 - `log::foreign::Receiver::open(paths, app, dev)`; `append(&mut self, bytes) ->
   Result<Head>` validating every envelope line per `§10.2` and row 11 before any is
   written, one `write_all`, one `fsync`; `complete_torn(&mut self, bytes)` per row 13;
@@ -1082,8 +1121,11 @@ sync_events, publish_peers}`, `sync::{Inbox, SyncHandle, SyncReport, PeerTable,
 engine::Engine, endpoints::Candidates, routes}`, `sys::{KIND_SYNC_PEER_SEEN,
 KIND_ENDPOINT_FAILOVER}`, `local::PeersRecord`.
 
-**Tests** (`tests/sync.rs`, no socket: two roots in one process, the receiver fed bytes
-read from the other root's files, the drain driven by `refresh_app` and `sync_now`):
+**Tests.** `crates/privatium-core/tests/sync.rs` feeds the receiver bytes from another
+root and checks raw storage, replay, recovery audits, SSE and Lua callbacks. Inbox,
+health and certificate-renewal tests are unit tests in `src/sync/mod.rs`; candidate
+ordering is in `src/sync/endpoints.rs`, and the public lifecycle test is in
+`tests/embedded.rs`. These cover:
 `test_spec_10_2_push_validates_dev_seq_app_and_envelope` (each refused, nothing written;
 an empty body answers the head unchanged),
 `test_spec_10_2_a_seq_gap_is_refused_and_the_range_is_pulled`,
@@ -1121,14 +1163,20 @@ the desktop restarts and converges with no lost line and no duplicate),
 `test_spec_10_3_offline_edits_on_both_nodes_converge`,
 `test_spec_10_4_killing_the_active_endpoint_fails_over_in_under_five_seconds` (two
 listeners for one peer, the first closed mid-pass, a clock on the second's first answer),
-`test_spec_10_3_no_node_is_primary` (every node's `data/` digests equal after the passes,
-whichever started first), `test_spec_2_3_1_certificate_renews_after_a_completed_pass`,
+`test_spec_10_3_no_node_is_primary` (every node's app-log bytes equal after passes
+started in both orders),
 `test_spec_8_3_either_side_can_start_the_first_pass_after_admission` (the admitter
 dials the joiner before any `_sys` has crossed and is admitted from the hint; after the
 pass the row has arrived and a revocation of the admitter, synced in, is honoured over
 the hint; a stranger's ID with no row and no hint is refused).
 
-**Documentation:** rows 9–17, 21, 26, 27; `docs/architecture.md §6`;
+Whole-batch page boundaries and deferred no-seq tails are also held over the channel
+by `test_spec_10_2_pull_keeps_batches_whole_and_defers_only_trailing_filler` and
+`test_spec_10_2_short_tail_heads_and_filler_converge_by_sequence`. The receiver tests
+include unmounted recovery without a local writer and a torn foreign tail across
+restart. `test_spec_data_3_live_sse_delivers_below_the_resume_mark` holds row 35.
+
+**Documentation:** rows 9–17, 21, 26, 27, 35, 36; `docs/architecture.md §6`;
 `docs/deployment.md §1, §3`; `skills/privatium-tier1-lua` and `-tier2-web`
 (`pv.on('append')` and the stream now carry other devices' events; the tense);
 `skills/privatium-tier3-rust` (`start_sync`, `sync_now`, `subscribe` as they now behave).
@@ -1166,6 +1214,56 @@ the hint; a stranger's ID with no row and no hint is refused).
 
 The roadmap's first bullet — a second node admitted with one pairing, the phone reaching
 it without re-pairing — is complete here, not at M20, for the reason §2.4 gives.
+
+**Verification on Windows (2026-09-07).** The pinned toolchain ran the Windows tests
+natively. The full suite passed after fixing a scheduling race in the existing
+`test_spec_4_5_a_reader_sees_a_batch_whole_or_not_at_all`: the reader now observes both
+before and after the commit, while retaining the assertion that no partial batch is
+visible. The final node-page prose change also passed its accessibility test.
+
+| Command | Outcome |
+| --- | --- |
+| `cargo fmt --all --check` | Passed |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | Passed |
+| `cargo test --workspace --locked` | 671 passed, 0 failed, 2 ignored (the two vector generators) |
+| `cargo test -p privatium-core --locked --test sync` | 14 passed |
+| `cargo test -p privatium --locked --test cluster -- --nocapture` | 17 passed, including the four original child-binary admission tests |
+| `cargo test -p privatium-core --locked --test devices test_spec_cli_5_pv4xx_join_form_admit_button_and_node_page -- --exact` | 1 passed |
+| `cargo xtask header-check` | 345 files checked |
+| `cargo xtask gen-skill-reference` | Regenerated 21 reference files |
+| `cargo xtask gen-skill-reference --check` | All 21 match |
+| `cargo xtask lint-spec-refs` | All 37 rules resolve |
+| `cargo deny check` | Advisories, bans, licenses and sources passed; duplicate-version warnings remain |
+| `bash .github/scripts/conformance.sh` | Passed, including receiver, engine, lifecycle and real-channel sync tests by name |
+| `target/debug/privatium --data-dir target/m21-lint-node lint apps/hello apps/animals apps/sketch` | All three apps: 0 errors, 0 warnings |
+| `node --test crates/privatium-core/tests/js/*.test.mjs` | 62 passed |
+| `cargo +stable check --workspace --all-targets --locked` | Passed on Windows; this does not substitute for the Linux stable job |
+| `bash .github/scripts/embedded-example.sh target/m21-embedded-20260907` | Appended, queried, served, and refused a foreign Host |
+| `bash .github/scripts/fresh-clone.sh target/m21-fresh-20260907` | Attempted; blocked by an existing listener on port 8420 (Windows error 10048), left running |
+| `python -m unittest discover -s .github/scripts -p test_release_tools.py` | 7 passed |
+| `cargo build --workspace --release --locked` | Passed |
+| `target/release/privatium --version` and `target/release/privatium skill list` | Started successfully; 7 bundled skills; executable size 13,669,888 bytes |
+| `python .github/scripts/release_tools.py package Windows` | Created the single-binary and portable ZIPs; `GITHUB_OUTPUT` pointed to a temporary build-output file |
+
+Git Bash, browser-script workers, release-tool tests and the advisory fetch needed the
+ordinary execution environment because the sandbox blocked their process or temporary
+file access. No dependency was added. GitHub's Linux, macOS and Windows matrix has not
+run for this change, and no acceptance box is checked on the strength of a local run.
+
+The measured desktop catch-up, including full cache replay, took 241 ms (R23). First
+app delivery after 1,000 system audit rows took 1.02 s (R28). These are one local
+synthetic run, not performance guarantees. Failover's five-second assertion passed.
+Foreign receipt still rebuilds caches; this change does not implement rank maintenance.
+
+The node page gained explanatory text, no control. Its semantic accessibility check
+passed, and the text was re-read; no additional control required a manual interaction
+pass. The desktop/laptop/phone demonstration remains a person's check.
+
+One append may write at most `api.max_body` bytes, refused before anything reaches the
+log (row 36), so every batch fits a page and can be offered. A log written before that
+bound, or by hand, can still hold a range no request body can carry: it is refused for
+that log alone, the rest of the pass runs, and the pass does not complete, so nothing
+renews on it. Neither case adds another cursor.
 
 ---
 
@@ -1575,13 +1673,16 @@ cluster binding, if one is ever wanted, is a `pv/2` question beside `§14` item 
 |---|---|---|---|
 | 40 | `phase3-plan-revision` | PR #38 | none — this plan |
 | 49 | `m20-admission` | PR #40 | §3 rows 1–8, 30, 31, the hint of row 14, and rows 33 and 34 found on the way; issues #46 and #48 |
-| 50 | `m21-sync` | M20 | rows 9–17, 21, 26, 27 |
+| 50 | `m21-sync` | M20 | rows 9–17, 21, 26, 27, 35, 36; §2.14 records succession for a separate milestone |
 | 51 | `m22-rank` | M21 | rows 19, 24 |
 | 52 | `m23-filesync` | M22 | rows 18, 20 |
 | 53 | `m24-animals-live` | M23 | row 25 |
 | 54 | `m25-attachments` | M24 | rows 22, 23, 32 |
 | 55 | `m26-always-on` | M25 | rows 28, 29; roadmap: tick Phase 3 and 3b |
 | 56 | `phase3-hardening` | M26 | as found |
+
+Cluster succession (§2.14) is a separate follow-up after M21; its PR number and final
+spec rows are assigned when that milestone is planned.
 
 The numbers from M21 on are a forecast in sequence after #49; a fix or a documentation
 PR that lands between two milestones shifts them, as #43 and the two issues did before

@@ -430,6 +430,13 @@ fn standing_section(cx: &Context<'_>, body: &mut String) {
                 "Certificate",
                 &format!("valid until {expires}; renewed on every completed sync"),
             );
+            dl(
+                body,
+                "Shared data",
+                "Your admitted spaces synchronize over the local network when discovered, \
+                 every minute, and one second after a write. Each keeps every device's \
+                 logs. Joining combines the app data already held by both spaces.",
+            );
         }
         Ok(crate::Standing::Expired) => {
             dl(

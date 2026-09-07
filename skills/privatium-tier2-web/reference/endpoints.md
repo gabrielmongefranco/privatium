@@ -148,7 +148,9 @@ batch's, so a client knows the rank (`spec/protocol.md §4.5`) of what it wrote.
 Constraints, each refusing the whole batch and naming the event's `index` from 0:
 
 - Maximum `api.max_batch` (1000) events per batch (400), maximum `api.max_body` (4 MB)
-  per request (413, before the body is read when the length is declared).
+  per request (413, before the body is read when the length is declared). The log lines
+  a batch produces are bounded by `api.max_body` too (413, nothing written), since a
+  batch reaches another node whole or not at all (`spec/protocol.md §4.1`).
 - `op` is `put` or `del`; `tbl` is a table name; a put carries `d`, a JSON object, and a
   del carries none.
 - `id` MUST be a valid ULID. Mint one client-side with `pv.ulid()` or server-side by
@@ -241,15 +243,19 @@ data: {"lam":8900}
 
 | Event | Meaning |
 |---|---|
-| `append` | One new event, as its log line — the same bytes `/api/events` returns. `after=` guarantees no gap on reconnect. |
+| `append` | One new event, as its log line — the same bytes `/api/events` returns. Live delivery includes synced events below an earlier Lamport mark; reconnect limits are described below. |
 | `resync` | State changed underneath you. Re-query. `reason` is `rematerialized` — the cache was rebuilt: a changed `schema.sql`, a restore, a line that reached the log some other way — or `lagged`, this stream fell too far behind and the backlog was dropped. `lam` is the high-water mark now. |
 | `ping` | Keep-alive, every 30 seconds, carrying the high-water mark. Its stat of the app is what notices a log that grew on an otherwise idle node, so a resync follows it without another request. |
 
 `after=` is a `lam`: the events with a greater `lam` are sent first, from the log, then
 live ones as they land — subscribed and read under one hold of the node's lock, so nothing
-appended in between can be missed, and nothing at or below `after` is sent twice. Without
-`after` the stream starts from now. A client keeps the last `lam` it saw and reconnects
-with it. `HEAD` answers the headers alone. At most `api.max_streams` streams per device;
+appended in between can be missed, and nothing is sent twice. Live delivery MUST include
+accepted synced events regardless of their `lam`; the high-water mark never decreases.
+Without `after` the stream starts from now. A client keeps the greatest `lam` it saw and
+reconnects with it. A Lamport cursor cannot replay a synced event at or below that mark
+which arrived while the client was disconnected. Clients MUST re-read state after a
+reconnect and on `resync`; `after=` alone is not a gap-free cross-device resume cursor.
+`HEAD` answers the headers alone. At most `api.max_streams` streams per device;
 past it the answer is 429.
 
 The body is the streaming response body of the core interface (`docs/decisions/0003`):

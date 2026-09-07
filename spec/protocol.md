@@ -163,9 +163,10 @@ those bytes, and the certificate is that object with `sig` added; `sys_node.cert
 base64-encoded (`spec/data-dictionary.md §3.1`). Every node holds the cluster key, so a
 node renews its own **unexpired** certificate whenever fewer than ninety days remain —
 at start, and after every **completed** sync: heads exchanged for every app, every range
-this node asked for arrived whole, and every range it offered accepted or refused with a
-reason. A pass that stopped early renews nothing. At or after `expires_at`, it MUST
-refuse self-renewal and require re-admission instead.
+this node asked for arrived whole, and every range it offered accepted. A refusal is not
+a completion: a 409 means the peer's head moved, so the pass stops and the next trigger
+starts from fresh heads (§10.2). A pass that stopped early renews nothing. At or after
+`expires_at`, it MUST refuse self-renewal and require re-admission instead.
 
 **The expired state.** A node whose own certificate has expired still starts, for its
 owner alone: it answers loopback and in-process callers as the owner (§8.4), presents no
@@ -356,11 +357,20 @@ and reach the file in one write. The first line of a batch of `n ≥ 2` events c
 fewer than `n` consecutive lines with that `ts` and a `seq` one past the previous — the
 segment ended, a line with another `ts` came first, a new header began — has a batch that
 reached the disk short, which a crash between the write and the disk leaves. A reader MUST
-NOT materialize, serve or forward the lines of such a batch, MUST NOT remove them, and MUST
+NOT materialize or serve the lines of such a batch to an app, MUST NOT remove them, and MUST
 continue past them; the writer continues after them with the next `seq`, and the node
 records the batch once in `sys_audit` as `batch.incomplete` (`spec/data-dictionary.md
 §3.10`). A single event, a tombstone on its own, and a line appended by hand are batches of
-one and carry no marker: nothing about a line a person writes changes.
+one and carry no marker: nothing about a line a person writes changes. Sync copies short
+batches byte for byte (§10.2). Every line of a short batch carries a `seq`, counts in
+heads, and is copied immediately; every reader skips the batch by this same rule.
+
+**What one append may write.** A batch reaches a peer whole or not at all and a line
+reaches it whole (§10.2), so a writer MUST refuse an append whose bytes — one line, or a
+batch's lines together, newlines included — exceed `api.max_body`, before writing any of
+them. Bytes past that bound could never leave the node that wrote them: no page could
+offer them and no peer's request body could hold them. The caller splits the batch or
+stores less in one row.
 
 **A failed append.** A writer whose write or flush fails MUST NOT append again until it
 has re-read its own file: the failed line may be on disk in whole or in part, and the
@@ -391,7 +401,10 @@ only.
 ### 4.4 Clock hygiene
 
 A node MUST reject on ingest any event whose `ts` is more than 24 hours in the future
-relative to its own clock, and MUST record the rejection in `sys_audit`. A node SHOULD warn
+relative to its own clock, and MUST record the rejection in `sys_audit`. A sync receiver
+MUST store that line byte for byte; rejection applies to materialization and app delivery,
+not storage or forwarding. It audits `event.rejected` once across drains and restarts.
+A node SHOULD warn
 the owner when its own clock appears to have moved backwards more than 60 seconds.
 
 ### 4.5 Replay and merge
@@ -1084,7 +1097,11 @@ The static keys are the X25519 keys exchanged at pairing (§7.4); both sides der
 keys above. The node MUST close with code 4403 on a `dev` that is not an active,
 unrevoked `sys_device` row with an X25519 key — its own row included, since a node never
 pairs with itself — and on a confirm that does not open, before it answers a hello in
-the first case. A node SHOULD bound the time the handshake may take and close a peer
+the first case. The exception is a node peer remembered at admission: while no
+`sys_device` row for its ID exists, its pinned X25519 key in the local peer hint MAY
+admit a node session. Any existing row supersedes the hint, including a malformed,
+non-node, or revoked row; `sys_node_revocation` MUST override both sources.
+A node SHOULD bound the time the handshake may take and close a peer
 that falls silent; the reference node allows ten seconds. The client MUST verify `cert`
 against its pinned cluster public key before it sends the confirm, and MUST treat a
 failure as §8.1. The session is the connection: no cookie carries it, and a new
@@ -1167,6 +1184,11 @@ it. The response's scripts and styles follow §8.3's integrity rules before exec
 
 ### 8.4 What plain HTTP serves
 
+An authenticated node session MUST be confined to the three sync routes of §9.2,
+`/api/v1/health`, and `/api/v1/manifest`. Every other request from that session MUST
+answer 403, including app routes, settings, skills, pairing, and joining. A node
+session cannot become owner standing.
+
 To a peer that is not loopback and holds no session, a node on plain HTTP MUST answer
 only:
 
@@ -1244,13 +1266,14 @@ internal link MUST go through `url()` or `pv.url()` rather than a literal path.
 | POST | `/api/v1/join` | owner | Join a cluster: `{"url": "http://host:port", "code": "<two words, or four labels>"}` in; the outcome — the cluster ID, the peer, which side joined — out, or the refusal by name (§2.3.1, `spec/cli.md §8`). Read as `application/json`, bounded as `/api/v1/pair`'s body is; the code never appears in a URL, a log or an error |
 | GET | `/ws/pair` | code | Pairing handshake |
 | GET | `/ws` | session | Encrypted application channel |
-| GET | `/api/v1/sync/heads?app=` | session | `{dev: hi_lam}` per device |
-| GET | `/api/v1/sync/pull?app=&dev=&after=` | session | NDJSON stream of raw event lines |
-| POST | `/api/v1/sync/push` | session | NDJSON body of raw event lines |
+| GET | `/api/v1/sync/heads?app=` | node session | `{dev: seq}` for one app, or `{slug: {dev: seq}}` without `app` |
+| GET | `/api/v1/sync/pull?app=&dev=&after=` | node session | Raw NDJSON page with `pv-next` and `pv-head` headers (§10.2) |
+| POST | `/api/v1/sync/push?app=&dev=` | node session | Bounded raw NDJSON body; new head or atomic refusal (§10.2) |
 
 `owner` is the node's own standing of §8.4 — a request from this machine or an
 in-process call — the only caller that may open pairing or join a cluster; a session is
-refused whatever its device.
+refused whatever its device. A sync route requires an active node session; a paired
+browser, native device session, or owner without a node session MUST receive 403.
 
 Unauthenticated endpoints MUST expose no application data of any kind. `/api/v1/manifest`
 returns app slugs and titles because discovery requires them; it MUST NOT return row
@@ -1299,29 +1322,80 @@ require-corp`. Never in host mode, where the loader refuses the permission.
 
 ### 10.1 Model
 
-Sync is a set union over `(dev, seq)` pairs. There is no conflict resolution step; conflict
+Sync is a set union over `(app, dev, seq)` identities. There is no conflict resolution step; conflict
 is impossible because logs are single-writer and append-only.
 
 ```
 A → B  GET /api/v1/sync/heads?app=hello
 B → A  {"k7m2q9xf": 1041, "b3nn8t2q": 87}
 A      for each dev where A.head[dev] > B.head[dev]:
-A → B    POST /api/v1/sync/push  (raw lines, seq > B.head[dev])
+A → B    POST /api/v1/sync/push?app=hello&dev=<dev>  (seq > B.head[dev])
 A      for each dev where B.head[dev] > A.head[dev]:
-A → B    GET /api/v1/sync/pull?dev=<dev>&after=<A.head[dev]>
+A → B    GET /api/v1/sync/pull?app=hello&dev=<dev>&after=<A.head[dev]>
 ```
+
+`heads` without `app` MUST include every valid slug under `data/`, mounted or not,
+including `_sys`. A filtered unknown app answers `{}`; unseen devices are omitted.
+A pass exchanges the union of both app lists, `_sys` first. Requests and responses
+travel inside the encrypted channel of §8.3, using its existing frames.
 
 ### 10.2 Requirements
 
-- Pushed lines MUST be validated: `dev` matches the claimed log, `seq` is exactly
-  `head + 1`, `app` matches the request, envelope parses.
-- A receiver MUST reject a gap in `seq` and request the missing range rather than
-  appending out of order.
-- A receiver MUST write received events to `data/<app>/log/<origin-dev>.jsonl`, never to
-  its own log. This is the one case where a node writes a file named for another device;
-  it is still single-writer, because only that origin device ever produces those lines.
-- A receiver MUST NOT re-serialize. Bytes in, bytes out (§4.2).
-- Sync state (per-peer heads) lives in `local/`, MUST NOT be an event, and MUST NOT sync.
+- A receiver MUST validate the whole range before writing any of it. On envelope lines,
+  `dev` and `app` match the destination, the envelope parses, and `seq` is exactly
+  `head + 1`. Lines without a `seq` pass through in position and count toward the line
+  bound: `api.max_body` bytes, newline included. Validate app and device names before
+  constructing a path; `_sys` is the only reserved slug allowed.
+- A receiver MUST refuse a gap, duplicate, or reversal rather than append out of order.
+  A refused push answers 409 with `seq` naming the first offending envelope and `head`
+  the unchanged durable head, nothing written. The next pass requests the missing range
+  from fresh heads. A 409 does not complete a pass.
+- The sync receiver is the ONLY component that appends another device's lines to
+  `data/<app>/log/<origin-dev>.jsonl`. It MUST refuse its own device's file. Only the
+  origin produces those lines; the receiver produces none of its own. A new slug
+  creates its log directory without mounting an app.
+- A receiver MUST NOT re-serialize, normalize, or remove anything. It copies the segment
+  as the origin holds it, short batches included (§4.1). Each short-batch line has a
+  `seq` and counts in heads. Every reader skips the batch by §4.1. The receiver audits
+  `batch.incomplete` once per segment and offset, across drains and restarts.
+- A trailing complete line without a `seq` travels with the origin's next envelope,
+  not before. Such corruption changes neither cache while it waits. A torn partial line
+  is not yet a line and waits until the origin terminates it.
+- A foreign file ending mid-line MUST be completed only when its bytes are a strict
+  prefix of the full line received from the origin. Append only the missing suffix.
+  Otherwise refuse without writing and report the segment and offset to the owner;
+  never truncate or expose an internal path to a channel client.
+- `pull` with `after=0` begins at the first envelope. A data page consists of the
+  envelope lines with `seq` in `(after, pv-next]`, plus every line without a `seq`
+  before or between them in file order. `pv-head` is the origin head at the frozen read
+  boundary, and `pv-next` is the last envelope sent. When nothing remains both equal
+  the head and the body is empty. No data page contains zero envelope lines.
+- Choose `pv-next` to keep the page within `api.max_body` when possible and always
+  include at least one envelope. A page MUST NOT end inside a batch: end before a
+  header whose batch would not fit. §4.1 bounds a batch at `api.max_body`, so one always
+  fits; preceding bounded filler plus one envelope or batch can require up to twice
+  `api.max_body`. The client MUST bound its page read at that plus the channel head
+  allowance (64 KiB and 20 framing/encryption bytes). Refuse a range that cannot fit
+  that bound.
+- A log written before that bound, or by hand, may still hold a range no page can offer
+  and no request body can hold. It is refused for that log alone: the pass MUST carry on
+  with the remaining apps and devices, and MUST NOT complete (§2.3.1), so nothing renews
+  on it. A refusal names the operation, never a line's contents.
+- A client MUST refuse a non-progressing page (`pv-next <= after`), an inconsistent
+  head, heads JSON beyond 1 MiB, or more than 1024 pages for an app/device in a pass.
+  Repeat pulls until `pv-next == pv-head`. Reads freeze the complete-line boundary of
+  each segment, so concurrent appends do not extend an in-flight response.
+- A push MUST be `application/x-ndjson` (otherwise 415), at most `api.max_body` bytes
+  (otherwise 413), and newline terminated. Empty input is a no-op. Success answers
+  200 with `{"head": seq}` after durable receipt. Invalid or missing query values
+  answer 400; a push to this node's own file answers 403.
+- Received ranges MUST update caches from replay order (§4.5), fold accepted Lamport
+  counters (§4.3), and publish each accepted event to app subscribers. Short batches
+  and rejected future events produce no app callbacks or append frames.
+- Peer heads and endpoint attempts are node-local, in memory in the reference node,
+  rebuilt at start. They MUST NOT be events or sync. The receive inbox holds at most
+  64 pages/control items and drains `_sys` before apps. No outbox dedupe table,
+  transaction ID, or second cursor is involved.
 
 ### 10.3 Multi-node clusters
 
@@ -1343,13 +1417,16 @@ authoritative.
 
 ### 10.4 Endpoint selection and failover
 
-A client keeps a **candidate endpoint list**, persisted, one entry per reachable path:
+A client keeps a **candidate endpoint list**, one entry per reachable path. The node
+rebuilds it in memory from local hints and discovery at start:
 
 ```json
 {"url":"http://192.168.1.5:8420","kind":"lan-ip","last_ok":"2026-08-28T14:03:11Z","rtt_ms":4}
 ```
 
-`kind` is one of `lan-mdns`, `lan-ip`, `dns`, `tunnel`, `vpn`, `p2p`.
+`kind` is one of `lan-mdns`, `lan-udp`, `lan-ip`, `pkarr`, `dns`, `ddns`, `tunnel`,
+`vpn`, `p2p`, `relay`, `static`, in that order. The reference node bounds the list to
+64 candidates per peer; only LAN discovery and remembered URLs are implemented.
 
 Requirements:
 
@@ -1357,10 +1434,17 @@ Requirements:
   the endpoint that worked a minute ago is the best guess now.
 - Connect timeout MUST be short — 2500 ms RECOMMENDED — so a dead endpoint fails over
   quickly rather than hanging. Total attempt budget across all candidates SHOULD be ≤ 10 s.
-- Re-attempt on: network-change events, application foreground, and explicit user action.
+- A node re-attempts on discovery, explicit `sync_now`, and a sixty-second timer after
+  a peer has answered. Automatic sync also runs at startup and one second after local
+  appends settle; discovery is checked every five seconds. Network-change and foreground
+  triggers are a native client's responsibility (Phase 4).
   A client MUST NOT rely on a background timer alone.
 - After exhausting candidates, enter offline mode (§10.6) rather than blocking the UI.
 - Discovery results merge into the list; they do not replace it.
+
+Only known peers in this node's cluster are dialed. A successful alternate after failure
+records `endpoint.failover` with the endpoint kinds, without URLs. The first authenticated
+contact per peer per process records `sync.peer_seen` once.
 
 **Browser clients are restricted to their own origin.** An HTTPS page cannot fetch an
 `http://` LAN endpoint — mixed content forbids it — so a browser client MUST hold exactly
@@ -1582,7 +1666,7 @@ An implementation claiming `pv/1` conformance MUST satisfy all of:
 - [ ] Cluster-key mismatch has no override path (§2.3.2, §8.1)
 - [ ] Discovery filters by TXT `cl` once paired (§6.1)
 - [ ] No node is designated primary or authoritative (§10.3)
-- [ ] Endpoint failover uses ≤2500 ms connect timeouts and re-attempts on network change (§10.4)
+- [ ] Endpoint failover uses ≤2500 ms connect timeouts; nodes re-attempt on discovery and explicit sync, native clients on network change (§10.4)
 - [ ] Browser clients hold exactly one endpoint (§10.4, §10.8)
 - [ ] Outbox replay relies on ULID idempotency, with no dedupe table (§10.6)
 - [ ] `sys_device.replica` declared accurately (§10.7)
