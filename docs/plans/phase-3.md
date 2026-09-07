@@ -1371,15 +1371,15 @@ phase pretends otherwise.
 
 | # | Branch | Depends on | Spec edits |
 |---|---|---|---|
-| 39 | `phase3-plan-revision` | PR #38 | none — this plan |
-| 40 | `m20-admission` | §2.1, §2.2, §2.12 confirmed | §3 rows 1–8 |
-| 41 | `m21-sync` | M20 | rows 9–17, 21, 26, 27 |
-| 42 | `m22-rank` | M21 | rows 19, 24 |
-| 43 | `m23-filesync` | M22 | rows 18, 20 |
-| 44 | `m24-animals-live` | M23 | row 25 |
-| 45 | `m25-attachments` | M24, §2.11 confirmed | rows 22, 23 |
-| 46 | `m26-always-on` | M25 | rows 28, 29; roadmap: tick Phase 3 and 3b |
-| 47 | `phase3-hardening` | M26 | as found |
+| 40 | `phase3-plan-revision` | PR #38 | none — this plan |
+| 41 | `m20-admission` | §2.1, §2.2, §2.12 confirmed | §3 rows 1–8 |
+| 42 | `m21-sync` | M20 | rows 9–17, 21, 26, 27 |
+| 43 | `m22-rank` | M21 | rows 19, 24 |
+| 44 | `m23-filesync` | M22 | rows 18, 20 |
+| 45 | `m24-animals-live` | M23 | row 25 |
+| 46 | `m25-attachments` | M24, §2.11 confirmed | rows 22, 23 |
+| 47 | `m26-always-on` | M25 | rows 28, 29; roadmap: tick Phase 3 and 3b |
+| 48 | `phase3-hardening` | M26 | as found |
 
 The PR numbers are the next in sequence after #38 and are a forecast; a fix or a
 documentation PR that lands between two milestones shifts them.
