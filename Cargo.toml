@@ -10,7 +10,7 @@ resolver = "3"
 members = ["crates/privatium-core", "crates/privatium", "crates/xtask"]
 
 [workspace.package]
-version       = "0.1.0"
+version       = "0.2.0"
 edition       = "2024"
 rust-version  = "1.90.0"
 license       = "GPL-3.0-or-later"
@@ -26,7 +26,7 @@ homepage      = "https://github.com/gabrielmongefranco/privatium"
 # The workspace's own crates. The version is required as well as the path: a bare path
 # dependency is a wildcard requirement, which cargo-deny rejects and which would be
 # unpublishable.
-privatium-core = { path = "crates/privatium-core", version = "0.1.0" }
+privatium-core = { path = "crates/privatium-core", version = "0.2.0" }
 
 # HTTP — M6. `auth_layer` is a tower::Layer (spec/app-contract.md §6).
 axum       = { version = "0.8.9", default-features = false }

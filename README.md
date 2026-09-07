@@ -50,7 +50,7 @@ framework to get it.
 
 You can run Privatium on Windows, macOS, or Linux. Lua and SQLite are included.
 
-1. **Download Privatium.** Download directly for your platform: [Windows](https://github.com/gabrielmongefranco/privatium/releases/download/v0.1/privatium-windows.zip), [Windows portable](https://github.com/gabrielmongefranco/privatium/releases/download/v0.1/privatium-windows-portable.zip), [macOS](https://github.com/gabrielmongefranco/privatium/releases/download/v0.1/privatium-mac.zip), [Linux](https://github.com/gabrielmongefranco/privatium/releases/download/v0.1/privatium-linux.tar.gz). After downloading, extract the `privatium` (or `privatium.exe` on Windows) binary to a folder of your choice. The portable zip also holds a `privatium-data` folder with the example apps; keep it beside the program and everything Privatium knows stays in that one folder.
+1. **Download Privatium.** Download directly for your platform: [Windows](https://github.com/gabrielmongefranco/privatium/releases/latest/download/privatium-windows.zip), [Windows portable](https://github.com/gabrielmongefranco/privatium/releases/latest/download/privatium-windows-portable.zip), [macOS](https://github.com/gabrielmongefranco/privatium/releases/latest/download/privatium-mac.zip), [Linux](https://github.com/gabrielmongefranco/privatium/releases/latest/download/privatium-linux.tar.gz). After downloading, extract the `privatium` (or `privatium.exe` on Windows) binary to a folder of your choice. The portable zip also holds a `privatium-data` folder with the example apps; keep it beside the program and everything Privatium knows stays in that one folder.
 2. **Run it.** Open a terminal in that folder and run:
 
    ```sh
@@ -68,8 +68,8 @@ You can run Privatium on Windows, macOS, or Linux. Lua and SQLite are included.
    and, the first time, a pairing code. Scan the QR code with the phone and tap the four
    emoji it shows, or type the two words. Later, open pairing again from
    **Settings › Devices** or with `./privatium pair`, and label or remove a paired phone
-   on the same page. The pairing screen, the devices page and `privatium pair` are in
-   builds after v0.1; see [connectivity](docs/connectivity.md) for what each kind of
+   on the same page. The pairing screen, the devices page and `privatium pair` arrived
+   with v0.2; see [connectivity](docs/connectivity.md) for what each kind of
    device can reach.
 4. **Make your own app.** In a second terminal, run:
 

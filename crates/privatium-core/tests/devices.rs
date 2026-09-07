@@ -263,6 +263,10 @@ async fn test_spec_9_2_manifest_pair_flag_is_true_while_open() {
 async fn test_spec_7_7_plain_http_pairing_page_discloses_the_gap() {
     let root = tempfile::tempdir().unwrap();
     let h = handler(&root);
+    // The bootstrap a phone loads while pairing is closed, to compare against the one
+    // it loads while a window is open: the two are the same bytes, because no window
+    // state reaches that document.
+    let before = body_of(h.handle(lan_html("/a/hello/")).await).await;
     let closed = body_of(
         h.handle(owner(Method::GET, "/settings/devices/pairing"))
             .await,
@@ -321,10 +325,12 @@ async fn test_spec_7_7_plain_http_pairing_page_discloses_the_gap() {
     assert_eq!(bootstrap.matches("class=\"pv-pad-key\"").count(), 16);
     assert!(bootstrap.contains("<label for=\"pv-words\">"));
     assert!(bootstrap.contains("id=\"pv-pair-status\" role=\"status\""));
-    assert!(
-        !bootstrap.contains(words[0]),
-        "the code never reaches the bootstrap"
-    );
+    // The code never reaches the bootstrap. A single word of the list can appear in
+    // the screen's own prose ("device" is one), so the check is that the document is
+    // unchanged by the open window, and that neither rendering of the code is in it.
+    assert_eq!(bootstrap, before, "the bootstrap carries no window state");
+    assert!(!bootstrap.contains(&format!("{} {}", words[0], words[1])));
+    assert!(!bootstrap.contains(&window.glyphs().map(|g| g.glyph).concat()));
 }
 
 fn lan_html(path: &str) -> Request {
