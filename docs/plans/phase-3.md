@@ -1574,17 +1574,18 @@ cluster binding, if one is ever wanted, is a `pv/2` question beside `§14` item 
 | # | Branch | Depends on | Spec edits |
 |---|---|---|---|
 | 40 | `phase3-plan-revision` | PR #38 | none — this plan |
-| 41 | `m20-admission` | PR #40 | §3 rows 1–8, 30, 31, and the hint of row 14 |
-| 42 | `m21-sync` | M20 | rows 9–17, 21, 26, 27 |
-| 43 | `m22-rank` | M21 | rows 19, 24 |
-| 44 | `m23-filesync` | M22 | rows 18, 20 |
-| 45 | `m24-animals-live` | M23 | row 25 |
-| 46 | `m25-attachments` | M24 | rows 22, 23, 32 |
-| 47 | `m26-always-on` | M25 | rows 28, 29; roadmap: tick Phase 3 and 3b |
-| 48 | `phase3-hardening` | M26 | as found |
+| 49 | `m20-admission` | PR #40 | §3 rows 1–8, 30, 31, the hint of row 14, and rows 33 and 34 found on the way; issues #46 and #48 |
+| 50 | `m21-sync` | M20 | rows 9–17, 21, 26, 27 |
+| 51 | `m22-rank` | M21 | rows 19, 24 |
+| 52 | `m23-filesync` | M22 | rows 18, 20 |
+| 53 | `m24-animals-live` | M23 | row 25 |
+| 54 | `m25-attachments` | M24 | rows 22, 23, 32 |
+| 55 | `m26-always-on` | M25 | rows 28, 29; roadmap: tick Phase 3 and 3b |
+| 56 | `phase3-hardening` | M26 | as found |
 
-The PR numbers are the next in sequence after #38 and are a forecast; a fix or a
-documentation PR that lands between two milestones shifts them.
+The numbers from M21 on are a forecast in sequence after #49; a fix or a documentation
+PR that lands between two milestones shifts them, as #43 and the two issues did before
+M20.
 
 ---
 
