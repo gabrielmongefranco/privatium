@@ -147,8 +147,7 @@ the only one.
 
 One honest limit: this gives Tier 2 full parity immediately, and Tier 1 parity for views
 already visited. Rendering an *unvisited* Tier 1 view offline needs handler logic in the
-browser, which is the open `wasmoon` question in `docs/roadmap.md`, not a transport
-question.
+browser, which is an open `wasmoon` question, not a transport question.
 
 ### 2.6 Certificates are a browser problem, not a security problem
 
@@ -223,7 +222,7 @@ Each installation uses the node and cluster identity verified from its local key
 certificate. The public registry keeps the records that restore and sync bring in, so it
 can describe more than one node or cluster. Readers select this installation's records
 by its identity. Losing local keys does not retire a cluster that another machine may
-still use (`spec/data-dictionary.md §3.1, §3.1b`). Network sync is planned for Phase 3.
+still use (`spec/data-dictionary.md §3.1, §3.1b`). Network sync is not built yet.
 
 Nodes belonging to one owner form a **cluster** sharing a keypair (`spec/protocol.md §2.3`).
 A device pins the *cluster* key at pairing, not a node key, so pairing a phone once makes it

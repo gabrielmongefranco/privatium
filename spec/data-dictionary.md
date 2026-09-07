@@ -358,8 +358,8 @@ native-client capability.
 | `peer_id` | `VARCHAR` | |
 | `app_id` | `VARCHAR` | |
 | `origin_dev` | `VARCHAR` | The device whose log this cursor tracks |
-| `their_seq` | `BIGINT` | Highest `seq` we believe the peer holds |
-| `our_seq` | `BIGINT` | Highest `seq` we hold |
+| `their_seq` | `BIGINT` | Highest `seq` this node believes the peer holds |
+| `our_seq` | `BIGINT` | Highest `seq` this node holds |
 | `updated_at` | `TIMESTAMPTZ` | |
 
 ### 3.9 `sys_snapshot`

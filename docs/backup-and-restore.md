@@ -40,10 +40,10 @@ platform's data directory — `%LOCALAPPDATA%\privatium` on Windows,
 `~/Library/Application Support/privatium` on macOS, `~/.local/share/privatium` on Linux.
 The Windows one is hidden by default; paste the path into the Explorer address bar.
 
-The first start creates both keys, including when you upgrade a Phase 1 folder. Each
-start renews the node certificate if it is still valid and fewer than ninety days remain.
-At expiry, startup refuses renewal and requires node re-admission. Admission is planned
-for Phase 3; this build cannot perform it. Ordinary data backups never include either
+The first start creates both keys, including when you upgrade a folder made by an earlier
+build. Each start renews the node certificate if it is still valid and fewer than ninety
+days remain. At expiry, startup refuses renewal and requires node re-admission. Admission
+is not built yet; this build cannot perform it. Ordinary data backups never include either
 private key.
 
 Restoring `data/` preserves records of the original nodes and clusters. Your keys in
@@ -82,7 +82,7 @@ because Privatium keeps nothing important in a database file.
 With a valid copy of `identity/`, you keep your original node and cluster identity.
 Without it, you get a new node and cluster; the original cluster may still be running
 elsewhere. Restore leaves its records intact. Joining a surviving node's cluster is
-planned for Phase 3 and requires admission; restoring its records does not perform it.
+not built yet and requires admission; restoring its records does not perform it.
 
 It rebuilds everything — database, snapshots, views — from the text files. Depending on
 history size this takes seconds.

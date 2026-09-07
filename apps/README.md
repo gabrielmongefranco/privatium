@@ -18,7 +18,7 @@ of §"HTMX and Alpine" in its README. `sketch` is nothing but JavaScript, becaus
 renders itself. All of this is normal.
 
 A fourth reference app, **`lantern`** (Tier 3, LÖVE linking the C ABI with no node process),
-arrives with `privatium-ffi` in Phase 4 — see `docs/roadmap.md`.
+arrives with `privatium-ffi`, the C ABI, which is not built yet.
 
 **Tiers differ by language, not by capability.** None has a ceiling. If your app is records
 and forms, Tier 1 saves you a front end. If it is a game or a canvas, use Tier 2 — you lose
@@ -32,8 +32,8 @@ For layout and accessibility choices, see [Sample app design](../docs/sample-app
 ## Bundled vs installed
 
 Apps in this directory are *bundled*: in a checkout they sit beside the binary and are on
-the launcher without copying, and a packaged install (Phase 6 of `docs/roadmap.md`) will
-carry them read-only beside the program (a Flatpak install directory is not writable).
+the launcher without copying, and a packaged install will carry them read-only beside the
+program (a Flatpak install directory is not writable).
 
 A release binary carries the same three folders inside it. When you run it and your
 data directory's `apps/` holds no app yet, it writes them there, so the launcher has

@@ -1,6 +1,6 @@
 # apps/_lint/
 
-The linter's corpus (`spec/cli.md §5.4`, `docs/roadmap.md` Phase 1): for every rule of
+The linter's corpus (`spec/cli.md §5.4`): for every rule of
 `spec/cli.md §5.1`, one app that passes it and one that fails it, under
 `pass/<rule>/<slug>/` and `fail/<rule>/<slug>/`. The rule directory holds the app rather
 than being it, because `PV104` compares the slug to the folder name and `PV104` is not a
@@ -18,7 +18,7 @@ Rules:
   directory here is not named after a rule.
 
 The loader never mounts anything under `_lint/`: a folder whose name starts with `_` is
-not an app (`docs/plans/phase-1.md §2.6`).
+not an app (`spec/cli.md §5.4`).
 
 Lint one by hand:
 

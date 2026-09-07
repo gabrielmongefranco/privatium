@@ -9,9 +9,9 @@ Summary:  NORMATIVE. Wire formats, event log, discovery, pairing, session crypto
 
 # Privatium Protocol Specification — `pv/1`
 
-**Status:** Draft 0.1 — Phase 1 complete (`docs/plans/phase-1.md`), Phase 2 implemented
-through its last milestone (`docs/plans/phase-2.md`); a build that does not yet satisfy
-every item of §13 identifies itself as `pv/1 (partial: phase 2)` (`spec/cli.md §1`)
+**Status:** Draft 0.1. A build that does not yet satisfy every item of §13 identifies
+itself with a qualified protocol string, such as `pv/1 (partial: phase 2)`
+(`spec/cli.md §1`).
 **Protocol identifier:** `pv/1`
 
 The key words MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, RECOMMENDED,
@@ -1019,9 +1019,8 @@ only:
 - `/ws/pair` and `/ws`.
 
 Everything else is 403. A loopback request with a loopback `Host`, and a call made
-in-process, are the node's owner and see every route with no session
-(`docs/plans/phase-1.md §2.2`). A transport §8.2 exempts serves as it did before the
-channel existed.
+in-process, are the node's owner and see every route with no session. A transport §8.2
+exempts serves as it did before the channel existed.
 
 ---
 
@@ -1446,13 +1445,12 @@ Tracked, not decided. Do not implement speculatively.
    The constraint is already fixed — a migration transforms events at replay and never
    mutates a log — but the transform language is undesigned, deliberately, until a real case
    exists.
-8. **Attachments.** Binary blobs have no home in a JSONL log. Decided in principle and
-   scheduled for Phase 3 (`docs/roadmap.md`), with the constraints fixed now and the wire
-   shape left to that phase's milestone (`docs/plans/phase-3.md`): a content-addressed
+8. **Attachments.** Binary blobs have no home in a JSONL log. Decided in principle, with
+   the constraints fixed now and the wire shape left until sync lands: a content-addressed
    `data/<slug>/blob/<sha256>` directory of immutable files, each referenced from `d` by
    its hash, synced as a set union exactly as the logs are, inside the same backup, and
    never a mutable file sync — a file edited in place can conflict, and nothing here may.
-   Do not implement before that milestone.
+   Do not implement before then.
 
 ---
 

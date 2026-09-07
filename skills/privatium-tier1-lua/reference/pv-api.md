@@ -209,8 +209,7 @@ the string, `365` the number — or `default` when no row has that key; with no 
 `nil`.
 
 `pv.log(level, message)`, with `level` one of `debug`, `info`, `warn`, `error`, writes one
-line to the node's **diagnostic log** — its standard error in Phase 1, prefixed with the
-app's slug — and nowhere else: never the event log, never `sys_audit`. `print` is routed
+line to the node's **diagnostic log** — its standard error, prefixed with the app's slug — and nowhere else: never the event log, never `sys_audit`. `print` is routed
 there too, as `info`, so an app cannot write to the node's standard output at all.
 
 `pv.on('append', fn)` fires `fn(ev)` — `ev` being the envelope of `spec/protocol.md §4.1`

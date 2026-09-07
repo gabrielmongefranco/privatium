@@ -195,7 +195,7 @@ warnings and errors — and the exit code is `3` when anything at or above it re
 standard error.
 
 Advice an assistant can ignore is worth little. The linter is what makes `skills/`
-enforceable, which is why it ships in Phase 1 rather than later (`docs/roadmap.md`).
+enforceable rather than advisory, which is why it ships with the first working node.
 
 ### 5.1 Rule classes
 

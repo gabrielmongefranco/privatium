@@ -50,7 +50,7 @@ top.
 |---|---|---|
 | **HTMX** | ✅ **Default** | Fragment swaps, `hx-*` attributes. Pairs naturally with LSP partials. |
 | **Alpine.js** | ✅ **Default** | For state that has no business on the server — dropdowns, tabs, toggles. |
-| **Datastar** | ✅ Supported alternative | Hypermedia plus signals, and **SSE-native**, which fits our `/api/stream` well. Smaller community and less training data than HTMX, so it is documented rather than default. |
+| **Datastar** | ✅ Supported alternative | Hypermedia plus signals, and **SSE-native**, which fits `/api/stream` well. Smaller community and less training data than HTMX, so it is documented rather than default. |
 | **VanJS** | ✅ Supported | ~1 KB, function-based components, no JSX. Good when you want composition without a framework. |
 | **Petite-Vue** | ⚠️ Works | ~6 KB, Vue template syntax, no build. Fine; Alpine has more momentum. |
 | **jQuery** | ⚠️ Works | Not recommended for new work, but it will not break anything. |
@@ -67,7 +67,7 @@ library; the linter reads `lib/` like any other app code.
 
 Server-side templating alternatives, all rejected in favour of LSP: **MiniJinja** and
 **Tera** (Rust-side, so a second language in one app), **etlua** (fine, but reimplementing
-gives us hot reload and escaping-by-default), **Mako Server / Barracuda** (non-commercial
+buys hot reload and escaping-by-default), **Mako Server / Barracuda** (non-commercial
 license, unsandboxed Lua — see `spec/lua-api.md §1.1`).
 
 ## 4. Tier 2 — your own `web/`
@@ -160,9 +160,8 @@ leaderboard in the browser. That is often the best of both.
 Better still, link `privatium-core` directly. It exposes a C ABI, so LÖVE reaches it through
 LuaJIT's FFI, Godot through GDExtension, Unity through P/Invoke, and Bevy as an ordinary
 crate — **with no server, no localhost port, and no daemon**. The HTTP path above remains
-correct and is the right answer when a process boundary is wanted anyway. The `lantern`
-reference app (roadmap, Phase 4) demonstrates the linked path with a paired Tier 1 app
-rendering its history.
+correct and is the right answer when a process boundary is wanted anyway. The planned `lantern`
+reference app demonstrates the linked path with a paired Tier 1 app rendering its history.
 
 ### 5.4 The cross-origin isolation problem
 
@@ -175,7 +174,7 @@ headers, only Chromium browsers load these builds, and Godot ships an export tog
 needs `SharedArrayBuffer` and therefore cross-origin isolation. A Tier 1 offline query
 runtime that required cross-origin isolation would impose those headers on the framework's
 own origin and **break host mode for every other app on the node**. If browser SQLite is
-ever adopted for offline Tier 1 rendering (`docs/roadmap.md`), it is the **single-threaded,
+ever adopted for offline Tier 1 rendering, it is the **single-threaded,
 asynchronous build only** — no exceptions, regardless of benchmark results. Otherwise Tier 1
 offline becomes solo-mode-only, which is not a trade worth making.
 

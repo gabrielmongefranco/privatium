@@ -11,7 +11,7 @@ Summary:  Threat model, protections, and honest statements of what is not protec
 
 Non-normative narrative. Normative requirements live in `spec/protocol.md §7–9`.
 
-**Current build:** Phase 2 provides live pairing at `/ws/pair` and the encrypted
+**Current build:** the node provides live pairing at `/ws/pair` and the encrypted
 application channel at `/ws`. The node binds IPv4 on every interface and IPv6 where
 available. Unpaired LAN browsers receive only the bootstrap set; loopback keeps the
 owner's existing access. The node advertises itself over mDNS and answers UDP probes

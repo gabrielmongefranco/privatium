@@ -40,9 +40,8 @@ leaderboard in the browser. That is often the best of both.
 Better still, link `privatium-core` directly. It exposes a C ABI, so LÖVE reaches it through
 LuaJIT's FFI, Godot through GDExtension, Unity through P/Invoke, and Bevy as an ordinary
 crate — **with no server, no localhost port, and no daemon**. The HTTP path above remains
-correct and is the right answer when a process boundary is wanted anyway. The `lantern`
-reference app (roadmap, Phase 4) demonstrates the linked path with a paired Tier 1 app
-rendering its history.
+correct and is the right answer when a process boundary is wanted anyway. The planned `lantern`
+reference app demonstrates the linked path with a paired Tier 1 app rendering its history.
 
 ### 5.4 The cross-origin isolation problem
 
@@ -55,7 +54,7 @@ headers, only Chromium browsers load these builds, and Godot ships an export tog
 needs `SharedArrayBuffer` and therefore cross-origin isolation. A Tier 1 offline query
 runtime that required cross-origin isolation would impose those headers on the framework's
 own origin and **break host mode for every other app on the node**. If browser SQLite is
-ever adopted for offline Tier 1 rendering (`docs/roadmap.md`), it is the **single-threaded,
+ever adopted for offline Tier 1 rendering, it is the **single-threaded,
 asynchronous build only** — no exceptions, regardless of benchmark results. Otherwise Tier 1
 offline becomes solo-mode-only, which is not a trade worth making.
 

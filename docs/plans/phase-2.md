@@ -30,7 +30,7 @@ all three platforms, not when it compiles. Write the named tests first; the mile
 shape is in them. Do not start M(n+1) before M(n) merges.
 
 Section 2 lists the decisions this plan makes that the spec did not. **All eleven are
-decided**, by the owner, and the spec carries every one; each section ends with where.
+decided**, and the spec carries every one; each section ends with where.
 Section 3 is the record of the spec gaps found while writing this plan — all fixed, as
 Phase 1's §3 was, so an implementer is not handed a specification they have been told is
 wrong. A milestone edits those sections only where the code proves them wrong, in the PR
@@ -118,8 +118,8 @@ authenticated channel for the same active device consumes the response once; it 
 executes the request again. Capacity is 32 responses per node and 4 per device; a ready
 response expires after 120 seconds. There is no form-body storage, response disk cache,
 event acknowledgement or deduplication table. Loss of the response leaves any committed
-write intact and requires checking the result before resubmission. The owner approved
-this correction; `protocol.md §8.3.1` is normative.
+write intact and requires checking the result before resubmission.
+`protocol.md §8.3.1` is normative.
 
 **Scripts and stylesheets stay plaintext, and a genuine client pins them.** A page delivered through the
 channel names its scripts with `<script src>`; the browser fetches those over plain HTTP,
@@ -212,8 +212,6 @@ The identities bind both static keys, which `§7.4` step 4 requires: `A` is
 public key (base64)`. The password `w` is `HKDF-SHA256(ikm = the two code bytes, big
 endian; salt = ""; info = "pv/1 pake w")`, 64 bytes reduced modulo the group order.
 
-This is a security decision, and the one in this list most worth a second opinion.
-
 *Decided. `protocol.md §7.4` names SPAKE2 alone and strikes CPace; `§7.4.1` fixes the
 ciphersuite, the identities, `w`, the transcript encodings and the key schedule; `§7.4.2`
 is the message sequence M16 implements. R9 stands: the vector file is what holds the two
@@ -229,8 +227,8 @@ come from the EFF Short Wordlist 2.0 (1,296 words, every one distinct in its fir
 letters and at edit distance three from every other, which is what lets a screen-reader
 user abbreviate and lets a typo be caught rather than mis-decoded): the words of four to
 six letters, in alphabetical order, the first 256, with three words unsuited to saying
-aloud skipped on review. The first draft of the rule said four or five letters and yields
-only 193, which is why the rule says six.
+aloud skipped on review. A four-or-five-letter rule yields only 193 words, which is why
+the rule says six.
 
 *Decided, and the file is written — `spec/pairing-words.txt`, `abyss` first.
 `protocol.md §7.2` names it and `NOTICE` attributes it (CC BY 3.0 US).*
@@ -254,9 +252,9 @@ window to answer the handshake at all, so hashing the code beside it protects no
 M16 keeps one pairing at a time in memory — the code, `w`, `created_at`, `expires_at`,
 `attempts`, `consumed_by` — and writes nothing to disk: `local/` keeps its two files
 (`§3`), and a code that never touched a file needs no hash. §3 row 6 amends `§3.3` to
-say so. No `argon2` crate. The first draft of this section had the node drop the code's
-bytes once `w` existed; row 23 records why it does not — the window is shown again on
-request, and `w` is a function of the code.
+say so. No `argon2` crate. The window keeps the code's bytes rather than dropping them
+once `w` exists; row 23 records why — the window is shown again on request, and `w` is a
+function of the code.
 
 *Decided: `data-dictionary.md §3.3`.*
 
@@ -296,7 +294,7 @@ path holds on loopback exactly as before, since loopback never sees the channel.
 
 ### 2.10 What is claimed about program authenticity — DECIDED, corrected
 
-The owner confirmed that M17 keeps §2.1's channel design and corrects its security claim.
+M17 keeps §2.1's channel design and corrects its security claim.
 Every load over plain HTTP permits active replacement of the bootstrap and client,
 including access to stored device keys after pairing. The bootstrap's integrity hashes
 can be replaced with it. A genuine client refuses a substituted node and protects
@@ -332,18 +330,18 @@ Phase 1, this records what changed and why;
 | # | Was | Proposed | Files | Milestone |
 |---|---|---|---|---|
 | 31 | `§3.2` had `last_seen_at` "written at the channel handshake" unconditionally; since M17 every full-page navigation opens a channel of its own, so that sentence meant one `sys_device` event per page view | Written at the handshake only when the row holds no mark or one more than an hour old, and by a request an hour or more after the last write — at most hourly, never per request, never per page navigation. The node decides (`Node::note_device_seen`, the instant passed in) and the channel asks at the handshake and on every request | `data-dictionary.md §3.2` | **Fixed**; M19; `test_spec_3_2_last_seen_at_is_written_at_most_hourly` |
-| 30 | The data root was the platform directory or `--data-dir`, nothing else; on Windows that directory is hidden, so owners could not find their apps, and a zip download had no way to keep everything in one folder | Three sources, most explicit first: `--data-dir`; a `privatium-data` folder the owner created beside the executable (portable mode — the program never creates it, and one that cannot be written is a runtime error, never a fall-through); the platform directory. Every start prints the root and the rule that chose it; the data page shows the same. The Windows release gains `privatium-windows-portable.zip` carrying `privatium-data/apps/` with the three examples | `cli.md §1`, `protocol.md §3`, `AGENTS.md` invariant 7, `README.md`, `docs/backup-and-restore.md §1`, Tier 3 skill, `release_tools.py`, `release.yml` | **Fixed**, owner requested; between M18 and M19 |
-| 29 | `cli.md` had a release binary start with an empty launcher — the reference apps existed only in a checkout — and `new --from hello` failed without one | The binary carries the three example apps; a start whose `apps/` holds no app folder writes them there, whether the data directory is new or was used before the binary carried them, `new --examples` writes them on request, `--from` finds the embedded copy, and a checkout keeps mounting its own `apps/` as `bundled` and writes nothing | `cli.md §2, §4`, `data-dictionary.md §3.4`, `apps/README.md`, `README.md`, overview skill | **Fixed**, owner requested; M18 |
+| 30 | The data root was the platform directory or `--data-dir`, nothing else; on Windows that directory is hidden, so owners could not find their apps, and a zip download had no way to keep everything in one folder | Three sources, most explicit first: `--data-dir`; a `privatium-data` folder the owner created beside the executable (portable mode — the program never creates it, and one that cannot be written is a runtime error, never a fall-through); the platform directory. Every start prints the root and the rule that chose it; the data page shows the same. The Windows release gains `privatium-windows-portable.zip` carrying `privatium-data/apps/` with the three examples | `cli.md §1`, `protocol.md §3`, `AGENTS.md` invariant 7, `README.md`, `docs/backup-and-restore.md §1`, Tier 3 skill, `release_tools.py`, `release.yml` | **Fixed**; between M18 and M19 |
+| 29 | `cli.md` had a release binary start with an empty launcher — the reference apps existed only in a checkout — and `new --from hello` failed without one | The binary carries the three example apps; a start whose `apps/` holds no app folder writes them there, whether the data directory is new or was used before the binary carried them, `new --examples` writes them on request, `--from` finds the embedded copy, and a checkout keeps mounting its own `apps/` as `bundled` and writes nothing | `cli.md §2, §4`, `data-dictionary.md §3.4`, `apps/README.md`, `README.md`, overview skill | **Fixed**; M18 |
 | 28 | The integrity rule assumed every resource could be fetched by an origin-local channel | Hash same-origin external resources through the channel; require an existing integrity hash in authenticated HTML for permitted remote resources; keep inline script CSP and imported-module limits explicit | `protocol.md §8.3`, this plan §2.1, security and Tier 2 skills | **Fixed**; M17 |
-| 27 | Full-document replacement and `pushState` retain the previous CSP and module map | Fresh bootstrap documents use destination app permissions. A bounded, unpolled response stream stays in node RAM across a form transition; only a reference crosses in per-tab storage. Same-device attachment consumes it once without re-executing the request | `protocol.md §8.3.1`, this plan §2.1; `app-contract.md §5.4` remains binding | **Fixed**, owner approved; M17 |
-| 26 | The active-attacker gap was described as first pairing and Tier 2 imports only | State that every plain-HTTP load can replace the bootstrap and client, exposing stored device keys; keep the channel design and word the disclosure for every visit | `protocol.md §7.0, §7.7`, `docs/security.md §1, §4`, this plan §2.10, security skill | **Fixed**, owner confirmed; M17 |
+| 27 | Full-document replacement and `pushState` retain the previous CSP and module map | Fresh bootstrap documents use destination app permissions. A bounded, unpolled response stream stays in node RAM across a form transition; only a reference crosses in per-tab storage. Same-device attachment consumes it once without re-executing the request | `protocol.md §8.3.1`, this plan §2.1; `app-contract.md §5.4` remains binding | **Fixed**; M17 |
+| 26 | The active-attacker gap was described as first pairing and Tier 2 imports only | State that every plain-HTTP load can replace the bootstrap and client, exposing stored device keys; keep the channel design and word the disclosure for every visit | `protocol.md §7.0, §7.7`, `docs/security.md §1, §4`, this plan §2.10, security skill | **Fixed**; M17 |
 | 25 | `§7.3` row 10 gave the flamingo's codepoint as U+1FAB0, which is 🪰; the glyph and the label in the same row were right | U+1F9A9, which both implementations already emit; the conformance test now reads the table's glyph, codepoints and label and holds all three to the code | `protocol.md §7.3` | **Fixed**; M16; `test_spec_7_3_glyph_table_is_normative_and_keeps_variation_selectors` |
 | 24 | `§7.4.2` never said when an attempt is counted. Counting at `cA` lets a client guess for free: the node's answer to `pA` already tells it whether the code matched, and it need never send `cA` | An attempt is counted when `pA` is accepted; an exhausted code is replaced before the 4429; a refusal before `pA` — closed, rate-limited, malformed — is no attempt and writes no audit row; a peer that leaves after `pA` is a failed attempt the transport reports; a registered device key is refused with 4403 | `protocol.md §7.4.2, §7.5` | **Fixed**; M16; `test_spec_7_5_code_expires_at_120s_and_five_attempts_issue_a_new_one` |
 | 23 | `§3.3` had the node drop the code's bytes once `w` existed, but `§9.2`'s `GET /api/v1/pair` answers the code again on request, and `w` is a function of sixteen bits, so dropping the code hides nothing | The window holds the code beside `w`; `generation` counts replaced codes so a surface can notice a new one | `data-dictionary.md §3.3` | **Fixed**; M16 |
 | 22 | `§7.4.1` reduced 64 HKDF bytes "modulo the order" with no byte order | Little-endian, as RFC 8032 reads a scalar and as both curve libraries do | `protocol.md §7.4.1` | **Fixed**; M16; `test_spec_7_4_spake2_matches_the_checked_in_vectors` |
-| 21 | The plan requires unmodified Noble modules, but their bare `@noble/hashes/...` imports cannot resolve in a browser without a build step or import map | Permit import-path-only edits to relative URLs. Keep cryptographic code unchanged and record upstream and vendored SHA-256 hashes, archive integrity, and original licences | This plan §5; `assets/shell/vendor/noble/VENDOR.md` | **Fixed**, owner confirmed; M15; protocol and CSP unchanged |
-| 20 | The global singleton wording for `sys_node` and `sys_cluster` conflicts with restored and replicated identity records | Preserve all restored records. Verified local keys and certificate select this installation's current node and cluster; startup appends corrections to their public identity fields without retiring other clusters. Registry presence alone establishes no cluster trust | `data-dictionary.md §3.1, §3.1b`, `protocol.md §2.3` | **Fixed**, owner confirmed; M14; `test_spec_3_1b_data_only_restore_preserves_records_and_selects_local_identity`, `test_spec_3_1b_restored_keys_select_the_original_cluster`, `test_spec_3_1b_replayed_rows_cannot_change_local_cluster_identity` |
-| 19 | `§2.3.1` requires re-admission after expiry but startup renewal has no expiry exception | Startup renewal applies only to unexpired certificates; at or after expiry the node refuses self-renewal and requires re-admission | `protocol.md §2.3.1` | **Fixed**, owner confirmed; M14 |
+| 21 | The plan requires unmodified Noble modules, but their bare `@noble/hashes/...` imports cannot resolve in a browser without a build step or import map | Permit import-path-only edits to relative URLs. Keep cryptographic code unchanged and record upstream and vendored SHA-256 hashes, archive integrity, and original licences | This plan §5; `assets/shell/vendor/noble/VENDOR.md` | **Fixed**; M15; protocol and CSP unchanged |
+| 20 | The global singleton wording for `sys_node` and `sys_cluster` conflicts with restored and replicated identity records | Preserve all restored records. Verified local keys and certificate select this installation's current node and cluster; startup appends corrections to their public identity fields without retiring other clusters. Registry presence alone establishes no cluster trust | `data-dictionary.md §3.1, §3.1b`, `protocol.md §2.3` | **Fixed**; M14; `test_spec_3_1b_data_only_restore_preserves_records_and_selects_local_identity`, `test_spec_3_1b_restored_keys_select_the_original_cluster`, `test_spec_3_1b_replayed_rows_cannot_change_local_cluster_identity` |
+| 19 | `§2.3.1` requires re-admission after expiry but startup renewal has no expiry exception | Startup renewal applies only to unexpired certificates; at or after expiry the node refuses self-renewal and requires re-admission | `protocol.md §2.3.1` | **Fixed**; M14 |
 | 1 | `§7.4` gives the handshake's six steps and no message shapes, encodings or close codes | The messages of M16 spelled out: the node's hello, the client's `pA` with its identity, the node's `pB` and `cB`, the client's `cA`, the two key exchanges over `K_pair`, and the WebSocket close codes for *closed*, *wrong code* and *exhausted* | `protocol.md §7.4.1, §7.4.2` | **Fixed**; M16 |
 | 2 | `§8` gives the key schedule and says nothing about how a session starts on `/ws`, what a frame is, or what a request or response looks like inside one | The handshake messages, the frame — `nonce = direction ‖ counter`, one AEAD ciphertext per WebSocket binary message, no associated data — the request and response frames of §2.1 with their `id` and `kind`, the confirm frame, and the rule that a side closes at 2³² frames rather than rekeying | `protocol.md §8.3` | **Fixed**; M15, M17 |
 | 3 | `§7.2` says "the 256-word list" and no list exists | `spec/pairing-words.txt`, index order normative, produced by the rule in §2.5; `§7.2` names it and says a change is a breaking protocol change | `protocol.md §7.2`, `spec/pairing-words.txt`, `NOTICE` | **Fixed**; M16 |
@@ -364,8 +362,7 @@ Phase 1, this records what changed and why;
 | 16 | `§6.1` instance name is "the owner-set display name" and no surface sets one | The node settings page sets `sys_node.display_name`; while unset the Node ID stands in, as `§9.2` already says | `protocol.md §6.1` | **Fixed**; M19 |
 
 Two are additions rather than corrections and deserve to be called out: **`/api/v1/pair`**
-widens `§9.2`, and **`spec/pairing-words.txt`** is a new normative file. Both were the
-owner's call (§2.8, §2.5).
+widens `§9.2`, and **`spec/pairing-words.txt`** is a new normative file (§2.8, §2.5).
 
 **The rule from Phase 1 stands:** when implementation reveals a further gap, fix the spec
 in the PR that found it. Do not accumulate a list and do not code around it.
@@ -571,8 +568,8 @@ Node admission and sync remain Phase 3 work; this change provides no successful 
 
 **Implementation status, 2026-09-05:** implemented on `m15-session` and merged as PR
 #28; the three-platform CI run on the merge passed, and the checklist below is ticked
-on that run. A later review confirmed that reverting the import specifiers of every
-vendored Noble file reproduces its upstream hash (row 21). Session helpers do no network or storage I/O.
+on that run. Reverting the import specifiers of every vendored Noble file reproduces its
+upstream hash (row 21). Session helpers do no network or storage I/O.
 The node handshake takes
 active pairing facts from its caller; wiring that lookup to the registry and enforcing
 revocation on channel requests remain M17 work. The bind remains loopback until M17.
@@ -1095,8 +1092,8 @@ half and nothing logs. Its `if-addrs`, `socket2`, `mio` and `windows-sys` were a
 in the graph; `flume`, `spin` and `socket-pktinfo` are new. `cargo deny check` is in
 the PR's verification table.
 
-The same branch carries the owner's request that a release binary never start with an
-empty launcher (§3 row 29): the three example apps are embedded in the core
+The same branch carries the rule that a release binary never starts with an empty
+launcher (§3 row 29): the three example apps are embedded in the core
 (`app::examples`, 138 KB), written to `<data-dir>/apps/` whenever that folder holds no app and by
 `privatium new --examples`, and found by `--from hello` without a checkout. A checkout
 still mounts its own `apps/` as `bundled` and writes nothing, since a copy would shadow

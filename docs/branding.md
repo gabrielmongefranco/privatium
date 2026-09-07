@@ -91,7 +91,7 @@ provide common web-app icon sizes. Manifest integration is a separate applicatio
 
 The workflow graphics show an app appending changes to the event log, the framework
 updating its rebuildable SQLite cache, and the screen displaying data. The log is the
-source of truth. Network sync is labelled as planned for Phase 3. This paragraph is the
+source of truth. Network sync is labelled as planned. This paragraph is the
 text equivalent of both graphics. The personal-apps illustration depicts tracking,
 organizing, and creating as examples of what an owner might build.
 
@@ -117,8 +117,8 @@ Preview: [banner](../assets/branding/privatium-banner.png),
 
 Write **Privatium™** at the first prominent mention and retain the trademark in the wordmark.
 Use the tagline exactly as written above. Supporting copy should explain personal apps,
-local data, and ownership in plain language. Describe planned sync and remote-access features
-as planned until their roadmap phases are implemented.
+local data, and ownership in plain language. Describe sync and remote access as planned
+until they are implemented.
 
 Do not add invented domains, atomic numbers, pharmacy symbols, stock padlocks, clouds,
 or extra slogans. The element tile is a brand metaphor, not a claim about a chemical element.

@@ -265,7 +265,7 @@ fallback, and a client MAY negotiate it with `Accept: application/json` plus `af
 receiving the same event objects in a JSON array and reissuing the request on each response.
 The fallback exists because custom-scheme streaming inside a platform webview — WKWebView in
 particular — is unproven; it is not an invitation to skip SSE. `pv.js` selects between them
-and apps see no difference (`§5`). Phase 1 implements SSE only.
+and apps see no difference (`§5`). This build implements SSE only.
 
 **Note:** a quick Cloudflare tunnel does not pass SSE. This does not affect LAN, Tailscale,
 Let's Encrypt, onion, or native transports.

@@ -4,7 +4,8 @@ File:     README.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-31
 Modified: 2026-09-06
-Summary:  Overview, quick start, examples, and documentation index for Privatium.
+Summary:  Overview, quick start and examples for Privatium. The documentation index
+          lives in docs/README.md.
 Copyright © 2026 Gabriel Mongefranco
 Privatium™ is a trademark of Gabriel Mongefranco.
 Documentation license: GFDL-1.3-or-later, with no Invariant Sections,
@@ -21,10 +22,8 @@ See the License and Credits sections below for the full notices and attribution.
 
 ## Description
 
-I built Privatium™ because I wanted small personal apps — a tracker, a collection, a
-form and a list — that run on my own computer, that I can read and back up as plain
-files, and that I do not have to rent from anyone. It is an open-source, local-first
-framework for exactly that. Your apps and your data live on hardware you control. There
+Privatium™ is an open-source, local-first framework for small personal apps — a tracker,
+a collection, a form, a list. Your apps and your data live on hardware you control. There
 is no account, no cloud subscription, and no database server to look after.
 
 It is one program, written in Rust, with Lua and SQLite built in. Every record you save
@@ -40,9 +39,12 @@ assistant and let it write the first draft; a linter checks the result against t
 that matter, including accessibility.
 
 Other devices on your home network reach a node over an encrypted channel once they are
-paired: scan a QR code, tap four emoji, done. Sync between your own machines is what I
-am working on now, and none of this requires a domain name, a DNS provider, or a port
-forward.
+paired: scan a QR code, tap four emoji, done. None of it requires a domain name, a DNS
+provider, or a port forward.
+
+Privatium is for people who want an app for exactly one purpose, want it private by
+construction, and do not want to run a server, buy a domain, trust a cloud, or learn a
+framework to get it.
 
 ## Quick Start Guide
 
@@ -87,24 +89,7 @@ To use Privatium inside your own Rust application, see the
 
 ## Documentation
 
-| Document | Purpose |
-|---|---|
-| [docs/architecture.md](docs/architecture.md) | How the system is put together, and why |
-| [spec/protocol.md](spec/protocol.md) | **Normative.** Wire formats, events, discovery, pairing, sync |
-| [spec/app-contract.md](spec/app-contract.md) | **Normative.** The three app tiers and three deployment modes |
-| [spec/lua-api.md](spec/lua-api.md) | **Normative.** Tier 1 — the Lua API and LSP templates |
-| [spec/data-api.md](spec/data-api.md) | **Normative.** The data API custom front ends build against |
-| [spec/data-dictionary.md](spec/data-dictionary.md) | System tables, app index, field definitions |
-| [spec/cli.md](spec/cli.md) | **Normative.** Command line, and the lint rules the skills enforce |
-| [docs/security.md](docs/security.md) | Threat model and what is actually protected |
-| [docs/connectivity.md](docs/connectivity.md) | Bootstrap and reachability per client type |
-| [docs/deployment.md](docs/deployment.md) | Topologies, the always-on machine, per-OS firewall behaviour |
-| [docs/backup-and-restore.md](docs/backup-and-restore.md) | The restore drill, for non-technical users |
-| [docs/frameworks.md](docs/frameworks.md) | Which libraries, frameworks and game engines fit, and which do not |
-| [docs/skills.md](docs/skills.md) | How LLM-authored apps get correct, accessible, secure code |
-| [docs/icons.md](docs/icons.md) | Icon system: Bootstrap Icons, inlined server-side |
-| [docs/decisions/](docs/decisions/) | Decision records: Barracuda declined (0001); Rust core, pkarr, peer transport (0002); one core interface behind three transports (0003); Gun, RxDB, libp2p, SharkTrustX and BAS-in-Rust declined (0004); what a phone is in the cluster (0005); SQLite as the query engine (0006) |
-| [docs/naming.md](docs/naming.md) | Name, taglines, and the rename checklist |
+Every guide, use case and specification is indexed in **[docs/README.md](docs/README.md)**.
 
 ## Example Applications
 
@@ -118,17 +103,21 @@ and a source checkout serves them straight from `apps/`:
 [AI assistant guides](docs/skills.md) help an assistant build apps that follow Privatium's
 requirements, including security and accessibility.
 
-The first real application, a medication fill and prior-authorization tracker, will be
-built as a separate repository once this framework is proven.
-
 ## About the Author
 
-Privatium is built by [Gabriel Mongefranco](https://gabriel.mongefranco.com), a database and
-software architect who has spent two decades building data platforms in healthcare and
-research — enterprise data warehouses, BI systems, knowledge bases, and the first architecture for mobile and
-wearable research data at a large research university.
+Privatium is built by [Gabriel Mongefranco](https://gabriel.mongefranco.com), a database,
+analytics, and software architect with two decades of experience across healthcare,
+research, and enterprise systems.
 
-Learn more at: https://gabriel.mongefranco.com
+His work includes establishing the University of Michigan’s first data architecture for
+research using mobile and wearable technologies. His research on automating Fitbit
+sleep-data cleaning was published in *SLEEP*, sleep medicine’s premier peer-reviewed
+journal. Earlier in his career, his analytics helped hospitals avoid more than $5 million
+in readmission penalties.
+
+He brings the same priorities to Privatium: understandable data, durable local ownership,
+accessible software, and systems people can operate without becoming infrastructure
+experts. Learn more at: https://gabriel.mongefranco.com
 
 
 ## Contact

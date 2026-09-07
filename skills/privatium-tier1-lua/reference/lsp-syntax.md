@@ -91,7 +91,7 @@ renders two places, grouped, with the point and the group separator `ui.locale` 
 unchanged while no `locales/` format exists, which is all of `pv/1`.
 
 `csrf()` emits a hidden `_csrf` field whose token is bound to the app's mount for the life
-of the process (`docs/plans/phase-1.md §2.2`). The host MUST verify it on every non-GET
+of the process. The host MUST verify it on every non-GET
 request beneath the mount — as the `_csrf` form field, or as an `X-CSRF-Token` header for
 a request that carries no form, such as `hx-delete` on a button — and refuse a request
 without it with 403 before any handler runs. The page frame (below) puts the token in

@@ -47,8 +47,7 @@ Most of these tools solve the cheap problem well and the expensive one not at al
   upstream releases have been paused since 2020 with an accumulating dependency surface.
 
 **Would reopen if** the project ever wanted a public shared graph across strangers, which
-is the thing Gun is actually excellent at and Privatium explicitly is not
-(`docs/roadmap.md`, "Explicitly not on the roadmap").
+is the thing Gun is actually excellent at and Privatium explicitly is not.
 
 ## 2. RxDB
 
@@ -58,7 +57,7 @@ is the thing Gun is actually excellent at and Privatium explicitly is not
   *protocol*. Every replication plugin — GraphQL, CouchDB, Websocket, Supabase, Firestore,
   NATS, Google Drive — points at a backend you supply. WebRTC is the only peer-to-peer one
   and it needs a signalling server. There is no third option to find.
-- **It solves the layer after the one that blocks us.** RxDB stores in IndexedDB, which is
+- **It solves the layer after the one that blocks the browser.** RxDB stores in IndexedDB, which is
   unreachable if the page will not load — see ADR 0003. Secure context is the constraint;
   RxDB does not address it.
 - **Once secure context is solved, it earns little.** In a native shell the core is
@@ -117,7 +116,8 @@ That is a domain, a registrar, a VPS, a payment method, and a single point of fa
 obtain what pkarr provides from an Ed25519 key and nothing else.
 
 **Would reopen if** the project ever acquires a domain for other reasons *and* pkarr proves
-unreliable — at which point it is a good implementation of a thing we would then need.
+unreliable — at which point it is a good implementation of a thing the project would then
+need.
 
 ## 5. BAS embedded in Rust
 

@@ -7,7 +7,7 @@ description: Write Tier 3 Privatium apps in Rust by linking the privatium-core c
 
 Your binary, your `main()`, your routing. `privatium-core` supplies the log, the
 materializer, the auth layer, discovery and pairing as a library now; sync is on the
-same `Node` and arrives with Phase 3 of `docs/roadmap.md`.
+same `Node` and is not built yet.
 
 ## When Tier 3 is right
 
@@ -91,7 +91,7 @@ method of `Node` at this version, generated from the source.
 - Bind ports ≥ 1024; ACME is DNS-01 only
 - Match on `Error::Unimplemented` from the network calls and say so to your user, rather
   than assuming a sync happened
-- Handle `subscribe` events from other devices, not just your own writes, once Phase 3
+- Handle `subscribe` events from other devices, not just your own writes, once sync
   delivers them
 
 ## MUST NOT
