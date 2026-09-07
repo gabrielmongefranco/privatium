@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Project:  Privatium™  |  File: .github/scripts/conformance.sh
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-09-05  |  Modified: 2026-09-06
+# Created:  2026-09-05  |  Modified: 2026-09-07
 # Summary:  The conformance checklist of spec/protocol.md §13, asserted by test name: every
 #           item this build can satisfy, plus the two docs/roadmap.md bullets that are easy
 #           to lose (every route through core::handle; bodies stream both ways). The test
@@ -63,7 +63,8 @@ run privatium-core apps test_spec_12_higher_api_refused
 run privatium adapter \
   test_large_request_body_never_fully_buffered \
   test_response_body_streams_without_buffering
-# Cluster secret exclusion and the certificate lifetime; renewal on sync remains planned.
+# Cluster secret exclusion and the certificate lifetime; renewal after a completed sync
+# pass is the sync milestone's, renewal at runtime is held below.
 run privatium-core identity \
   test_spec_2_3_3_cluster_private_key_is_absent_from_every_event_snapshot_and_backup \
   test_spec_2_3_1_certificate_verifies_against_the_cluster_key_and_expires_at_180_days \
@@ -127,4 +128,13 @@ run privatium-core discover \
   test_spec_6_5_mdns_and_udp_start_together_and_stop_together \
   test_spec_6_4_udp_refuses_a_public_source_and_answers_once_a_second
 
-echo "conformance: Phase 1, identity, pairing, encrypted-channel, discovery and devices items hold by name"
+# Node admission (§2.3.1): the cluster key crosses once, after proof, and never to a
+# browser (§2.3.3); a node's certificate renews at runtime under ninety days and never at
+# expiry (§2.3.1, the runtime half); discovery filters to the cluster by `cl` (§6.1);
+# `sys_device.replica` is declared accurately for a node (§10.7).
+run privatium-core admission   test_spec_2_3_3_the_cluster_key_goes_to_a_node_and_never_to_a_browser   test_spec_2_3_3_cluster_private_key_is_absent_from_every_event_snapshot_and_backup   test_spec_2_3_1_certificate_renews_at_runtime_under_ninety_days_and_never_at_expiry   test_spec_6_1_peers_are_the_clusters_nodes_and_strangers_are_kept_apart_by_id   test_spec_2_3_1_the_joiner_and_the_admitter_write_the_same_device_facts
+
+# The owner's standing is a request from this machine, held to its Host (§8.4).
+run privatium-core wire   test_spec_8_4_a_request_from_this_machines_own_address_is_the_owner
+
+echo "conformance: Phase 1, identity, pairing, encrypted-channel, discovery, devices and admission items hold by name"

@@ -75,6 +75,10 @@ assistive technology. Draw and Stroke eraser expose their mode with aria-pressed
 
 Undo uses compensating events and fresh IDs when restoring deleted strokes. The
 optional stroke `layer` retains its original drawing order across those restorations.
-Keep undo local to this tab and bounded to 50 actions. New sketch clears the shared
+Undo is shared like the canvas: every change a tab sees — its own, another window's,
+another device's, and the log replayed at load — joins one history in arrival order, and
+undo reverses the latest, bounded to 50 changes. A batch written as one act is undone as
+one. Keep it that way: a per-tab undo on a replicated canvas surprises the person at the
+other device. New sketch clears the shared
 canvas; it does not introduce a document library. PNG export uses an opaque white
 background and excludes the keyboard cursor. Sketch actions groups export and New sketch.

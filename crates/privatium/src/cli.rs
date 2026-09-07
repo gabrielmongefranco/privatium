@@ -33,8 +33,8 @@ privatium [--data-dir <path>] [--config <file>] [--verbose] [--version] [<comman
   privatium snapshot [--app <slug>] [--verify]
   privatium restore --from <path> [--app <slug>] [--dry-run]
       snapshots and the three-tier restore (§7)
-  privatium pair [--open] [--timeout 120]
-      pairing mode (§8)
+  privatium pair [--open] [--timeout 120] [--node] [--join <url>]
+      pairing mode, for devices or for another space; --join joins the space at <url> (§8)
   privatium firewall [--apply]
       the firewall helper (§9)
 
@@ -118,7 +118,12 @@ pub enum Command {
         dry_run: bool,
     },
     /// `§8`.
-    Pair { open: bool, timeout: u64 },
+    Pair {
+        open: bool,
+        timeout: u64,
+        node: bool,
+        join: Option<String>,
+    },
     /// `§9`.
     Firewall { apply: bool },
 }
@@ -616,7 +621,7 @@ fn restore(global: &mut Global, args: &mut Args) -> Result<Command, Usage> {
 }
 
 fn pair(global: &mut Global, args: &mut Args) -> Result<Command, Usage> {
-    let (mut open, mut timeout) = (false, 120u64);
+    let (mut open, mut timeout, mut node, mut join) = (false, 120u64, false, None);
     let terminal = flags(
         global,
         args,
@@ -632,13 +637,31 @@ fn pair(global: &mut Global, args: &mut Args) -> Result<Command, Usage> {
                         .parse()
                         .map_err(|_| usage(format!("--timeout {value:?}: seconds")))?;
                 }
+                "--node" => {
+                    Args::switch(name, inline)?;
+                    node = true;
+                }
+                "--join" => join = Some(args.value(name, inline)?),
                 _ => return Ok(false),
             }
             Ok(true)
         },
         no_positional("pair"),
     )?;
-    Ok(terminal.unwrap_or(Command::Pair { open, timeout }))
+    if let Some(terminal) = terminal {
+        return Ok(terminal);
+    }
+    if join.is_some() && (node || open) {
+        return Err(usage(
+            "pair: --join is this space's half of joining; --node and --open belong to the other space's",
+        ));
+    }
+    Ok(Command::Pair {
+        open,
+        timeout,
+        node,
+        join,
+    })
 }
 
 fn firewall(global: &mut Global, args: &mut Args) -> Result<Command, Usage> {
@@ -773,7 +796,27 @@ mod tests {
             parsed("pair --open --timeout 30").unwrap().command,
             Command::Pair {
                 open: true,
-                timeout: 30
+                timeout: 30,
+                node: false,
+                join: None
+            }
+        );
+        assert_eq!(
+            parsed("pair --node --timeout 90").unwrap().command,
+            Command::Pair {
+                open: false,
+                timeout: 90,
+                node: true,
+                join: None
+            }
+        );
+        assert_eq!(
+            parsed("pair --join http://192.0.2.5:8420").unwrap().command,
+            Command::Pair {
+                open: false,
+                timeout: 120,
+                node: false,
+                join: Some("http://192.0.2.5:8420".into())
             }
         );
         assert_eq!(
@@ -799,6 +842,9 @@ mod tests {
             ("doctor", "doctor"),
             ("serve", "serve"),
             ("--open=1", "no value"),
+            ("pair --join http://x --node", "--join"),
+            ("pair --join http://x --open", "--join"),
+            ("pair --join", "value"),
         ] {
             let error = parsed(line).unwrap_err();
             assert!(error.0.contains(needle), "{line:?}: {error}");

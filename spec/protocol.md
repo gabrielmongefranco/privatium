@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/protocol.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-06
+Modified: 2026-09-07
 Summary:  NORMATIVE. Wire formats, event log, discovery, pairing, session crypto, sync.
           See main README.md for full license information.
 -->
@@ -82,10 +82,25 @@ pair separately with every node — tedious with two machines and unworkable wit
 A node generates its cluster keypair **on its first start**, before anything can pair
 with it, so that the first device to pair pins a cluster key (§2.3.2) and a second node
 admitted later needs no re-pairing. A node that is afterwards admitted to another cluster
-(§2.3.1) discards the one it founded — permitted only while it has paired nothing and
-admitted nobody, which is what makes a founded-and-empty cluster disposable — and
+(§2.3.1) discards the one it founded — permitted only while it is **disposable** — and
 tombstones only that empty cluster's own `sys_cluster` row
 (`spec/data-dictionary.md §3.1b`).
+
+A node is disposable while it has paired nothing and admitted nobody since it entered
+its current cluster, judged from its **own** `_sys` log segments alone: no `sys_device`
+`put` for another ID after the event that last set its own `sys_node.cluster_id`. Rows
+another device wrote — restored or synced in — count for nothing, which is what lets a
+node rebuilt from a backup join with its data restored, and a re-founded node (§2.3.5)
+join again.
+
+**Discarding the founded cluster** replaces `identity/cluster.key`, `cluster.pub` and
+`node.cert` together, in a swap a crash cannot leave half done: the three new files are
+written and flushed into a staging directory beside them, `identity/adopt.tmp/`, which
+is then renamed to `identity/adopt/` — the one moment the swap is committed — and from
+there each file is renamed into place and the directory removed. A node that starts and
+finds `identity/adopt/` MUST complete the swap before it reads any identity file, MUST
+discard an `identity/adopt.tmp/` it finds, and MUST NOT found a cluster while either
+exists.
 
 A node has exactly one current cluster, selected by its verified `identity/` keys and
 node certificate. The replicated registry can contain records of other clusters after a
@@ -98,15 +113,44 @@ from the verified identity, preserving owner-set and unknown fields (§4.2).
 
 #### 2.3.1 Admitting a node
 
-A new node joins by pairing with an existing node using the ordinary §7 flow. The owner
-opens pairing mode on the existing node; physical presence is the authorization, exactly as
-for a phone.
+A new node joins by pairing with an existing node using the ordinary §7 flow with
+`kind = "node"`. The owner opens a pairing window **for a node** on one machine (§7.1)
+and, on the other, gives the running node that machine's URL and the code
+(`spec/cli.md §8`, `POST /api/v1/join` in §9.2); physical presence at both is the
+authorization, exactly as for a phone. Either machine may be the one dialed: a laptop on
+a LAN can dial the desktop or be dialed by it, while a machine behind a router can dial
+an always-on node and cannot be dialed by it, so which of the two nodes is **admitted**
+is decided by the exchange, not by which one dialed (§7.4.2).
 
-On success the admitting node sends:
+The side that admits is the **established** one; the side admitted is the **joiner**.
+After both sealed messages of §7.4.2 each side holds the other's `disposable` (§2.3) and
+`expired` flags and decides the direction by one rule, in this order:
+
+1. Both expired: refused. An expired node never admits.
+2. Exactly one side expired: that side is the joiner and the other must be established
+   — not disposable — or the exchange is refused. The established side then applies the
+   re-admission check below.
+3. Neither expired: a disposable dialer joins the node whose owner opened the window,
+   even when that node is disposable too; a disposable node whose dialer is established
+   joins the dialer; two established nodes are refused — two clusters are never merged,
+   and the owner rotates (§2.3.5) instead.
+
+The admitter then sends, sealed under `K_pair` and only after the joiner's signature has
+verified and its key has passed the registry check (§7.4.2):
 
 1. The cluster private key.
 2. A **node certificate**: `{node_id, node_pub, cluster_id, issued_at, expires_at, sig}`
    where `sig` is the cluster key's Ed25519 signature over the other fields.
+3. The instant it will record as the joiner's `paired_at`, and its own `_sys` Lamport
+   counter, which the joiner folds as §4.3 folds a received counter so that everything
+   it writes from here is causally after its admission.
+
+The joiner adopts the cluster — the swap of §2.3, the `sys_node` and `sys_device`
+amendments of `spec/data-dictionary.md §3.1b` and `§3.2` — **before** it answers
+`joined`, and the admitter writes the joiner's `sys_device` row and `node.admitted` only
+on receiving `joined`. An `admit` that draws no `joined` writes no row: the joiner, still
+disposable, is joined again against a new window. The joiner writes no `sys_cluster` row
+for the cluster it joined; that row is the founder's and arrives by sync.
 
 `expires_at` MUST be `issued_at + 180 days`. Certificates renew automatically whenever two
 nodes complete a sync, so an in-use node never expires. A node offline longer than 180 days
@@ -118,8 +162,28 @@ the two instants spelled as §4.1 spells `ts`. `sig` is the base64 Ed25519 signa
 those bytes, and the certificate is that object with `sig` added; `sys_node.cert` holds it
 base64-encoded (`spec/data-dictionary.md §3.1`). Every node holds the cluster key, so a
 node renews its own **unexpired** certificate whenever fewer than ninety days remain —
-at start, and after every completed sync. At or after `expires_at`, it MUST refuse
-self-renewal and require re-admission instead.
+at start, and after every **completed** sync: heads exchanged for every app, every range
+this node asked for arrived whole, and every range it offered accepted or refused with a
+reason. A pass that stopped early renews nothing. At or after `expires_at`, it MUST
+refuse self-renewal and require re-admission instead.
+
+**The expired state.** A node whose own certificate has expired still starts, for its
+owner alone: it answers loopback and in-process callers as the owner (§8.4), presents no
+certificate on `/ws` — every non-loopback handshake is refused with close code 4403 —
+opens no channel to a peer, opens no pairing window for devices, advertises with
+`pair = 0`, records `cert.expired` once (`spec/data-dictionary.md §3.10`) and says so on
+its settings page. Re-admission is the only way out: the node is joined to its own
+cluster again, from either side as reachability allows, and keeps its key, its row and
+its cluster.
+
+**Re-admission.** An admitter that finds the joiner's key already in `sys_device`,
+active, with `kind = 'node'`, its `sys_node.cluster_id` the admitter's own cluster and
+its `sys_node.cert_expires_at` at or before now, re-admits it: no disposability check
+and no new row — the reply carries a fresh certificate and the cluster key the node
+already holds, `node.admitted` says so, and the joiner replaces `node.cert` alone. A
+registered key whose certificate has not expired, whose row is revoked, or whose ID is
+in `sys_node_revocation`, is refused with 4403 as §7.4.2 says; a node that wants
+another cluster re-founds first (§2.3.5).
 
 #### 2.3.2 What devices pin
 
@@ -148,8 +212,17 @@ tablets, and browsers receive the public key only.
 
 #### 2.3.4 Revoking a node
 
-Revocation writes a `sys_node_revocation` event, which replicates. A device that has synced
-since the revocation refuses that node.
+Revocation writes a `sys_node_revocation` event, which replicates, beside the revoked
+node's `sys_device` row marked revoked (`spec/data-dictionary.md §3.1c`, `§3.2`). A
+replica — a node, or a native client holding the logs — that has synced since the
+revocation refuses that node: it opens no channel to it, admits none from it, and
+refuses its certificate however fresh. A browser holds the cluster public key alone and
+never syncs, so it is covered by the certificate lifetime below and nothing else.
+
+A node that finds its own ID in `sys_node_revocation` stops syncing, refuses every
+channel, records `node.revoked` about itself (`spec/data-dictionary.md §3.10`) and
+tells its owner on its settings page. Its key is never admitted again — a registered
+key is refused at pairing (§7.4.2) — and it is re-initialized instead (§2.4).
 
 There is no CRL and no online check. The gap is bounded by the 180-day certificate lifetime:
 a revoked node stays trusted by a device that never syncs, for at most that long. An owner
@@ -160,6 +233,15 @@ who needs a hard cut MUST rotate the cluster (§2.3.5).
 Generating a new cluster keypair and re-admitting the good nodes invalidates every
 outstanding certificate. All devices must re-pair. This is the nuclear option and the only
 one available in `pv/1`.
+
+It is a procedure, not a command. On each good node, stop it, delete
+`identity/cluster.key`, `cluster.pub` and `node.cert`, and start it again: each founds
+a cluster of its own and is disposable (§2.3). Open a window for a node on one of them
+and join every other to it (§2.3.1). Then, from the devices page, revoke every device
+row the old cluster had paired, nodes included: a `sys_device` row's keys are accepted
+by every node that holds the row, whatever cluster it was paired into, and a `pv/1`
+node cannot tell an old cluster's row from a new one by itself. Devices then pair
+again.
 
 ### 2.4 Key rotation
 
@@ -197,7 +279,7 @@ write beside its executable except into such a folder the owner made.
 │       └── snap/<snapshot-id>/
 ├── local/                       node-local state, NEVER synced, NOT required for restore
 │   ├── lock                     held exclusively by the process that has this root open (§3.1)
-│   └── state.jsonl
+│   └── state.jsonl              per-app counters, and the peer hints of spec/data-dictionary.md §3.7
 └── cache/                       fully disposable
     ├── <slug>.sqlite
     └── ...
@@ -300,6 +382,8 @@ Each node maintains one Lamport counter per app.
 
 - On write: `lam = max(lam_local, lam_max_seen) + 1`.
 - On receiving events during sync: `lam_local = max(lam_local, max(received.lam))`.
+- On admission (§2.3.1) the joiner folds the admitter's `_sys` counter the same way,
+  before it writes anything as a member.
 
 `lam` establishes causal order. `ts` is for humans and for last-write-wins tie-breaking
 only.
@@ -489,6 +573,11 @@ A client that has paired MUST filter discovery results by `cl` matching its pinn
 On a LAN carrying several households' nodes this is what keeps the list to your own machines
 without any per-node pairing.
 
+A node browsing is a client here: its **peers** are the records whose `cl` is its own
+cluster and whose `id` is not its own, and it offers a sync pass (§10) to those and to
+no other. The rest are strangers — kept by `id`, shown apart from the peers on its
+settings page so an owner can see them, and never contacted.
+
 ### 6.2 pkarr — remote discovery on the mainline DHT
 
 mDNS ends at the broadcast domain. For a client that is not on the LAN, a node publishes its
@@ -671,6 +760,15 @@ never does so again once any device is paired (`spec/cli.md §2`); after that, p
 opens only through `privatium pair` or the settings page. A QR code encodes the node's
 URL and never the code: the code is on the screen, for the person standing there.
 
+A window is opened **for devices** or **for a node** (`spec/data-dictionary.md §3.3`,
+`privatium pair --node`, the devices page's *Admit a node*, `"node": true` in `POST
+/api/v1/pair`). A window for devices answers `kind` `browser`, `desktop` and `mobile`
+and refuses `node`; a window for a node answers `kind = "node"` alone; either refusal is
+close code 4403 (§7.4.2). A window opened for a phone can therefore never hand out the
+cluster key. One window is open at a time, of one kind; opening another while one is
+open returns the open one, whichever kind was asked, and the object §9.2 answers with
+says which kind it is.
+
 ### 7.2 The code
 
 The pairing secret is **16 bits** of CSPRNG output. It is rendered two ways, both of which
@@ -785,8 +883,8 @@ client → sealed {"x25519":"<base64>","label":"Pixel 9","ua":"<user agent, or a
 
 - `open: false` is followed by close code 4404: pairing is closed (§7.1).
 - `kind` is `browser`, `desktop`, `mobile` or `node` (`spec/data-dictionary.md §3.2`).
-  A build without node admission answers `kind: "node"` with close code 4403 naming the
-  phase it arrives in.
+  A `kind` the open window was not opened for is refused with close code 4403 before
+  the attempt is counted (§7.1).
 - `dev` MUST be the Node ID §2.1 derives from `pub`; a mismatch is close code 4400.
 - The client verifies `cB` before sending `cA`; a `cB` that does not verify is the
   wrong code, and the client says so and closes without sending `cA`. The node verifies
@@ -819,6 +917,43 @@ client → sealed {"x25519":"<base64>","label":"Pixel 9","ua":"<user agent, or a
 
 The code, either rendering of it, and `w` appear in no message. An implementation MUST
 be able to show that from a transcript.
+
+**A node as the client** (`kind = "node"`, §2.3.1). Messages 1–4 are unchanged: the
+dialer's `dev` is its Node ID, its `pub` its node Ed25519 key, and its `x25519` the
+static §8 derives. What is added, for this kind alone and never for a browser:
+
+```
+node   → sealed {"x25519":…,"cert":…,"cluster_id":…,"cluster_pub":…,
+                 "sig":"<base64>","disposable":true,"expired":false}
+client → sealed {"x25519":"<base64>","label":"<sys_node.display_name, or absent>",
+                 "sig":"<base64>","disposable":false,"expired":false}
+admitter → sealed {"cluster_key":"<base64 of the 32-byte Ed25519 seed>","cert":"<the
+                   joiner's certificate, base64>","paired_at":"<RFC 3339 UTC>","lam":<integer>}
+joiner   → sealed {"joined":true}
+```
+
+- `sig` is the sender's Ed25519 signature over the PAKE transcript `TT` of §7.4.1, by
+  the key its `pub` named — the hello's for the node, the client start's for the client.
+  Each side verifies the other's before it reads anything else in the message; a
+  missing or failing signature is close code 4403 and one audited failure, and nothing
+  is sealed after it. This is proof of possession: the certificate about to be issued
+  names that key, and the `sys_device` row about to be written is keyed by it.
+- `disposable` and `expired` are the sender's own state (§2.3, §2.3.1), and the two
+  pairs decide the direction by §2.3.1's rule. The client's message carries no `ua`.
+- The window is consumed at the client's sealed message, as for every kind; the
+  admitter's `admit` and the joiner's `joined` follow on the same frames, counters
+  continuing. The node's registry check — a registered key refused unless it is
+  re-admission (§2.3.1) — is made after the client's message is read and before
+  anything is sealed for it, on whichever side admits. Refusals after message 6 are
+  close code 4403, one audited failure each, naming the reason; a peer that falls
+  silent is dropped by the same bound as before and audited as abandoned.
+- `joined` is sent only after the joiner has verified `admit` — the certificate under
+  the public half of `cluster_key`, that half against the `cluster_pub` it was sent when
+  the node admits, `cert.node_id` its own — and adopted the cluster. The admitter closes
+  with code 1000 once it has written the row.
+
+The cluster private key crosses a network here and nowhere else, under `K_pair`, to a
+peer that has proven its key and passed the registry check (§2.3.3).
 
 ### 7.5 Constraints
 
@@ -1043,9 +1178,14 @@ only:
 - `/api/v1/health` and `/api/v1/manifest`;
 - `/ws/pair` and `/ws`.
 
-Everything else is 403. A loopback request with a loopback `Host`, and a call made
-in-process, are the node's owner and see every route with no session. A transport §8.2
-exempts serves as it did before the channel existed.
+Everything else is 403. A request from **this machine** — a loopback peer, or a peer
+address that is one of the node's own interface addresses — whose `Host`, when present,
+names this machine the same way, and a call made in-process, are the node's owner and
+see every route with no session. The `Host` rule is what defeats a browser resolving an
+attacker's name to this machine: such a request connects from here and names the
+attacker's domain. A transport §8.2 exempts serves as it did before the channel existed.
+A node in the expired or revoked state (§2.3.1, §2.3.4) answers its owner this way and
+nobody else.
 
 ---
 
@@ -1099,16 +1239,18 @@ internal link MUST go through `url()` or `pv.url()` rather than a literal path.
 |---|---|---|---|
 | GET | `/api/v1/health` | none | Liveness. Returns `{"v":1,"id":"..."}` only. |
 | GET | `/api/v1/manifest` | none | Node ID, display name, app index, `pair` flag (below). No data. |
-| POST | `/api/v1/pair` | owner | Open a pairing window: `{"ttl": seconds}` in; the code in both renderings, the URL and `expires_at` out (§7.1, `spec/cli.md §8`) |
+| POST | `/api/v1/pair` | owner | Open a pairing window: `{"ttl": seconds, "node": false}` in, both optional; the code in both renderings, the URL, `expires_at` and `node` out (§7.1, `spec/cli.md §8`) |
 | GET | `/api/v1/pair` | owner | The open window, the same object — or `null` |
+| POST | `/api/v1/join` | owner | Join a cluster: `{"url": "http://host:port", "code": "<two words, or four labels>"}` in; the outcome — the cluster ID, the peer, which side joined — out, or the refusal by name (§2.3.1, `spec/cli.md §8`). Read as `application/json`, bounded as `/api/v1/pair`'s body is; the code never appears in a URL, a log or an error |
 | GET | `/ws/pair` | code | Pairing handshake |
 | GET | `/ws` | session | Encrypted application channel |
 | GET | `/api/v1/sync/heads?app=` | session | `{dev: hi_lam}` per device |
 | GET | `/api/v1/sync/pull?app=&dev=&after=` | session | NDJSON stream of raw event lines |
 | POST | `/api/v1/sync/push` | session | NDJSON body of raw event lines |
 
-`owner` is the node's own standing of §8.4 — a loopback request or an in-process call —
-the only caller that may open pairing; a session is refused whatever its device.
+`owner` is the node's own standing of §8.4 — a request from this machine or an
+in-process call — the only caller that may open pairing or join a cluster; a session is
+refused whatever its device.
 
 Unauthenticated endpoints MUST expose no application data of any kind. `/api/v1/manifest`
 returns app slugs and titles because discovery requires them; it MUST NOT return row

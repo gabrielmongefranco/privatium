@@ -102,6 +102,15 @@ hkdf        = { workspace = true }
 include_dir = { workspace = true }
 mdns-sd = { version = "0.21.1", default-features = false }
 qrcode = { version = "0.14.1", default-features = false }
+# The client side of `/ws/pair` when a node joins a cluster (spec/protocol.md §2.3.1):
+# `Node::join` dials the other node's socket. The same crate axum's `ws` feature already
+# compiles, with the same default features, so the graph gains no package.
+tokio-tungstenite = { workspace = true }
+# The owner's standing (spec/protocol.md §8.4) is a request from this machine: loopback,
+# or one of this machine's own interface addresses — a browser opened on the node's LAN
+# address from the node's own keyboard. The interface list is read here; the binary
+# already lists it for `--verbose`, so the graph gains no package.
+if-addrs = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

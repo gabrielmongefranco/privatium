@@ -60,7 +60,8 @@ express: a serial port, a scheduled job, a filesystem watcher, a non-HTTP protoc
 | `open_app` | Your own app, with no folder: its slug and its `schema.sql` text (§2.3) |
 | `append` / `append_batch` | One event, or a batch that lands whole or not at all, with `seq`/`lam`/`ts`/`dev` stamped by the node |
 | `query` / `subscribe` | Sandboxed SQLite reads with bound parameters, rows typed as `spec/data-api.md §1` types them; the app's event stream |
-| `serve_discovery` / `pair` | mDNS and UDP, started together (`spec/protocol.md §6.5`); `pair(ttl)` opens a pairing window and hands back the code in both renderings, the URL and the expiry (`§7`) — the device registry is what a completed pairing writes |
+| `serve_discovery` / `pair` | mDNS and UDP, started together (`spec/protocol.md §6.5`); `pair(ttl)` opens a pairing window for devices and `pair_node(ttl)` one for a node, each handing back the code in both renderings, the URL and the expiry (`§7`) — the device registry is what a completed pairing writes; `peers()` lists the cluster's other nodes discovery has seen and `strangers()` the rest (`§6.1`) |
+| `join(url, code)` | Join the cluster of the node at `url`, whose owner opened a window for a node and read out `code` (`spec/protocol.md §2.3.1`, `§7.4.2`): the node dials `<url>/ws/pair`, both sides prove their keys, and whichever side the exchange admits adopts the other's cluster — this node discards the cluster it founded only while it is disposable (`§2.3`), or is re-admitted to its own after its certificate expired. Answers which side joined, the cluster and the peer, or the refusal by name; refused while sync would be unsafe, and never over a session |
 | `start_sync` / `sync_now` | iroh + LAN peers |
 | `auth_layer` | Tower middleware enforcing session and grants. `core::handle` applies it itself, so every adapter gets it without doing anything (`docs/decisions/0003`); an embedder wraps their own router with it, as §2.3 shows, and the layer reads the peer from axum's `ConnectInfo`. A request whose peer it cannot see is refused, naming the missing call, so a router served without `into_make_service_with_connect_info` admits nobody rather than everybody; a call an embedder makes in-process inserts the `Peer` extension the framework's own adapter inserts |
 | `snapshot` / `restore` | Manual snapshot and three-tier restore |
@@ -73,12 +74,14 @@ would believe it was syncing.
 
 ## `Node`'s public methods at this version
 
-From every `impl Node` block under `crates/privatium-core/src/`. `pair(ttl)` opens a pairing window (`spec/protocol.md §7`); `serve_discovery` starts mDNS and the UDP responder together (`§6.5`) and `discovered` lists the nodes seen, by ID. `start_sync` and `sync_now` are present with their signatures and return `Error::Unimplemented` naming Phase 3 (`docs/roadmap.md`) — never `Ok`.
+From every `impl Node` block under `crates/privatium-core/src/`. `pair(ttl)` opens a pairing window for devices and `pair_node(ttl)` one for another node (`spec/protocol.md §7`); `join(url, code)` joins that node's cluster, or admits it, as `§2.3.1` decides; `serve_discovery` starts mDNS and the UDP responder together (`§6.5`), `discovered` lists the nodes seen, by ID, and `peers` and `strangers` split them by cluster (`§6.1`). `start_sync` and `sync_now` are present with their signatures and return `Error::Unimplemented` naming Phase 3 (`docs/roadmap.md`) — never `Ok`.
 
 ```rust
 pub fn open(data_dir: impl Into<PathBuf>) -> Result<Self>
 pub fn open_with(data_dir: Option<&Path>, config: Option<&Path>) -> Result<Self>
 pub fn open_holding(lock: DataLock) -> Result<Self>
+pub fn standing(&self, now: jiff::Timestamp) -> Result<Standing>
+pub fn node_revoked(&self, node: &str) -> Result<bool>
 pub fn flush(&mut self) -> Result<()>
 pub fn refresh(&mut self) -> Result<bool>
 pub fn snapshot(&mut self, app: &str) -> Result<Snapshot>
@@ -101,6 +104,9 @@ pub fn close(mut self) -> Result<()>
 pub fn serve_discovery(&mut self) -> Result<()>
 pub fn discovery_status(&self) -> Option<&discover::Status>
 pub fn discovered(&self) -> Vec<discover::Discovered>
+pub fn absorb_discovered(&self, seen: discover::Discovered) -> bool
+pub fn peers(&self) -> Vec<discover::Discovered>
+pub fn strangers(&self) -> Vec<discover::Discovered>
 pub fn discovery_facts(&self) -> Result<discover::Facts>
 pub fn publish_facts(&self) -> Result<()>
 pub fn start_sync(&mut self) -> Result<()>
@@ -129,8 +135,13 @@ pub fn subscribe(&self, slug: &str) -> Result<broadcast::Receiver<StreamEvent>>
 pub fn setting_value(&self, key: &str) -> Result<Option<String>>
 pub fn audit_lua_limit(&mut self, slug: &str, detail: &str) -> Result<()>
 pub fn refresh_app(&mut self, slug: &str) -> Result<bool>
+pub fn join(&mut self, url: &str, code: Code) -> Result<Joined>
+pub fn join_start_at( &mut self, url: &str, code: Code, hello: &str, now: jiff::Timestamp, ) -> Result<(JoinClient, String)>
+pub fn join_apply_at(&mut self, outcome: JoinOutcome, now: jiff::Timestamp) -> Result<Joined>
 pub fn pair(&mut self, ttl: Duration) -> Result<PairingSnapshot>
 pub fn pair_at(&mut self, ttl: Duration, now: jiff::Timestamp) -> Result<PairingSnapshot>
+pub fn pair_node(&mut self, ttl: Duration) -> Result<PairingSnapshot>
+pub fn pair_node_at(&mut self, ttl: Duration, now: jiff::Timestamp) -> Result<PairingSnapshot>
 pub fn pairing(&self) -> Option<&Pairing>
 pub fn pairing_open(&self, now: jiff::Timestamp) -> bool
 pub fn refresh_pairing(&mut self, now: jiff::Timestamp) -> Result<Option<PairingSnapshot>>
@@ -139,7 +150,16 @@ pub fn pairing_hello(&self, now: jiff::Timestamp) -> String
 pub fn pairing_begin( &mut self, source: IpAddr, now: jiff::Timestamp, text: &str, ) -> Result<(Exchange, String)>
 pub fn pairing_begin_with( &mut self, source: IpAddr, now: jiff::Timestamp, text: &str, secret: &[u8; 64], ) -> Result<(Exchange, String)>
 pub fn pairing_confirm( &mut self, exchange: Exchange, text: &str, now: jiff::Timestamp, ) -> Result<(Sealed, Vec<u8>)>
-pub fn pairing_finish( &mut self, sealed: Sealed, ciphertext: &[u8], now: jiff::Timestamp, ) -> Result<Paired>
+pub fn flags(&self, now: jiff::Timestamp) -> Result<Flags>
+pub fn pairing_finish( &mut self, sealed: Sealed, ciphertext: &[u8], now: jiff::Timestamp, ) -> Result<PairOutcome>
+pub fn pairing_admit( &mut self, admission: Admission, now: jiff::Timestamp, ) -> Result<(AdmitPending, Vec<u8>)>
+pub fn pairing_admitted( &mut self, pending: AdmitPending, ciphertext: &[u8], now: jiff::Timestamp, ) -> Result<Paired>
+pub fn pairing_adopt( &mut self, admission: Admission, ciphertext: &[u8], now: jiff::Timestamp, ) -> Result<(Joined, Vec<u8>)>
+pub fn is_disposable(&self) -> Result<bool>
+pub fn renew_certificate_if_due(&mut self, now: jiff::Timestamp) -> Result<bool>
+pub fn revoke_node( &mut self, node: &str, reason: Option<&str>, now: jiff::Timestamp, ) -> Result<()>
+pub fn peer_hints(&self) -> Vec<PeerHint>
+pub fn device_is_node(&self, device: &str) -> Result<bool>
 pub fn pairing_abandon(&mut self, device: &str, source: IpAddr) -> Result<()>
 pub fn listen_url(&self) -> String
 pub fn set_display_name(&mut self, name: &str) -> Result<()>

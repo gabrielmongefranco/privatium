@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/sys.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-06
+// Created:  2026-09-01  |  Modified: 2026-09-07
 // Summary:  Public node and cluster records, device and app registries, snapshot facts, and
 //           audit kinds, written through the same event log apps use
 //           (spec/data-dictionary.md §3). See main README.md for full license information.
@@ -23,11 +23,35 @@ pub const NODE: &str = "sys_node";
 /// `sys_cluster`, one public cluster identity (`spec/data-dictionary.md §3.1b`).
 pub const CLUSTER: &str = "sys_cluster";
 
+/// `sys_node_revocation`, one row per revoked node (`spec/data-dictionary.md §3.1c`).
+pub const REVOCATION: &str = "sys_node_revocation";
+
 /// A node founded a cluster (`spec/data-dictionary.md §3.10`).
 pub const KIND_CLUSTER_CREATED: &str = "cluster.created";
 
 /// An unexpired node certificate was renewed (`spec/protocol.md §2.3.1`).
 pub const KIND_CERT_RENEWED: &str = "cert.renewed";
+
+/// A node's certificate has expired: its own, once, or a peer's it refused
+/// (`spec/protocol.md §2.3.1`). Warn.
+pub const KIND_CERT_EXPIRED: &str = "cert.expired";
+
+/// A node was admitted to the cluster, written by the admitter once the joiner answered
+/// `joined` (`spec/protocol.md §2.3.1`). Alert.
+pub const KIND_NODE_ADMITTED: &str = "node.admitted";
+
+/// A node was revoked (`spec/protocol.md §2.3.4`), or found itself revoked. Alert.
+pub const KIND_NODE_REVOKED: &str = "node.revoked";
+
+/// The `d` of a `sys_node_revocation` row (`spec/data-dictionary.md §3.1c`); `id` is the
+/// envelope's and is the revoked node's ID.
+#[derive(Debug, Serialize)]
+pub(crate) struct RevocationRow<'a> {
+    pub revoked_at: &'a str,
+    pub revoked_by: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<&'a str>,
+}
 
 /// What `serve_discovery` started, per mechanism, and the port it advertises
 /// (`spec/protocol.md §6.5`, `spec/data-dictionary.md §3.10`). Info.
@@ -119,9 +143,9 @@ pub const KIND_LUA_LIMIT_EXCEEDED: &str = "lua.limit_exceeded";
 /// doing.
 const ACTOR_SYSTEM: &str = "system";
 
-/// `§3.10`'s three severities. Only `key.mismatch`, `node.admitted`, `cluster.rotated`, and
-/// `restore.tier3` MUST be `alert`; inflating anything else would train the owner to ignore
-/// alerts.
+/// `§3.10`'s three severities. Only `key.mismatch`, `node.admitted`, `node.revoked`,
+/// `cluster.rotated`, and `restore.tier3` MUST be `alert`; inflating anything else would
+/// train the owner to ignore alerts.
 const SEVERITY_INFO: &str = "info";
 const SEVERITY_WARN: &str = "warn";
 const SEVERITY_ALERT: &str = "alert";
@@ -277,8 +301,8 @@ impl<'a> AuditRow<'a> {
         Self::system(at, kind, subject, detail, SEVERITY_INFO)
     }
 
-    /// An `alert` from the framework itself. `§3.10` reserves this for four kinds;
-    /// `restore.tier3` is the one this crate raises.
+    /// An `alert` from the framework itself. `§3.10` reserves this for five kinds;
+    /// `restore.tier3`, `node.admitted` and `node.revoked` are the ones this crate raises.
     pub(crate) fn alert(
         at: &'a str,
         kind: &'a str,

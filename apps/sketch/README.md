@@ -32,7 +32,8 @@ The framework provides:
 - **Storage** — every stroke is an append-only event in `data/sketch/log/<device>.jsonl`
 - **Backup** — copy `data/`, and every stroke you ever drew comes back
 - **Offline** — writes queue in an outbox, replay on reconnect
-- **Live updates** — a stroke drawn in one window reaches every other open window
+- **Live updates** — a stroke drawn in one window reaches every other open window, and
+  undo reverses the latest change to the shared canvas whichever window or device made it
 - **Authentication and encryption** — `pv.js` uses the paired browser's encrypted
   channel on the LAN; no credential code belongs in this app
 

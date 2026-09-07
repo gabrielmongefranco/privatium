@@ -1,7 +1,7 @@
 /*
  * Project:  Privatium™  |  File: apps/sketch/web/app.js
  * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
- * Created:  2026-08-28  |  Modified: 2026-09-06
+ * Created:  2026-08-28  |  Modified: 2026-09-07
  * Summary:  Drawing, controls and event replay. Plain ES modules — no build step, no
  *           framework, no SQL. The event log is used directly as a document store. A stroke
  *           holds the pointer's capture from down to up, so ending it off the canvas still
@@ -239,7 +239,7 @@ undo.onclick = async () => {
   try {
     const result = await history.undo();
     refresh();
-    say(result?.queued ? 'Offline — undo queued.' : 'Action undone.');
+    say(result?.queued ? 'Offline — undo queued.' : 'Change undone.');
   } catch (error) { say(error.message); }
 };
 document.getElementById('clear').onclick = async () => {
@@ -249,7 +249,7 @@ document.getElementById('clear').onclick = async () => {
     refresh();
     closePanels();
     pad.focus();
-    say(result?.queued ? 'Offline — new sketch queued.' : 'New sketch ready. Undo restores the previous drawing in this tab.');
+    say(result?.queued ? 'Offline — new sketch queued.' : 'New sketch ready. Undo restores the previous drawing.');
   } catch (error) { say(`Could not start a new sketch. ${error.message}`); }
 };
 // Render saved strokes on an opaque white surface; omit the keyboard crosshair.
@@ -283,9 +283,10 @@ document.getElementById('download').onclick = () => {
 };
 
 // ---- live updates --------------------------------------------------------
-// Every stroke drawn in another window on this node arrives here. Once nodes sync, so
-// does every stroke from a paired device, including ones that landed while this tab was
-// closed.
+// Every stroke drawn in another window on this node arrives here, and once nodes sync
+// so does every stroke from a paired device, including ones that landed while this tab
+// was closed. Each joins the undo history like a stroke drawn here: the canvas is
+// shared, so undo reverses the latest change to it whichever device made it.
 pv.subscribe(ev => {
   if (ev.tbl !== 'stroke') return;
   history.apply(ev);
@@ -296,16 +297,17 @@ pv.on('offline', () => say('Offline — your strokes are queued.'));
 pv.on('online',  () => say(''));
 
 // ---- boot ----------------------------------------------------------------
-// The log in order: a put is a stroke, a del takes it back. The same read serves a
-// resync, which is the node saying its cache was rebuilt underneath us.
+// The log in order: a put is a stroke, a del takes it back, and the last fifty changes
+// are what undo can reverse from the start. The same read serves a resync, which is
+// the node saying its cache was rebuilt underneath us.
 async function load() {
   strokes.clear();
   history.order.clear();
+  history.undoStack.length = 0;
   for await (const ev of pv.events({ tbl: 'stroke' })) {
     history.apply(ev);
   }
-  summarize();
-  redrawAll();
+  refresh();
 }
 pv.on('resync', load);
 await load();

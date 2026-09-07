@@ -155,7 +155,18 @@ fn test_spec_2_3_1_certificate_renews_under_ninety_days() {
     assert_eq!(renewed.cluster_id(), first.cluster_id());
     assert_eq!(renewed.id(), first.id());
     fs::write(dir.join("node.cert"), serde_json::to_vec(&cert).unwrap()).unwrap();
-    assert!(Identity::load_or_create_at(&dir, instant() + days(180)).is_err());
+    // At expiry the identity loads in the expired state and renews nothing
+    // (spec/protocol.md §2.3.1): re-admission needs a running node.
+    let expired = Identity::load_or_create_at(&dir, instant() + days(180)).unwrap();
+    assert!(expired.is_expired(instant() + days(180)));
+    assert!(!expired.is_expired(instant() + days(179)));
+    assert_eq!(expired.certificate(), &cert);
+    assert_eq!(
+        serde_json::from_slice::<Certificate>(&fs::read(dir.join("node.cert")).unwrap()).unwrap(),
+        cert
+    );
+    let mut expired = expired;
+    assert!(expired.renew(&dir, instant() + days(180)).is_err());
     assert_eq!(
         serde_json::from_slice::<Certificate>(&fs::read(dir.join("node.cert")).unwrap()).unwrap(),
         cert

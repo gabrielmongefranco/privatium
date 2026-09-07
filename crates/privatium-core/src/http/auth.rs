@@ -1,18 +1,21 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/auth.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-06
+// Created:  2026-09-03  |  Modified: 2026-09-07
 // Summary:  auth_layer (spec/app-contract.md §6) with its real signature — a tower::Layer —
-//           and the bootstrap policy of spec/protocol.md §8.4: loopback is this node, a
-//           channel is its paired device, and public routes carry no device. core::handle
-//           applies it, so every adapter gets it; an embedder wraps their own router with
-//           it (§2.3), where the peer is axum's ConnectInfo and a request with no peer at
-//           all is refused — the layer fails closed, never open.
-//           See main README.md for full license information.
+//           and the bootstrap policy of spec/protocol.md §8.4: a request from this
+//           machine is this node, a channel is its paired device, and public routes
+//           carry no device. core::handle applies it, so every adapter gets it; an
+//           embedder wraps their own router with it (§2.3), where the peer is axum's
+//           ConnectInfo and a request with no peer at all is refused — the layer fails
+//           closed, never open. See main README.md for full license information.
 
+use std::collections::BTreeSet;
 use std::future::Future;
 use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
+use std::sync::{Mutex, PoisonError};
 use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
 
 use axum::extract::ConnectInfo;
 use axum::http::StatusCode;
@@ -212,10 +215,13 @@ const NO_PEER: &str = "403 Forbidden — the request carries no peer address, so
 /// attaches (`spec/app-contract.md §2.3`). A request with neither is allowed only where
 /// `require_peer` is off — the layer over `handle`, whose in-process callers are this
 /// process — and refused everywhere else, naming the missing call. One with a peer is
-/// allowed only from a loopback address — and only with a `Host` header naming loopback,
-/// because a browser resolving an attacker's name to `127.0.0.1` (DNS rebinding) still
-/// connects from loopback, and the `Host` it sends is the one thing that gives the game
-/// away. An absent `Host` is allowed: HTTP/1.0 clients and custom schemes send none.
+/// allowed only from this machine — loopback, or one of its own interface addresses,
+/// which is where a browser opened on the node's LAN address from the node's own
+/// keyboard connects from — and only with a `Host` header naming this machine the same
+/// way, because a browser resolving an attacker's name to `127.0.0.1` (DNS rebinding)
+/// still connects from loopback, and the `Host` it sends is the one thing that gives
+/// the game away. An absent `Host` is allowed: HTTP/1.0 clients and custom schemes send
+/// none.
 fn check(request: &Request, require_peer: bool) -> Result<(), Box<Response>> {
     let extensions = request.extensions();
     let peer = extensions.get::<Peer>().map(|peer| peer.0).or_else(|| {
@@ -230,48 +236,110 @@ fn check(request: &Request, require_peer: bool) -> Result<(), Box<Response>> {
             Ok(())
         };
     };
-    if !addr.ip().is_loopback() {
+    if !is_this_machine(addr.ip()) {
         return Err(Box::new(headers::text(StatusCode::FORBIDDEN, FORBIDDEN)));
     }
     if let Some(host) = request.headers().get(HOST) {
         let host = host.to_str().unwrap_or_default();
-        if !host_is_loopback(host) {
+        if !host_names_this_machine(host) {
             return Err(Box::new(headers::text(StatusCode::FORBIDDEN, FORBIDDEN)));
         }
     }
     Ok(())
 }
 
-/// Whether an HTTP `Host` value names this machine: `localhost`, `*.localhost`, an IPv4
-/// loopback address, or `[::1]`, each with an optional port.
+/// How long the interface list is trusted before it is read again: an address a cable
+/// or a Wi-Fi network just gave this machine is the owner's within this long.
+const INTERFACES_FOR: Duration = Duration::from_secs(5);
+
+/// Whether `ip` is one of this machine's own addresses (`spec/protocol.md §8.4`):
+/// loopback, or an address one of its interfaces holds. A connection with such a
+/// source completed a handshake with this machine's own stack, so it came from here.
+#[must_use]
+pub fn is_this_machine(ip: IpAddr) -> bool {
+    ip.is_loopback() || local_addresses().contains(&canonical(ip))
+}
+
+/// An IPv4-mapped IPv6 address compared as the IPv4 it maps, since a dual-stack
+/// listener reports peers that way.
+fn canonical(ip: IpAddr) -> IpAddr {
+    match ip {
+        IpAddr::V6(v6) => v6.to_ipv4_mapped().map_or(ip, IpAddr::V4),
+        IpAddr::V4(_) => ip,
+    }
+}
+
+/// This machine's interface addresses, read at most once per [`INTERFACES_FOR`]. An
+/// enumeration that fails yields the empty set — loopback alone — rather than a stale
+/// one, so an error never widens the owner's standing.
+fn local_addresses() -> BTreeSet<IpAddr> {
+    static CACHE: Mutex<Option<(Instant, BTreeSet<IpAddr>)>> = Mutex::new(None);
+    let mut cache = CACHE.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some((read_at, addresses)) = cache.as_ref()
+        && read_at.elapsed() < INTERFACES_FOR
+    {
+        return addresses.clone();
+    }
+    let addresses: BTreeSet<IpAddr> = if_addrs::get_if_addrs()
+        .map(|interfaces| {
+            interfaces
+                .into_iter()
+                .map(|interface| canonical(interface.ip()))
+                .filter(|ip| !ip.is_unspecified())
+                .collect()
+        })
+        .unwrap_or_default();
+    *cache = Some((Instant::now(), addresses.clone()));
+    addresses
+}
+
+/// Whether an HTTP `Host` value names this machine (`spec/protocol.md §8.4`):
+/// `localhost`, `*.localhost`, a loopback address, or one of this machine's own
+/// interface addresses, each with an optional port. A name that resolves here but is
+/// not one of these — an attacker's domain pointed at this machine — is refused.
+#[must_use]
+pub fn host_names_this_machine(host: &str) -> bool {
+    host_is_loopback(host)
+        || host_address(host).is_some_and(|ip| local_addresses().contains(&canonical(ip)))
+}
+
+/// Whether an HTTP `Host` value names this machine's loopback: `localhost`,
+/// `*.localhost`, an IPv4 loopback address, or `[::1]`, each with an optional port.
 #[must_use]
 pub fn host_is_loopback(host: &str) -> bool {
-    let name = if let Some(rest) = host.strip_prefix('[') {
-        // `[::1]` or `[::1]:8420`
-        let Some(end) = rest.find(']') else {
-            return false;
-        };
+    if let Some(ip) = host_address(host) {
+        return ip.is_loopback();
+    }
+    let name = host_name(host).to_ascii_lowercase();
+    name == "localhost" || name.ends_with(".localhost")
+}
+
+/// The name part of a `Host` value: the port stripped, brackets kept.
+fn host_name(host: &str) -> &str {
+    if host.starts_with('[') {
+        return host;
+    }
+    host.rsplit_once(':').map_or(host, |(name, port)| {
+        if port.bytes().all(|b| b.is_ascii_digit()) {
+            name
+        } else {
+            host
+        }
+    })
+}
+
+/// The IP address a `Host` value names, when it names one rather than a hostname:
+/// `192.0.2.5`, `192.0.2.5:8420`, `[::1]`, `[fd00::5]:8420`.
+fn host_address(host: &str) -> Option<IpAddr> {
+    if let Some(rest) = host.strip_prefix('[') {
+        let end = rest.find(']')?;
         let after = &rest[end + 1..];
         if !(after.is_empty() || after.starts_with(':')) {
-            return false;
+            return None;
         }
-        return rest[..end]
-            .parse::<IpAddr>()
-            .is_ok_and(|ip| ip.is_loopback());
-    } else {
-        host.rsplit_once(':').map_or(host, |(name, port)| {
-            if port.bytes().all(|b| b.is_ascii_digit()) {
-                name
-            } else {
-                host
-            }
-        })
-    };
-    let name = name.to_ascii_lowercase();
-    if name == "localhost" || name.ends_with(".localhost") {
-        return true;
+        return rest[..end].parse::<IpAddr>().ok();
     }
-    name.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback())
+    host_name(host).parse::<IpAddr>().ok()
 }
 
 #[cfg(test)]

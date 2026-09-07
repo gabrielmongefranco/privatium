@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/app-contract.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-06
+Modified: 2026-09-07
 Summary:  NORMATIVE. What an app is, the three tiers of app, and the three deployment modes.
           The declarative tier is one option, not the model.
           See main README.md for full license information.
@@ -443,7 +443,8 @@ express: a serial port, a scheduled job, a filesystem watcher, a non-HTTP protoc
 | `open_app` | Your own app, with no folder: its slug and its `schema.sql` text (§2.3) |
 | `append` / `append_batch` | One event, or a batch that lands whole or not at all, with `seq`/`lam`/`ts`/`dev` stamped by the node |
 | `query` / `subscribe` | Sandboxed SQLite reads with bound parameters, rows typed as `spec/data-api.md §1` types them; the app's event stream |
-| `serve_discovery` / `pair` | mDNS and UDP, started together (`spec/protocol.md §6.5`); `pair(ttl)` opens a pairing window and hands back the code in both renderings, the URL and the expiry (`§7`) — the device registry is what a completed pairing writes |
+| `serve_discovery` / `pair` | mDNS and UDP, started together (`spec/protocol.md §6.5`); `pair(ttl)` opens a pairing window for devices and `pair_node(ttl)` one for a node, each handing back the code in both renderings, the URL and the expiry (`§7`) — the device registry is what a completed pairing writes; `peers()` lists the cluster's other nodes discovery has seen and `strangers()` the rest (`§6.1`) |
+| `join(url, code)` | Join the cluster of the node at `url`, whose owner opened a window for a node and read out `code` (`spec/protocol.md §2.3.1`, `§7.4.2`): the node dials `<url>/ws/pair`, both sides prove their keys, and whichever side the exchange admits adopts the other's cluster — this node discards the cluster it founded only while it is disposable (`§2.3`), or is re-admitted to its own after its certificate expired. Answers which side joined, the cluster and the peer, or the refusal by name; refused while sync would be unsafe, and never over a session |
 | `start_sync` / `sync_now` | iroh + LAN peers |
 | `auth_layer` | Tower middleware enforcing session and grants. `core::handle` applies it itself, so every adapter gets it without doing anything (`docs/decisions/0003`); an embedder wraps their own router with it, as §2.3 shows, and the layer reads the peer from axum's `ConnectInfo`. A request whose peer it cannot see is refused, naming the missing call, so a router served without `into_make_service_with_connect_info` admits nobody rather than everybody; a call an embedder makes in-process inserts the `Peer` extension the framework's own adapter inserts |
 | `snapshot` / `restore` | Manual snapshot and three-tier restore |

@@ -1,7 +1,7 @@
 <!--
   Project:  Privatium™  |  File: apps/sketch/web/index.html
   Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-  Created:  2026-08-28  |  Modified: 2026-09-06
+  Created:  2026-08-28  |  Modified: 2026-09-07
   Summary:  Tier 2 entry point. The framework serves this file verbatim at the app's mount
             point and injects nothing. No HTMX, no shell, no opinions. The swatches are
             classes, not style= attributes: the default CSP (spec/protocol.md §9.3) has no
@@ -35,7 +35,7 @@
     <div class="action-panel">
       <button id="download" type="button">Download PNG</button>
       <button id="clear" type="button">New sketch</button>
-      <p>New sketch clears the shared canvas. Undo restores it in this tab.</p>
+      <p>New sketch clears the shared canvas. Undo restores it.</p>
     </div>
   </details>
   </nav>
@@ -93,7 +93,7 @@
     <p>Draw on the canvas with a mouse or one finger. Choose a color above.</p>
     <p>Use Color to open the color picker, or enter a hex color such as #008080. Choose Eraser to paint with white ink, or Stroke eraser, then tap a stroke to remove it entirely. From the keyboard, move the pen onto a stroke and press Space or Enter. Choose a color to draw again.</p>
     <p id="keys">Arrow keys move the pen, Shift moves it farther. Space or Enter puts the pen down and lifts it. Escape discards the stroke in progress.</p>
-    <p>Undo reverses up to 50 actions from this tab until you reload. Sketch actions offers Download PNG and New sketch. Download before starting over if you want a separate copy.</p>
+    <p>Undo reverses the latest change to the shared canvas, whichever window or device made it, up to 50 changes back. Sketch actions offers Download PNG and New sketch. Download before starting over if you want a separate copy.</p>
   </details>
 </footer>
 

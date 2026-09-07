@@ -43,9 +43,17 @@ The Windows one is hidden by default; paste the path into the Explorer address b
 
 The first start creates both keys, including when you upgrade a folder made by an earlier
 build. Each start renews the node certificate if it is still valid and fewer than ninety
-days remain. At expiry, startup refuses renewal and requires node re-admission. Admission
-is not built yet; this build cannot perform it. Ordinary data backups never include either
-private key.
+days remain. A node that joins another node's cluster (`docs/deployment.md §3`) replaces
+its `cluster.key`, `cluster.pub` and `node.cert` with that cluster's, in one swap a
+crash cannot leave half done; its `node.key` never changes. Ordinary data backups never
+include either private key.
+
+**An expired certificate.** A node off for more than 180 days starts anyway, for you
+alone: it serves this computer, answers no phone and no other node, and says so on its
+Space settings page and when it starts. The way back is to re-admit it to its own
+cluster — run `privatium pair --node` on another node of the cluster and
+`privatium pair --join` on this one, or the other way round — which keeps its identity,
+its data and its devices and issues a fresh certificate.
 
 Restoring `data/` preserves records of the original nodes and clusters. Your keys in
 `identity/` determine which node and cluster this installation uses. Other records can
@@ -82,8 +90,10 @@ because Privatium keeps nothing important in a database file.
 
 With a valid copy of `identity/`, you keep your original node and cluster identity.
 Without it, you get a new node and cluster; the original cluster may still be running
-elsewhere. Restore leaves its records intact. Joining a surviving node's cluster is
-not built yet and requires admission; restoring its records does not perform it.
+elsewhere. Restore leaves its records intact and does not make this installation a
+member. To join a surviving node's cluster, admit the rebuilt node as you would a new
+one (`docs/deployment.md §3`): the rows another node wrote do not stop a fresh identity
+from joining, and once it has joined, the restored data and the cluster's are one.
 
 It rebuilds everything — database, snapshots, views — from the text files. Depending on
 history size this takes seconds.

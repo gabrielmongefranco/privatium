@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium/tests/channel.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-06
+// Created:  2026-09-05  |  Modified: 2026-09-07
 // Summary:  Actual WebSocket pairing, authenticated routing, streaming and refusal (§8);
 //           the owner-only acts a session is refused (§9.2), the session device an app
 //           sees, and the refusal a paired client makes of a re-keyed node (§8.1).
@@ -668,6 +668,9 @@ async fn test_spec_9_2_pair_route_refuses_a_session() {
         ("POST", "/settings/name"),
         ("POST", "/settings/devices/b3nn8t2q/revoke"),
         ("POST", "/settings/devices/b3nn8t2q/label"),
+        ("POST", "/api/v1/join"),
+        ("POST", "/settings/join"),
+        ("POST", "/settings/devices/admit"),
     ] {
         let id = c.request(method, path, "{\"ttl\":120}").await;
         let (status, body) = c.response(id).await;
@@ -828,4 +831,83 @@ fn copy_dir(from: &Path, to: &Path) {
             std::fs::copy(entry.path(), target).unwrap();
         }
     }
+}
+
+/// `spec/protocol.md §2.3.1` — an expired node refuses every channel: `/ws` closes with
+/// 4403 before the hello is read, `/ws/pair` answers a device with `open: false` since
+/// no device window can open, and the manifest says `pair: false`; the owner's own
+/// requests are answered as before.
+#[tokio::test]
+async fn test_spec_2_3_1_an_expired_node_refuses_every_channel_over_a_socket() {
+    let root = tempfile::tempdir().unwrap();
+    {
+        let node = Node::open(root.path()).unwrap();
+        let cert = node
+            .identity()
+            .sign_certificate(
+                &node.identity().verifying_key(),
+                jiff::Timestamp::now() - jiff::SignedDuration::from_secs(181 * 86_400),
+            )
+            .unwrap();
+        let path = node.paths().identity_dir().join("node.cert");
+        drop(node);
+        std::fs::write(path, serde_json::to_vec(&cert).unwrap()).unwrap();
+    }
+    let f = Fixture::with_apps(root, None).await;
+    assert_eq!(
+        f.handler
+            .node()
+            .lock()
+            .unwrap()
+            .standing(jiff::Timestamp::now())
+            .unwrap(),
+        privatium_core::Standing::Expired
+    );
+    let mut ws = f.socket("/ws").await;
+    assert!(
+        matches!(next(&mut ws).await, Message::Close(Some(c)) if c.code == 4403.into() && c.reason.contains("re-admitted")),
+        "refused before the hello"
+    );
+    assert!(
+        f.handler
+            .node()
+            .lock()
+            .unwrap()
+            .pair(Duration::from_secs(120))
+            .is_err(),
+        "no window for devices"
+    );
+    let mut pair = f.socket("/ws/pair").await;
+    let hello: serde_json::Value =
+        serde_json::from_str(&next(&mut pair).await.into_text().unwrap()).unwrap();
+    assert_eq!(hello["open"], false);
+    let manifest = f
+        .handler
+        .handle(owner_request("GET", "/api/v1/manifest", ""))
+        .await;
+    let body = axum::body::to_bytes(manifest.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let manifest: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(manifest["pair"], false);
+    let page = f
+        .handler
+        .handle(owner_request("GET", "/settings", ""))
+        .await;
+    assert_eq!(page.status(), 200);
+    let body = axum::body::to_bytes(page.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    assert!(String::from_utf8_lossy(&body).contains("expired"));
+}
+
+/// An in-process request with the owner's standing: no peer, no session.
+fn owner_request(method: &str, path: &str, body: &str) -> Request {
+    axum::http::Request::builder()
+        .method(method)
+        .uri(path)
+        .header("host", "127.0.0.1:8420")
+        .header("accept", "text/html, application/json")
+        .body(axum::body::Body::from(body.to_owned()))
+        .unwrap()
 }

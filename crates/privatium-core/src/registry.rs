@@ -35,7 +35,7 @@ pub const KIND_DEVICE_REVOKED: &str = "device.revoked";
 pub const KIND_CONFIG_CHANGED: &str = "config.changed";
 
 /// A row's `d` as the log holds it: every key, known or not, as raw JSON text.
-type Row = BTreeMap<String, Box<RawValue>>;
+pub(crate) type Row = BTreeMap<String, Box<RawValue>>;
 
 /// Owner-typed text cut to what a column may hold: control characters dropped,
 /// whitespace trimmed, at most `max` characters. `None` when nothing is left.
@@ -224,7 +224,7 @@ impl Node {
     }
 
     /// The winning `d` of `table`/`id` as the log holds it, every key kept.
-    fn sys_row(&self, table: &str, id: &str) -> Result<Option<Row>> {
+    pub(crate) fn sys_row(&self, table: &str, id: &str) -> Result<Option<Row>> {
         let events = read_log(self.sys_log().log_dir(), sys::SLUG, &store::cutoff_now())
             .map_err(|error| Error::Store(Box::new(error)))?;
         winners(&events)
@@ -239,7 +239,7 @@ impl Node {
     /// Put the row as it stands with `edit` applied, or nothing when `edit` changed
     /// nothing. Returns whether an event was appended. A row the log does not hold is
     /// [`Error::DeviceUnknown`] for `sys_device` and [`Error::IdentityRow`] otherwise.
-    fn amend_sys_row(
+    pub(crate) fn amend_sys_row(
         &mut self,
         table: &str,
         id: &str,

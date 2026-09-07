@@ -574,10 +574,13 @@ fn rust_api(root: &Path) -> Result<String> {
     Ok(format!(
         "# `privatium-core` as a library\n\n{}\n{}\n## `Node`'s public methods at this version\n\n\
          From every `impl Node` block under `crates/privatium-core/src/`. `pair(ttl)` opens a \
-         pairing window (`spec/protocol.md §7`); `serve_discovery` starts mDNS and the UDP \
-         responder together (`§6.5`) and `discovered` lists the nodes seen, by ID. \
-         `start_sync` and `sync_now` are present with their signatures and return \
-         `Error::Unimplemented` naming Phase 3 (`docs/roadmap.md`) — never `Ok`.\n\n```rust\n{list}```\n",
+         pairing window for devices and `pair_node(ttl)` one for another node \
+         (`spec/protocol.md §7`); `join(url, code)` joins that node's cluster, or admits it, \
+         as `§2.3.1` decides; `serve_discovery` starts mDNS and the UDP responder together \
+         (`§6.5`), `discovered` lists the nodes seen, by ID, and `peers` and `strangers` split \
+         them by cluster (`§6.1`). `start_sync` and `sync_now` are present with their \
+         signatures and return `Error::Unimplemented` naming Phase 3 (`docs/roadmap.md`) — \
+         never `Ok`.\n\n```rust\n{list}```\n",
         section(root, "spec/app-contract.md", "2.3")?,
         section(root, "spec/app-contract.md", "6")?
     ))

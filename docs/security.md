@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/security.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-06
+Modified: 2026-09-07
 Summary:  Threat model, protections, and honest statements of what is not protected.
           See main README.md for full license information.
 -->
@@ -14,8 +14,10 @@ Non-normative narrative. Normative requirements live in `spec/protocol.md §7–
 
 **Current build:** the node provides live pairing at `/ws/pair` and the encrypted
 application channel at `/ws`. The node binds IPv4 on every interface and IPv6 where
-available. Unpaired LAN browsers receive only the bootstrap set; loopback keeps the
-owner's existing access. The node advertises itself over mDNS and answers UDP probes
+available. Unpaired LAN browsers receive only the bootstrap set; a request from the
+node's own machine — loopback, or the node's own LAN address opened from its keyboard —
+keeps the owner's existing access, held to a `Host` header that names the machine the
+same way (`spec/protocol.md §8.4`). The node advertises itself over mDNS and answers UDP probes
 (`spec/protocol.md §6`); what it advertises is its public identity and app slugs, never
 data. What it hears back is checked before it is listed — an ID that is not shaped as
 one is dropped, a name is cut to length — and the UDP responder answers a bounded number
@@ -283,6 +285,25 @@ revocation is immediate on any node that has received the event.
 
 Revocation is not a delete. The record of what was paired and when survives permanently —
 that history is a security feature.
+
+**Revoking a node** (`spec/protocol.md §2.3.4`) is the same button on the devices page,
+on a row whose kind is a space. It marks the node's device row revoked and writes a
+`sys_node_revocation` row beside it, both of which replicate; every node that holds them
+refuses that node's channels and never admits its key again. The revoked node itself,
+once the row reaches it, stops syncing, refuses every channel, and tells its owner; to
+use that machine again, stop it, delete its `identity/` folder, start it, and admit it as
+a new space. A phone or a browser that never syncs keeps trusting the revoked node's
+certificate until that certificate expires, at most 180 days; an owner who needs a hard
+cut rotates the cluster.
+
+**Rotating the cluster** (`spec/protocol.md §2.3.5`) is a procedure, not a command. On
+each node you keep: stop it, delete `identity/cluster.key`, `identity/cluster.pub` and
+`identity/node.cert`, and start it again. Each now stands alone in a fresh cluster.
+Admit them to one another as `docs/deployment.md §3` describes — a window on one, `pair
+--join` from each other. Then, on the devices page, revoke every device row the old
+cluster had — phones, browsers and nodes alike — because a row's keys are accepted by
+every node that holds the row, whatever cluster it was paired into, and a node cannot
+tell an old cluster's row from a new one on its own. Pair the devices again.
 
 There is no key rotation in `pv/1` (`spec/protocol.md §2.3`). A compromised *node* key
 means re-initializing the node and re-pairing every device. This is a known gap.

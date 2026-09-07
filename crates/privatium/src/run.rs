@@ -96,6 +96,20 @@ pub fn run(global: &Global, options: Options) -> Result<u8> {
                     node.paths().root().display(),
                     node.paths().source().describe()
                 );
+                // An expired or revoked node serves its owner alone (spec/protocol.md
+                // §2.3.1, §2.3.4); said here as well as on the settings page.
+                match node.standing(jiff::Timestamp::now()) {
+                    Ok(privatium_core::Standing::Expired) => eprintln!(
+                        "privatium: this space's certificate has expired; it serves this computer \
+                         alone until it is re-admitted with `privatium pair --join` \
+                         (spec/protocol.md §2.3.1)"
+                    ),
+                    Ok(privatium_core::Standing::Revoked) => eprintln!(
+                        "privatium: this space was revoked from its cluster; it serves this computer \
+                         alone, and a fresh identity is needed to join again (spec/protocol.md §2.3.4)"
+                    ),
+                    _ => {}
+                }
             }
             if global.verbose {
                 match adapter::other_urls(addr.port()) {
