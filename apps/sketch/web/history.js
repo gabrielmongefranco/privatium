@@ -41,7 +41,15 @@ export class SketchHistory {
     this.undoStack = [];
     this.redoStack = [];
     this.busy = false;
+    // The events of the write currently in flight. The node publishes an append to the
+    // stream and answers the request that made it, in no fixed order, so a tab's own
+    // write can arrive back before the call that wrote it has returned. Counting that
+    // echo as a change of its own remembers every mark twice and leaves the second undo
+    // refusing, because by then the stack's next entry describes a mark that is gone.
+    this.inflight = new Set();
   }
+  /** A row and the operation on it: what makes an echo recognisable as our own. */
+  static key(ev) { return `${ev.tbl}/${ev.id}/${ev.op}`; }
   /**
    * Apply an event from replay, subscription or a successful local write, and remember
    * how to reverse it. An event that changes nothing — this tab's own write echoed back
@@ -49,6 +57,7 @@ export class SketchHistory {
    * share one `ts` and one `dev` were written as one batch and are undone as one.
    */
   apply(ev, remember = true) {
+    if (this.inflight.has(SketchHistory.key(ev))) remember = false;
     const before = this.strokes.has(ev.id) ? this.strokes.get(ev.id) : undefined;
     if (ev.op === 'del') {
       if (before === undefined) return;
@@ -95,12 +104,21 @@ export class SketchHistory {
       : {op:'del', tbl:'stroke', id:ev.id});
     this.busy = true;
     try {
-      const result = await this.write(events);
-      events.forEach(ev => this.apply(ev, false));
-      this.redoStack.length = 0;
-      this.remember({events, inverse, batch:null});
-      return result;
+      return await this.writing(events, async () => {
+        const result = await this.write(events);
+        events.forEach(ev => this.apply(ev, false));
+        this.redoStack.length = 0;
+        this.remember({events, inverse, batch:null});
+        return result;
+      });
     } finally { this.busy = false; }
+  }
+  /** Run a write with its events marked as ours, so the stream's echo of them is applied
+   *  but not remembered, whichever of the two arrives first. */
+  async writing(events, run) {
+    const keys = events.map(ev => SketchHistory.key(ev));
+    for (const key of keys) this.inflight.add(key);
+    try { return await run(); } finally { for (const key of keys) this.inflight.delete(key); }
   }
   /**
    * Write one direction of a remembered action. A put whose row is currently a tombstone
@@ -117,8 +135,11 @@ export class SketchHistory {
       restored.set(ev.id, replacement);
       return replacement;
     });
-    const result = await this.write(events);
-    events.forEach(ev => this.apply(ev, false));
+    const result = await this.writing(events, async () => {
+      const out = await this.write(events);
+      events.forEach(ev => this.apply(ev, false));
+      return out;
+    });
     if (restored.size) {
       for (const entry of [...this.undoStack, ...this.redoStack]) {
         for (const list of [entry.events, entry.inverse]) {

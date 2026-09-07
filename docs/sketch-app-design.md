@@ -92,7 +92,7 @@ scroll at all.
 **Top bar**, a single row. Its left half follows the tool selected in the rail:
 
 - Four quick tools — Select, Brush, Eraser, and a fourth slot showing whichever other
-  tool was last chosen, Pan included.
+  tool was last chosen, Pan included. Each is a **split button**: see below.
 - Then, for the tools that lay ink down, the colour row and the custom-colour circle.
 - For the four that do not — Eraser, Eyedropper, Select, Pan — one line of explanation
   instead.
@@ -122,6 +122,33 @@ Below 820 pixels the rail becomes a horizontal strip *below* the stage
 into four columns, and the rail heading is taken off the screen but left in the
 accessibility tree, since it is the page's only `<h1>`. Every control keeps its 44-pixel
 minimum.
+
+### The quick tools are split buttons
+
+A quick tool that has settings carries a small caret in its bottom-right corner. The
+button chooses the tool; the caret opens that tool's own options as a menu, so a size or a
+selection mode is one press away without going to the rail.
+
+Four ways in, because a long press alone would be a gesture with no alternative:
+
+| | |
+|---|---|
+| The caret | A control of its own, 24 × 24, reachable by tab and by a single tap. |
+| Long press | 450 ms on the tool itself. The click that ends it does not also choose the tool. |
+| Right click | On the tool itself. |
+| `ArrowDown` or `Shift+F10` | With the tool focused. |
+
+The menu is `role="menu"` with `role="menuitemradio"` items carrying `aria-checked`, and
+`aria-haspopup="menu"` and `aria-expanded` on the caret. Up and down move through it, Home
+and End jump, Enter applies, Escape closes it and returns focus to the tool. While it is
+open it takes the keyboard, so a tool letter does not fire underneath it.
+
+What each tool offers is the same set the rail shows: the four sizes for anything with a
+width, the three line styles as well for Line, Rectangle and Ellipse, and the two modes
+for Select. A tool with no settings — Fill, Eyedropper, Pan — has no caret at all.
+Choosing an option also selects the tool the menu belongs to, which is what a split button
+means. **Every option in a menu is also a full-size button in the rail**, so nothing is
+reachable only this way.
 
 ### The custom colour dialog
 
@@ -289,8 +316,15 @@ line style; Text becomes `text`. A blended mark is wrapped in a group with
 `mix-blend-mode: multiply`, which composites the group as a unit and so matches the
 canvas.
 
-Fill events are the one thing that cannot be expressed — they are pixels, not shapes — so
-they are left out and the count is reported in `#status`.
+A fill **anchored to a rectangle or an ellipse** is written as that shape's own area — the
+same geometry, filled, with no outline of its own, inset by half the outline's width
+because that is where the flood actually stops. It is emitted at the fill's own place in
+painting order, so it lands over the outline exactly as it does on the canvas. Without
+this a filled shape exported as a hollow one.
+
+A fill **on the open page** is a region of pixels with no shape behind it and cannot be
+expressed, so it is left out and the count is reported in `#status`. A fill anchored to a
+line is the same case: a line encloses nothing.
 
 ### Undo, and the batch ceiling
 
@@ -298,6 +332,13 @@ Undo works over the shared canvas, not over this tab's own writes. Every change 
 sees — its own, another window's, another device's, and the log replayed at load — joins
 one history in arrival order, and undo reverses the latest, bounded to 50 changes. A batch
 written as one act is undone as one. Redo puts back what undo reversed.
+
+**A tab's own write reaches it twice.** The node publishes an append to the stream and
+answers the request that made it, in no fixed order, so the echo can arrive before the
+call that wrote it returns. The history holds the events of the write in flight and
+applies their echo without remembering it. Counting the echo as a change of its own
+remembers every mark twice, and the second undo then refuses forever — the stack's next
+entry describes a mark the first undo already removed.
 
 Restoring a deleted mark writes compensating events under a fresh id carrying the original
 `layer`, and re-points every reference held elsewhere: the other entries in both stacks,

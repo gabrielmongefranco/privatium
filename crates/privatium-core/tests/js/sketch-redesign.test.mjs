@@ -274,17 +274,17 @@ test('the app\'s own control boundary clears 3:1 on every surface it is drawn ag
 });
 
 // ---- the SVG the clipboard and the export write ------------------------------------------
-test('every kind of mark reaches SVG, and a fill is reported rather than guessed at', () => {
+test('every kind of mark reaches SVG, and a bare fill is reported rather than guessed at', () => {
   const { text: svg, skipped } = toSvg([
-    freehand,
-    { ...freehand, points: [[0, 0], [50, 50], [100, 0]] },
-    rect,
-    { kind: 'line', a: { x: 0, y: 0 }, b: { x: 10, y: 10 }, color: '#E63946', width: 4, dash: 'dashed' },
-    { kind: 'ellipse', a: { x: 0, y: 0 }, b: { x: 40, y: 20 }, color: '#457B9D', width: 2 },
-    text,
-    { kind: 'fill', x: 5, y: 5, color: '#FFB703' }
+    ['a', freehand],
+    ['b', { ...freehand, points: [[0, 0], [50, 50], [100, 0]] }],
+    ['c', rect],
+    ['d', { kind: 'line', a: { x: 0, y: 0 }, b: { x: 10, y: 10 }, color: '#E63946', width: 4, dash: 'dashed' }],
+    ['e', { kind: 'ellipse', a: { x: 0, y: 0 }, b: { x: 40, y: 20 }, color: '#457B9D', width: 2 }],
+    ['f', text],
+    ['g', { kind: 'fill', x: 5, y: 5, color: '#FFB703' }]
   ]);
-  assert.equal(skipped, 1, 'a fill is pixels, not a shape');
+  assert.equal(skipped, 1, 'a fill on the open page is pixels, not a shape');
   assert.match(svg, /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
   assert.match(svg, new RegExp(`width="${SHEET_W}" height="${SHEET_H}"`));
   for (const element of ['<path ', '<rect ', '<line ', '<ellipse ', '<text ']) {
@@ -295,37 +295,64 @@ test('every kind of mark reaches SVG, and a fill is reported rather than guessed
 });
 
 test('a translucent mark is exported as a group, which composites the way the canvas does', () => {
-  const { text: svg } = toSvg([{ ...freehand, blend: 'multiply' }]);
+  const { text: svg } = toSvg([['a', { ...freehand, blend: 'multiply' }]]);
   assert.match(svg, /<g style="mix-blend-mode:multiply">/);
   assert.match(svg, /<\/g>/);
 });
 
 test('a pressure stroke keeps its per-point widths, and an even one becomes one curve', () => {
-  const even = toSvg([{ points: [[0, 0], [10, 10], [20, 0], [30, 10]], color: '#000000', width: 6 }]).text;
+  const even = toSvg([['a', { points: [[0, 0], [10, 10], [20, 0], [30, 10]], color: '#000000', width: 6 }]]).text;
   assert.equal((even.match(/<path /g) || []).length, 1);
   assert.match(even, / Q /, 'curves through the midpoints, not a run of straight lines');
 
-  const varying = toSvg([{ points: [[0, 0, 2], [10, 10, 9], [20, 0, 14]], color: '#000000', width: 6 }]).text;
+  const varying = toSvg([['a', { points: [[0, 0, 2], [10, 10, 9], [20, 0, 14]], color: '#000000', width: 6 }]]).text;
   assert.equal((varying.match(/<line /g) || []).length, 2, 'a segment per pair, each at its own width');
   assert.match(varying, /stroke-width="5.5"/);
 });
 
 test('text in a mark is escaped, never emitted as markup', () => {
-  const { text: svg } = toSvg([{ ...text, text: '<script>alert(1)</script> & "more"' }]);
+  const { text: svg } = toSvg([['a', { ...text, text: '<script>alert(1)</script> & "more"' }]]);
   assert.ok(!svg.includes('<script>'), svg);
   assert.match(svg, /&lt;script&gt;alert\(1\)&lt;\/script&gt; &amp; /);
 });
 
 test('our own clipboard SVG is recognised by its stamp and nothing else is', () => {
   const stamp = 'sk' + (1234567890).toString(36);
-  const { text: mine } = toSvg([freehand], stamp);
+  const { text: mine } = toSvg([['a', freehand]], stamp);
   assert.equal(isOurs(mine, stamp), true);
   assert.equal(isOurs(mine, 'sk-other'), false, 'a different session is a foreign payload');
-  assert.equal(isOurs(toSvg([freehand]).text, stamp), false, 'an export carries no stamp');
+  assert.equal(isOurs(toSvg([['a', freehand]]).text, stamp), false, 'an export carries no stamp');
   for (const empty of [null, '', undefined]) {
     assert.equal(isOurs(empty, stamp), false);
     assert.equal(isOurs(mine, empty), false);
   }
+});
+
+test('a fill inside a shape is exported as that shape\'s own area, inset by the outline', () => {
+  // Only the outline reached the file before, so a filled shape came back hollow.
+  const shape = { kind: 'rect', a: { x: 100, y: 100 }, b: { x: 300, y: 200 }, color: '#000000', width: 6 };
+  const { text: svg, skipped } = toSvg([
+    ['shape', shape],
+    ['paint', { kind: 'fill', x: 200, y: 150, color: '#FFB703', anchor: 'shape', anchorAt: { x: 100, y: 100 } }]
+  ]);
+  assert.equal(skipped, 0, 'an anchored fill is expressible');
+  assert.match(svg, /<rect x="103" y="103" width="194" height="94" fill="#FFB703"\/>/);
+  // The outline is still there, and the fill is painted after it, as the log replays.
+  assert.ok(svg.indexOf('stroke="#000000"') < svg.indexOf('fill="#FFB703"'), svg);
+
+  const round = toSvg([
+    ['shape', { kind: 'ellipse', a: { x: 0, y: 0 }, b: { x: 100, y: 60 }, color: '#000000', width: 4 }],
+    ['paint', { kind: 'fill', x: 50, y: 30, color: '#457B9D', anchor: 'shape', anchorAt: { x: 0, y: 0 } }]
+  ]);
+  assert.match(round.text, /<ellipse cx="50" cy="30" rx="48" ry="28" fill="#457B9D"\/>/);
+
+  // A fill anchored to a line encloses nothing, and one whose shape is gone has no area.
+  const nothing = toSvg([
+    ['line', { kind: 'line', a: { x: 0, y: 0 }, b: { x: 9, y: 9 }, color: '#000000', width: 2 }],
+    ['p1', { kind: 'fill', x: 1, y: 1, color: '#FFB703', anchor: 'line', anchorAt: { x: 0, y: 0 } }],
+    ['p2', { kind: 'fill', x: 1, y: 1, color: '#FFB703', anchor: 'gone', anchorAt: { x: 0, y: 0 } }]
+  ]);
+  assert.equal(nothing.skipped, 2);
 });
 
 // ---- writing at the node's ceiling --------------------------------------------------------
@@ -432,4 +459,79 @@ test('a fill anchored to a restored shape follows it to its new id', async () =>
   assert.notEqual(fresh, 'shape');
   assert.equal(m.strokes.get('paint').anchor, fresh,
     'or the fill would silently stop drawing, since an unknown anchor is not painted');
+});
+
+// ---- a tab's own write, echoed back by the node --------------------------------------------
+/**
+ * The node publishes an append to the stream and answers the request that made it, in no
+ * fixed order, so a tab's own write can arrive back before the call that wrote it returns.
+ * A history that counts the echo as a change of its own remembers every mark twice, and
+ * the second undo then refuses forever: the stack's next entry describes a mark that the
+ * first undo already removed.
+ */
+function echoing({ early }) {
+  let minted = 0;
+  let clock = Date.parse('2026-09-07T12:00:00.000Z');
+  let history;
+  const written = [];
+  history = new SketchHistory(async events => {
+    const ts = new Date(clock).toISOString();
+    clock += 40;
+    const stamped = events.map(ev => ({ ...ev, ts, dev: 'k7m2q9xf' }));
+    written.push(stamped);
+    const echo = () => { for (const ev of stamped) history.apply(ev); };
+    if (early) queueMicrotask(echo);           // the stream wins the race
+    else setTimeout(echo, 0);                  // the response wins it
+    return { appended: events.length };
+  }, () => `fresh-${minted++}`);
+  return { history, written };
+}
+const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+
+for (const early of [true, false]) {
+  const when = early ? 'before the write returns' : 'after it';
+  test(`a mark is remembered once when the stream echoes it ${when}`, async () => {
+    const { history: m } = echoing({ early });
+    for (let i = 0; i < 5; i++) {
+      await m.change([put(`s${i}`)]);
+      await settle();
+    }
+    assert.equal(m.strokes.size, 5);
+    assert.equal(m.undoStack.length, 5, 'one entry per mark, not two');
+
+    for (let left = 4; left >= 0; left--) {
+      await m.undo();
+      await settle();
+      assert.equal(m.strokes.size, left, `undo down to ${left}`);
+    }
+    assert.equal(m.canUndo, false);
+    assert.equal(m.strokes.size, 0, 'every mark undone, not just the last');
+  });
+}
+
+test('the echo of a restoring write does not become an undo entry of its own', async () => {
+  const { history: m } = echoing({ early: true });
+  await m.change([put('shape')]);
+  await settle();
+  await m.change([{ op: 'del', tbl: 'stroke', id: 'shape' }]);
+  await settle();
+
+  await m.undo();                       // restores it under a fresh id
+  await settle();
+  assert.equal(m.strokes.size, 1);
+  assert.equal(m.undoStack.length, 1, 'the compensating write is not a change of its own');
+
+  await m.undo();                       // and the mark itself can still be taken back
+  await settle();
+  assert.equal(m.strokes.size, 0);
+});
+
+test('a change from another device is still remembered while our own write is in flight', async () => {
+  const { history: m } = echoing({ early: true });
+  const pending = m.change([put('mine')]);
+  m.apply({ ...put('theirs'), ts: '2026-09-07T12:00:00.000Z', dev: 'b3nn8t2q' });
+  await pending;
+  await settle();
+  assert.equal(m.strokes.size, 2);
+  assert.equal(m.undoStack.length, 2, "the other device's mark is a change like any other");
 });

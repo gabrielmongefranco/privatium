@@ -97,6 +97,14 @@ Ten: Select, Brush, Eraser, Eyedropper, Fill, Line, Rectangle, Ellipse, Text, Pa
 - Copy, cut and paste move marks within the sheet; copying also writes stamped SVG to the
   system clipboard, and a foreign SVG paste is read through a deliberately small subset
   (straight geometry only) which reports what it left out.
+- **SVG export** writes a fill anchored to a rectangle or an ellipse as that shape's own
+  area, inset by half the outline; a fill on the open page has no shape behind it, so it is
+  counted and left out. `toSvg` takes `[id, mark]` pairs because a fill has to find the
+  shape it belongs to.
+- **The four quick tools are split buttons**: the tool, and a corner caret that opens its
+  options. Long press, right click, `ArrowDown` and `Shift+F10` reach the same menu, but
+  the caret is a control of its own — a gesture never gets to be the only way in (WCAG
+  2.5.7), and every option in a menu is also a full-size button in the rail.
 
 ## Accessibility
 
@@ -139,7 +147,10 @@ A drawing is not a pointer-only or a sight-only thing here, and a change must ke
   dark tokens. High contrast is a toggle over `:root`, not a third stylesheet.
 
 Which controls are on show follows `data-tool` on `<body>`, in CSS. Keep it that way: the
-contextual toolbar then costs no JavaScript and cannot fall out of step with the tool.
+contextual toolbar then costs no JavaScript and cannot fall out of step with the tool. It
+does mean a delegated click handler must name the control — `closest('button[data-tool]')`,
+never `closest('[data-tool]')`, which matches `<body>` from anywhere on the page and
+re-chooses the current tool on every click of the sheet.
 
 Keep app navigation — Apps, undo, redo, contrast, the Sketch actions menu — in the top
 bar's own `<nav>`, separate from the drawing controls. New sketch clears the shared canvas
@@ -148,6 +159,11 @@ export renders the sheet at 1600 × 1200 whatever the zoom, on opaque white, wit
 keyboard cursor.
 
 ## Undo, and the batch ceiling
+
+A tab's own write arrives back on the stream, and can do so before the call that wrote it
+returns. `history.js` holds the events of the write in flight and applies their echo
+without remembering it; counting it as a change of its own remembers every mark twice and
+leaves the second undo refusing forever.
 
 Undo is shared like the canvas: every change a tab sees — its own, another window's,
 another device's, and the log replayed at load — joins one history in arrival order, and

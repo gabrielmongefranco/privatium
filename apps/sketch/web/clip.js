@@ -16,20 +16,47 @@ const STAMP = 'data-sketch-clip';
 const round = v => Math.round(v * 10) / 10;
 const escape = text => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+/** A fill that belongs to a shape, as that shape's own area. The flood stops at the
+ *  inside edge of the outline, so the filled copy is inset by half the stroke width. */
+function filledShape(shape, colour) {
+  const inset = (shape.width || 6) / 2;
+  const x0 = Math.min(shape.a.x, shape.b.x), x1 = Math.max(shape.a.x, shape.b.x);
+  const y0 = Math.min(shape.a.y, shape.b.y), y1 = Math.max(shape.a.y, shape.b.y);
+  const w = Math.max(0, x1 - x0 - inset * 2), h = Math.max(0, y1 - y0 - inset * 2);
+  if (!w || !h) return null;
+  if (shape.kind === 'rect') {
+    return '<rect x="' + round(x0 + inset) + '" y="' + round(y0 + inset) +
+      '" width="' + round(w) + '" height="' + round(h) + '" fill="' + colour + '"/>';
+  }
+  return '<ellipse cx="' + round((x0 + x1) / 2) + '" cy="' + round((y0 + y1) / 2) +
+    '" rx="' + round(w / 2) + '" ry="' + round(h / 2) + '" fill="' + colour + '"/>';
+}
+
 /**
- * Serialise marks as SVG. Freehand becomes one path of quadratic segments — the same
- * curve the canvas draws — and a translucent mark is wrapped in a group, which composites
- * as a unit so overlaps inside it stay normal. A fill cannot be expressed: it is pixels,
- * not shapes, and the count comes back so the caller can say so.
+ * Serialise marks as SVG, given as [id, mark] pairs in painting order. Freehand becomes
+ * one path of quadratic segments — the same curve the canvas draws — and a translucent
+ * mark is wrapped in a group, which composites as a unit so overlaps inside it stay
+ * normal. A fill anchored to a rectangle or an ellipse is written as that shape's own
+ * area, which is what the flood actually covers; a fill on the open page is a region of
+ * pixels rather than a shape and cannot be expressed, so it is counted and left out.
  */
-export function toSvg(marks, stamp) {
+export function toSvg(entries, stamp) {
   const out = ['<svg xmlns="http://www.w3.org/2000/svg"' + (stamp ? ' ' + STAMP + '="' + stamp + '"' : '') +
     ' width="' + SHEET_W + '" height="' + SHEET_H + '" viewBox="0 0 ' + SHEET_W + ' ' + SHEET_H + '">',
     '<rect width="' + SHEET_W + '" height="' + SHEET_H + '" fill="#FFFFFF"/>'];
   let skipped = 0;
+  const byId = new Map(entries);
 
-  for (const mark of marks) {
-    if (mark.kind === 'fill') { skipped++; continue; }
+  for (const [, mark] of entries) {
+    if (mark.kind === 'fill') {
+      const shape = mark.anchor ? byId.get(mark.anchor) : null;
+      const area = shape && (shape.kind === 'rect' || shape.kind === 'ellipse')
+        ? filledShape(shape, mark.color)
+        : null;
+      if (area) out.push(area);
+      else skipped++;
+      continue;
+    }
     const width = mark.width || 6;
     const dash = mark.dash
       ? ' stroke-dasharray="' + dashFor(width, mark.dash).map(round).join(',') + '"'

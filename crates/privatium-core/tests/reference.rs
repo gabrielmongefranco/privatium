@@ -1055,6 +1055,43 @@ async fn test_sketch_end_to_end() {
         app_js.contains("batches(groups)"),
         "app.js no longer chunks a write at the ceiling"
     );
+    // Each quick tool is a split button: the tool, and a caret that opens its options.
+    // The caret is a control of its own, so the menu never depends on a long press
+    // (`docs/sketch-app-design.md`, and the accessibility skill's rule on gestures).
+    assert_eq!(
+        index.matches("class=\"quick-wrap\"").count(),
+        4,
+        "the four quick tools are split buttons"
+    );
+    assert_eq!(
+        index.matches("class=\"more\" data-more=").count(),
+        4,
+        "each carries its own caret"
+    );
+    assert_eq!(
+        index
+            .matches("aria-haspopup=\"menu\" aria-expanded=\"false\"")
+            .count(),
+        4,
+        "and announces the menu it opens"
+    );
+    assert!(
+        index.contains("<div id=\"quick-menu\" role=\"menu\" hidden>"),
+        "{index}"
+    );
+    // <body> carries data-tool for the CSS, so a delegated click handler has to name the
+    // control itself or every click on the sheet re-chooses the current tool.
+    assert!(
+        app_js.contains("closest('button[data-tool]"),
+        "the tool-choosing click handler is not scoped to a button"
+    );
+    // A tab's own write comes back on the stream; counting it twice leaves the second
+    // undo refusing, because the next entry then describes a mark that is already gone.
+    assert!(
+        history_js.contains("this.inflight"),
+        "history.js no longer recognises the echo of its own write"
+    );
+
     // Every glyph is a vendored Bootstrap Icon, inlined into the page's sprite.
     let index_html = &index;
     let icons = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -1070,6 +1107,7 @@ async fn test_sketch_end_to_end() {
         ("i-redo", "arrow-90deg-right"),
         ("i-apps", "grid-3x3-gap"),
         ("i-delete", "trash"),
+        ("i-caret", "caret-down-fill"),
     ] {
         let source = fs::read_to_string(icons.join(format!("{icon}.svg"))).unwrap();
         let body: String = source

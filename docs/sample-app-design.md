@@ -119,7 +119,8 @@ New sketch clears the shared canvas with tombstones, rather than creating a sket
 library. Download PNG first to keep a separate image. PNG export renders the sheet at
 1600 by 1200 whatever the zoom, with an opaque white background and no keyboard
 crosshair. Download SVG writes the marks as shapes; a flood fill is pixels rather than a
-shape, so it is left out and the count is reported.
+shape. A fill that belongs to a rectangle or an ellipse is written as that shape's own
+area; one on the open page is left out and the count is reported.
 
 A correct Animals guess shows “I guessed it!” with a Start over button. The win page
 is a presentation state, available with or without HTMX; it writes no event. Starting

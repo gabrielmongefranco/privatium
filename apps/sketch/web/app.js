@@ -19,8 +19,8 @@ import { bounds, hits, inBox, isShape, moved, origin } from './strokes.js';
 import { floodMark, paintMark } from './paint.js';
 import { fromSvg, isOurs, toSvg } from './clip.js';
 import {
-  BASIC, DASHED, DEFAULT_SLOTS, INKING, INKS, SIZES, TOOLS, WIDTHED,
-  colorName, contrast, inkOn, isHex, needsEdge, panelColor
+  BASIC, DASHED, DASHES, DEFAULT_SLOTS, INKING, INKS, SIZES, TOOLS, WIDTHED,
+  colorName, inkOn, isHex, needsEdge, panelColor
 } from './tools.js';
 
 const $ = id => document.getElementById(id);
@@ -239,6 +239,11 @@ function refresh() {
   quickOther.dataset.tool = other.id;
   quickOther.querySelector('use').setAttribute('href', '#i-' + other.id);
   quickOther.querySelector('.sr').textContent = other.label;
+  const otherCaret = quickOther.parentElement.querySelector('.more');
+  otherCaret.dataset.more = other.id;
+  otherCaret.setAttribute('aria-label', other.label + ' options');
+  if (openFor && !hasOptions(openFor)) closeQuick(false);
+  for (const caret of document.querySelectorAll('.more')) caret.hidden = !hasOptions(caret.dataset.more);
 
   for (const button of toolButtons()) {
     const id = button.dataset.tool;
@@ -653,7 +658,7 @@ function copySelection(cut) {
   state.clipStamp = 'sk' + Date.now().toString(36);
   // Best effort only: pasting back into the sheet never depends on the system clipboard.
   try {
-    const svg = toSvg(state.clip, state.clipStamp).text;
+    const svg = toSvg(state.clip.map(mark => [mark.from, mark]), state.clipStamp).text;
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(svg);
   } catch { /* a clipboard the browser will not give us is not an error worth showing */ }
   if (cut) { deleteSelection(); return; }
@@ -954,32 +959,257 @@ pad.addEventListener('blur', () => { pen.down = false; render(); });
 
 function closeMenus() {
   for (const open of document.querySelectorAll('#actions[open]')) open.open = false;
+  closeQuick(false);
 }
 
+/** Apply one of a tool's options and return what to say about it. The rail's buttons and
+ *  the top bar's menus are two ways to the same setting, so both come through here. */
+function applyOption(kind, value) {
+  if (kind === 'size') {
+    state.size = Number(value);
+    return (SIZES.find(s => s.px === state.size) || {}).label + ', ' + state.size + ' pixels.';
+  }
+  if (kind === 'dash') {
+    state.dash = value;
+    return (DASHES.find(d => d.id === value) || {}).label + ' line style.';
+  }
+  if (kind === 'sel') {
+    state.selMode = value;
+    state.selection = [];
+    return (value === 'rect' ? 'Rectangle' : 'Stroke') + ' selection.';
+  }
+  return '';
+}
+
+/* ---- the quick tools' option menus -------------------------------------- */
+
+// Each quick tool is a split button: the tool, and a corner caret that opens its own
+// options. A long press and a right click reach the same menu, but the caret is a control
+// of its own, so nothing depends on holding a finger down (WCAG 2.5.7) — and every option
+// in here is also a full-size button in the rail.
+const LONG_PRESS = 450;
+const quickMenu = $('quick-menu');
+let openFor = null;
+let pressTimer = null;
+let pressedLong = false;
+
+/** What a tool offers, in the groups a menu draws. Empty for a tool with no settings. */
+function optionsFor(tool) {
+  const groups = [];
+  if (WIDTHED.includes(tool)) {
+    groups.push({
+      name: tool === 'eraser' ? 'Eraser width' : 'Size',
+      kind: 'size',
+      items: SIZES.map(size => ({
+        value: size.px, label: size.label, note: size.px + ' px',
+        chip: 'dot dot-' + size.px, on: state.size === size.px
+      }))
+    });
+  }
+  if (DASHED.includes(tool)) {
+    groups.push({
+      name: 'Line style',
+      kind: 'dash',
+      items: DASHES.map(dash => ({
+        value: dash.id, label: dash.label,
+        chip: 'rule rule-' + dash.id, on: state.dash === dash.id
+      }))
+    });
+  }
+  if (tool === 'select') {
+    groups.push({
+      name: 'Selection',
+      kind: 'sel',
+      items: [
+        { value: 'stroke', label: 'Stroke', note: 'one mark', icon: 'i-select', on: state.selMode === 'stroke' },
+        { value: 'rect', label: 'Rectangle', note: 'a box', icon: 'i-marquee', on: state.selMode === 'rect' }
+      ]
+    });
+  }
+  return groups;
+}
+
+const hasOptions = tool => optionsFor(tool).length > 0;
+
+// Cloned from the page rather than built in script: an <svg> needs its namespace, and
+// naming that URL here would read as an external origin the app reaches for.
+function menuIcon(id) {
+  const svg = $('icon-template').content.firstElementChild.cloneNode(true);
+  svg.querySelector('use').setAttribute('href', '#' + id);
+  return svg;
+}
+
+function buildQuickMenu(tool) {
+  quickMenu.textContent = '';
+  for (const group of optionsFor(tool)) {
+    const heading = document.createElement('p');
+    heading.className = 'menu-head';
+    heading.textContent = group.name;
+    quickMenu.append(heading);
+    for (const item of group.items) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.setAttribute('role', 'menuitemradio');
+      button.setAttribute('aria-checked', String(item.on));
+      button.dataset.kind = group.kind;
+      button.dataset.value = String(item.value);
+      if (item.icon) {
+        button.append(menuIcon(item.icon));
+      } else {
+        const chip = document.createElement('span');
+        chip.className = item.chip;
+        button.append(chip);
+      }
+      const label = document.createElement('span');
+      label.textContent = item.label;
+      button.append(label);
+      if (item.note) {
+        const note = document.createElement('span');
+        note.className = 'px';
+        note.textContent = item.note;
+        button.append(note);
+      }
+      quickMenu.append(button);
+    }
+  }
+}
+
+function openQuick(tool, wrapper) {
+  if (!hasOptions(tool)) return false;
+  closeQuick(false);
+  buildQuickMenu(tool);
+  wrapper.append(quickMenu);
+  quickMenu.hidden = false;
+  openFor = tool;
+  // The menu hangs off its own button, which puts the rightmost one past the edge of a
+  // narrow window; shift it back rather than letting the page scroll sideways.
+  quickMenu.style.setProperty('--shift', '0px');
+  const room = document.documentElement.clientWidth - 8 - quickMenu.getBoundingClientRect().right;
+  if (room < 0) quickMenu.style.setProperty('--shift', Math.floor(room) + 'px');
+  const caret = wrapper.querySelector('.more');
+  if (caret) caret.setAttribute('aria-expanded', 'true');
+  const first = quickMenu.querySelector('[aria-checked="true"]') || quickMenu.querySelector('button');
+  if (first) first.focus();
+  say((TOOLS.find(t => t.id === tool) || {}).label +
+    ' options. Up and down choose, Enter applies, Escape closes.');
+  return true;
+}
+
+function closeQuick(refocus) {
+  if (!openFor) return;
+  const tool = openFor;
+  openFor = null;
+  quickMenu.hidden = true;
+  for (const caret of document.querySelectorAll('.more')) caret.setAttribute('aria-expanded', 'false');
+  if (!refocus) return;
+  const button = [...document.querySelectorAll('.quick')].find(b => b.dataset.tool === tool);
+  if (button) button.focus();
+}
+
+quickMenu.addEventListener('click', event => {
+  const item = event.target.closest('button[role="menuitemradio"]');
+  if (!item) return;
+  const tool = openFor;
+  closeQuick(true);
+  let message = '';
+  if (tool && tool !== state.tool) {
+    chooseTool(tool, true);
+    message = (TOOLS.find(t => t.id === tool) || {}).label + ' selected. ';
+  }
+  message += applyOption(item.dataset.kind, item.dataset.value);
+  refresh();
+  say(message);
+});
+
+// The menu owns the keyboard while it is open, so a tool letter does not fire underneath it.
+quickMenu.addEventListener('keydown', event => {
+  const items = [...quickMenu.querySelectorAll('button[role="menuitemradio"]')];
+  const at = items.indexOf(document.activeElement);
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    closeQuick(true);
+    return;
+  }
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    event.stopPropagation();
+    const step = event.key === 'ArrowDown' ? 1 : -1;
+    const next = items[(at + step + items.length) % items.length];
+    if (next) next.focus();
+    return;
+  }
+  if (event.key === 'Home' || event.key === 'End') {
+    event.preventDefault();
+    event.stopPropagation();
+    const next = event.key === 'Home' ? items[0] : items.at(-1);
+    if (next) next.focus();
+    return;
+  }
+  if (event.key === 'Tab') { closeQuick(false); return; }
+  event.stopPropagation();
+});
+
+for (const wrapper of document.querySelectorAll('.quick-wrap')) {
+  const quick = wrapper.querySelector('.quick');
+  const caret = wrapper.querySelector('.more');
+
+  caret.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    const tool = caret.dataset.more;
+    if (openFor === tool) closeQuick(true);
+    else openQuick(tool, wrapper);
+  });
+
+  quick.addEventListener('pointerdown', event => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    pressedLong = false;
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => {
+      pressTimer = null;
+      pressedLong = openQuick(quick.dataset.tool, wrapper);
+    }, LONG_PRESS);
+  });
+  for (const end of ['pointerup', 'pointerleave', 'pointercancel']) {
+    quick.addEventListener(end, () => { clearTimeout(pressTimer); pressTimer = null; });
+  }
+
+  quick.addEventListener('contextmenu', event => {
+    if (!hasOptions(quick.dataset.tool)) return;
+    event.preventDefault();
+    openQuick(quick.dataset.tool, wrapper);
+  });
+
+  quick.addEventListener('keydown', event => {
+    if (event.key !== 'ArrowDown' && !(event.shiftKey && event.key === 'F10')) return;
+    if (!openQuick(quick.dataset.tool, wrapper)) return;
+    event.preventDefault();
+    event.stopPropagation();
+  });
+}
+
+// Anywhere else closes it, before the sheet's own handler sees the press.
+document.addEventListener('pointerdown', event => {
+  if (!openFor) return;
+  if (event.target.closest('#quick-menu') || event.target.closest('.quick-wrap')) return;
+  closeQuick(false);
+}, true);
+
 document.addEventListener('click', event => {
-  const button = event.target.closest('[data-tool], .size, .dash, .selmode, .slot');
+  // A long press has already opened the menu; the click that ends it is not a choice.
+  if (pressedLong) { pressedLong = false; return; }
+  // Only a control, never an ancestor that happens to carry the attribute: <body> holds
+  // data-tool for the CSS, and matching it here made every click on the sheet re-choose
+  // the current tool, which drops the selection the click had just made.
+  const button = event.target.closest('button[data-tool], .size, .dash, .selmode, .slot');
   if (!button || button.disabled) return;
   if (button.dataset.tool) { chooseTool(button.dataset.tool); return; }
-  if (button.classList.contains('size')) {
-    state.size = Number(button.dataset.size);
-    say((SIZES.find(s => s.px === state.size) || {}).label + ', ' + state.size + ' pixels.');
-    refresh();
-    return;
-  }
-  if (button.classList.contains('dash')) {
-    state.dash = button.dataset.dash;
-    say(button.textContent.trim() + ' line style.');
-    refresh();
-    return;
-  }
-  if (button.classList.contains('selmode')) {
-    state.selMode = button.dataset.sel;
-    state.selection = [];
-    say(button.textContent.trim() + ' selection.');
-    refresh();
-    return;
-  }
-  if (button.classList.contains('slot')) chooseSlot(Number(button.dataset.slot));
+  if (button.classList.contains('slot')) { chooseSlot(Number(button.dataset.slot)); return; }
+  const kind = button.classList.contains('size') ? 'size'
+    : button.classList.contains('dash') ? 'dash' : 'sel';
+  say(applyOption(kind, button.dataset.size ?? button.dataset.dash ?? button.dataset.sel));
+  refresh();
 });
 
 $('blend').onclick = () => {
@@ -1091,7 +1321,7 @@ $('png').onclick = () => {
 
 $('svg').onclick = () => {
   closeMenus();
-  const { text, skipped } = toSvg(ordered().map(([, mark]) => mark));
+  const { text, skipped } = toSvg(ordered());
   const url = URL.createObjectURL(new Blob([text], { type: 'image/svg+xml' }));
   const link = document.createElement('a');
   link.href = url;
@@ -1099,7 +1329,8 @@ $('svg').onclick = () => {
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 60000);
   say(skipped
-    ? 'SVG saved. ' + skipped + ' fill' + (skipped === 1 ? '' : 's') + ' left out — a fill is pixels, not a shape.'
+    ? 'SVG saved. ' + skipped + ' fill' + (skipped === 1 ? '' : 's') +
+      ' left out — a fill on the open page is pixels, not a shape.'
     : 'SVG saved.');
 };
 

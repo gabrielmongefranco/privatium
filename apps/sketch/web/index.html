@@ -51,6 +51,7 @@
   <symbol id="i-paste" viewBox="0 0 16 16"><path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1z"/><path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5zm-3-1A1.5 1.5 0 0 0 5 1.5v1A1.5 1.5 0 0 0 6.5 4h3A1.5 1.5 0 0 0 11 2.5v-1A1.5 1.5 0 0 0 9.5 0z"/></symbol>
   <symbol id="i-delete" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/></symbol>
   <symbol id="i-sliders" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M11.5 2a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3M9.05 3a2.5 2.5 0 0 1 4.9 0H16v1h-2.05a2.5 2.5 0 0 1-4.9 0H0V3zM4.5 7a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3M2.05 8a2.5 2.5 0 0 1 4.9 0H16v1H6.95a2.5 2.5 0 0 1-4.9 0H0V8zm9.45 4a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3m-2.45 1a2.5 2.5 0 0 1 4.9 0H16v1h-2.05a2.5 2.5 0 0 1-4.9 0H0v-1z"/></symbol>
+  <symbol id="i-caret" viewBox="0 0 16 16"><path d="M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z"/></symbol>
 </svg>
 
 <div class="shell">
@@ -120,10 +121,12 @@
 
     <div id="bar">
       <div class="group" role="group" aria-label="Basic tools">
-        <button type="button" class="quick" data-tool="select" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-select"></use></svg><span class="sr">Select</span></button>
-        <button type="button" class="quick" data-tool="brush" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-brush"></use></svg><span class="sr">Brush</span></button>
-        <button type="button" class="quick" data-tool="eraser" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-eraser"></use></svg><span class="sr">Eraser</span></button>
-        <button type="button" class="quick" id="quick-other" data-tool="fill" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-fill"></use></svg><span class="sr">Fill</span></button>
+        <span class="quick-wrap"><button type="button" class="quick" data-tool="select" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-select"></use></svg><span class="sr">Select</span></button><button type="button" class="more" data-more="select" aria-haspopup="menu" aria-expanded="false" aria-label="Select options"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-caret"></use></svg></button></span>
+        <span class="quick-wrap"><button type="button" class="quick" data-tool="brush" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-brush"></use></svg><span class="sr">Brush</span></button><button type="button" class="more" data-more="brush" aria-haspopup="menu" aria-expanded="false" aria-label="Brush options"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-caret"></use></svg></button></span>
+        <span class="quick-wrap"><button type="button" class="quick" data-tool="eraser" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-eraser"></use></svg><span class="sr">Eraser</span></button><button type="button" class="more" data-more="eraser" aria-haspopup="menu" aria-expanded="false" aria-label="Eraser options"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-caret"></use></svg></button></span>
+        <span class="quick-wrap"><button type="button" class="quick" id="quick-other" data-tool="fill" aria-pressed="false"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-fill"></use></svg><span class="sr">Fill</span></button><button type="button" class="more" data-more="fill" aria-haspopup="menu" aria-expanded="false" aria-label="Fill options"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-caret"></use></svg></button></span>
+        <div id="quick-menu" role="menu" hidden></div>
+        <template id="icon-template"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-select"></use></svg></template>
       </div>
 
       <span class="rule-v" aria-hidden="true"></span>
