@@ -21,7 +21,7 @@ use crate::store::schema::{Column, ID_COLUMN, Kind, Table};
 
 /// Ids whose winning event is a tombstone (`spec/protocol.md §4.6`).
 ///
-/// Derived, disposable, and in `cache/` — the set M9's data API consults to refuse a
+/// Derived, disposable, and in `cache/` — the set the data API consults to refuse a
 /// client-supplied ULID that has been deleted. Prefixed `pv_` so it cannot collide with a
 /// table an app declared under `spec/data-dictionary.md §5`'s naming rules.
 pub(crate) const TOMBSTONE_TABLE: &str = "pv_tombstone";
@@ -193,7 +193,7 @@ pub(crate) fn apply_tail(
 /// ago, so `§4.3` gives it `max(lam_local, lam_max_seen) + 1` — the highest `lam` in the
 /// app — and `§4.5` therefore makes it the winner for its `id` no matter what else the log
 /// holds. That reasoning is the whole licence for skipping the replay, and it expires the
-/// moment a second writer exists: Phase 3's sync receiver ingests events whose `lam` may
+/// moment a second writer exists: a sync receiver ingests events whose `lam` may
 /// be lower than ours, and must either compare `(lam, ts, dev)` here or fall back to a
 /// full rematerialize.
 pub(crate) fn apply(

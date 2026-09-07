@@ -162,7 +162,7 @@ fn newlines(text: &str) -> u32 {
 }
 
 /// One piece of a template as the scanner reads it: the front end the compiler and the
-/// linter share (`docs/plans/phase-1.md` M12), so there is one reading of what a tag is.
+/// linter share, so there is one reading of what a tag is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Segment {
     /// 1-based `.lsp` line the segment begins on.

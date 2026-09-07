@@ -23,8 +23,8 @@ use cli::Command;
 
 /// The protocol claim of `spec/cli.md §1`: a build that does not satisfy every item of
 /// `spec/protocol.md §13` qualifies the string rather than printing a bare `pv/1`. What
-/// this build cannot claim is sync's and the remote transports' (`docs/plans/phase-2.md
-/// §7`). The wire format itself is `privatium_core::PROTOCOL`.
+/// this build cannot claim is sync and the remote transports (`spec/protocol.md §10`,
+/// `§11`). The wire format itself is `privatium_core::PROTOCOL`.
 fn protocol_claim() -> String {
     format!("{} (partial: phase 2)", privatium_core::PROTOCOL)
 }

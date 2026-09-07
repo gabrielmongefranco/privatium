@@ -1,6 +1,6 @@
 # Project:  Privatium™  |  File: deny.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-08-31  |  Modified: 2026-09-03
+# Created:  2026-08-31  |  Modified: 2026-09-06
 # Summary:  Licence and supply-chain policy, checked by `cargo deny check` in CI. ADR 0001
 #           declined Barracuda/BAS partly because it is GPL-2.0-only and so incompatible
 #           with this project's GPL-3.0-or-later. That was a judgement call made once; this
@@ -24,9 +24,9 @@ all-features = false
 
 [licenses]
 confidence-threshold = 0.93
-# CC0-1.0 and MPL-2.0 below are for crates that arrive in M8 and M12 and are not in the
-# graph yet. Warning about an allowance nobody has used yet trains people to skim this
-# check's output, which is the opposite of what it is for.
+# An allowance below may name a licence no crate in the graph currently carries. Warning
+# about that trains people to skim this check's output, which is the opposite of what it
+# is for.
 unused-allowed-license = "allow"
 allow = [
     "Apache-2.0",
@@ -42,9 +42,8 @@ allow = [
     "Unicode-3.0",
     "Zlib",
 ]
-# No exceptions. The one this file used to carry — webpki-roots, a build-dependency of
-# libduckdb-sys — left with DuckDB (docs/decisions/0006); libsqlite3-sys vendors the
-# amalgamation and builds nothing that fetches.
+# No exceptions. libsqlite3-sys vendors the amalgamation and builds nothing that fetches,
+# so no build-dependency needs one (docs/decisions/0006).
 exceptions = []
 
 # A workspace crate carrying its own licence field is not audited against the list above.
@@ -54,8 +53,7 @@ ignore = true
 [advisories]
 yanked = "deny"
 # "workspace" rather than "all": an unmaintained advisory on a direct dependency is a
-# decision to make (risk R4 is exactly this question about full_moon); one buried four
-# levels down usually is not.
+# decision to make; one buried four levels down usually is not.
 unmaintained = "workspace"
 ignore = []
 

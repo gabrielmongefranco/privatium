@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/skills.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  /skills/<name>.md and /skills/bundle.zip (spec/cli.md §6, docs/skills.md §6):
 //           the skills/ tree of this build, embedded so an owner gets the contract matching
 //           the version they are running. The bundle is a stored (uncompressed) zip written
@@ -210,7 +210,7 @@ mod tests {
     }
 
     /// Walk the archive by hand: every local header is where the central directory says,
-    /// every name is the path we gave it, and the record count matches.
+    /// every name is the path it was registered under, and the record count matches.
     #[test]
     fn the_bundle_is_a_well_formed_stored_zip_of_the_skills_tree() {
         let bytes = bundle();

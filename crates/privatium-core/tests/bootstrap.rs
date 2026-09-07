@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/bootstrap.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-05
+// Created:  2026-09-01  |  Modified: 2026-09-06
 // Summary:  First run: the storage tree and public identity rows written before apps load.
 //           See main README.md for full license information.
 
@@ -78,12 +78,11 @@ fn sys_events(node: &Node) -> Vec<Value> {
 /// forbids: no secret is stored anywhere, and the key is derived at startup instead. That
 /// decision has no code of its own to test, so this is where it is enforced.
 ///
-/// M2 added `local/state.jsonl` — the file `§3` already names, holding the §4.3 Lamport
-/// counter. It is one more line here and the assertion stays exhaustive; the point of this
-/// test is that a new path in `local/` cannot appear without someone typing it out.
+/// `local/state.jsonl` and `cache/_sys.sqlite` are the two files `§3` names, and both are
+/// listed out here; the point of this test is that a new path in `local/` or `cache/`
+/// cannot appear without someone typing it out.
 ///
-/// M3 adds `cache/_sys.sqlite`, the other file `§3` already names, because `Node::open`
-/// now performs step 4 of `docs/plans/phase-1.md §2.6`. **One** file, and that is
+/// **One** file in `cache/`, and that is
 /// load-bearing: the store keeps SQLite's rollback journal, whose `-journal` file exists
 /// only inside a write and is gone at commit. Switch it to WAL and this test fails with a
 /// stray `cache/_sys.sqlite-wal` — which is exactly the unannounced file in `cache/` it
@@ -287,9 +286,8 @@ fn test_spec_4_1_key_order_is_greppable() {
 
 /// Opening a node twice never re-runs the bootstrap, whatever state the log is in.
 ///
-/// M1 guarded this on the `_sys` log file existing, because M1's writer could only create.
-/// M2 has a reader, so the guard is what it should always have been: **the log recovered no
-/// events**. The difference is not cosmetic. A crash between creating the file and writing
+/// The guard is **the log recovered no events**, not the `_sys` log file existing. The
+/// difference is not cosmetic. A crash between creating the file and writing
 /// the first line leaves a zero-byte log, and a file-existence guard sees it, concludes this
 /// was not a first run, and skips the bootstrap forever — leaving a node with an identity,
 /// no `sys_device` row, and nothing to notice it by.

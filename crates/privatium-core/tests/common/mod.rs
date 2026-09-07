@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/common/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-02  |  Modified: 2026-09-03
+// Created:  2026-09-02  |  Modified: 2026-09-06
 // Summary:  What tests/store.rs, tests/snapshot.rs and tests/apps.rs share: a node plus one
 //           app store, the event line of spec/protocol.md §4.1 spelled by hand, `echo >>`,
 //           the digests the §2.5 comparisons are made with, app folders written into a data
@@ -47,7 +47,7 @@ pub const TYPED_DDL: &str = "CREATE TABLE thing (
      tags         VARCHAR[]
  );";
 
-/// A node plus a store over one app, which is what M5 will assemble for real.
+/// A node plus a store over one app, the pairing the app host assembles for real.
 pub struct Fixture {
     pub root: tempfile::TempDir,
     pub node: Node,

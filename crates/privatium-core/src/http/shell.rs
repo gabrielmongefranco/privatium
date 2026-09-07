@@ -644,9 +644,9 @@ fn tier_text(tier: Tier) -> &'static str {
     }
 }
 
-/// Rows in one of an app's tables, through the sandboxed connection — the same one the data
-/// API will use, taken and dropped inside the handler's lock so it never outlives a
-/// privileged window (M5: never hold an `app_conn()` across `refresh_app`).
+/// Rows in one of an app's tables, through the sandboxed connection the data API also
+/// uses, taken and dropped inside the handler's lock so it never outlives a privileged
+/// window — an `app_conn()` held across `refresh_app` would read a replaced cache.
 fn table_count(app: &crate::App, table: &str) -> i64 {
     let Ok(conn) = app.store().app_conn() else {
         return 0;

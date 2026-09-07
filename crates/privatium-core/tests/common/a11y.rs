@@ -168,7 +168,7 @@ pub fn check(html: &str, unit: Unit) -> Vec<String> {
 }
 
 // ---------------------------------------------------------------------------------------
-// Contrast and stylesheets: the linter's, in the shape the M10 tests read
+// Contrast and stylesheets: the linter's rules, in the shape these tests read
 // ---------------------------------------------------------------------------------------
 
 /// The contrast ratio between two colours, `1.0..=21.0`. Panics on a colour that is not

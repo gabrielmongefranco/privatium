@@ -513,9 +513,9 @@ fn permissions(root: &Path) -> Result<String> {
 
 /// Every `pub fn` signature in every `impl Node` block of the crate, `lib.rs` first —
 /// the bootstrap, the maintenance and the `§6` surface are there; the loader's, the
-/// writer's and the embedder's methods are in `app/mod.rs`. One file's block was read
-/// until M13, which left `load_apps`, `append` and their neighbours out of a page that
-/// called itself the public methods at this version.
+/// writer's and the embedder's methods are in `app/mod.rs`. Reading only one file would
+/// leave `load_apps`, `append` and their neighbours out of a page that calls itself the
+/// public methods at this version.
 fn node_signatures(root: &Path) -> Result<Vec<String>> {
     const LIB: &str = "crates/privatium-core/src/lib.rs";
     let mut paths: Vec<String> = crate::repo::files(root)?

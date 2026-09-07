@@ -1402,7 +1402,7 @@ async fn test_stream_frames_arrive_before_the_handler_finishes() {
 }
 
 /// `docs/plans/phase-1.md §8`, R5 — a cache rebuilt underneath a reader is a `resync`:
-/// an edited `schema.sql` (M8's reload) and a line appended by hand both do it, on the
+/// an edited `schema.sql` and a line appended by hand both do it, on the
 /// next request beneath the mount.
 #[tokio::test]
 async fn test_stream_resync_on_schema_change() {

@@ -180,7 +180,7 @@ impl Paths {
         self.root.join("local")
     }
 
-    /// `local/state.jsonl`. Not created by M1, which writes no local state.
+    /// `local/state.jsonl`. Absent until something records local state in it.
     #[must_use]
     pub fn local_state(&self) -> PathBuf {
         self.local_dir().join("state.jsonl")

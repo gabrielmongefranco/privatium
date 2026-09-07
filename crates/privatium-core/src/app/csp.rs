@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/app/csp.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-02  |  Modified: 2026-09-02
+// Created:  2026-09-02  |  Modified: 2026-09-06
 // Summary:  One Content-Security-Policy per app, computed at load from [permissions]
 //           (spec/app-contract.md §5.4) over the default of spec/protocol.md §9.3. The
 //           default is never relaxed to make anything work (AGENTS.md); each permission
@@ -27,10 +27,10 @@ const FRAMEWORK_STATIC: &str = "/static/";
 /// the app's own path. CSP cannot spell a path without a host — a `host-source` needs one
 /// and there is no origin-relative form — and the loader runs before any request exists to
 /// take an origin from. So the policy holds the *shape*, [`header`](Self::header) renders
-/// it with `'self'` (the whole origin, which is what Phase 1's shared-origin apps share
-/// anyway; `AGENTS.md` says CSP is not an inter-app boundary today), and
-/// [`header_for`](Self::header_for) renders the path-scoped form once M6 has the request's
-/// origin. Both carry the same widenings.
+/// it with `'self'` (the whole origin, which apps sharing one origin share anyway;
+/// `AGENTS.md` says CSP is not an inter-app boundary today), and
+/// [`header_for`](Self::header_for) renders the path-scoped form once a request supplies
+/// the origin. Both carry the same widenings.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Csp {
     /// The app's mount path (`/a/<slug>/`, or `/` in solo mode), if mounted.

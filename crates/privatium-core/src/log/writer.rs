@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/log/writer.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-05
+// Created:  2026-09-01  |  Modified: 2026-09-06
 // Summary:  The single writer of one data/<slug>/log/<dev>.jsonl (AGENTS.md 2). Appends
 //           puts, tombstones, and all-or-nothing batches, with `seq` gapless per
 //           spec/protocol.md §4.1 and the clock read here rather than taken from a caller.
@@ -20,10 +20,9 @@ use crate::{Error, Result, io_at};
 ///
 /// **Not a `config.toml` key.** `spec/` defines `[node]` and `[lua]`, and
 /// `docs/plans/phase-1.md §1` makes inventing a config key a signal that the spec is wrong
-/// rather than licence to add one. The plan asks for the fsync policy to be configurable and
-/// to default to sync-on-append; a constructor argument is configurable, and it does not
-/// widen a surface nobody has numbers for. When M10 produces those numbers, an owner-facing
-/// knob can be specified and added — in that order.
+/// rather than licence to add one. The fsync policy has to be configurable and to default
+/// to sync-on-append; a constructor argument is both, and it does not widen an owner-facing
+/// surface nobody has measurements for. Those would have to come first, then a spec key.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Durability {
     /// `fsync` after every append. Correctness over throughput, and the default.
@@ -41,8 +40,8 @@ pub enum Durability {
 /// file that is not this node's own, which is what makes
 /// `test_spec_3_1_never_writes_other_device_log` a refusal rather than a convention.
 ///
-/// The writer owns `seq` and not `lam`: `§4.3`'s counter is per **app**, and in Phase 3 a
-/// sync receiver folds another device's events into it without ever touching this writer.
+/// The writer owns `seq` and not `lam`: `§4.3`'s counter is per **app**, and a sync
+/// receiver folds another device's events into it without ever touching this writer.
 /// So [`Lamport`] arrives as an argument, from [`AppLog`](super::AppLog), which owns it.
 ///
 /// **A failed append closes the writer** (`§4.1`). When a write or a flush fails, some of
@@ -245,8 +244,8 @@ impl Writer {
     ///
     /// The closure builds the batch; nothing reaches the file until it returns `Ok`, and an
     /// `Err` leaves `seq`, the Lamport counter, and the file untouched. This is the shape
-    /// `spec/lua-api.md §3.3` gives `pv.batch(function(tx) ... end)`, so M7's binding is a
-    /// wrapper rather than a second implementation.
+    /// `spec/lua-api.md §3.3` gives `pv.batch(function(tx) ... end)`, so the Lua binding is
+    /// a wrapper rather than a second implementation.
     ///
     /// **How all-or-nothing is kept on a file that has to stay `echo`-appendable.** One
     /// `write_all` followed by one `fsync` is what reaches the disk, and a crash between
@@ -511,8 +510,8 @@ fn sync_parent(path: &Path, durability: Durability) -> Result<()> {
 ///
 /// Both are checked against the path rather than assumed, so `AGENTS.md` 2 — one writer per
 /// log file, forever — is a refusal a test can trigger rather than a comment. The one legal
-/// exception is `§10.2`'s sync receiver, which writes `log/<origin-dev>.jsonl`; it does not
-/// exist until Phase 3 and will not come through this type.
+/// exception is `§10.2`'s sync receiver, which writes `log/<origin-dev>.jsonl` and will not
+/// come through this type.
 fn check_is_ours(path: &Path, app: &str, dev: &NodeId) -> Result<()> {
     let filename = path
         .file_name()

@@ -28,12 +28,12 @@ homepage      = "https://github.com/gabrielmongefranco/privatium"
 # unpublishable.
 privatium-core = { path = "crates/privatium-core", version = "0.2.0" }
 
-# HTTP — M6. `auth_layer` is a tower::Layer (spec/app-contract.md §6).
+# HTTP. `auth_layer` is a tower::Layer (spec/app-contract.md §6).
 axum       = { version = "0.8.9", default-features = false }
 tower      = "0.5.3"
 tower-http = "0.7.1"
 tokio      = "1.53.1"
-# Streams — M9. The SSE body of spec/data-api.md §3 is a channel receiver polled as a
+# Streams. The SSE body of spec/data-api.md §3 is a channel receiver polled as a
 # stream, and `Body::from_stream` wants a `futures_core::Stream`. The trait crate alone —
 # already in the graph beneath axum, so no new compile unit — rather than `tokio-stream`
 # (a new crate for one wrapper) or the `futures` facade.
@@ -45,15 +45,15 @@ tokio-tungstenite = "0.29.0"
 socket2 = "0.6.5"
 if-addrs = "0.15.0"
 
-# Lua — M7. lua54 (not LuaJIT, not Luau: AGENTS.md), vendored so no system Lua is needed.
+# Lua. lua54 (not LuaJIT, not Luau: AGENTS.md), vendored so no system Lua is needed.
 mlua = "0.12.1"
 
-# SQL — M3, engine swapped to SQLite after M6 (docs/decisions/0006). `bundled` compiles the
+# SQL. SQLite is the query engine (docs/decisions/0006). `bundled` compiles the
 # vendored amalgamation (one C file, about a minute) with JSON1 and FTS5 in; nothing is
 # downloaded and nothing can be loaded at runtime.
 rusqlite = { version = "0.40.2", default-features = false }
 
-# Crypto — M1 node identity, M6 CSRF. No session crypto in Phase 1.
+# Node identity (spec/protocol.md §2.1) and CSRF token signing.
 ed25519-dalek = "3.0.0"
 # Static session identity, derived from the node key (spec/protocol.md §8).
 x25519-dalek = { version = "3.0.0", default-features = false, features = ["static_secrets", "zeroize"] }
@@ -61,8 +61,7 @@ x25519-dalek = { version = "3.0.0", default-features = false, features = ["stati
 chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["alloc", "zeroize"] }
 # The group arithmetic of the pairing PAKE (spec/protocol.md §7.4.1): RFC 9382 over
 # edwards25519 is written here from `EdwardsPoint` and `Scalar`, so the crate that already
-# sits beneath ed25519-dalek is taken directly and no PAKE crate is added
-# (docs/plans/phase-2.md §2.4).
+# sits beneath ed25519-dalek is taken directly and no PAKE crate is added.
 curve25519-dalek = { version = "5.0.0", default-features = false, features = ["alloc", "precomputed-tables", "zeroize"] }
 sha2          = "0.11.0"
 hmac          = "0.13.0"
@@ -76,17 +75,17 @@ zeroize       = "1.9.0"
 # a 32-byte key is not where SIMD earns its keep.
 base64 = { version = "0.23.1", default-features = false, features = ["std"] }
 
-# Time — M1 `ts`, M2 §4.4 clock hygiene, M3 TIMESTAMPTZ. Not in the plan's §5 table; see
-# the M1 PR. `ts` is normative (RFC 3339 UTC, millisecond precision, literal `Z`) and
+# Time — the `ts` field, the §4.4 clock hygiene checks, and timestamp columns in the cache.
+# `ts` is normative (RFC 3339 UTC, millisecond precision, literal `Z`) and
 # hand-rolled civil-from-days arithmetic is not worth owning. default-features = false
 # drops the whole bundled tz database and `windows-link`; Privatium stores UTC only.
 jiff = { version = "0.2.35", default-features = false, features = ["std"] }
 
-# Data root resolution — M1. XDG on Linux, Known Folder API on Windows, the Standard
+# Data root resolution. XDG on Linux, Known Folder API on Windows, the Standard
 # Directory guidelines on macOS (spec/protocol.md §3, AGENTS.md 7).
 directories = "6.0.0"
 
-# Events — M2. Crockford Base32, 26 characters.
+# Event identifiers. Crockford Base32, 26 characters.
 ulid = "3.0.0"
 
 # Serde. serde_json's `preserve_order` stays OFF: raw event lines are String/&[u8] end to
@@ -95,22 +94,22 @@ serde      = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 toml       = "1.1.4"
 
-# Lua AST for the linter — M12. MPL-2.0; see deny.toml.
+# Lua AST for the linter. MPL-2.0; see deny.toml.
 full_moon = { version = "2.2.0", default-features = false }
 
-# CLI — M11 takes nothing. The plan's §5 named clap and owo-colors; the surface is eight
-# commands and twenty flags fixed by spec/cli.md, whose synopsis lines are the help text,
-# so the binary parses `std::env::args_os` itself (crates/privatium/src/cli.rs), as xtask
-# already does. Colour is unspecified and unused.
+# No argument-parsing crate. The surface is eight commands and twenty flags fixed by
+# spec/cli.md, whose synopsis lines are the help text, so the binary parses
+# `std::env::args_os` itself (crates/privatium/src/cli.rs), as xtask already does. Colour
+# is unspecified and unused.
 
 # Errors: thiserror in the library, anyhow at binary boundaries (AGENTS.md, Style).
 thiserror = "2.0.20"
 anyhow    = "1.0.104"
 
-# Embedding icons, shell assets, and pv.js into the binary — M6.
+# Embedding icons, shell assets, and pv.js into the binary.
 include_dir = "0.7.4"
 
-# Test-only: an isolated data root per test, removed on drop. M1 onward.
+# Test-only: an isolated data root per test, removed on drop.
 tempfile = "3.27.0"
 
 # `panic` stays at its default, unwind, and that is load-bearing: mlua raises a Lua error
@@ -118,7 +117,7 @@ tempfile = "3.27.0"
 # through the callback frame. With `panic = "abort"` the release binary died on the first
 # Lua limit trip ("panic in a function that cannot unwind … aborting"), taking the whole
 # node with it; with unwind the same request is a 500 and the node lives. Verified against
-# the running binary, not assumed (docs/plans/phase-1.md, the Lua host milestone).
+# the running binary, not assumed.
 [profile.release]
 lto           = "thin"
 codegen-units = 1

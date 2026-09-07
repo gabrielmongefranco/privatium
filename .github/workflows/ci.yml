@@ -56,21 +56,21 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked
 
-      # docs/plans/phase-1.md §7: the lines of spec/protocol.md §13 a Phase 1 build can
-      # satisfy, asserted by name — and the two docs/roadmap.md bullets §7 says are easy to
-      # lose. The binaries were built by the step above; each name must run and pass.
+      # The lines of spec/protocol.md §13 this build can satisfy, asserted by name, so a
+      # conformance claim cannot quietly stop being true. The binaries were built by the
+      # step above; each name must run and pass.
       - name: Conformance items by name (spec/protocol.md §13, Phase 1 subset)
         shell: bash
         run: bash .github/scripts/conformance.sh
 
       # spec/app-contract.md §2.3: the thirty-line embedder, run — a node with no app
-      # folders, an append, a query, its own router behind auth_layer (M13).
+      # folders, an append, a query, its own router behind auth_layer.
       - name: Embedded example (spec/app-contract.md §2.3)
         shell: bash
         run: bash .github/scripts/embedded-example.sh "$RUNNER_TEMP/embedded-node"
 
-      # docs/plans/phase-1.md M13: the fresh-clone check — `cargo build`, then the debug
-      # binary with nothing but an empty data directory serves hello at 127.0.0.1:8420.
+      # The quick start has to keep working from nothing: `cargo build`, then the debug
+      # binary with an empty data directory alone serves hello at 127.0.0.1:8420.
       - name: Fresh clone serves hello on 8420
         shell: bash
         run: bash .github/scripts/fresh-clone.sh "$RUNNER_TEMP/fresh-node"
@@ -86,7 +86,7 @@ jobs:
 
       # docs/skills.md §7: a change to spec/ that is not reflected in skills/ is an
       # incomplete change. The reference sections are generated from the crate and the
-      # spec and committed; this fails naming the file that drifted (M12).
+      # spec and committed; this fails naming the file that drifted.
       - name: Skill references against the crate and the spec
         run: cargo xtask gen-skill-reference --check
 
@@ -103,9 +103,9 @@ jobs:
       - name: Release build
         run: cargo build --workspace --release --locked
 
-      # Risk R1: both engines are C compiled from source. Running the artefact proves it
-      # links and starts; printing its size is the number later milestones diff against.
-      # `--version` since M11 — bare `privatium` runs a node and would wait here forever.
+      # Both engines are C compiled from source. Running the artefact proves it links and
+      # starts, and printing its size is what later changes are diffed against.
+      # `--version` and not bare `privatium`, which runs a node and would wait here forever.
       - name: Linked engines and binary size
         shell: bash
         run: |
@@ -113,8 +113,8 @@ jobs:
           [ "${{ matrix.os }}" = "windows-latest" ] && binary="target/release/privatium.exe"
           "$binary" --version
           "$binary" skill list
-          # Bytes first and always. MB/MiB differ by 5% and by tool, and M6 and M13 diff
-          # against this number.
+          # Bytes and never MB/MiB, which differ by 5% and by tool, so two runs of this
+          # step are comparable.
           echo "binary size: $(wc -c < "$binary") bytes ($binary)"
 
       - name: Release tooling tests
@@ -138,8 +138,8 @@ jobs:
           archive: false
           if-no-files-found: error
 
-  # A second opinion from current stable, so a compiler change that will break us lands
-  # as one failing job rather than as a surprise the next time the MSRV moves.
+  # A second opinion from current stable, so a compiler change that will break the build
+  # lands as one failing job rather than as a surprise the next time the MSRV moves.
   stable:
     name: stable
     runs-on: ubuntu-latest

@@ -59,7 +59,7 @@ pub use crate::http::auth::{Device, Peer};
 /// takes the lock for its synchronous part: resolving the route, the stat-based
 /// `refresh_app`/`refresh`, the `_sys` reads and the HTML they render, and releases it
 /// before anything is awaited, so file streaming for a Tier 2 app never holds it. Every
-/// `app_conn()` is taken and dropped inside one locked section, which is what keeps M5's
+/// `app_conn()` is taken and dropped inside one locked section, which is what keeps the
 /// rule — never hold one across a privileged window — true without further machinery. An
 /// actor would give the same serialization with a channel in between; the mutex is the
 /// same guarantee with less to read, and `refresh_app`/`load_seed` need `&mut Node` anyway.
@@ -71,8 +71,8 @@ pub use crate::http::auth::{Device, Peer};
 /// that takes `lua.max_seconds` blocks neither the shell nor another app. Only
 /// `pv.append`, `pv.batch` and `pv.setting` take the lock, for the milliseconds a batch
 /// write and its incremental apply take. The connection is opened after the refresh and
-/// closed when the run ends; no VM keeps one across requests, which keeps M5's rule
-/// without machinery. The data API (M9, `api`) takes the same shape: a query runs on a
+/// closed when the run ends; no VM keeps one across requests, which keeps that same rule
+/// without machinery. The data API (`api`) takes the same shape: a query runs on a
 /// blocking thread with a connection taken under the lock, an append takes the lock for
 /// the write, and a stream subscribes under the lock and is pumped by a task after it.
 #[derive(Clone)]
@@ -163,7 +163,7 @@ impl Handler {
     /// header when it names an authority, otherwise this node's loopback origin.
     ///
     /// The value goes into a header verbatim, so it is accepted only when it is a bare
-    /// authority — no `;`, no spaces — and `http` is the only scheme Phase 1 speaks.
+    /// authority — no `;`, no spaces — and `http` is the only scheme this origin is served on.
     #[must_use]
     pub fn origin_of(&self, request: &Request) -> String {
         request

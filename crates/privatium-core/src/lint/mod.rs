@@ -158,8 +158,8 @@ pub struct Rule {
     pub criterion: Option<&'static str>,
 }
 
-/// The rule table. `PV308` was added in M12 (`docs/plans/phase-1.md §3`): the engine
-/// made it necessary and `spec/data-dictionary.md §2` had already promised it.
+/// The rule table. Every rule cites the spec section it enforces, which
+/// `cargo xtask lint-spec-refs` resolves; a rule that cannot is not a rule.
 pub static RULES: &[Rule] = &[
     Rule {
         id: RuleId::PV101,

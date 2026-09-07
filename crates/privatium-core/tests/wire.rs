@@ -658,7 +658,7 @@ async fn test_solo_mode_framework_prefix_wins() {
 // ---------------------------------------------------------------------------------------
 
 /// `apps/hello/README.md` — a line appended by hand is visible on the next request, with
-/// no restart: `refresh_app` runs per request (M5's stat, then a rebuild when stale).
+/// no restart: `refresh_app` runs per request — a stat, then a rebuild when stale.
 #[tokio::test]
 async fn test_hand_appended_line_visible_without_restart() {
     let root = tempfile::tempdir().unwrap();
@@ -827,9 +827,9 @@ async fn test_launcher_shows_a_missing_folder_as_unavailable() {
     );
 }
 
-/// The four settings pages render what `docs/plans/phase-1.md` M6 lists: identity, the
-/// installed apps with their warnings and errors, the data directory with backup
-/// instructions, and this space's own device row with the Phase 2 note.
+/// The four settings pages: identity, the installed apps with their warnings and
+/// errors, the data directory with backup instructions, and this space's own device row
+/// beside the offer to pair another.
 #[tokio::test]
 async fn test_settings_pages_render_the_node() {
     let root = tempfile::tempdir().unwrap();

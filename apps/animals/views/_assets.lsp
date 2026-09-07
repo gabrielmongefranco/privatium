@@ -13,7 +13,7 @@
               listener in a script that loads after Alpine is registered too late, and every
               x-data on the page is an "Undefined variable". Both scripts are `defer`, which
               runs them in document order; this order is what makes the components exist
-              when Alpine looks for them (found in M10, in a browser).
+              when Alpine looks for them.
 
               The <noscript> sheet is the no-JavaScript path: it reverts x-cloak and hides
               the buttons that only toggle Alpine state, so every question path and the

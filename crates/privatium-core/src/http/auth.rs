@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/auth.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-05
+// Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  auth_layer (spec/app-contract.md §6) with its real signature — a tower::Layer —
 //           and the bootstrap policy of spec/protocol.md §8.4: loopback is this node, a
 //           channel is its paired device, and public routes carry no device. core::handle
@@ -205,7 +205,7 @@ const NO_PEER: &str = "403 Forbidden — the request carries no peer address, so
                        Peer extension for a call made in-process \
                        (spec/app-contract.md §2.3).\n";
 
-/// Phase 1's whole policy.
+/// The whole admission policy, in one function.
 ///
 /// The peer is the [`Peer`] the framework's adapter inserts or, on an embedder's own
 /// axum router, the `ConnectInfo<SocketAddr>` that `into_make_service_with_connect_info`

@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/log/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-05
+// Created:  2026-09-01  |  Modified: 2026-09-06
 // Summary:  The append-only event log (spec/protocol.md §4). This module is the timestamp
 //           printer, the `op` and envelope types, and AppLog — one app's log, which owns
 //           the §4.3 Lamport counter and the single writer §3.1 allows this node.
@@ -43,8 +43,8 @@ pub fn now() -> String {
 
 /// Any instant, formatted as `ts`.
 ///
-/// The `§4.4` horizon M3 compares against has to be printed the same way the envelope's
-/// own `ts` is, or the comparison is between two different spellings of a timestamp.
+/// The `§4.4` horizon is compared against an envelope's `ts` as text, so both have to be
+/// printed the same way or the comparison is between two spellings of one timestamp.
 #[must_use]
 pub fn format_ts(at: jiff::Timestamp) -> String {
     TIMESTAMP.timestamp_to_string(&at)
@@ -53,10 +53,10 @@ pub fn format_ts(at: jiff::Timestamp) -> String {
 /// One app's event log: every segment on disk, the one this node writes, and the app's
 /// Lamport counter.
 ///
-/// This is the type everything above M2 appends through. It owns the [`Lamport`] counter
-/// because `§4.3` makes that per **app** — in Phase 1 there is exactly one writer per app so
-/// the two coincide, and in Phase 3 a sync receiver folds another device's events into the
-/// same counter without going through this node's writer.
+/// This is the type every append goes through. It owns the [`Lamport`] counter because
+/// `§4.3` makes that per **app** rather than per writer — with one writer per app the two
+/// coincide, but a sync receiver folds another device's events into the same counter
+/// without going through this node's writer.
 ///
 /// Opening one is where `seq` and `lam` are recovered. What comes back beside it is a
 /// [`Recovered`], which carries anything the scan found that the owner should hear about —

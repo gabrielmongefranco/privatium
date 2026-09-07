@@ -37,11 +37,11 @@ jiff           = { workspace = true }
 # table for that one reader.
 serde_json     = { workspace = true }
 
-# M6 — the axum adapter. `http1` and `tokio` are what `axum::serve` needs; the adapter has
-# no router, so none of axum's routing or extractor features are on. `tokio`'s `net` is the
-# loopback listener of docs/plans/phase-1.md §2.1 and `rt-multi-thread` the runtime `main`
-# starts. M11 added `signal` — Ctrl-C flushes local/state.jsonl before the process ends —
-# and `time`, for the daily pass that writes the weekly snapshots of spec/protocol.md §5.
+# The axum adapter. `http1` and `tokio` are what `axum::serve` needs; the adapter has no
+# router, so none of axum's routing or extractor features are on. `tokio`'s `net` is the
+# listener and `rt-multi-thread` the runtime `main` starts; `signal` lets Ctrl-C flush
+# local/state.jsonl before the process ends, and `time` drives the daily pass that writes
+# the weekly snapshots of spec/protocol.md §5.
 axum  = { workspace = true, features = ["http1", "tokio"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "net", "macros", "io-util", "signal", "time"] }
 tower = { workspace = true, features = ["util"] }

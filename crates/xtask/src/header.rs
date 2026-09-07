@@ -248,7 +248,7 @@ pub fn nothing() {}
         assert!(found.is_empty(), "{found:?}");
     }
 
-    /// The milestone's stated done-when: delete the header, and the check fails.
+    /// Delete the header, and the check fails — the whole point of it.
     #[test]
     fn a_deleted_header_fails() {
         let stripped = "pub fn nothing() {}\n";

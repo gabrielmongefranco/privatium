@@ -32,7 +32,7 @@ pub enum SettingsPage {
     Apps,
     /// `/settings/data` — the data directory and backup instructions.
     Data,
-    /// `/settings/devices` — this node's own row; pairing arrives in Phase 2.
+    /// `/settings/devices` — the pairing window and every paired device.
     Devices,
 }
 
@@ -324,7 +324,7 @@ fn is_skill_name(name: &str) -> bool {
 /// app, under its mount. Host mode and solo mode differ here and nowhere else.
 ///
 /// `url("/a/hello/", "/edit")` is `/a/hello/edit`; `url("/", "/edit")` is `/edit`; an empty
-/// `path` is the mount point itself. `pv.url()` (M7) and `pv.js`'s (M9) are this function.
+/// `path` is the mount point itself. Lua's `pv.url()` and `pv.js`'s are this function.
 #[must_use]
 pub fn url(mount: &str, path: &str) -> String {
     let mount = mount.trim_end_matches('/');

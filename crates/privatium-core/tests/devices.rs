@@ -717,7 +717,7 @@ async fn test_settings_node_display_name_is_set_by_the_owner_and_reaches_the_man
 }
 
 // ---------------------------------------------------------------------------------------
-// spec/cli.md §5.4 — the PV4xx rules over every page this milestone adds
+// spec/cli.md §5.4 — the PV4xx rules over every page in this file
 // ---------------------------------------------------------------------------------------
 
 /// `spec/cli.md §5.4` — the devices page with a device and its forms, the code page with

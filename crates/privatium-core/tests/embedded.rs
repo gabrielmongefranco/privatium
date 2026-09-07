@@ -333,7 +333,7 @@ fn test_spec_app_contract_6_snapshot_and_restore_reach_an_embedded_app() {
 
 /// `§6` — `start_sync` and `sync_now` are present with their signatures and answer with
 /// a typed error naming the phase they arrive in. Never `Ok`: a no-op that succeeded is
-/// what an embedder would build on (`docs/plans/phase-1.md`, M13). `pair` is real and
+/// what an embedder would build on. `pair` is real and
 /// is held by `tests/pair.rs`; `serve_discovery` is real and is held by
 /// `tests/discover.rs`.
 #[test]
@@ -486,7 +486,7 @@ fn test_spec_app_contract_7_query_cannot_write() {
     assert_eq!(devices[0]["kind"], json!("node"));
 }
 
-/// `§2.3`, `docs/plans/phase-1.md` M13 — `examples/embedded.rs` is the spec's shape in
+/// `§2.3` — `examples/embedded.rs` is the spec's shape in
 /// thirty lines: open, the app, an append, a query, an own axum router behind
 /// `auth_layer`, close. CI compiles and runs it; this holds its size and its content.
 #[test]

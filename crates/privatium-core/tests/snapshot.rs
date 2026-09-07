@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/snapshot.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-02  |  Modified: 2026-09-05
+// Created:  2026-09-02  |  Modified: 2026-09-06
 // Summary:  spec/protocol.md §5 — the snapshot id and manifest, the three-tier read with
 //           real bytes flipped on disk, when a snapshot does not apply, retention that
 //           never prunes the oldest, verification, the weekly policy, and where the tier
@@ -824,7 +824,7 @@ fn test_reopen_restores_from_tier1_after_cache_deleted() {
     );
     drop(node);
 
-    // An app store, with `local/` kept so the recorded watermark is the trap it was in M3.
+    // An app store, with `local/` kept so the recorded watermark is the trap under test.
     let mut fixture = Fixture::open_in(root, HELLO_DDL);
     seed_hello(&fixture);
     fixture.rematerialize();
@@ -1040,7 +1040,7 @@ fn test_spec_3_6_snapshot_policy_reads_sys_setting() {
 }
 
 /// The weekly schedule as API — due by interval or by event count, whichever first, with
-/// retention applied after. The timer is M6's; the command is M11's.
+/// retention applied after. The node's daily pass and `privatium maintain` both read it.
 #[test]
 fn test_weekly_snapshot_is_due_by_interval_or_events() {
     let root = tempfile::tempdir().unwrap();

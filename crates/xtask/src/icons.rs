@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/xtask/src/icons.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  `cargo xtask icons-verify`. Every icon name the shell, the reference apps, the
 //           skills and docs/icons.md's vocabulary table refer to must exist in the vendored
 //           Bootstrap Icons set, and the vendored VERSION must be the one docs/icons.md
@@ -251,8 +251,7 @@ mod tests {
         assert_eq!(references[3].line, 2);
     }
 
-    /// The test the milestone asks for: a name the vendored set lacks is a failure, not a
-    /// fallback.
+    /// A name the vendored set lacks is a failure, not a silent fallback glyph.
     #[test]
     fn a_missing_name_is_a_finding() {
         let set = set(&["gear", "trash"]);

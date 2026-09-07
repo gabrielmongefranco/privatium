@@ -359,7 +359,7 @@ async fn test_hello_end_to_end() {
 /// out of the file and run against a log that holds the three lines it describes: the
 /// path is this device's log, `seq` 4 keeps the file gapless (`spec/protocol.md §4.1`),
 /// `lam` 4 beats the row it amends (`§4.5`), the page shows it, and the next write the
-/// node makes takes `seq` 5 and `lam` 5 (`§4.3`, M9's rescan).
+/// node makes takes `seq` 5 and `lam` 5 (`§4.3`, after the log is rescanned).
 #[tokio::test]
 async fn test_hello_readme_echo_example_is_valid() {
     let root = tempfile::tempdir().unwrap();
@@ -709,7 +709,7 @@ async fn test_animals_end_to_end() {
     // Alpine's CDN builds call Alpine.start() in a microtask as soon as their script
     // runs, and start() dispatches `alpine:init` right then. A component registered from
     // an `alpine:init` listener in a script loaded *after* Alpine is registered too late
-    // and every x-data is an "Undefined variable" (seen in Edge in M10). So animals.js
+    // and every x-data is an "Undefined variable", as seen in a browser. So animals.js
     // has to come before alpine-csp.min.js, and both are `defer`, which keeps that order.
     for (name, html) in [
         ("play", &reloaded),
@@ -791,7 +791,7 @@ async fn test_animals_end_to_end() {
     assert!(empty.contains("0 animals, 0 questions"), "{empty}");
 }
 
-/// `docs/plans/phase-1.md` M10 — every write in animals as a plain form post with no
+/// Every write in animals as a plain form post with no
 /// `HX-Request`: each answers 303 to the board and the next GET shows the state; the
 /// error branch renders the page with `role="alert"`; every board form carries `method`
 /// and `action` beside `hx-post`; the reset form is a real form with `csrf()`; the

@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/log/lamport.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-01
+// Created:  2026-09-01  |  Modified: 2026-09-06
 // Summary:  The Lamport counter of spec/protocol.md §4.3. Small enough to inline
 //           everywhere, and a type rather than a bare u64 because getting its arithmetic
 //           subtly wrong would corrupt §4.5 merge order silently.
@@ -19,9 +19,9 @@
 /// humans and for tie-breaking only — which is why a wrong clock cannot reorder history
 /// but a wrong `lam` can.
 ///
-/// The counter is per **app**, not per writer. In Phase 1 those coincide, because a node
-/// has exactly one writer per app (`AGENTS.md` 2). They stop coinciding in Phase 3, when a
-/// sync receiver writes another device's log (`§10.2`) and must fold those events into the
+/// The counter is per **app**, not per writer. The two coincide while a node has exactly
+/// one writer per app (`AGENTS.md` 2). They stop coinciding once a sync receiver writes
+/// another device's log (`§10.2`) and must fold those events into the
 /// same counter without going through this node's writer — which is why the counter lives
 /// on [`AppLog`](super::AppLog) and is passed into the writer rather than owned by it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
@@ -34,8 +34,8 @@ impl Lamport {
         Self(value)
     }
 
-    /// Fold in the `lam` of an event this node has seen — read from any log file, or (from
-    /// Phase 3) received from a peer.
+    /// Fold in the `lam` of an event this node has seen — read from any log file, or
+    /// received from a peer.
     ///
     /// Monotonic by construction: a lower value cannot pull the counter back. That is what
     /// keeps the counter correct when a log file is replaced by an older copy, which a
