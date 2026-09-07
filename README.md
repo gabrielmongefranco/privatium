@@ -105,12 +105,19 @@ requirements, including security and accessibility.
 
 ## About the Author
 
-Privatium is built by [Gabriel Mongefranco](https://gabriel.mongefranco.com), a database and
-software architect who has spent two decades building data platforms in healthcare and
-research — enterprise data warehouses, BI systems, knowledge bases, and the first architecture for mobile and
-wearable research data at a large research university.
+Privatium is created by [Gabriel Mongefranco](https://gabriel.mongefranco.com), a database,
+analytics, and software architect with two decades of experience across healthcare,
+research, and enterprise systems.
 
-Learn more at: https://gabriel.mongefranco.com
+His work includes establishing the University of Michigan’s first data architecture for
+research using mobile and wearable technologies. His research on automating Fitbit
+sleep-data cleaning was published in *SLEEP*, sleep medicine’s premier peer-reviewed
+journal. Earlier in his career, his analytics helped hospitals avoid more than $5 million
+in readmission penalties.
+
+He brings the same priorities to Privatium: understandable data, durable local ownership,
+accessible software, and systems people can operate without becoming infrastructure
+experts. Learn more at: https://gabriel.mongefranco.com
 
 
 ## Contact
