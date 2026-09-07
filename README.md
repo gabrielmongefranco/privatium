@@ -68,8 +68,7 @@ You can run Privatium on Windows, macOS, or Linux. Lua and SQLite are included.
    and, the first time, a pairing code. Scan the QR code with the phone and tap the four
    emoji it shows, or type the two words. Later, open pairing again from
    **Settings › Devices** or with `./privatium pair`, and label or remove a paired phone
-   on the same page. The pairing screen, the devices page and `privatium pair` arrived
-   with v0.2; see [connectivity](docs/connectivity.md) for what each kind of
+   on the same page; see [connectivity](docs/connectivity.md) for what each kind of
    device can reach.
 4. **Make your own app.** In a second terminal, run:
 
