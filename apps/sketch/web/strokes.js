@@ -142,6 +142,43 @@ export function areaFilled(mark, host) {
   return host ? areaOf(host) : null;
 }
 
+/**
+ * The events that move a selection.
+ *
+ * Each mark becomes a tombstone and a fresh put, since an id is never reused, carrying its
+ * original layer so painting order survives. A fill that belongs to one of the moved marks
+ * travels in the same batch: it holds its own geometry, so it has to be moved by the same
+ * delta — it does not follow on its own — and re-pointed at its mark's new id.
+ *
+ * Returns the events in groups. A group is written whole, so a tombstone and the put that
+ * replaces it are never split across two batches.
+ */
+export function moveEvents(entries, ids, dx, dy, mint) {
+  const byId = new Map(entries);
+  const chosen = new Set(ids);
+  const fresh = new Map();
+  for (const id of ids) if (byId.has(id)) fresh.set(id, mint());
+
+  const relocate = (id, mark) => {
+    const d = { ...moved(mark, dx, dy), layer: mark.layer || id };
+    if (d.kind === 'fill' && fresh.has(d.anchor)) d.anchor = fresh.get(d.anchor);
+    return d;
+  };
+  const group = (id, mark) => [
+    { op: 'del', tbl: 'stroke', id },
+    { op: 'put', tbl: 'stroke', id: fresh.get(id), d: relocate(id, mark) }
+  ];
+
+  const groups = [];
+  for (const id of ids) if (byId.has(id)) groups.push(group(id, byId.get(id)));
+  for (const [id, mark] of entries) {
+    if (fresh.has(id) || mark.kind !== 'fill' || !chosen.has(mark.anchor)) continue;
+    fresh.set(id, mint());
+    groups.push(group(id, mark));
+  }
+  return { groups, fresh };
+}
+
 /** A copy of a mark moved by a delta. Fields this file does not understand — an old
  *  fill's `anchorAt` among them — are carried over untouched (`spec/protocol.md §4.2`). */
 export function moved(mark, dx, dy) {

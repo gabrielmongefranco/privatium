@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Sheet, SHEET_W, SHEET_H } from '../../../../apps/sketch/web/sheet.js';
-import { areaFilled, areaOf, bounds, covers, encloses, hits, inBox, isShape, moved, textSize } from '../../../../apps/sketch/web/strokes.js';
+import { areaFilled, areaOf, bounds, covers, encloses, hits, inBox, isShape, moveEvents, moved, textSize } from '../../../../apps/sketch/web/strokes.js';
 import { dashFor } from '../../../../apps/sketch/web/paint.js';
 import { toSvg, isOurs } from '../../../../apps/sketch/web/clip.js';
 import { BASIC, DEFAULT_SLOTS, INKING, INKS, SIZES, TOOLS, colorName, contrast, inkOn, isHex, luminance, needsEdge } from '../../../../apps/sketch/web/tools.js';
@@ -258,6 +258,56 @@ test('a dash pattern scales with the stroke so it reads the same at Fine and at 
   assert.equal(dotted[0], 1);
   assert.ok(Math.abs(dotted[1] - 13.2) < 1e-9, String(dotted[1]));
   assert.deepEqual(dashFor(6, 'solid'), [], 'a solid line has no pattern');
+});
+
+test('moving a shape moves the colour inside it exactly as far', () => {
+  // The colour carries its own geometry, so it does not follow on its own. Writing the
+  // fill back unmoved is what sent it home the instant the pointer came up, leaving the
+  // outline where it was dropped.
+  const ring = { points: [[100, 100], [200, 150], [100, 200]], color: '#000000', width: 6 };
+  const paint = { kind: 'fill', shape: 'free', points: [[100, 100], [200, 150], [100, 200]],
+    color: '#FFB703', anchor: 'ring' };
+  let n = 0;
+  const { groups, fresh } = moveEvents([['ring', ring], ['paint', paint]], ['ring'], 40, -25, () => `new-${n++}`);
+
+  assert.equal(groups.length, 2, 'the shape and its colour both move');
+  for (const group of groups) {
+    assert.deepEqual(group.map(e => e.op), ['del', 'put'], 'a tombstone and its replacement');
+    assert.equal(group[0].id !== group[1].id, true, 'an id is never reused');
+  }
+  const [outline, colour] = groups.map(group => group[1]);
+  assert.deepEqual(outline.d.points, [[140, 75], [240, 125], [140, 175]]);
+  assert.deepEqual(colour.d.points, outline.d.points, 'the same delta, not a different one');
+  assert.equal(colour.d.anchor, fresh.get('ring'), 're-pointed at the shape it now belongs to');
+  assert.equal(outline.d.layer, 'ring', 'painting order survives');
+  assert.equal(colour.d.layer, 'paint');
+
+  // A rectangle's colour is two corners rather than samples, and moves the same way.
+  const box = { kind: 'rect', a: { x: 0, y: 0 }, b: { x: 100, y: 60 }, color: '#000000', width: 6 };
+  const inside = { kind: 'fill', shape: 'rect', a: { x: 3, y: 3 }, b: { x: 97, y: 57 }, color: '#457B9D', anchor: 'box' };
+  const boxed = moveEvents([['box', box], ['inside', inside]], ['box'], 10, 10, () => `new-${n++}`);
+  const [, painted] = boxed.groups.map(group => group[1]);
+  assert.deepEqual(painted.d.a, { x: 13, y: 13 });
+  assert.deepEqual(painted.d.b, { x: 107, y: 67 });
+});
+
+test('a move touches nothing it was not given', () => {
+  let n = 0;
+  const mint = () => `new-${n++}`;
+  const ring = { points: [[0, 0], [9, 9], [0, 18]], width: 6 };
+  const other = { points: [[50, 50], [60, 60], [50, 70]], width: 6 };
+  const paint = { kind: 'fill', shape: 'free', points: [[0, 0], [9, 9], [0, 18]], anchor: 'ring' };
+  const loose = { kind: 'fill', shape: 'free', points: [[50, 50], [60, 60], [50, 70]], anchor: 'other' };
+  const entries = [['ring', ring], ['other', other], ['paint', paint], ['loose', loose]];
+
+  const { groups } = moveEvents(entries, ['ring'], 5, 5, mint);
+  assert.deepEqual(groups.flat().filter(e => e.op === 'del').map(e => e.id), ['ring', 'paint'],
+    'the colour on the other shape stays where it is');
+
+  // A selection naming a mark that is gone writes nothing for it.
+  assert.deepEqual(moveEvents(entries, ['vanished'], 5, 5, mint).groups, []);
+  // And a fill whose anchor is not in the selection is not dragged along.
+  assert.equal(moveEvents(entries, ['other'], 5, 5, mint).groups.length, 2);
 });
 
 // ---- the tool and colour tables ---------------------------------------------------------

@@ -15,7 +15,7 @@
 import { pv } from '/static/pv.js';
 import { batches, SketchHistory } from './history.js';
 import { Sheet, SHEET_W, SHEET_H } from './sheet.js';
-import { areaFilled, areaOf, bounds, covers, encloses, hits, inBox, isShape, moved } from './strokes.js';
+import { areaFilled, areaOf, bounds, covers, encloses, hits, inBox, isShape, moveEvents, moved } from './strokes.js';
 import { paintArea, paintMark } from './paint.js';
 import { fromSvg, isOurs, toSvg } from './clip.js';
 import {
@@ -662,30 +662,7 @@ function selectAt(point) {
 function moveSelection(dx, dy) {
   const ids = state.selection.slice();
   if (!ids.length || (!dx && !dy)) return;
-  const groups = [];
-  const fresh = new Map();
-
-  for (const id of ids) {
-    const mark = marks.get(id);
-    if (!mark) continue;
-    const next = pv.ulid();
-    fresh.set(id, next);
-    groups.push([
-      { op: 'del', tbl: 'stroke', id },
-      { op: 'put', tbl: 'stroke', id: next, d: { ...moved(mark, dx, dy), layer: layerOf(id, mark) } }
-    ]);
-  }
-
-  for (const [id, fill] of anchoredTo(ids)) {
-    if (fresh.has(id)) continue;                    // already moving on its own account
-    const next = pv.ulid();
-    groups.push([
-      { op: 'del', tbl: 'stroke', id },
-      { op: 'put', tbl: 'stroke', id: next,
-        d: { ...fill, anchor: fresh.get(fill.anchor) || fill.anchor, layer: layerOf(id, fill) } }
-    ]);
-  }
-
+  const { groups, fresh } = moveEvents(ordered(), ids, dx, dy, () => pv.ulid());
   state.selection = ids.map(id => fresh.get(id) || id);
   cycle = null;
   commitGroups(groups, 'Moved ' + ids.length + ' mark' + (ids.length === 1 ? '' : 's') + '.');
