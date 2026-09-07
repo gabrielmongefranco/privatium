@@ -85,10 +85,36 @@ export function inBox(mark, a, b) {
   return box[2] >= x0 && box[0] <= x1 && box[3] >= y0 && box[1] <= y1;
 }
 
-/** The origin a fill anchors to: a shape's top-left corner in sheet coordinates. */
+/**
+ * The origin a fill anchors to: the top-left of the mark's own geometry, in sheet
+ * coordinates. Any mark that encloses a region can host a fill — a circle drawn freehand
+ * as readily as one drawn with the ellipse tool — so this is not only for the two-point
+ * shapes. Only the delta between two origins is ever used, so the exact corner matters
+ * less than its being the same one every time.
+ */
 export function origin(mark) {
-  if (!isShape(mark)) return null;
-  return { x: Math.min(mark.a.x, mark.b.x), y: Math.min(mark.a.y, mark.b.y) };
+  if (!mark) return null;
+  if (isShape(mark)) return { x: Math.min(mark.a.x, mark.b.x), y: Math.min(mark.a.y, mark.b.y) };
+  if (mark.kind === 'text') return finite(mark.x, mark.y) ? { x: mark.x, y: mark.y } : null;
+  if (mark.kind === 'fill') return null;
+  if (!validPoints(mark)) return null;
+  return {
+    x: Math.min(...mark.points.map(p => p[0])),
+    y: Math.min(...mark.points.map(p => p[1]))
+  };
+}
+
+/** Whether a mark encloses an area, and so could be what a fill landed inside. */
+export function encloses(mark) {
+  if (!mark || mark.kind === 'fill' || mark.kind === 'text' || mark.kind === 'line') return false;
+  return isShape(mark) || validPoints(mark);
+}
+
+/** Whether a mark's box contains a region given as sheet coordinates. */
+export function contains(mark, region) {
+  const box = bounds(mark);
+  return !!box && box[0] <= region.x0 && box[1] <= region.y0 &&
+    box[2] >= region.x1 && box[3] >= region.y1;
 }
 
 /** A copy of a mark moved by a delta, including a fill's anchor reference. */

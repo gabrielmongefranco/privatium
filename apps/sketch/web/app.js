@@ -15,7 +15,7 @@
 import { pv } from '/static/pv.js';
 import { batches, SketchHistory } from './history.js';
 import { Sheet, SHEET_W, SHEET_H } from './sheet.js';
-import { bounds, hits, inBox, isShape, moved, origin } from './strokes.js';
+import { bounds, contains, encloses, hits, inBox, isShape, moved, origin } from './strokes.js';
 import { floodMark, paintMark } from './paint.js';
 import { fromSvg, isOurs, toSvg } from './clip.js';
 import {
@@ -125,16 +125,27 @@ function render() {
   ctx.fillRect(0, 0, pad.width, pad.height);
   sheet.applyTo(ctx);
 
-  for (const [, mark] of ordered()) {
+  // A drag is drawn as the finished move would look: the selected marks at their offset,
+  // and the fills that belong to them flooding from a seed carried the same distance.
+  // Painting the outline alone left the fill sitting where the shape used to be.
+  const drag = dragging && (dragging.dx || dragging.dy)
+    ? { ids: new Set(state.selection), dx: dragging.dx, dy: dragging.dy }
+    : null;
+  const carried = (id, mark) => !!drag &&
+    (drag.ids.has(id) || (mark.kind === 'fill' && mark.anchor && drag.ids.has(mark.anchor)));
+
+  for (const [id, mark] of ordered()) {
     if (mark.kind === 'fill') {
-      // An anchored fill whose shape has not arrived yet waits for it. Live delivery
+      // An anchored fill whose host has not arrived yet waits for it. Live delivery
       // includes synced events below the current mark, so the fill can land first, and
       // flooding from a seed that is no longer inside anything would cover the sheet.
       if (mark.anchor && !marks.has(mark.anchor)) continue;
-      floodMark(ctx, seedOf(mark), mark.color, sheet.k);
+      const seed = seedOf(mark);
+      floodMark(ctx, carried(id, mark) ? { x: seed.x + drag.dx, y: seed.y + drag.dy } : seed,
+        mark.color, sheet.k);
       continue;
     }
-    paintMark(ctx, mark, sheet.k);
+    paintMark(ctx, carried(id, mark) ? moved(mark, drag.dx, drag.dy) : mark, sheet.k);
   }
 
   if (drawing) paintMark(ctx, drawing, sheet.k);
@@ -143,11 +154,25 @@ function render() {
   drawPen();
 }
 
+// A flood fill reads and writes the whole backing store, so a pointer that reports more
+// often than the display refreshes would queue work it can never finish. One repaint per
+// frame is what the screen can show anyway.
+let frame = null;
+function scheduleRender() {
+  if (frame !== null) return;
+  frame = requestAnimationFrame(() => { frame = null; render(); });
+}
+
 function outlineSelection() {
+  const dx = dragging ? dragging.dx : 0;
+  const dy = dragging ? dragging.dy : 0;
   for (const id of state.selection) {
     const mark = marks.get(id);
     const box = mark && bounds(mark);
-    if (box) outlineBox({ x: box[0], y: box[1] }, { x: box[2], y: box[3] }, '#2459CF', [9, 6]);
+    if (box) {
+      outlineBox({ x: box[0] + dx, y: box[1] + dy }, { x: box[2] + dx, y: box[3] + dy },
+        '#2459CF', [9, 6]);
+    }
   }
 }
 
@@ -534,16 +559,26 @@ function finishMark() {
   commit([{ op: 'put', tbl: 'stroke', id: pv.ulid(), d: mark }], 'Mark saved.');
 }
 
+/**
+ * Flood, then record what the flood landed inside. The host is decided from the region
+ * the fill actually covered rather than from the seed alone: the topmost mark that
+ * encloses an area and whose own box contains that whole region. A circle drawn freehand
+ * qualifies exactly as one drawn with the ellipse tool — before, only the two-point
+ * shapes did, so a fill inside a hand-drawn circle kept a bare seed and escaped onto the
+ * page as soon as the circle moved.
+ *
+ * The flood is painted here rather than measured on a copy, because the whole sheet is
+ * repainted from the log a moment later anyway.
+ */
 function fillAt(point) {
-  const found = ordered().slice().reverse().find(([, mark]) => {
-    if (!isShape(mark) || mark.kind === 'line') return false;
-    const box = bounds(mark);
-    return box && point.x >= box[0] && point.x <= box[2] && point.y >= box[1] && point.y <= box[3];
-  });
+  const region = floodMark(ctx, point, state.color, sheet.k);
+  const host = region
+    ? ordered().slice().reverse().find(([, mark]) => encloses(mark) && contains(mark, region))
+    : null;
   const mark = { kind: 'fill', x: point.x, y: point.y, color: state.color, width: state.size };
-  if (found) { mark.anchor = found[0]; mark.anchorAt = origin(found[1]); }
+  if (host) { mark.anchor = host[0]; mark.anchorAt = origin(host[1]); }
   commit([{ op: 'put', tbl: 'stroke', id: pv.ulid(), d: mark }],
-    found ? 'Filled inside a shape — the fill moves with it.' : 'Filled a region.');
+    host ? 'Filled inside a shape — the fill moves with it.' : 'Filled a region.');
 }
 
 function placeText(point) {
@@ -571,9 +606,25 @@ function pickAt(point) {
 
 /* ---- selecting and moving ---------------------------------------------- */
 
-/** Every mark under a point, topmost first, so a repeat click can step through overlaps. */
+/**
+ * Every mark under a point, topmost first, so a repeat click can step through overlaps.
+ *
+ * A freehand mark is tested against the painted path, so a click inside a loose scribble
+ * does not grab it. A freehand mark that holds a fill is a filled object, though, and is
+ * grabbed anywhere inside it — otherwise a hand-drawn circle you have coloured in can
+ * only be picked up by its outline.
+ */
 function hitsAt(point) {
-  return ordered().slice().reverse().filter(([, mark]) => hits(mark, point.x, point.y)).map(([id]) => id);
+  const filled = new Set();
+  for (const [, mark] of ordered()) if (mark.kind === 'fill' && mark.anchor) filled.add(mark.anchor);
+  const inside = (id, mark) => {
+    if (!filled.has(id)) return false;
+    const box = bounds(mark);
+    return !!box && point.x >= box[0] && point.x <= box[2] && point.y >= box[1] && point.y <= box[3];
+  };
+  return ordered().slice().reverse()
+    .filter(([id, mark]) => hits(mark, point.x, point.y) || inside(id, mark))
+    .map(([id]) => id);
 }
 
 function selectAt(point) {
@@ -773,12 +824,12 @@ pad.addEventListener('pointermove', event => {
     if (hex !== state.hover) { state.hover = hex; paintPickChip(); }
     return;
   }
-  if (marquee) { marquee.b = sheet.at(event); render(); return; }
+  if (marquee) { marquee.b = sheet.at(event); scheduleRender(); return; }
   if (dragging) {
     const point = sheet.at(event);
     dragging.dx = point.x - dragging.x;
     dragging.dy = point.y - dragging.y;
-    previewDrag();
+    scheduleRender();
     return;
   }
   if (!drawing) return;
@@ -790,21 +841,8 @@ pad.addEventListener('pointermove', event => {
   } else {
     drawing.b = sheet.at(event);
   }
-  render();
+  scheduleRender();
 });
-
-/** Show the drag before it is written: the marks are painted at their offset, nothing
- *  is appended until the pointer is released. */
-function previewDrag() {
-  render();
-  ctx.save();
-  for (const id of state.selection) {
-    const mark = marks.get(id);
-    if (!mark) continue;
-    paintMark(ctx, moved(mark, dragging.dx, dragging.dy), sheet.k);
-  }
-  ctx.restore();
-}
 
 pad.addEventListener('pointerleave', () => { if (state.hover) { state.hover = ''; paintPickChip(); } });
 

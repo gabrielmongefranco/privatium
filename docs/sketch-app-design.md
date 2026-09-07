@@ -199,17 +199,47 @@ existed replays unchanged. Everything else is an additive field.
 restoration, which has to mint a fresh id because a tombstoned id is never the key of
 another row (`spec/protocol.md §4.6`).
 
-### Fills travel with their shape
+### Fills travel with the mark they landed in
 
 A fill is a seed point, not a raster snapshot, and replay is deterministic because events
 replay in log order against the same 1600 × 1200 surface at a tolerance of 28 per channel.
 
-A bare seed is not stable under *editing*, though. A fill dropped inside a shape replays
-after that shape, so moving the shape leaves the seed outside it and the flood escapes
-onto the page — the page and the shape appear to swap colours as you drag. So a fill that
-lands inside a rectangle or an ellipse records `anchor`, the shape's id, and `anchorAt`,
-the shape's origin at the time. Its seed is resolved at draw time against that shape's
-current origin. A fill on the open page keeps a plain seed.
+A bare seed is not stable under *editing*, though. A fill dropped inside an outline
+replays after that outline, so moving the outline leaves the seed behind it and the flood
+escapes onto the page — the page and the shape appear to swap colours as you drag. So a
+fill records `anchor`, the id of the mark it landed inside, and `anchorAt`, that mark's
+origin at the time. Its seed is resolved at draw time against the mark's current origin.
+A fill on the open page keeps a plain seed.
+
+**The host is decided from the region the fill actually covered, not from the seed.** The
+flood runs first and reports its bounding box; the host is then the topmost mark that
+encloses an area and whose own box contains that whole region. A fill that escaped onto
+the page covers a region no mark contains, so it correctly keeps a bare seed instead of
+being tied to something it is not inside.
+
+**Any mark that encloses an area can be a host** — a circle drawn freehand with the brush
+as readily as one drawn with the ellipse tool. A line and a text block enclose nothing and
+never host a fill.
+
+A mark that holds a fill is a filled object, so Select grabs it anywhere inside it. Without
+that rule a hand-drawn circle you have coloured in could only be picked up by its outline,
+because freehand marks are otherwise tested against the painted path rather than the box —
+which is what stops a loose scribble grabbing everything inside its bounding box.
+
+While a selection is being dragged, the sheet is drawn as the finished move will look: the
+marks at their offset, and the fills that belong to them flooding from a seed carried the
+same distance. Painting the outline alone left the colour sitting where the shape used to
+be, and the sheet repaints at most once a frame because a flood reads and writes the whole
+backing store.
+
+#### What a seed cannot do
+
+A fill is replayed, not stored, so it is bounded by whatever is on the sheet when its turn
+comes. If a line was drawn **before** the fill, the flood stops at it, and it goes on
+stopping at it afterwards — move a filled circle onto that line and the colour covers only
+the part of the circle the seed can reach. That is what a flood fill is, and the same thing
+happens in any paint program; a fill drawn *before* the line is unaffected, because the
+line is not yet on the surface when the flood runs.
 
 Two rules follow:
 
@@ -316,15 +346,16 @@ line style; Text becomes `text`. A blended mark is wrapped in a group with
 `mix-blend-mode: multiply`, which composites the group as a unit and so matches the
 canvas.
 
-A fill **anchored to a rectangle or an ellipse** is written as that shape's own area — the
-same geometry, filled, with no outline of its own, inset by half the outline's width
-because that is where the flood actually stops. It is emitted at the fill's own place in
-painting order, so it lands over the outline exactly as it does on the canvas. Without
-this a filled shape exported as a hollow one.
+A fill **anchored to a mark** is written as that mark's own area, emitted at the fill's own
+place in painting order so it lands over the outline exactly as it does on the canvas:
 
-A fill **on the open page** is a region of pixels with no shape behind it and cannot be
-expressed, so it is left out and the count is reported in `#status`. A fill anchored to a
-line is the same case: a line encloses nothing.
+- A rectangle or an ellipse becomes the same geometry, filled and unstroked, inset by half
+  the outline's width because that is where the flood stops.
+- A **freehand** outline becomes the same closed curve the stroke traces, filled and
+  unstroked. A circle drawn with the brush exported as an empty ring until this existed.
+
+A fill **on the open page** is a region of pixels with no outline behind it and cannot be
+expressed, so it is left out and the count is reported in `#status`.
 
 ### Undo, and the batch ceiling
 

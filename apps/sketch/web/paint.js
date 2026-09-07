@@ -134,6 +134,9 @@ function paintBlended(ctx, mark, k) {
  * Flood from a seed in sheet coordinates. The seed and the scan are in backing-store
  * pixels, since that is where the pixels are; tolerance is 28 per channel, which keeps
  * an anti-aliased edge from leaking.
+ *
+ * Returns the region it covered, in sheet coordinates, so a caller can tell what the
+ * fill actually landed inside; null when it covered nothing.
  */
 export function floodMark(ctx, seed, hex, k) {
   const W = ctx.canvas.width, H = ctx.canvas.height;
@@ -145,9 +148,10 @@ export function floodMark(ctx, seed, hex, k) {
   const target = [data[start], data[start + 1], data[start + 2]];
   const n = parseInt(hex.slice(1), 16);
   const r = n >> 16 & 255, g = n >> 8 & 255, b = n & 255;
-  if (target[0] === r && target[1] === g && target[2] === b) return;
+  if (target[0] === r && target[1] === g && target[2] === b) return null;
   const stack = [y * W + x];
   const seen = new Uint8Array(W * H);
+  let x0 = W, y0 = H, x1 = -1, y1 = -1;
   while (stack.length) {
     const at = stack.pop();
     if (seen[at]) continue;
@@ -157,10 +161,16 @@ export function floodMark(ctx, seed, hex, k) {
         Math.abs(data[i + 2] - target[2]) > 28) continue;
     data[i] = r; data[i + 1] = g; data[i + 2] = b; data[i + 3] = 255;
     const px = at % W, py = (at - px) / W;
+    if (px < x0) x0 = px;
+    if (py < y0) y0 = py;
+    if (px > x1) x1 = px;
+    if (py > y1) y1 = py;
     if (px > 0) stack.push(at - 1);
     if (px < W - 1) stack.push(at + 1);
     if (py > 0) stack.push(at - W);
     if (py < H - 1) stack.push(at + W);
   }
   ctx.putImageData(image, 0, 0);
+  if (x1 < 0) return null;
+  return { x0: x0 / k, y0: y0 / k, x1: x1 / k, y1: y1 / k };
 }

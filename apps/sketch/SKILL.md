@@ -80,12 +80,20 @@ Ten: Select, Brush, Eraser, Eyedropper, Fill, Line, Rectangle, Ellipse, Text, Pa
   overlapping marks on a repeat click; Rectangle mode takes every mark its box touches.
   A move is a tombstone and a fresh put per mark, carrying `layer`, written as one batch
   so one undo returns it.
-- **Fill** is a seed point replayed in log order, not a raster snapshot. A fill that lands
-  inside a rectangle or ellipse records that shape's id and its origin at the time, and
-  resolves its seed against the shape's current origin, so it travels with it. **A fill
-  whose anchor is not in the log is not drawn** — under sync it can arrive before its
-  shape, and flooding from a stale seed would cover the sheet. Copying a shape brings its
-  anchored fills; restoring one re-points them (`history.js` returns the id map).
+- **Fill** is a seed point replayed in log order, not a raster snapshot. It records the id
+  of the mark it landed inside and that mark's origin at the time, and resolves its seed
+  against the mark's current origin, so it travels with it. The host is chosen from the
+  region the flood actually covered — `floodMark` returns it — and is **any** mark that
+  encloses an area, a freehand circle as much as an ellipse; a fill that escaped onto the
+  page covers a region nothing contains and correctly keeps a bare seed. **A fill whose
+  anchor is not in the log is not drawn** — under sync it can arrive before its host, and
+  flooding from a stale seed would cover the sheet. Copying a mark brings its anchored
+  fills; restoring one re-points them (`history.js` returns the id map).
+- A mark that holds a fill is grabbed anywhere inside it. Freehand is otherwise hit-tested
+  against the painted path, which is what stops a loose scribble grabbing everything in
+  its bounding box — but a coloured-in circle you can only grab by the outline is wrong.
+- A drag repaints the sheet as the finished move will look, fills included, at most once a
+  frame. A flood reads and writes the whole backing store, so never repaint per event.
 - **Eyedropper** is momentary: it writes into the selected colour and hands back to the
   tool it interrupted, and it is disabled where there is no colour to pick into.
 - **Translucent ink** is a property of the mark, not a mode, so replay never depends on
