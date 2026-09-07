@@ -1,10 +1,11 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/csrf.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-05
-// Summary:  The csrf() of docs/plans/phase-1.md §2.2: HMAC-SHA256 over node_id ‖ nonce ‖ path
-//           under a key HKDF-derived from the node key by Identity::csrf_key. Nothing is
-//           written to disk; the nonce lives for the process, so a restart invalidates
+// Created:  2026-09-03  |  Modified: 2026-09-06
+// Summary:  The csrf() token of spec/lua-api.md §4.1: HMAC-SHA256 over node_id ‖ nonce ‖
+//           path under a key HKDF-derived from the node key by Identity::csrf_key. Nothing
+//           is written to disk; the nonce lives for the process, so a restart invalidates
 //           every outstanding form, which on one machine is correct and unremarkable.
+//           See main README.md for full license information.
 
 use hmac::{Hmac, KeyInit as _, Mac as _};
 use sha2::Sha256;

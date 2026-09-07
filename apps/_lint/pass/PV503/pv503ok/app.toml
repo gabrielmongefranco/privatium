@@ -1,7 +1,7 @@
 # Project:  Privatium™  |  File: apps/_lint/pass/PV503/pv503ok/app.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-05
-# Summary:  An icon the vendored set has.
+# Summary:  An icon the vendored set has. See main README.md for full license information.
 
 [app]
 slug    = "pv503ok"

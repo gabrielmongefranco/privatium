@@ -2,6 +2,7 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  Encrypted HTMX dispatch and metadata-only document handoffs (§8.3.1).
+//           See main README.md for full license information.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

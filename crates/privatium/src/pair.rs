@@ -1,13 +1,14 @@
 // Project:  Privatium™  |  File: crates/privatium/src/pair.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-06  |  Modified: 2026-09-06
-// Summary:  `privatium pair` (spec/cli.md §8): ask the running node over loopback to open
-//           a pairing window (POST /api/v1/pair), print the code as four emoji with their
+// Summary:  `privatium pair` (spec/cli.md §8): ask the running node over loopback to open a
+//           pairing window (POST /api/v1/pair), print the code as four emoji with their
 //           labels and as two words, the QR code of the node's URL with the URL in text
 //           beside it, then follow the window (GET /api/v1/pair) every two seconds until a
 //           device pairs (exit 0, naming it) or the window expires (exit 1). A data root is
-//           one process's (§1), so this command opens no node of its own; with none
-//           running it is a runtime error saying to start one.
+//           one process's (§1), so this command opens no node of its own; with none running
+//           it is a runtime error saying to start one.
+//           See main README.md for full license information.
 
 use std::io::{Read as _, Write as _};
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};

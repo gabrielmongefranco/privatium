@@ -1,10 +1,11 @@
 // Project:  Privatium™  |  File: crates/privatium/tests/adapter.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-03  |  Modified: 2026-09-05
-// Summary:  The axum adapter against ADR 0003 and spec/cli.md §2: it binds
-//           every interface, it adds nothing the core does not answer, it forwards the core's
-//           streamed body frames verbatim, and it never buffers a request body the core did
-//           not ask for. Raw TCP on the client side, so nothing here depends on an HTTP client.
+// Summary:  The axum adapter against ADR 0003 and spec/cli.md §2: it binds every interface,
+//           it adds nothing the core does not answer, it forwards the core's streamed body
+//           frames verbatim, and it never buffers a request body the core did not ask for.
+//           Raw TCP on the client side, so nothing here depends on an HTTP client.
+//           See main README.md for full license information.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

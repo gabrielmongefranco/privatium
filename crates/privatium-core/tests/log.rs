@@ -4,7 +4,7 @@
 // Summary:  The event log against spec/protocol.md §4 — the envelope, gapless `seq`, a
 //           reader that tolerates a gap, the Lamport clock across a restart, §4.4 clock
 //           hygiene, and what a batch can promise on a file that must stay appendable by
-//           `echo`.
+//           `echo`. See main README.md for full license information.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

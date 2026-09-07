@@ -2,8 +2,9 @@
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-06
 # Summary:  Package a single executable — and for Windows a portable zip holding the
-#           privatium-data folder with the example apps — and require successful CI
-#           for a release commit.
+#           privatium-data folder with the example apps — name every archive a release
+#           carries, and require successful CI for a release commit.
+#           See main README.md for full license information.
 
 import argparse
 import json
@@ -17,6 +18,19 @@ from pathlib import Path
 # The example apps of apps/README.md, the folders a portable zip carries under
 # privatium-data/apps/ so its launcher is never empty (spec/cli.md §1, §2).
 EXAMPLE_APPS = ("hello", "animals", "sketch")
+
+# One single-binary archive per platform, keyed as GitHub names the runner's operating
+# system, and the executable each holds.
+ARCHIVES = {"Linux": ("privatium-linux.tar.gz", "privatium"),
+            "macOS": ("privatium-mac.zip", "privatium"),
+            "Windows": ("privatium-windows.zip", "privatium.exe")}
+
+# The Windows portable zip (spec/cli.md §1).
+PORTABLE_ARCHIVE = "privatium-windows-portable.zip"
+
+# Every archive a release carries, in the order they are attached. The release
+# workflow reads this list, so an archive built here is never left off a release.
+ASSETS = tuple(name for name, _ in ARCHIVES.values()) + (PORTABLE_ARCHIVE,)
 
 PORTABLE_README = """Privatium, portable.
 
@@ -35,12 +49,9 @@ Delete privatium-data (after copying it) to use the platform data directory inst
 
 def package(platform, source, destination):
     """Archive only the platform binary, preserving an executable Unix mode."""
-    names = {"Linux": ("privatium-linux.tar.gz", "privatium"),
-             "macOS": ("privatium-mac.zip", "privatium"),
-             "Windows": ("privatium-windows.zip", "privatium.exe")}
-    if platform not in names:
+    if platform not in ARCHIVES:
         raise ValueError("Cannot package this platform; use Linux, macOS or Windows.")
-    archive, binary = names[platform]
+    archive, binary = ARCHIVES[platform]
     path = source / binary
     if not path.is_file() or path.is_symlink():
         raise FileNotFoundError("Cannot package the binary; build the release executable first.")
@@ -73,7 +84,7 @@ def package_portable(source, destination, apps):
         if not (apps / slug / "app.toml").is_file():
             raise FileNotFoundError(f"Cannot package the portable zip; apps/{slug} is not an app folder.")
     destination.mkdir(parents=True, exist_ok=True)
-    result = destination / "privatium-windows-portable.zip"
+    result = destination / PORTABLE_ARCHIVE
     with zipfile.ZipFile(result, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
         entry = zipfile.ZipInfo(binary)
         entry.create_system = 3
@@ -99,10 +110,16 @@ def require_ci(runs, sha):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=["package", "check-ci"])
+    parser.add_argument("command", choices=["package", "check-ci", "assets"])
     parser.add_argument("value")
     args = parser.parse_args()
-    if args.command == "package":
+    if args.command == "assets":
+        # `assets list`: the archive names a release carries, one per line, for the
+        # workflow step that attaches them.
+        if args.value != "list":
+            parser.error("Expected `assets list`.")
+        print("\n".join(ASSETS))
+    elif args.command == "package":
         result = package(args.value, Path("target/release"), Path("dist"))
         # A second output rather than a second line: with `archive: false` the upload
         # action takes exactly one file per step, so the portable zip has its own step.

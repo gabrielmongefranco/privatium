@@ -2,6 +2,7 @@
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-05
 # Summary:  One h1 in every state, levels in order, the h1 in the partial htmx swaps.
+#           See main README.md for full license information.
 
 [app]
 slug    = "pv404ok"

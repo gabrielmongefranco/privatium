@@ -4,9 +4,9 @@ File:     docs/decisions/0005-mobile-role.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-31
 Modified: 2026-08-31
-Summary:  Decision record. What a phone is in the cluster — full replica for
-          durability, opportunistic peer for availability, never a server.
-          Status: DECIDED.
+Summary:  Decision record. What a phone is in the cluster — full replica for durability,
+          opportunistic peer for availability, never a server. Status: DECIDED.
+          See main README.md for full license information.
 -->
 
 # ADR 0005 — Mobile is a full replica and an opportunistic peer

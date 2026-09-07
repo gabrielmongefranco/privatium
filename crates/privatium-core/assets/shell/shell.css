@@ -5,9 +5,9 @@
  *           Tier 1 view renders inside. Served at /static/shell.css under the default CSP
  *           of spec/protocol.md §9.3, which is why nothing in the shell carries a style=
  *           attribute. System fonts, no icon font (docs/icons.md), visible focus, and
- *           status never carried by colour alone. The tokens below are checked for
- *           contrast by tests/reference.rs (PV406): text at 4.5:1, focus and control
- *           borders at 3:1, in both colour schemes.
+ *           status never carried by colour alone. The tokens below are checked for contrast
+ *           by tests/reference.rs (PV406): text at 4.5:1, focus and control borders at 3:1,
+ *           in both colour schemes. See main README.md for full license information.
  */
 
 :root {

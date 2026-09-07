@@ -2,5 +2,6 @@
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-08-31  |  Modified: 2026-08-31
 # Summary:  Clippy knows the MSRV so it does not suggest APIs newer than it.
+#           See main README.md for full license information.
 
 msrv = "1.90.0"

@@ -1,12 +1,13 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/scaffold.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-04  |  Modified: 2026-09-06
-// Summary:  docs/plans/phase-1.md M11 — what `privatium new` writes, loaded and driven
-//           through core::handle: the CRUD screens `--scaffold` emits for a typed table
-//           (spec/cli.md §4, spec/app-contract.md §4.7) create, show, edit and tombstone a
-//           row, refuse a bad value with the schema's own message, and every rendered page
-//           meets the PV4xx rules (spec/cli.md §5.1) as the shell's own pages must; the
-//           empty app of each tier loads; a copy of hello carries its new slug and title.
+// Summary:  What `privatium new` writes, loaded and driven through core::handle: the CRUD
+//           screens `--scaffold` emits for a typed table (spec/cli.md §4,
+//           spec/app-contract.md §4.7) create, show, edit and tombstone a row, refuse a bad
+//           value with the schema's own message, and every rendered page meets the PV4xx
+//           rules (spec/cli.md §5.1) as the shell's own pages must; the empty app of each
+//           tier loads; a copy of hello carries its new slug and title.
+//           See main README.md for full license information.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

@@ -3,9 +3,10 @@
 // Created:  2026-09-06  |  Modified: 2026-09-06
 // Summary:  What the owner edits in the public registry (spec/data-dictionary.md §3.1,
 //           §3.2): the node's display name, a device's label, its revocation, and the
-//           hourly last_seen_at mark. Every change is a put of the whole current row
-//           read from the log, so owner-set and unknown fields survive (spec/protocol.md
-//           §4.2), and a revocation is never a del.
+//           hourly last_seen_at mark. Every change is a put of the whole current row read
+//           from the log, so owner-set and unknown fields survive (spec/protocol.md §4.2),
+//           and a revocation is never a del.
+//           See main README.md for full license information.
 
 use std::collections::BTreeMap;
 
@@ -129,7 +130,9 @@ impl Node {
         let at = log::format_ts(now);
         let reason = reason.and_then(|reason| clean_text(reason, LABEL_MAX));
         let changed = self.amend_sys_row(sys::DEVICE, device, |row| {
-            if row.contains_key("revoked_at") {
+            // A `null` and an absent key are the same value (`spec/data-dictionary.md
+            // §2.1`): a row that spells the null out is not a revoked row.
+            if row.get("revoked_at").is_some_and(|at| at.get() != "null") {
                 return Ok(());
             }
             row.insert("revoked_at".into(), to_raw_value(&at)?);
@@ -172,8 +175,10 @@ impl Node {
                 Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(false),
                 Err(error) => return Err(Error::Store(Box::new(StoreError::Sql(error)))),
             };
+        // A mark in the future — a clock that was wrong when it was written — is
+        // corrected now rather than trusted for however long it claims.
         let due = match last.and_then(|text| text.parse::<jiff::Timestamp>().ok()) {
-            Some(last) => now.duration_since(last) >= SEEN_INTERVAL,
+            Some(last) => last > now || now.duration_since(last) >= SEEN_INTERVAL,
             None => true,
         };
         if !due {

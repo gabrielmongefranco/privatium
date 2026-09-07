@@ -2,6 +2,7 @@
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 -- Created:  2026-09-05  |  Modified: 2026-09-05
 -- Summary:  The folder and the slug agree, so only the reservation is wrong.
+--           See main README.md for full license information.
 
 local pv = require 'privatium'
 

@@ -1,8 +1,9 @@
 # Project:  Privatium™  |  File: Cargo.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-08-31  |  Modified: 2026-09-05
-# Summary:  Workspace root. Three crates per docs/plans/phase-1.md §4, one pinned
-#           dependency table, and the MSRV every member inherits.
+# Created:  2026-08-31  |  Modified: 2026-09-06
+# Summary:  Workspace root: the core library, the binary and the repository's own checks,
+#           one pinned dependency table, and the MSRV every member inherits.
+#           See main README.md for full license information.
 
 [workspace]
 resolver = "3"

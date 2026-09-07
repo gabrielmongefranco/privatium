@@ -2,6 +2,7 @@
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-05
 # Summary:  cross_origin_isolated under a solo-mode node.
+#           See main README.md for full license information.
 
 [app]
 slug    = "pv502ok"

@@ -1,8 +1,9 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/session.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-05  |  Modified: 2026-09-05
-// Summary:  Session key agreement, authenticated framing, and handshake refusals
-//           against spec/protocol.md §8 and shared browser fixtures.
+// Summary:  Session key agreement, authenticated framing, and handshake refusals against
+//           spec/protocol.md §8 and shared browser fixtures.
+//           See main README.md for full license information.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

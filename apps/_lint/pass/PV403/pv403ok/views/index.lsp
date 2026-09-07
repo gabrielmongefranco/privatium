@@ -1,5 +1,6 @@
 <?-- Project: Privatium™ | apps/_lint/pass/PV403/pv403ok/views/index.lsp
-     Summary: PV403 pass: fieldset and legend around the group. --?>
+     Summary: PV403 pass: fieldset and legend around the group.
+              See main README.md for full license information. --?>
 <h1>Preferences</h1>
 <form method="get" action="<?= url('/') ?>">
   <fieldset>

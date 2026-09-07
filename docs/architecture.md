@@ -5,6 +5,7 @@ Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
 Modified: 2026-09-05
 Summary:  Explanatory architecture overview. Non-normative; see spec/ for the contract.
+          See main README.md for full license information.
 -->
 
 # Architecture

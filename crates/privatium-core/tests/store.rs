@@ -5,6 +5,7 @@
 //           granularity, tombstones, the §4.4 horizon, the §2.1 encodings, a cache that can
 //           be deleted, a log anyone may append to by hand, and the §2.5 property that the
 //           incremental apply, the full replay, and a restore from a snapshot all agree.
+//           See main README.md for full license information.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

@@ -2,6 +2,7 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-05  |  Modified: 2026-09-05
 // Summary:  Origin-confined encrypted requests and streaming responses (§8.3).
+//           See main README.md for full license information.
 
 import { clientHandshake, decode64 } from './session.js';
 import { sha256 } from './vendor/noble/hashes/sha2.js';

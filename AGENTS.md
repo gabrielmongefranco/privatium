@@ -106,7 +106,13 @@ spread-out form used throughout `spec/` and `docs/`, and the compact form used i
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-08-31  |  Modified: 2026-09-05
 // Summary:  What this file is for, in a sentence or three.
+//           See main README.md for full license information.
 ```
+
+The summary tells a reader what they will find in the file and cites the documents it
+implements — never a plan, a milestone, a round of work or a conversation — and it ends
+with the sentence `See main README.md for full license information.`, kept whole on one
+line, which is how every file points at the licence notices without repeating them.
 
 `.lsp` templates carry a reduced form: project, path, and summary. Authorship on every
 partial of an app nobody reads separately is noise.

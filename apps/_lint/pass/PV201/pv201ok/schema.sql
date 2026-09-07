@@ -1,6 +1,6 @@
 -- Project:  Privatium™  |  File: apps/_lint/pass/PV201/pv201ok/schema.sql
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 -- Created:  2026-09-05  |  Modified: 2026-09-05
--- Summary:  One table to query.
+-- Summary:  One table to query. See main README.md for full license information.
 
 CREATE TABLE note (id VARCHAR PRIMARY KEY, text VARCHAR NOT NULL);

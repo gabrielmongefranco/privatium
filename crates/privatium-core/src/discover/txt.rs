@@ -1,15 +1,18 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/discover/txt.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-06  |  Modified: 2026-09-06
-// Summary:  The TXT record of spec/protocol.md §6.1 — the eight keys in the table's
-//           order, built from the node's facts, with `apps` truncated to `,…` so the
-//           whole record stays under 1300 bytes — and the reading of one back into a
-//           Discovered.
+// Summary:  The TXT record of spec/protocol.md §6.1 — the eight keys in the table's order,
+//           built from the node's facts, with `apps` truncated to `,…` so the whole record
+//           stays under 1300 bytes — and the reading of one back into a Discovered, with
+//           every key off the wire judged before it is kept.
+//           See main README.md for full license information.
 
 use std::collections::BTreeMap;
 use std::net::IpAddr;
 
 use super::{Discovered, Facts};
+use crate::app::manifest::is_valid_slug;
+use crate::identity::NodeId;
 
 /// The budget the whole record SHOULD stay under so it fits one packet (`§6.1`).
 pub const BUDGET: usize = 1300;
@@ -92,9 +95,16 @@ pub fn fit_apps(apps: &[String], room: usize) -> String {
     kept
 }
 
+/// The most slugs kept from one record's `apps`; a record under the budget holds fewer.
+pub const APPS_MAX: usize = 64;
+
 /// Read a record back — from mDNS or from a UDP answer — into a [`Discovered`] at
-/// `addrs`. `None` when it is not a `pv/1` record: no `id`, or a `v` this build does not
-/// speak. A missing `p` falls back to `port`, the SRV port an mDNS resolution carries.
+/// `addrs`. The record came off the network, so every key is judged before it is kept
+/// (`§6.1`): `None` when it is not a `pv/1` record — a `v` this build does not speak,
+/// an `id` or a `cl` that is not shaped as an ID; the name is cut to what an instance
+/// name may hold, and `apps` keeps only slugs, at most [`APPS_MAX`], plus the marker of
+/// a truncated list. A missing `p` falls back to `port`, the SRV port an mDNS
+/// resolution carries.
 #[must_use]
 pub fn read(
     txt: &BTreeMap<String, String>,
@@ -106,7 +116,11 @@ pub fn read(
     if txt.get("v").map(String::as_str) != Some("1") {
         return None;
     }
-    let id = txt.get("id").filter(|id| !id.is_empty())?.clone();
+    let id = txt.get("id").filter(|id| NodeId::is_valid(id))?.clone();
+    let cluster = txt.get("cl").cloned().unwrap_or_default();
+    if !cluster.is_empty() && !NodeId::is_valid(&cluster) {
+        return None;
+    }
     let port = txt
         .get("p")
         .and_then(|p| p.parse::<u16>().ok())
@@ -115,7 +129,8 @@ pub fn read(
         .get("apps")
         .map(|apps| {
             apps.split(',')
-                .filter(|slug| !slug.is_empty())
+                .filter(|item| *item == ELLIPSIS.trim_start_matches(',') || is_valid_slug(item))
+                .take(APPS_MAX)
                 .map(str::to_owned)
                 .collect()
         })
@@ -125,8 +140,8 @@ pub fn read(
     addrs.dedup();
     Some(Discovered {
         id,
-        cluster: txt.get("cl").cloned().unwrap_or_default(),
-        name: txt.get("nm").cloned().unwrap_or_default(),
+        cluster,
+        name: super::bound_name(txt.get("nm").map_or("", String::as_str)),
         addrs,
         port,
         apps,

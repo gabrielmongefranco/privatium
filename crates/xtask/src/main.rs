@@ -2,8 +2,9 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-08-31  |  Modified: 2026-09-03
 // Summary:  Command dispatch for the repository's own checks. Deliberately not clap:
-//           spec/cli.md governs the flags of `privatium`, and nothing here should ever
-//           be mistaken for part of that surface.
+//           spec/cli.md governs the flags of `privatium`, and nothing here should ever be
+//           mistaken for part of that surface.
+//           See main README.md for full license information.
 
 use std::process::{Command, ExitCode};
 

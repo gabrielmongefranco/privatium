@@ -4,9 +4,10 @@ File:     docs/decisions/0006-sqlite-engine.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-09-03
 Modified: 2026-09-03
-Summary:  Decision record. The query engine is SQLite, not DuckDB; what that costs,
-          what it buys, and where the guarantees DuckDB used to give now live.
-          Status: DECIDED. Supersedes ADR 0001 §3 and ADR 0002's engine bullet.
+Summary:  Decision record. The query engine is SQLite, not DuckDB; what that costs, what it
+          buys, and where the guarantees DuckDB used to give now live. Status: DECIDED.
+          Supersedes ADR 0001 §3 and ADR 0002's engine bullet.
+          See main README.md for full license information.
 -->
 
 # ADR 0006 — SQLite is the query engine

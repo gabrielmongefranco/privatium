@@ -4,8 +4,8 @@
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-08-28
 # Modified: 2026-09-06
-# Summary:  Tier 2 reference app. Note what is absent: no app.lua, no views/,
-#           no schema.sql. This is the entire manifest.
+# Summary:  Tier 2 reference app. Note what is absent: no app.lua, no views/, no schema.sql.
+#           This is the entire manifest. See main README.md for full license information.
 # ---------------------------------------------------------------------------
 
 [app]

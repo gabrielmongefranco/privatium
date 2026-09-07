@@ -1,11 +1,12 @@
 # Project:  Privatium™  |  File: deny.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-08-31  |  Modified: 2026-09-03
-# Summary:  Licence and supply-chain policy, checked by `cargo deny check` in CI.
-#           ADR 0001 declined Barracuda/BAS partly because it is GPL-2.0-only and so
-#           incompatible with this project's GPL-3.0-or-later. That was a judgement call
-#           made once; this file makes it mechanical, so the same mistake cannot arrive
-#           later as a transitive dependency nobody read the licence of.
+# Summary:  Licence and supply-chain policy, checked by `cargo deny check` in CI. ADR 0001
+#           declined Barracuda/BAS partly because it is GPL-2.0-only and so incompatible
+#           with this project's GPL-3.0-or-later. That was a judgement call made once; this
+#           file makes it mechanical, so the same mistake cannot arrive later as a
+#           transitive dependency nobody read the licence of.
+#           See main README.md for full license information.
 #
 #           Written for cargo-deny 0.20.x, which is allow-list only: there is no `deny`
 #           list any more, and anything not named below fails. GPL-2.0-only is therefore

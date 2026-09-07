@@ -5,6 +5,7 @@ Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
 Modified: 2026-08-28
 Summary:  Name, tagline, and the rename procedure. Status: SETTLED.
+          See main README.md for full license information.
 -->
 
 # Naming

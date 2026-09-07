@@ -2,10 +2,10 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-01  |  Modified: 2026-09-05
 // Summary:  One app's cache/<slug>.sqlite: the framework's connection that materializes it
-//           from the log or from a snapshot (spec/protocol.md §5.3), the read-only sandboxed
-//           connection app SQL gets (spec/app-contract.md §7), the watermark that notices a
-//           log someone appended to by hand, and the record of which restore tier built the
-//           tables.
+//           from the log or from a snapshot (spec/protocol.md §5.3), the read-only
+//           sandboxed connection app SQL gets (spec/app-contract.md §7), the watermark that
+//           notices a log someone appended to by hand, and the record of which restore tier
+//           built the tables. See main README.md for full license information.
 
 use std::collections::BTreeMap;
 use std::fs;

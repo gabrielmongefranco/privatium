@@ -1,14 +1,14 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/lua.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-03  |  Modified: 2026-09-06
-// Summary:  The Lua host against spec/lua-api.md and docs/plans/phase-1.md M7 and M8, every
-//           test through core::handle with no listener: the sandbox of §5 and its four
-//           limits, adversarially (R2); the stable route index of §2.4; the pv module of §3
-//           — routing, typed reads, appends and batches, pv.dec; the sandbox globals of
-//           §4.0; solo-mode shadowing; the LSP templates of §4 — escaping, raw, comments,
-//           layouts and partials, the line map, csrf verified — and hot reload of
-//           templates, app.lua, lib/ and schema.sql with a VM mid-request (R3); the two
-//           reference apps rendering end to end, and static/ beneath a Tier 1 mount.
+// Summary:  The Lua host against spec/lua-api.md, every test through core::handle with no
+//           listener: the sandbox of §5 and its four limits, adversarially; the stable
+//           route index of §2.4; the pv module of §3 — routing, typed reads, appends and
+//           batches, pv.dec; the sandbox globals of §4.0; solo-mode shadowing; the LSP
+//           templates of §4 — escaping, raw, comments, layouts and partials, the line map,
+//           csrf verified — and hot reload of templates, app.lua, lib/ and schema.sql with
+//           a VM mid-request; the two reference apps rendering end to end, and static/
+//           beneath a Tier 1 mount. See main README.md for full license information.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

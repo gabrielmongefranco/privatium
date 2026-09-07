@@ -4,8 +4,9 @@ File:     docs/plans/phase-7.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-09-05
 Modified: 2026-09-05
-Summary:  Stub. The Phase 7 plan — the first real app — is written from docs/roadmap.md
-          when Phase 6 closes, in the shape of docs/plans/phase-1.md. Non-normative.
+Summary:  Stub. The Phase 7 plan — the first real app — is written from docs/roadmap.md when
+          Phase 6 closes, in the shape of docs/plans/phase-1.md. Non-normative.
+          See main README.md for full license information.
 -->
 
 # Phase 7 Implementation Plan — stub

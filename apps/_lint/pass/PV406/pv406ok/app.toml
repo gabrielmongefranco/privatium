@@ -1,7 +1,7 @@
 # Project:  Privatium™  |  File: apps/_lint/pass/PV406/pv406ok/app.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-05
-# Summary:  Declared tokens at 4.5:1.
+# Summary:  Declared tokens at 4.5:1. See main README.md for full license information.
 
 [app]
 slug    = "pv406ok"

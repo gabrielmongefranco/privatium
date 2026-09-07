@@ -2,6 +2,7 @@
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 -- Created:  2026-09-05  |  Modified: 2026-09-05
 -- Summary:  PV107 fail: an INSERT after the declaration; rows arrive by append.
+--           See main README.md for full license information.
 
 CREATE TABLE note (
     id   VARCHAR PRIMARY KEY,

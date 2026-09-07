@@ -1,11 +1,12 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lint/css.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
+// Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  What PV406 (spec/cli.md §5.1) reads: a stylesheet's `:root` tokens and rules,
 //           `var()` resolution, and the WCAG 2.x relative-luminance contrast ratio — the
-//           maths M10 wrote in tests/common/a11y.rs for the shell's own stylesheet, lifted
+//           same maths tests/common/a11y.rs applies to the shell's own stylesheet, shared
 //           here so an app's declared tokens are held to the same floors. Nothing here
 //           panics on a colour it cannot read; an unreadable value is simply not checked.
+//           See main README.md for full license information.
 
 use std::collections::BTreeMap;
 

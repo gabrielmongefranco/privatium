@@ -4,8 +4,9 @@ File:     docs/decisions/0002-rust-core.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-29
 Modified: 2026-09-03
-Summary:  Decision record. Rust as the core language, and the discovery and
-          transport stack that follows from it. Status: DECIDED.
+Summary:  Decision record. Rust as the core language, and the discovery and transport stack
+          that follows from it. Status: DECIDED.
+          See main README.md for full license information.
 -->
 
 # ADR 0002 — Rust core, pkarr discovery, direct peer transport

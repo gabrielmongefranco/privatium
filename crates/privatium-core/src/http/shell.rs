@@ -1,11 +1,12 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/shell.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-03  |  Modified: 2026-09-06
-// Summary:  The framework's own pages — launcher, settings, errors — as server-rendered HTML
-//           with HTMX and inlined Bootstrap Icons (docs/architecture.md §2.5, docs/icons.md).
-//           No client framework, no bundler, no inline script or style: every page renders
-//           under the default CSP of spec/protocol.md §9.3 exactly as written, and every
-//           page is held to the PV4xx rules of spec/cli.md §5 by tests/reference.rs.
+// Summary:  The framework's own pages — launcher, settings, errors — as server-rendered
+//           HTML with HTMX and inlined Bootstrap Icons (docs/architecture.md §2.5,
+//           docs/icons.md). No client framework, no bundler, no inline script or style:
+//           every page renders under the default CSP of spec/protocol.md §9.3 exactly as
+//           written, and every page is held to the PV4xx rules of spec/cli.md §5 by
+//           tests/reference.rs. See main README.md for full license information.
 
 use std::fmt::Write as _;
 

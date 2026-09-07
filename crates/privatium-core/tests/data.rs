@@ -1,14 +1,15 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/data.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-03  |  Modified: 2026-09-06
-// Summary:  The data API against spec/data-api.md and docs/plans/phase-1.md M9, every test
-//           through core::handle with no listener: the client's four fields and nothing
-//           stamped (§2, PV304), batches all or nothing with the offending index, the
-//           limits, ad-hoc SQL behind its permission with bound parameters only, `$name`
-//           views, the NDJSON of raw lines, the row endpoint, SSE with no gap across a
-//           reconnect and frames that arrive while the stream is open, resync on a rebuilt
-//           cache, pv.on('append') for an API append, a tombstoned id refused, DECIMAL as a
-//           string end to end, `sys.v_*` readable, and sketch with no schema.sql at all.
+// Summary:  The data API against spec/data-api.md, every test through core::handle with no
+//           listener: the client's four fields and nothing stamped (§2, PV304), batches all
+//           or nothing with the offending index, the limits, ad-hoc SQL behind its
+//           permission with bound parameters only, `$name` views, the NDJSON of raw lines,
+//           the row endpoint, SSE with no gap across a reconnect and frames that arrive
+//           while the stream is open, resync on a rebuilt cache, pv.on('append') for an API
+//           append, a tombstoned id refused, DECIMAL as a string end to end, `sys.v_*`
+//           readable, and sketch with no schema.sql at all.
+//           See main README.md for full license information.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

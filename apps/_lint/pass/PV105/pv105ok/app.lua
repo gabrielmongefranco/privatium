@@ -2,6 +2,7 @@
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 -- Created:  2026-09-05  |  Modified: 2026-09-05
 -- Summary:  PV105 pass: the tier's required file exists and parses.
+--           See main README.md for full license information.
 
 local pv = require 'privatium'
 

@@ -5,6 +5,7 @@ Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
 Modified: 2026-09-06
 Summary:  Topologies, the always-on node, and per-OS firewall behaviour.
+          See main README.md for full license information.
 -->
 
 # Deployment
@@ -167,12 +168,15 @@ containing folder inside the archive.
 |---|---|---|
 | macOS | `privatium-mac.zip` | `privatium` |
 | Windows | `privatium-windows.zip` | `privatium.exe` |
+| Windows, portable | `privatium-windows-portable.zip` | `privatium.exe`, a `README.txt`, and a `privatium-data` folder holding the three example apps, so everything stays in one folder (`spec/cli.md §1`) |
 | Linux | `privatium-linux.tar.gz` | `privatium` |
 
 These are native builds on GitHub's `macos-latest`, `windows-latest` and
 `ubuntu-latest` runners, respectively. The shorter names do not imply universal
-architecture support. Apps are separate; the binary includes Lua and SQLite.
-Installers, AppImage, Flatpak and signed or notarized packages are not built yet.
+architecture support. The binary includes Lua, SQLite and the three example apps, which
+it writes into an empty `apps/` folder on its first run; the portable zip carries them
+as files beside the program instead. Installers, AppImage, Flatpak and signed or
+notarized packages are not built yet.
 
 ### 6.1 Publishing binaries
 
@@ -182,13 +186,16 @@ Installers, AppImage, Flatpak and signed or notarized packages are not built yet
 2. Publish a GitHub release for that commit. The **Release binaries** workflow also
    handles prereleases. Pushing a tag alone does not create a release.
 3. The workflow checks the latest matching push CI run, builds the three binaries
-   with the pinned Rust toolchain and `Cargo.lock`, smoke-tests them, and attaches
-   the archives. It does not repeat the full test suite.
+   with the pinned Rust toolchain and `Cargo.lock`, smoke-tests them, packages the four
+   archives above, and attaches them. It does not repeat the full test suite.
 
 If matching CI is missing, pending or unsuccessful, the release remains published
-without new binaries. Let CI pass, then rerun **Release binaries** from Actions.
-Rerunning replaces only these three named assets; release notes and other assets stay
-as they are. The workflow must be present in the released commit.
+without new binaries. Let CI pass, then run **Release binaries** again from Actions:
+either rerun the failed run, or start the workflow by hand and give it the release tag,
+which is also how binaries are attached to a release that was published before the
+workflow existed. Either way replaces only the four named assets; release notes and
+other assets stay as they are. The workflow runs from the default branch, so it must be
+on `main` when the release is published or the workflow is started.
 
 ---
 

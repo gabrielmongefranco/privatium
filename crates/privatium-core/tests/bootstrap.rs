@@ -2,6 +2,7 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-01  |  Modified: 2026-09-05
 // Summary:  First run: the storage tree and public identity rows written before apps load.
+//           See main README.md for full license information.
 
 // AGENTS.md, Style: unwrap() is permitted in tests.
 #![allow(clippy::unwrap_used, clippy::expect_used)]

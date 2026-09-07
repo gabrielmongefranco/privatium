@@ -4,6 +4,7 @@
 // Summary:  The 16-bit pairing code, its two normative renderings — four glyphs and two
 //           words — and the parser that accepts either, or the glyphs' labels
 //           (spec/protocol.md §7.2, §7.3, spec/pairing-words.txt).
+//           See main README.md for full license information.
 
 use std::fmt;
 

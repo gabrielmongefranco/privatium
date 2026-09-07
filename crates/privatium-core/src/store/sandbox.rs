@@ -1,12 +1,14 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/sandbox.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-03  |  Modified: 2026-09-03
-// Summary:  spec/app-contract.md §7 — the connection app SQL runs on. Read-only at the file,
-//           `query_only` at the connection, and an authorizer that refuses every write, every
-//           PRAGMA, ATTACH, and extension loading, so nothing an app's SQL can say reaches the
-//           filesystem or the engine's settings. The framework's own connection is separate
-//           and never handed out. The framework attaches cache/_sys.sqlite as `sys` before
-//           the authorizer goes on (spec/data-dictionary.md §4): read-only, like main.
+// Summary:  spec/app-contract.md §7 — the connection app SQL runs on. Read-only at the
+//           file, `query_only` at the connection, and an authorizer that refuses every
+//           write, every PRAGMA, ATTACH, and extension loading, so nothing an app's SQL can
+//           say reaches the filesystem or the engine's settings. The framework's own
+//           connection is separate and never handed out. The framework attaches
+//           cache/_sys.sqlite as `sys` before the authorizer goes on
+//           (spec/data-dictionary.md §4): read-only, like main.
+//           See main README.md for full license information.
 
 use std::path::Path;
 use std::time::Duration;

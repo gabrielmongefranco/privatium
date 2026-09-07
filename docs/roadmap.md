@@ -4,8 +4,9 @@ File:     docs/roadmap.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
 Modified: 2026-09-06
-Summary:  Build phases with explicit acceptance criteria. Non-normative. Phases 2 and 3
-          have plans under docs/plans/; later phases have stubs there.
+Summary:  Build phases with explicit acceptance criteria. Non-normative. Phases 2 and 3 have
+          plans under docs/plans/; later phases have stubs there.
+          See main README.md for full license information.
 -->
 
 # Roadmap
@@ -101,8 +102,11 @@ together and stopped with the node, the `pair` flag from one source, and a real
 emoji pad and the word field, the code page and the devices page on the node with label
 and revoke, the display-name form, `/api/v1/pair` for the owner alone, `privatium pair`,
 the QR code and the first-run window behind `--open`, and `--version` claiming `pv/1
-(partial: phase 2)`. The bullets that need a person — a phone, a screen reader,
-Wireshark — stay open until the manual pass is recorded.
+(partial: phase 2)`. The hardening round after M19 bound an accepted pairing attempt
+to its code and its window, escaped the devices page's IDs, bounded the UDP responder
+and the records read off the network, and put a time bound on a silent peer
+(`docs/plans/phase-2.md`, "Phase 2 hardening"). The bullets that need a person — a
+phone, a screen reader, Wireshark — stay open until the manual pass is recorded.
 
 **Done when:**
 - [ ] Pairing completes on a phone in under 20 seconds, without a keyboard — the
@@ -121,9 +125,10 @@ Wireshark — stay open until the manual pass is recorded.
 - [x] Two nodes on one LAN are distinguishable in the discovery list by ID, not name —
       `test_spec_6_1_two_nodes_with_one_name_are_distinct_by_id`,
       `test_spec_6_1_mdns_registration_is_browsable_and_keyed_by_id`
-- [ ] Conformance checklist items for §6, §7, §8 pass — `.github/scripts/conformance.sh`
-      runs every item Phase 2 can claim by name (`docs/plans/phase-2.md §7`); the
-      `cl` filter of §6.1 needs a second node and is Phase 3's
+- [x] Conformance checklist items for §6, §7, §8 pass — `.github/scripts/conformance.sh`
+      runs every item Phase 2 can claim by name (`docs/plans/phase-2.md §7`), green on
+      all three platforms on the run of `main` at `8ca618d`; the `cl` filter of §6.1
+      needs a second node and is Phase 3's
 
 ## Phase 3 — More than one node
 

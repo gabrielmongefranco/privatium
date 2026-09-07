@@ -2,6 +2,7 @@
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-05
 # Summary:  PV206 fail: innerHTML assigned from data.
+#           See main README.md for full license information.
 
 [app]
 slug    = "pv206bad"

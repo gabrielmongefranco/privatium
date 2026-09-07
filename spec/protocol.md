@@ -5,6 +5,7 @@ Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
 Modified: 2026-09-06
 Summary:  NORMATIVE. Wire formats, event log, discovery, pairing, session crypto, sync.
+          See main README.md for full license information.
 -->
 
 # Privatium Protocol Specification — `pv/1`
@@ -477,7 +478,12 @@ is the mDNS stack's responsibility; implementations MUST NOT invent their own su
 Total TXT SHOULD stay under 1300 bytes so the record fits one packet. If `apps` would
 exceed the budget it MUST be truncated and terminated with `,…`.
 
-Clients MUST key discovered nodes on `id`, never on instance name.
+Clients MUST key discovered nodes on `id`, never on instance name. A record comes off
+the network and is judged before it is kept: one whose `id`, or whose `cl` when present,
+is not shaped as an ID (§2.1) is not a `pv/1` record and MUST be ignored; `nm` is read
+to at most the 63 bytes an instance name may hold; and `apps` keeps slugs (§1.1) and the
+truncation marker alone, to a bound the implementation states. The list of nodes seen
+MUST be bounded, so a flood of invented records cannot grow it without limit.
 
 A client that has paired MUST filter discovery results by `cl` matching its pinned cluster.
 On a LAN carrying several households' nodes this is what keeps the list to your own machines
@@ -561,7 +567,12 @@ For networks with multicast filtered or AP client isolation enabled.
   followed by a 4-byte random nonce.
 - Response: unicast UDP to the source, payload `PVDISCO1` + the same nonce + a JSON object
   with the same key set as the TXT record.
-- Nodes MUST rate-limit responses to 1 per source IP per second.
+- Nodes MUST rate-limit responses to 1 per source IP per second, and SHOULD bound the
+  answers sent in any second across every source and the number of sources remembered
+  — a probe is twelve bytes from an address nobody verified and an answer is a kilobyte,
+  so a flood of invented private addresses would otherwise make the responder an
+  amplifier. A source already known keeps its answer a second while strangers are
+  refused.
 - Nodes MUST NOT respond to a probe arriving from outside RFC 1918 / RFC 4193 space,
   link-local space, or loopback.
 
@@ -789,6 +800,17 @@ client → sealed {"x25519":"<base64>","label":"Pixel 9","ua":"<user agent, or a
   not an attempt and writes no `sys_audit` row, which keeps a stranger's connections out
   of a replicated table; a client that goes away after `pA` without a `cA` is a failed
   attempt, and the transport reports it as one.
+- An accepted `pA` is an attempt against that code and that window and no other. A `cA`
+  that arrives after five failures replaced the code is refused with 4429, and one that
+  arrives after another device consumed the window or after the window expired is
+  refused with 4404 — in each case before the message is read and before anything is
+  sealed; a sealed message that arrives after the window closed is refused the same
+  way, before it is opened, and writes no row. Each such refusal is audited as one
+  failed attempt.
+- A node SHOULD bound the time a handshake may take and close a peer that falls silent,
+  counting nothing and writing no audit row for it: the exchange is machine-paced, since
+  the person has already typed the code when the socket opens. The reference node
+  allows thirty seconds from its hello to the client's sealed message.
 - The node writes the `sys_device` row from the client's sealed message — `kind`,
   `replica` (`false` for a browser), both public keys, `paired_at`, `paired_via`,
   `user_agent`, `label` — then marks the code consumed and closes the window. A device
@@ -925,10 +947,13 @@ client → sealed, c2s, counter 0: {"confirm":"<hex SHA-256 over the two text fr
 
 The static keys are the X25519 keys exchanged at pairing (§7.4); both sides derive the
 keys above. The node MUST close with code 4403 on a `dev` that is not an active,
-unrevoked `sys_device` row with an X25519 key, and on a confirm that does not open. The
-client MUST verify `cert` against its pinned cluster public key before it sends the
-confirm, and MUST treat a failure as §8.1. The session is the connection: no cookie
-carries it, and a new connection is a new handshake.
+unrevoked `sys_device` row with an X25519 key — its own row included, since a node never
+pairs with itself — and on a confirm that does not open, before it answers a hello in
+the first case. A node SHOULD bound the time the handshake may take and close a peer
+that falls silent; the reference node allows ten seconds. The client MUST verify `cert`
+against its pinned cluster public key before it sends the confirm, and MUST treat a
+failure as §8.1. The session is the connection: no cookie carries it, and a new
+connection is a new handshake.
 
 **Frames.** One AEAD ciphertext per WebSocket binary message. The nonce is the 4-byte
 big-endian direction tag — `1` client to node, `2` node to client — followed by the

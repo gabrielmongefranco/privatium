@@ -3,9 +3,10 @@
 // Created:  2026-09-05  |  Modified: 2026-09-05
 // Summary:  The one-process rule of spec/protocol.md §3.1: whoever has a data root open
 //           holds an exclusive OS lock on local/lock, and a second process is refused
-//           rather than let mint `seq` beside the first. A node, `snapshot`, `restore`
-//           and anything else that opens a Node takes it; it is released when the handle
+//           rather than let mint `seq` beside the first. A node, `snapshot`, `restore` and
+//           anything else that opens a Node takes it; it is released when the handle
 //           closes, so a crash leaves nothing stale behind.
+//           See main README.md for full license information.
 
 use std::fs;
 use std::path::{Path, PathBuf};

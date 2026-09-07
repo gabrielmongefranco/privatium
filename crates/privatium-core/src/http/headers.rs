@@ -5,6 +5,7 @@
 //           shell and the API answer with. Every response leaving core::handle passes
 //           through `secure`, so a 403 from the auth layer and a 500 from a failed page
 //           carry the same policy a page does.
+//           See main README.md for full license information.
 
 use axum::body::Body;
 use axum::http::header::{

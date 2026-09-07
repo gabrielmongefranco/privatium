@@ -1,13 +1,13 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/devices.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-06  |  Modified: 2026-09-06
-// Summary:  The owner's surfaces through core::handle: the pairing API of
-//           spec/protocol.md §9.2 and the manifest's pair flag, the code page with the
-//           §7.7 disclosure, the devices page with its label and revoke forms, the
-//           display-name form of §6.1, the hourly last_seen_at of
-//           spec/data-dictionary.md §3.2, and every one of those pages under the PV4xx
-//           rules. A refused caller — a LAN peer without a session, a form without its
-//           token, a wrong value — is refused with nothing derived.
+// Summary:  The owner's surfaces through core::handle: the pairing API of spec/protocol.md
+//           §9.2 and the manifest's pair flag, the code page with the §7.7 disclosure, the
+//           devices page with its label and revoke forms, the display-name form of §6.1,
+//           the hourly last_seen_at of spec/data-dictionary.md §3.2, and every one of those
+//           pages under the PV4xx rules. A refused caller — a LAN peer without a session, a
+//           form without its token, a wrong value — is refused with nothing derived.
+//           See main README.md for full license information.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
@@ -445,6 +445,48 @@ async fn test_settings_devices_lists_paired_devices_and_revokes_one() {
     );
 }
 
+/// `spec/data-dictionary.md §3.2`, `spec/protocol.md §4.2` — the devices page trusts
+/// nothing a `sys_device` row carries, its key included: a row whose `id` is not shaped
+/// as a Node ID — a hand-edited log, a restored backup — is listed with the ID escaped,
+/// gets no label form and no revoke form, and the page still meets the PV4xx rules and
+/// the document checks. An empty ID and one that is only whitespace are listed the same
+/// way; the router answers nothing for either.
+#[tokio::test]
+async fn test_spec_3_2_devices_page_never_trusts_a_device_id_from_the_log() {
+    let root = tempfile::tempdir().unwrap();
+    let h = handler(&root);
+    let hostile = "x\" onmouseover=\"1";
+    for id in [hostile, "", " "] {
+        let mut node = h.node().lock().unwrap();
+        node.sys_log_mut()
+            .put(sys::DEVICE, id, &device_row("Stray", "synthetic agent"))
+            .unwrap();
+        node.refresh().unwrap();
+    }
+    with_device(&h, "Pixel 9", "synthetic agent");
+    let page = body_of(h.handle(owner(Method::GET, "/settings/devices")).await).await;
+    assert!(page.contains("x&quot; onmouseover=&quot;1"), "{page}");
+    assert!(!page.contains(hostile), "{page}");
+    assert!(!page.contains("onmouseover=\"1\""), "{page}");
+    assert!(
+        !page.contains("action=\"/settings/devices/x"),
+        "no form for an ID the router would refuse:\n{page}"
+    );
+    assert!(
+        page.contains(&format!("action=\"/settings/devices/{DEVICE}/revoke\"")),
+        "a shaped ID keeps its forms"
+    );
+    assert_clean("devices page with a stray row", &page);
+    let attempted = h
+        .handle(form(
+            &h,
+            "/settings/devices/x%22%20onmouseover=%221/revoke",
+            "",
+        ))
+        .await;
+    assert_eq!(attempted.status(), StatusCode::NOT_FOUND);
+}
+
 /// `spec/data-dictionary.md §3.2` — revocation is a `put` with `revoked_at` set, never a
 /// `del`: the log holds no tombstone for the device, the revoking line carries every
 /// column the row had — a key the dictionary does not know included
@@ -534,8 +576,35 @@ fn test_spec_3_2_last_seen_at_is_written_at_most_hourly() {
         !node.note_device_seen("zzzzzzzz", minutes(120)).unwrap(),
         "unknown: nothing"
     );
+    // A mark from the future — a clock that was wrong — is corrected on the next mark,
+    // not honoured for however long it claims.
+    let mut row = sys_row(&node, sys::DEVICE, DEVICE).unwrap();
+    row["last_seen_at"] = Value::String("2027-01-01T00:00:00.000Z".to_owned());
+    node.sys_log_mut().put(sys::DEVICE, DEVICE, &row).unwrap();
+    node.refresh().unwrap();
+    assert!(
+        node.note_device_seen(DEVICE, minutes(90)).unwrap(),
+        "a future mark is written over"
+    );
+    assert_eq!(
+        sys_row(&node, sys::DEVICE, DEVICE).unwrap()["last_seen_at"],
+        "2026-09-06T13:30:00.000Z"
+    );
+    // An unreadable mark is written over too.
+    let mut row = sys_row(&node, sys::DEVICE, DEVICE).unwrap();
+    row["last_seen_at"] = Value::String("yesterday".to_owned());
+    node.sys_log_mut().put(sys::DEVICE, DEVICE, &row).unwrap();
+    node.refresh().unwrap();
+    assert!(node.note_device_seen(DEVICE, minutes(100)).unwrap());
+    // The rows above spell `revoked_at` out as null, which is the same value as an
+    // absent key (`spec/data-dictionary.md §2.1`): the device is still revocable.
+    assert!(sys_row(&node, sys::DEVICE, DEVICE).unwrap()["revoked_at"].is_null());
     node.revoke_device(DEVICE, Some("lost"), minutes(120))
         .unwrap();
+    assert!(
+        sys_row(&node, sys::DEVICE, DEVICE).unwrap()["revoked_at"].is_string(),
+        "an explicit null was not mistaken for a revocation"
+    );
     assert!(
         !node.note_device_seen(DEVICE, minutes(240)).unwrap(),
         "revoked: nothing"

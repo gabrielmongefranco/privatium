@@ -5,6 +5,7 @@ Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-09-06
 Modified: 2026-09-06
 Summary:  How the reference apps keep their presentation small and responsive.
+          See main README.md for full license information.
 -->
 
 # Sample app design

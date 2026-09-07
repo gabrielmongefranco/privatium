@@ -4,8 +4,9 @@ File:     docs/skills.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
 Modified: 2026-09-05
-Summary:  The skills system: how LLM-authored apps get correct, accessible, secure
-          code without relying on the model's training data.
+Summary:  The skills system: how LLM-authored apps get correct, accessible, secure code
+          without relying on the model's training data.
+          See main README.md for full license information.
 -->
 
 # Skills

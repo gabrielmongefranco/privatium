@@ -5,6 +5,7 @@
 //           the much smaller struct a reader deserializes. They are separate types on
 //           purpose: §4.2 makes preservation a property of the bytes, so nothing here ever
 //           reads a line and writes it back out.
+//           See main README.md for full license information.
 
 use serde::{Deserialize, Serialize};
 

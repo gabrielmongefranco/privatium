@@ -7,6 +7,7 @@
 //           holds it — INTEGER an integer, REAL a float, TEXT a string — with two
 //           conveniences for a column that originates in a declared one: BOOLEAN as a
 //           boolean and JSON decoded. A DECIMAL is TEXT in the cache and stays a string.
+//           See main README.md for full license information.
 
 use mlua::{Lua, Table, Value};
 use rusqlite::types::ValueRef;

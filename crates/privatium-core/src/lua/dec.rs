@@ -6,6 +6,7 @@
 //           erroring on overflow rather than saturating; comparison across scales; `/` at
 //           the larger scale of the operands, rounded half away from zero, and `:div` for
 //           an author who wants to name the scale.
+//           See main README.md for full license information.
 
 use std::cmp::Ordering;
 

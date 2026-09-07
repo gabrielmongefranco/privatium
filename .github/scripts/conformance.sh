@@ -2,11 +2,12 @@
 # Project:  Privatium™  |  File: .github/scripts/conformance.sh
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-06
-# Summary:  docs/plans/phase-1.md §7: the lines of spec/protocol.md §13 a Phase 1 build can
-#           satisfy, asserted by name — plus the two docs/roadmap.md bullets §7 says are
-#           easy to lose (every route through core::handle; bodies stream both ways). The
-#           test binaries were built by the test step; each name below must run and pass,
-#           and a name that matches nothing fails here rather than passing by absence.
+# Summary:  The conformance checklist of spec/protocol.md §13, asserted by test name: every
+#           item this build can satisfy, plus the two docs/roadmap.md bullets that are easy
+#           to lose (every route through core::handle; bodies stream both ways). The test
+#           binaries were built by the test step; each name below must run and pass, and a
+#           name that matches nothing fails here rather than passing by absence.
+#           See main README.md for full license information.
 
 set -euo pipefail
 

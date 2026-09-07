@@ -2,6 +2,7 @@
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-08-28  |  Modified: 2026-09-06
 # Summary:  Manifest for the minimal Tier 1 app. Copy this folder to start.
+#           See main README.md for full license information.
 
 [app]
 slug        = "hello"

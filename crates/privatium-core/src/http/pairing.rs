@@ -1,12 +1,12 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/pairing.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-05  |  Modified: 2026-09-06
-// Summary:  The data-free browser bootstrap (§8.4) with the pairing screen inside it
-//           (§7.2, §7.7): the sixteen-glyph pad with a label beneath every glyph, the
-//           word field beside it, and the status region the three outcomes are said in.
-//           The markup is rendered here so the PV4xx checks hold it; client.js shows it
-//           when the browser holds no pairing and wires it, and a <noscript> browser
-//           never reaches it.
+// Summary:  The data-free browser bootstrap (§8.4) with the pairing screen inside it (§7.2,
+//           §7.7): the sixteen-glyph pad with a label beneath every glyph, the word field
+//           beside it, and the status region the three outcomes are said in. The markup is
+//           rendered here so the PV4xx checks hold it; client.js shows it when the browser
+//           holds no pairing and wires it, and a <noscript> browser never reaches it.
+//           See main README.md for full license information.
 
 use std::fmt::Write as _;
 

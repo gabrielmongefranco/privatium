@@ -4,8 +4,9 @@ File:     docs/frameworks.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
 Modified: 2026-09-05
-Summary:  Which frameworks, libraries and engines work inside Privatium, which
-          do not, and why. Selection criteria are explicit and testable.
+Summary:  Which frameworks, libraries and engines work inside Privatium, which do not, and
+          why. Selection criteria are explicit and testable.
+          See main README.md for full license information.
 -->
 
 # Framework Compatibility

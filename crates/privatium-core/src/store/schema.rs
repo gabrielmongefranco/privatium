@@ -1,11 +1,12 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/schema.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-05
-// Summary:  What a schema.sql declares, learned from SQLite's own catalog rather than from a
-//           parser we wrote: tables, the declared type of every column, NOT NULL, and views.
-//           The declared type decides how the materializer stores a column
+// Created:  2026-09-01  |  Modified: 2026-09-06
+// Summary:  What a schema.sql declares, learned from SQLite's own catalog rather than from
+//           a parser of its own: tables, the declared type of every column, NOT NULL, and
+//           views. The declared type decides how the materializer stores a column
 //           (spec/data-dictionary.md §2), because SQLite would otherwise decide by affinity
 //           and turn a DECIMAL into a float.
+//           See main README.md for full license information.
 
 use std::fmt::Write as _;
 

@@ -6,6 +6,7 @@
 //           NULL is nothing between the commas, an empty string is `""` — and a value with
 //           a comma, a quote or a newline survives. No inference anywhere: every field is
 //           text, and the caller types it from schema.sql.
+//           See main README.md for full license information.
 
 use std::fs;
 use std::io::{self, Write as _};

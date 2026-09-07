@@ -2,6 +2,7 @@
  * Authors: Gabriel Mongefranco (@gabrielmongefranco)
  * Created: 2026-09-06 | Modified: 2026-09-06
  * Summary: Hit testing for the whole-stroke eraser, independent of display scaling.
+ *          See main README.md for full license information.
  */
 
 /** Return whether a canvas point is within six pixels of a stroke's painted edge.

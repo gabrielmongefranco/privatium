@@ -1,12 +1,13 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/lint.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
-// Summary:  docs/plans/phase-1.md M12 — the linter against its corpus (spec/cli.md §5.4):
-//           every rule's pass fixture is clean and its fail fixture trips the rule, a rule
-//           with no pair fails the suite, the reference apps lint clean, every finding's
-//           spec reference resolves against this checkout (§5.2), the JSON carries the
-//           seven fields, --fix is mechanical and touches nothing else (§5.3), the scaffold's
-//           output is clean (§4), and PV404's unit is the page as rendered (§5.1).
+// Created:  2026-09-05  |  Modified: 2026-09-06
+// Summary:  The linter against its corpus (spec/cli.md §5.4): every rule's pass fixture is
+//           clean and its fail fixture trips the rule, a rule with no pair fails the suite,
+//           the reference apps lint clean, every finding's spec reference resolves against
+//           this checkout (§5.2), the JSON carries the seven fields, --fix is mechanical
+//           and touches nothing else (§5.3), the scaffold's output is clean (§4), and
+//           PV404's unit is the page as rendered (§5.1).
+//           See main README.md for full license information.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

@@ -4,6 +4,7 @@
 // Summary:  spec/protocol.md §5.3 — the three-tier read. The snapshot's SQLite files plus
 //           the log tail, then CSV plus schema.sql plus the tail, then the full replay;
 //           which tier succeeded, and why the ones before it did not.
+//           See main README.md for full license information.
 
 use std::fmt;
 use std::path::PathBuf;

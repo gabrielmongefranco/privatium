@@ -6,6 +6,7 @@
 //           whichever app is mounted there, and the mount table is Node::mounts(). This is
 //           the only place host mode and solo mode differ about where an app lives — that,
 //           and url(), which is the only place a URL is built.
+//           See main README.md for full license information.
 
 use std::collections::BTreeMap;
 

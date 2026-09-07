@@ -1,14 +1,15 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lint/lua.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
-// Summary:  The Lua rules over a full_moon AST, never a regex (docs/plans/phase-1.md M12):
-//           PV201 concatenated SQL, PV203 the sandbox's removed names, PV301 a literal
-//           mount path, PV302 a DECIMAL or BIGINT column treated as a number, PV303 and
-//           PV308 over the SQL literals handed to pv.query, PV305 outbox bookkeeping by
-//           name, PV306 appends that should be one batch, PV307 a handler's global or a
-//           mutated load-time table, PV503 icon names, PV505 filesystem paths, PV506 routes
-//           a framework prefix shadows. The same walk serves a template's compiled chunk,
-//           which is why what it learns — the views pv.render names — comes back as facts.
+// Created:  2026-09-05  |  Modified: 2026-09-06
+// Summary:  The Lua rules over a full_moon AST, never a regex: PV201 concatenated SQL,
+//           PV203 the sandbox's removed names, PV301 a literal mount path, PV302 a DECIMAL
+//           or BIGINT column treated as a number, PV303 and PV308 over the SQL literals
+//           handed to pv.query, PV305 outbox bookkeeping by name, PV306 appends that should
+//           be one batch, PV307 a handler's global or a mutated load-time table, PV503 icon
+//           names, PV505 filesystem paths, PV506 routes a framework prefix shadows. The
+//           same walk serves a template's compiled chunk, which is why what it learns — the
+//           views pv.render names — comes back as facts.
+//           See main README.md for full license information.
 
 use std::collections::BTreeSet;
 use std::fs;

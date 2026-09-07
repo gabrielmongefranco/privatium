@@ -1,9 +1,10 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/config.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-01  |  Modified: 2026-09-06
-// Summary:  Where the node's data lives (spec/protocol.md §3) and what config.toml may
-//           say about it. Both halves are here because --data-dir picks the root and
-//           --config defaults to a file inside it, so neither resolves without the other.
+// Summary:  Where the node's data lives (spec/protocol.md §3) and what config.toml may say
+//           about it. Both halves are here because --data-dir picks the root and --config
+//           defaults to a file inside it, so neither resolves without the other.
+//           See main README.md for full license information.
 
 use std::fs;
 use std::path::{Path, PathBuf};

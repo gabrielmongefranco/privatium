@@ -2,6 +2,7 @@
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 -- Created:  2026-09-05  |  Modified: 2026-09-05
 -- Summary:  PV201 fail: the query string is concatenated from a request value.
+--           See main README.md for full license information.
 
 local pv = require 'privatium'
 

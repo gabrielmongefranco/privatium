@@ -1,7 +1,7 @@
 # Project:  Privatium™  |  File: apps/_lint/pass/PV402/pv402ok/app.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-05
-# Summary:  Every input has a label.
+# Summary:  Every input has a label. See main README.md for full license information.
 
 [app]
 slug    = "pv402ok"

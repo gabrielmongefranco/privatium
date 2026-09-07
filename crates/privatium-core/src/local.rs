@@ -1,9 +1,10 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/local.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-05
+// Created:  2026-09-01  |  Modified: 2026-09-06
 // Summary:  local/state.jsonl — the node-local state of spec/protocol.md §3. Never synced,
-//           never backed up, and never required for restore. In M2 it holds one record per
-//           app: the Lamport counter and the highest `seq` seen per device.
+//           never backed up, and never required for restore. It holds one record per app:
+//           the Lamport counter and the highest `seq` seen per device.
+//           See main README.md for full license information.
 
 use std::collections::BTreeMap;
 use std::fs;

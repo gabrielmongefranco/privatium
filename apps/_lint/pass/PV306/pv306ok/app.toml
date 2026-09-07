@@ -2,6 +2,7 @@
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-05
 # Summary:  Two events that must land together, in one batch.
+#           See main README.md for full license information.
 
 [app]
 slug    = "pv306ok"

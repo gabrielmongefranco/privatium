@@ -2,11 +2,11 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-06  |  Modified: 2026-09-06
 // Summary:  The example apps of apps/README.md — hello, animals and sketch — embedded in
-//           the binary as the files they are in the repository, so a release download
-//           has them to write into <data-dir>/apps/ on a first run and for
-//           `privatium new --examples` and `--from` (spec/cli.md §2, §4). A checkout
-//           mounts the same folders from disk; nothing here is read at runtime by the
-//           loader.
+//           the binary as the files they are in the repository, so a release download has
+//           them to write into <data-dir>/apps/ on a first run and for `privatium new
+//           --examples` and `--from` (spec/cli.md §2, §4). A checkout mounts the same
+//           folders from disk; nothing here is read at runtime by the loader.
+//           See main README.md for full license information.
 
 use include_dir::{Dir, DirEntry, include_dir};
 

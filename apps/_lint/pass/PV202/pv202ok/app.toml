@@ -1,7 +1,7 @@
 # Project:  Privatium™  |  File: apps/_lint/pass/PV202/pv202ok/app.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-05
-# Summary:  A template that only escapes.
+# Summary:  A template that only escapes. See main README.md for full license information.
 
 [app]
 slug    = "pv202ok"

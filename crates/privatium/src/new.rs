@@ -5,8 +5,8 @@
 //           tier, a rewritten copy of an existing one, the CRUD screens for a table, or
 //           with --examples every example app the binary carries — from the generator in
 //           the core, then write it under <data-dir>/apps/ without overwriting a single
-//           file. The first-run copy of §2 uses the same writer. No node is opened;
-//           nothing here has a runtime presence.
+//           file. The first-run copy of §2 uses the same writer. No node is opened; nothing
+//           here has a runtime presence. See main README.md for full license information.
 
 use std::collections::BTreeMap;
 use std::fs;

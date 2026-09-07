@@ -5,6 +5,7 @@ Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
 Modified: 2026-09-06
 Summary:  The backup and restore procedure, written to be usable by a non-technical owner.
+          See main README.md for full license information.
 -->
 
 # Backup and Restore

@@ -2,6 +2,7 @@
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 -- Created:  2026-09-05  |  Modified: 2026-09-05
 -- Summary:  The handler is fine; the template's control has no name.
+--           See main README.md for full license information.
 
 local pv = require 'privatium'
 

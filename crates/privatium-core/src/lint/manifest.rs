@@ -6,6 +6,7 @@
 //           comment beside it), PV208 (nothing that looks like a secret in the manifest,
 //           the schema or sample/seed.jsonl), PV501 (the DNS-SD label limit) and PV502
 //           (cross_origin_isolated is the solo app's alone).
+//           See main README.md for full license information.
 
 use crate::app::manifest::{
     MANIFEST_FILE, MAX_ADVERTISED_SLUG, Manifest, ManifestError, SUPPORTED_API, is_reserved,

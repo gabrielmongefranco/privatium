@@ -2,7 +2,7 @@
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-08-31  |  Modified: 2026-08-31
 # Summary:  Repository checks, run as `cargo xtask <command>`. Never shipped, never a
-#           dependency of anything that is.
+#           dependency of anything that is. See main README.md for full license information.
 
 [package]
 name        = "xtask"

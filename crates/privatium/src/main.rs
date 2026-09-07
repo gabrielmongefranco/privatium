@@ -3,9 +3,10 @@
 // Created:  2026-08-31  |  Modified: 2026-09-06
 // Summary:  Entry point: spec/cli.md. Bare `privatium` runs a node; `dev`, `new`, `lint`,
 //           `skill`, `snapshot`, `restore` and `pair` are the subcommands this build has;
-//           `firewall` is a later phase's, and it parses and says so rather than being
+//           `firewall` is not built yet, and it parses and says so rather than being
 //           absent, so the help text matches the spec. Exit codes are §1's. Errors are
 //           anyhow at this boundary (AGENTS.md, Style) and print as one line.
+//           See main README.md for full license information.
 
 use std::process::ExitCode;
 

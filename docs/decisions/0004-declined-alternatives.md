@@ -4,10 +4,10 @@ File:     docs/decisions/0004-declined-alternatives.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-31
 Modified: 2026-09-05
-Summary:  Decision record. Sync and p2p stacks evaluated and declined —
-          Gun, RxDB, libp2p, SharkTrustX, and BAS embedded in Rust — with
-          the reasoning kept so the questions are not re-litigated.
-          Status: DECIDED.
+Summary:  Decision record. Sync and p2p stacks evaluated and declined — Gun, RxDB, libp2p,
+          SharkTrustX, and BAS embedded in Rust — with the reasoning kept so the questions
+          are not re-litigated. Status: DECIDED.
+          See main README.md for full license information.
 -->
 
 # ADR 0004 — Declined: Gun, RxDB, libp2p, SharkTrustX, BAS-in-Rust

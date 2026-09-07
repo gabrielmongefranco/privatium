@@ -2,6 +2,7 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-05  |  Modified: 2026-09-05
 // Summary:  Browser modules against a live core, driven by tests/channel.rs (§8.3).
+//           See main README.md for full license information.
 
 import assert from 'node:assert/strict';
 import { pair } from '../../assets/shell/pair.js';

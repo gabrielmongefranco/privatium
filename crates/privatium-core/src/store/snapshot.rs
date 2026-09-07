@@ -5,6 +5,7 @@
 //           writer that produces one snapshot directory from the log (a SQLite file and a
 //           CSV per table), checksum verification (spec/cli.md §7), retention, and the
 //           weekly policy of spec/data-dictionary.md §3.6.
+//           See main README.md for full license information.
 
 use std::collections::BTreeMap;
 use std::fmt;

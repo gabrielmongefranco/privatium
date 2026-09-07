@@ -6,6 +6,7 @@
 //           framework rewrites every `$name` in schema.sql to `pv_param('name')`, a scalar
 //           function registered on every connection. It answers from a per-connection table
 //           the data API fills before a query runs, and is NULL anywhere else.
+//           See main README.md for full license information.
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};

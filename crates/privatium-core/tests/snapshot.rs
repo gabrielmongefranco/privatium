@@ -4,7 +4,7 @@
 // Summary:  spec/protocol.md §5 — the snapshot id and manifest, the three-tier read with
 //           real bytes flipped on disk, when a snapshot does not apply, retention that
 //           never prunes the oldest, verification, the weekly policy, and where the tier
-//           used is recorded.
+//           used is recorded. See main README.md for full license information.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

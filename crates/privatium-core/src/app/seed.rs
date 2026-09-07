@@ -4,6 +4,7 @@
 // Summary:  sample/seed.jsonl (spec/app-contract.md §9) — synthetic events an owner may
 //           load into an empty app. Parsed here; appended by Node::load_seed through the
 //           app's own log as this node's events, never copied as another device's file.
+//           See main README.md for full license information.
 
 use serde_json::Value;
 use thiserror::Error;

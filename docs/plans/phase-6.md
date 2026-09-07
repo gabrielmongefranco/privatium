@@ -4,8 +4,9 @@ File:     docs/plans/phase-6.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-09-05
 Modified: 2026-09-05
-Summary:  Stub. The Phase 6 plan — packaging — is written from docs/roadmap.md when
-          Phase 5 closes, in the shape of docs/plans/phase-1.md. Non-normative.
+Summary:  Stub. The Phase 6 plan — packaging — is written from docs/roadmap.md when Phase 5
+          closes, in the shape of docs/plans/phase-1.md. Non-normative.
+          See main README.md for full license information.
 -->
 
 # Phase 6 Implementation Plan — stub

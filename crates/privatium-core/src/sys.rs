@@ -1,9 +1,9 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/sys.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-01  |  Modified: 2026-09-06
-// Summary:  Public node and cluster records, device and app registries, snapshot facts,
-//           and audit kinds, written through the same event log apps use
-//           (spec/data-dictionary.md §3).
+// Summary:  Public node and cluster records, device and app registries, snapshot facts, and
+//           audit kinds, written through the same event log apps use
+//           (spec/data-dictionary.md §3). See main README.md for full license information.
 
 use serde::Serialize;
 

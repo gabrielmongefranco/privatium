@@ -1,9 +1,10 @@
 // Project:  Privatium™  |  File: crates/privatium-core/examples/embedded.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
+// Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  Embedded mode in thirty lines (spec/app-contract.md §2.3, §6): your main(),
 //           your axum router, privatium-core as the log, the store and the auth layer.
-//           `cargo run --example embedded -- <data-dir>`; CI runs it and curls it (M13).
+//           `cargo run --example embedded -- <data-dir>`; CI runs it and curls it.
+//           See main README.md for full license information.
 
 use std::net::SocketAddr;
 

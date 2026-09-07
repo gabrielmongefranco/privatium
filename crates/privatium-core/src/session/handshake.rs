@@ -3,6 +3,7 @@
 // Created:  2026-09-05  |  Modified: 2026-09-05
 // Summary:  Transport-independent hello and confirmation state machines. Pins and
 //           certificate verification gate session establishment (spec/protocol.md §8.3).
+//           See main README.md for full license information.
 
 //! Single-use handshake states; callers transport bytes without reserializing hellos.
 

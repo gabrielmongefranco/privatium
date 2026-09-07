@@ -1,13 +1,13 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lint/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
-// Summary:  `privatium lint` (spec/cli.md §5, docs/plans/phase-1.md M12): the rule table
-//           with its stable IDs, severities and spec citations; a finding and its JSON
-//           shape (§5.2); the walk over an app folder that hands each file to the rule
-//           module that reads it — the manifest, the schema through SQLite, Lua through a
-//           full_moon AST, templates through the compiler's own front end, a Tier 2 web/
-//           through a lexer — and the mechanical fixer of §5.3. A module of the core, not
-//           a crate, so CI and the binary run identical rules.
+// Created:  2026-09-05  |  Modified: 2026-09-06
+// Summary:  `privatium lint` (spec/cli.md §5): the rule table with its stable IDs,
+//           severities and spec citations; a finding and its JSON shape (§5.2); the walk
+//           over an app folder that hands each file to the rule module that reads it — the
+//           manifest, the schema through SQLite, Lua through a full_moon AST, templates
+//           through the compiler's own front end, a Tier 2 web/ through a lexer — and the
+//           mechanical fixer of §5.3. A module of the core, not a crate, so CI and the
+//           binary run identical rules. See main README.md for full license information.
 
 pub mod css;
 pub mod html;

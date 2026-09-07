@@ -2,11 +2,11 @@
  * Project:  Privatium™  |  File: apps/sketch/web/app.js
  * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
  * Created:  2026-08-28  |  Modified: 2026-09-06
- * Summary:  Drawing, controls and event replay. Plain ES modules — no build step, no framework,
- *           no SQL. The event log is used directly as a document store. A
- *           stroke holds the pointer's capture from down to up, so ending
- *           it off the canvas still saves it; the keyboard draws too, and a
- *           live summary says what the canvas holds.
+ * Summary:  Drawing, controls and event replay. Plain ES modules — no build step, no
+ *           framework, no SQL. The event log is used directly as a document store. A stroke
+ *           holds the pointer's capture from down to up, so ending it off the canvas still
+ *           saves it; the keyboard draws too, and a live summary says what the canvas
+ *           holds. See main README.md for full license information.
  */
 import { pv } from '/static/pv.js';
 import { hitsStroke } from './strokes.js';

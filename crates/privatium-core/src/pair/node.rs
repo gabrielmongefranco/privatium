@@ -1,9 +1,10 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/pair/node.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-05  |  Modified: 2026-09-06
-// Summary:  Pairing on the node (spec/app-contract.md §6, spec/protocol.md §7): opening
-//           and closing the window, driving the handshake against it under the node's
-//           lock, writing the device row, and every sys_audit row §7.5 requires.
+// Summary:  Pairing on the node (spec/app-contract.md §6, spec/protocol.md §7): opening and
+//           closing the window, driving the handshake against it under the node's lock,
+//           writing the device row, and every sys_audit row §7.5 requires.
+//           See main README.md for full license information.
 
 use std::net::IpAddr;
 use std::time::Duration;
@@ -163,37 +164,47 @@ impl Node {
         }
     }
 
-    /// Verify the device's `cA` and, when it verifies, produce the node's sealed message
-    /// (`§7.4.2`). A wrong code writes `pair.failed`, naming whether it was the fifth and
-    /// a new code was issued.
-    pub fn pairing_confirm(&mut self, exchange: Exchange, text: &str) -> Result<(Sealed, Vec<u8>)> {
-        let Some(window) = self.pairing.as_mut() else {
-            return Err(PairError::Closed.into());
-        };
+    /// Verify the device's `cA` at `now` and, when it verifies, produce the node's sealed
+    /// message (`§7.4.2`). Every refusal is audited as `pair.failed` before it is
+    /// returned: a wrong code, naming whether it was the fifth and a new code was
+    /// issued; a code the window replaced since `pA`; a window that was consumed or
+    /// expired since; and a confirmation that cannot be read. None of them seals
+    /// anything.
+    pub fn pairing_confirm(
+        &mut self,
+        exchange: Exchange,
+        text: &str,
+        now: jiff::Timestamp,
+    ) -> Result<(Sealed, Vec<u8>)> {
         let device = exchange.device().to_owned();
         let source = exchange.source();
+        let Some(window) = self.pairing.as_mut() else {
+            self.audit_pair_failed(&device, source, "window closed before confirmation", false)?;
+            return Err(PairError::Closed.into());
+        };
         let before = window.generation();
-        match exchange.confirm(&self.identity, window, text) {
+        match exchange.confirm(&self.identity, window, text, now) {
             Ok(sealed) => Ok(sealed),
             Err(error) => {
                 let new_code = window.generation() != before;
-                if error == PairError::WrongCode {
-                    let detail = serde_json::to_string(&serde_json::json!({
-                        "source": source.to_string(),
-                        "reason": "wrong code",
-                        "new_code": new_code,
-                    }))?;
-                    self.audit_pair(sys::KIND_PAIR_FAILED, true, &device, &detail)?;
-                }
+                let reason = match error {
+                    PairError::WrongCode => "wrong code",
+                    PairError::Exhausted => "code replaced before confirmation",
+                    PairError::Closed => "window closed before confirmation",
+                    _ => "invalid confirmation message",
+                };
+                self.audit_pair_failed(&device, source, reason, new_code)?;
                 Err(error.into())
             }
         }
     }
 
-    /// Open the device's sealed message, write its `sys_device` row (`spec/data-dictionary.md
-    /// §3.2`) and `pair.success` as one batch, mark the code consumed and close the
-    /// window (`§7.4` steps 5 and 6). A device key already in the registry — active or
-    /// revoked — is refused and audited as `pair.failed`; a key is never re-registered.
+    /// Write the device's `sys_device` row (`spec/data-dictionary.md §3.2`) and
+    /// `pair.success` as one batch from its sealed message, mark the code consumed and
+    /// close the window (`§7.4` steps 5 and 6). The window and the registry are checked
+    /// before the message is opened: a window that closed since `cA` is refused, and a
+    /// device key already in the registry — active or revoked — is refused, since a key
+    /// is never re-registered. Every refusal is audited as `pair.failed`.
     pub fn pairing_finish(
         &mut self,
         sealed: Sealed,
@@ -202,22 +213,25 @@ impl Node {
     ) -> Result<Paired> {
         let device = sealed.device().to_owned();
         let source = sealed.source();
-        let paired = sealed.finish(&self.identity, ciphertext)?;
         self.refresh()?;
+        if !self.pairing_open(now) {
+            self.audit_pair_failed(&device, source, "window closed before registration", false)?;
+            return Err(PairError::Closed.into());
+        }
         if self.device_known(&device)? {
-            let detail = serde_json::to_string(&serde_json::json!({
-                "source": source.to_string(),
-                "reason": "device key already registered",
-            }))?;
-            self.audit_pair(sys::KIND_PAIR_FAILED, true, &device, &detail)?;
+            self.audit_pair_failed(&device, source, "device key already registered", false)?;
             return Err(PairError::DeviceKnown.into());
         }
+        let paired = match sealed.finish(&self.identity, ciphertext) {
+            Ok(paired) => paired,
+            Err(error) => {
+                self.audit_pair_failed(&device, source, "invalid sealed message", false)?;
+                return Err(error.into());
+            }
+        };
         let Some(window) = self.pairing.as_mut() else {
             return Err(PairError::Closed.into());
         };
-        if !window.is_open(now) {
-            return Err(PairError::Closed.into());
-        }
         let at = log::format_ts(now);
         let row = sys::DeviceRow {
             label: paired.label.as_deref(),
@@ -237,6 +251,9 @@ impl Node {
             "kind": paired.kind,
             "window": window.id(),
         }))?;
+        // The window is consumed before the row is written: a second device whose
+        // handshake is in flight finds it closed however the write below fares.
+        window.consume(&device, now);
         let audit_at = log::now();
         self.sys.batch(|batch| {
             batch.put(sys::DEVICE, &device, &row)?;
@@ -246,9 +263,6 @@ impl Node {
                 &sys::AuditRow::info(&audit_at, sys::KIND_PAIR_SUCCESS, Some(&device), &detail),
             )
         })?;
-        if let Some(window) = self.pairing.as_mut() {
-            window.consume(&device, now);
-        }
         self.refresh()?;
         self.publish_facts()?;
         Ok(paired)
@@ -262,9 +276,21 @@ impl Node {
             return Ok(());
         };
         let new_code = window.record_failure()?;
+        self.audit_pair_failed(device, source, "abandoned before confirmation", new_code)
+    }
+
+    /// The `pair.failed` row of `§7.5`: the source, why, and whether the failure replaced
+    /// the code. Never the code.
+    fn audit_pair_failed(
+        &mut self,
+        device: &str,
+        source: IpAddr,
+        reason: &str,
+        new_code: bool,
+    ) -> Result<()> {
         let detail = serde_json::to_string(&serde_json::json!({
             "source": source.to_string(),
-            "reason": "abandoned before confirmation",
+            "reason": reason,
             "new_code": new_code,
         }))?;
         self.audit_pair(sys::KIND_PAIR_FAILED, true, device, &detail)

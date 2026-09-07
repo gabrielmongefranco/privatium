@@ -1,13 +1,13 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/embedded.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-05  |  Modified: 2026-09-06
-// Summary:  spec/app-contract.md §2.3 and §6 against the crate as a library (M13): a node
-//           opened with no app folders, an app this binary owns with its schema inline,
-//           append, append_batch, query with bound parameters and the data API's typing,
-//           subscribe, snapshot and restore, close; the four Phase 2 and 3 methods that
-//           are present and never Ok; auth_layer around an embedder's own axum router;
-//           the sandbox holding under query (§7); and the example being what the spec
-//           shows, in thirty lines.
+// Summary:  spec/app-contract.md §2.3 and §6 against the crate as a library: a node opened
+//           with no app folders, an app this binary owns with its schema inline, append,
+//           append_batch, query with bound parameters and the data API's typing, subscribe,
+//           snapshot and restore, close; the sync methods that are present and never Ok;
+//           auth_layer around an embedder's own axum router; the sandbox holding under
+//           query (§7); and the example being what the spec shows, in thirty lines.
+//           See main README.md for full license information.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

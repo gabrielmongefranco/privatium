@@ -1,7 +1,7 @@
 # Project:  Privatium™  |  File: apps/_lint/pass/PV201/pv201ok/app.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-05
-# Summary:  SQL with a bound parameter.
+# Summary:  SQL with a bound parameter. See main README.md for full license information.
 
 [app]
 slug    = "pv201ok"

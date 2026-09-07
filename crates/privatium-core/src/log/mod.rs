@@ -4,6 +4,7 @@
 // Summary:  The append-only event log (spec/protocol.md §4). This module is the timestamp
 //           printer, the `op` and envelope types, and AppLog — one app's log, which owns
 //           the §4.3 Lamport counter and the single writer §3.1 allows this node.
+//           See main README.md for full license information.
 
 use std::collections::BTreeMap;
 use std::fs;

@@ -2,6 +2,7 @@
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-09-05  |  Modified: 2026-09-05
 # Summary:  Sample data with nothing that looks like a credential.
+#           See main README.md for full license information.
 
 [app]
 slug    = "pv208ok"

@@ -1,10 +1,11 @@
 // Project:  Privatium™  |  File: crates/privatium-core/assets/shell/pair.js
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
+// Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  The browser's side of pairing (spec/protocol.md §7): the code in both
 //           renderings and their parser, SPAKE2 as RFC 9382 spells it over the vendored
-//           curve, the six messages of /ws/pair, and the record kept under `pv:device`.
-//           No UI: the pairing screen drives `pair()` and shows what it throws.
+//           curve, the six messages of /ws/pair, and the record kept under `pv:device`. No
+//           UI: the pairing screen drives `pair()` and shows what it throws.
+//           See main README.md for full license information.
 
 import { ed25519, x25519 } from './vendor/noble/curves/ed25519.js';
 import { sha256 } from './vendor/noble/hashes/sha2.js';
@@ -263,6 +264,20 @@ function clean(value, max) {
   return kept || undefined;
 }
 
+/**
+ * What a close code from the node means to the person (spec/protocol.md §7.4.2). The
+ * text never repeats anything the node sent.
+ */
+export function closeReason(code) {
+  switch (code) {
+    case 4404: return 'pairing is closed on the node; open it there and try again';
+    case 4401: return 'the pairing code did not match; check the code on the node and try again';
+    case 4429: return 'too many attempts, or the code was replaced; read the code on the node now and try again in a moment';
+    case 4403: return 'cannot pair: the node refused this device; if it was paired before, forget that pairing and pair again';
+    default: return `cannot pair: the node ended the connection (${code})`;
+  }
+}
+
 /** Wrap a WebSocket-shaped object so its messages can be awaited in order. */
 function inbox(socket) {
   const queue = [], waiters = [];
@@ -271,7 +286,7 @@ function inbox(socket) {
     const waiter = waiters.shift();
     if (queue.length) waiter.resolve(queue.shift()); else waiter.reject(failure);
   } };
-  const closed = code => { failure ??= error(`cannot pair: the node closed the connection (${code})`); settle(); };
+  const closed = code => { failure ??= error(closeReason(code)); settle(); };
   socket.addEventListener('message', event => { queue.push(event.data); settle(); });
   socket.addEventListener('close', event => closed(event?.code ?? 'closed'));
   socket.addEventListener('error', () => closed('error'));

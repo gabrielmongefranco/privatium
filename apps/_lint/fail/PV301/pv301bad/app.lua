@@ -2,6 +2,7 @@
 -- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 -- Created:  2026-09-05  |  Modified: 2026-09-05
 -- Summary:  PV301 fail: the redirect names the mount, which solo mode has not got.
+--           See main README.md for full license information.
 
 local pv = require 'privatium'
 

@@ -1,13 +1,14 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/common/a11y.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-05
+// Created:  2026-09-04  |  Modified: 2026-09-06
 // Summary:  The PV4xx rules of spec/cli.md §5.1 over *rendered* HTML — the shell's pages
 //           and the Tier 1 page frame, which the linter never sees because they have no
-//           template (spec/cli.md §5.4). Since M12 the tree, the element checks and the
-//           contrast maths are the linter's own (privatium_core::lint::{html, css}); what
-//           stays here is the document-level judgement a rendered page adds — lang, one
-//           main, labelled nav, the skip target, no on*=, no style=, no inline script, id
-//           references that resolve — and the shape the M10 tests read.
+//           template (spec/cli.md §5.4). The tree, the element checks and the contrast
+//           maths are the linter's own (privatium_core::lint::{html, css}); what stays here
+//           is the document-level judgement a rendered page adds — lang, one main, labelled
+//           nav, the skip target, no on*=, no style=, no inline script, id references that
+//           resolve — and the shape the reference tests read.
+//           See main README.md for full license information.
 
 // Each test binary uses a different subset of these re-exports, as common/mod.rs says
 // of its helpers.

@@ -5,6 +5,7 @@ Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
 Modified: 2026-09-06
 Summary:  NORMATIVE. Tier 1 — the Lua application API and LSP template engine.
+          See main README.md for full license information.
 -->
 
 # Lua API — Tier 1

@@ -3,6 +3,7 @@
 // Created:  2026-09-05  |  Modified: 2026-09-05
 // Summary:  Rust/browser session interoperability and failure-closed crypto under
 //           spec/protocol.md §8, including operation without crypto.subtle.
+//           See main README.md for full license information.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

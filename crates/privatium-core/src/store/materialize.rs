@@ -1,11 +1,11 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/materialize.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-03
+// Created:  2026-09-01  |  Modified: 2026-09-06
 // Summary:  spec/protocol.md §4.5 in Rust over the staged log — the full replay that is the
-//           definition, the incremental apply that has to agree with it byte for byte
-//           (docs/plans/phase-1.md §2.5), the log tail a restore applies over a snapshot
-//           (§5.3), and the one projection from a JSON `d` to typed columns
-//           (spec/data-dictionary.md §2.1) that all three share.
+//           definition, the incremental apply that has to agree with it byte for byte, the
+//           log tail a restore applies over a snapshot (§5.3), and the one projection from
+//           a JSON `d` to typed columns (spec/data-dictionary.md §2.1) that all three
+//           share. See main README.md for full license information.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;

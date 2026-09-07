@@ -3,13 +3,13 @@
 // Created:  2026-09-04  |  Modified: 2026-09-06
 // Summary:  spec/cli.md against the real binary, section by section: the qualified
 //           --version (§1) and the exit codes; the flags, which are exactly the spec's
-//           synopsis lines (§1–§9, both directions); a node on loopback with --port,
-//           --solo and --no-discovery (§2); dev naming the app (§3); new for each tier and
-//           from hello (§4); skill list and export (§6); snapshot, --verify, and restore from
-//           a backup with its tier reported and a diverged log refused (§7); `pair`
-//           against a running node and without one (§8); `--open`'s QR code and the
-//           first-run window (§2); firewall parsing and refusing (§9); the commands §10
-//           keeps absent.
+//           synopsis lines (§1–§9, both directions); a node on loopback with --port, --solo
+//           and --no-discovery (§2); dev naming the app (§3); new for each tier and from
+//           hello (§4); skill list and export (§6); snapshot, --verify, and restore from a
+//           backup with its tier reported and a diverged log refused (§7); `pair` against a
+//           running node and without one (§8); `--open`'s QR code and the first-run window
+//           (§2); firewall parsing and refusing (§9); the commands §10 keeps absent.
+//           See main README.md for full license information.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

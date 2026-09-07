@@ -2,6 +2,7 @@
  * Authors: Gabriel Mongefranco (@gabrielmongefranco)
  * Created: 2026-09-06 | Modified: 2026-09-06
  * Summary: A greeting and a short form, using the shell's accessible color tokens.
+ *          See main README.md for full license information.
  */
 .hello {
   max-width: 44rem;

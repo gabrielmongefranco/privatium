@@ -2,8 +2,9 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  The pairing window (spec/protocol.md §7.1, §7.5): one code at a time, held in
-//           memory beside its PAKE secret and never written, with its TTL, its attempt
-//           cap, its per-source rate limit and the refusals each produces.
+//           memory beside its PAKE secret and never written, with its TTL, its attempt cap,
+//           its per-source rate limit and the refusals each produces.
+//           See main README.md for full license information.
 
 use std::collections::BTreeMap;
 use std::net::IpAddr;

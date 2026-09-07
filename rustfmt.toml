@@ -2,6 +2,7 @@
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-08-31  |  Modified: 2026-08-31
 # Summary:  Formatting. 100 columns matches the wrap width used throughout spec/ and docs/.
+#           See main README.md for full license information.
 
 edition   = "2024"
 max_width = 100

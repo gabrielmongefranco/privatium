@@ -4,6 +4,7 @@
 // Summary:  The QR code of the node's URL (spec/protocol.md §7.1): the module matrix from
 //           the encoder crate, rendered here as inline SVG for the code page and as block
 //           characters for a terminal. It encodes the URL and never the pairing code.
+//           See main README.md for full license information.
 
 use std::fmt::Write as _;
 

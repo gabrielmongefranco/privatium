@@ -2,6 +2,7 @@
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  Encrypted WebSocket adapter over core::handle and live pairing (§7.4, §8.3).
+//           See main README.md for full license information.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::SocketAddr;
@@ -28,7 +29,29 @@ const HEAD_LIMIT: usize = 64 * 1024;
 const CHUNK: usize = 64 * 1024;
 const IN_FLIGHT: usize = 64;
 const IDS: usize = 65_536;
-const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long a peer has to complete a handshake before its socket is closed with nothing
+/// counted (`spec/protocol.md §7.4.2`, `§8.3`). Both exchanges are machine-paced — the
+/// person has already typed the code when `/ws/pair` opens — so a peer that is silent
+/// this long is holding a task, not thinking. Shortened by a test; an embedder on a slow
+/// link may lengthen them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChannelTimeouts {
+    /// The two text frames and the confirm of `/ws`.
+    pub handshake: Duration,
+    /// The six messages of `/ws/pair`, from the node's hello to the device's sealed
+    /// message.
+    pub pairing: Duration,
+}
+
+impl Default for ChannelTimeouts {
+    fn default() -> Self {
+        Self {
+            handshake: Duration::from_secs(10),
+            pairing: Duration::from_secs(30),
+        }
+    }
+}
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
@@ -363,6 +386,11 @@ fn registered_device(node: &Node, dev: &str) -> Option<NodeId> {
 }
 
 fn pins(node: &Node, dev: &str) -> Option<DevicePins> {
+    // A node never pairs with itself: its own row carries keys for other purposes, and a
+    // channel that claimed them would run under the node's own device (§8.3).
+    if dev == node.id().as_str() {
+        return None;
+    }
     registered_device(node, dev)?;
     node.store()
         .conn()
@@ -528,7 +556,8 @@ pub async fn serve_ws(handler: Handler, peer: Peer, host: HeaderValue, mut socke
         }
         Ok((crypto, session))
     };
-    let Ok(Ok((mut crypto, session))) = tokio::time::timeout(HANDSHAKE_TIMEOUT, handshake).await
+    let Ok(Ok((mut crypto, session))) =
+        tokio::time::timeout(handler.timeouts.handshake, handshake).await
     else {
         close(&mut socket, 4403, "session refused; pair this device again").await;
         return;
@@ -675,12 +704,15 @@ async fn send_response(response: Response, id: u64, tx: mpsc::Sender<Frame>) -> 
     tx.send(Frame::new(id, Kind::End)).await.map_err(|_| ())
 }
 
-/// Drive the six pairing messages with one bounded lifetime. A counted attempt that
-/// disconnects or times out is audited through the node, including task cancellation.
+/// Drive the six pairing messages with one bounded lifetime. A counted attempt whose peer
+/// disconnects or falls silent is audited through the node as abandoned, including on
+/// task cancellation; an outcome the node itself audited — a wrong code, a replaced code,
+/// a closed window, a refused registration, a success — is not audited twice.
 pub async fn serve_ws_pair(handler: Handler, peer: Peer, mut socket: WebSocket) {
     struct Attempt {
         handler: Handler,
         peer: Peer,
+        /// The device of a counted attempt the node has not yet audited an outcome for.
         device: Option<String>,
     }
     impl Drop for Attempt {
@@ -732,11 +764,11 @@ pub async fn serve_ws_pair(handler: Handler, peer: Peer, mut socket: WebSocket) 
         else {
             return Err(crate::pair::PairError::Format.into());
         };
-        let confirmed = handler.lock().pairing_confirm(exchange, &confirm);
-        if matches!(
-            &confirmed,
-            Err(crate::Error::Pair(crate::pair::PairError::WrongCode))
-        ) {
+        let confirmed = handler
+            .lock()
+            .pairing_confirm(exchange, &confirm, jiff::Timestamp::now());
+        if confirmed.is_err() {
+            // The node audited the refusal, whichever it was.
             attempt.device = None;
         }
         let (sealed, bytes) = confirmed?;
@@ -753,17 +785,12 @@ pub async fn serve_ws_pair(handler: Handler, peer: Peer, mut socket: WebSocket) 
         let outcome = handler
             .lock()
             .pairing_finish(sealed, &bytes, jiff::Timestamp::now());
-        if outcome.is_ok()
-            || matches!(
-                &outcome,
-                Err(crate::Error::Pair(crate::pair::PairError::DeviceKnown))
-            )
-        {
-            attempt.device = None;
-        }
+        // Every outcome of a registration is audited by the node itself.
+        attempt.device = None;
         outcome.map(|_| ())
     };
-    let result: Result<crate::Result<()>, _> = tokio::time::timeout(crate::pair::TTL, run).await;
+    let result: Result<crate::Result<()>, _> =
+        tokio::time::timeout(handler.timeouts.pairing, run).await;
     let (code, reason) = match result {
         Ok(Ok(())) => (1000, "paired".to_owned()),
         Ok(Err(crate::Error::Pair(e))) => (e.close_code(), e.to_string()),

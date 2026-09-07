@@ -4,6 +4,7 @@
 -- Summary:  The framework's own schema.sql (spec/data-dictionary.md §3). `_sys` is an app
 --           and is materialized by exactly the machinery any app gets; this is the file it
 --           would have shipped if it had a folder.
+--           See main README.md for full license information.
 
 -- Materialized into cache/_sys.sqlite. An app's connection will see these tables and views
 -- attached read-only as the schema `sys` (spec/data-dictionary.md §1, §4), which is why the

@@ -3,15 +3,17 @@
 // Created:  2026-09-06  |  Modified: 2026-09-06
 // Summary:  The devices page and the code page (spec/protocol.md §7.1, §7.2, §9.2;
 //           spec/data-dictionary.md §3.2), and the owner's part of the node page — the
-//           display-name form and the nodes discovered on the network, by ID. Every
-//           label, user agent and display name is a device's or the owner's text and is
-//           escaped on the way into the page; the forms appear for the owner alone.
+//           display-name form and the nodes discovered on the network, by ID. Every label,
+//           user agent and display name is a device's or the owner's text and is escaped on
+//           the way into the page; the forms appear for the owner alone.
+//           See main README.md for full license information.
 
 use std::fmt::Write as _;
 
 use crate::http::pairing::DISCLOSURE;
 use crate::http::shell::{Context, code, dl, query};
 use crate::icons::{escape, icon};
+use crate::identity::NodeId;
 use crate::pair::{PairingSnapshot, qr};
 use crate::{Result, sys};
 
@@ -101,8 +103,12 @@ pub fn page(cx: &Context<'_>, body: &mut String) -> Result<()> {
     for row in rows {
         let this_node = row.id == node.id().as_str();
         let id = escape(&row.id);
-        let label_cell = if cx.owner && !this_node {
-            let action = format!("/settings/devices/{}/label", row.id);
+        // The row came from the log, which anything may have appended to. A form is
+        // offered only for an ID shaped as one — the router answers nothing else — and
+        // the ID goes into an attribute escaped even then.
+        let actionable = cx.owner && !this_node && NodeId::is_valid(&row.id);
+        let label_cell = if actionable {
+            let action = format!("/settings/devices/{id}/label");
             format!(
                 "<form class=\"pv-inline pv-label-form\" method=\"post\" action=\"{action}\">{}\
                  <label for=\"label-{id}\" class=\"pv-visually-hidden\">Label for {id}</label>\
@@ -115,8 +121,8 @@ pub fn page(cx: &Context<'_>, body: &mut String) -> Result<()> {
         } else {
             escape(row.label.as_deref().unwrap_or(""))
         };
-        let actions = if cx.owner && !this_node {
-            let action = format!("/settings/devices/{}/revoke", row.id);
+        let actions = if actionable {
+            let action = format!("/settings/devices/{id}/revoke");
             format!(
                 "<form class=\"pv-inline\" method=\"post\" action=\"{action}\">{}\
                  <button type=\"submit\" class=\"pv-btn pv-btn-danger\">{} Revoke {id}</button></form>",

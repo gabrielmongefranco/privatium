@@ -3,8 +3,9 @@
 // Created:  2026-09-05  |  Modified: 2026-09-05
 // Summary:  What pv.js needs of a browser, faked for `node --test`: a location, a
 //           navigator, a localStorage that can be told to fail, an EventSource that goes
-//           nowhere, and a fetch that answers from a script and records every request.
-//           Each test imports a fresh copy of the module through a unique query string.
+//           nowhere, and a fetch that answers from a script and records every request. Each
+//           test imports a fresh copy of the module through a unique query string.
+//           See main README.md for full license information.
 
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';

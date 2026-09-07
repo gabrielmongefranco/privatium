@@ -3,6 +3,7 @@
 // Created:  2026-09-05  |  Modified: 2026-09-06
 // Summary:  Bootstrap rendering, the pairing screen (§7.2), the refusal screen (§8.1),
 //           encrypted HTMX and fresh-document navigation (§8.3).
+//           See main README.md for full license information.
 
 import { channel, channelFetch, closeChannel, eventSource, localUrl } from './channel.js';
 import { pair, parseCode } from './pair.js';
@@ -206,9 +207,10 @@ export function pairingScreen(options = {}) {
         return true;
       } catch (error) {
         const text = error.message || '';
-        if (text.includes('closed')) say('Pairing is closed on the space. Open it there — Settings › Devices › Open pairing, or privatium pair — and press Pair again.');
+        if (text.includes('pairing is closed')) say('Pairing is closed on the space. Open it there — Settings › Devices › Open pairing, or privatium pair — and press Pair again.');
         else if (text.includes('did not match')) say('The code did not match. Check the code on the space and try again; a code allows five attempts before a new one is shown there.');
-        else say(text || 'Could not pair. Try again.');
+        else if (text.includes('too many attempts')) say('The space refused this attempt: too many tries, or a new code is on its screen now. Read the code there again and press Pair in a moment.');
+        else say(text.replace(/\bnode\b/g, 'space') || 'Could not pair. Try again.');
         submit.disabled = false;
         return false;
       }

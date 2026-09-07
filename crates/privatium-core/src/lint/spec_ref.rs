@@ -1,11 +1,12 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lint/spec_ref.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-05  |  Modified: 2026-09-05
-// Summary:  What makes a finding's `spec` field resolvable (spec/cli.md §5.2): a
-//           reference is `<path> §<section>` or a bare `<path>`, the path is a document
-//           under spec/ or docs/, and the section is a numbered heading of it. The core's
-//           own test and `cargo xtask lint-spec-refs` both resolve every rule through this
-//           against a checkout, so a rule cannot cite a section that is not there.
+// Summary:  What makes a finding's `spec` field resolvable (spec/cli.md §5.2): a reference
+//           is `<path> §<section>` or a bare `<path>`, the path is a document under spec/
+//           or docs/, and the section is a numbered heading of it. The core's own test and
+//           `cargo xtask lint-spec-refs` both resolve every rule through this against a
+//           checkout, so a rule cannot cite a section that is not there.
+//           See main README.md for full license information.
 
 use std::path::Path;
 

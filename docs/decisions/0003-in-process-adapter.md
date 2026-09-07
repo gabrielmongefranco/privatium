@@ -4,9 +4,9 @@ File:     docs/decisions/0003-in-process-adapter.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-31
 Modified: 2026-08-31
-Summary:  Decision record. One request/response interface in the core, three
-          transports behind it, and why this is what makes offline work
-          without a certificate. Status: DECIDED.
+Summary:  Decision record. One request/response interface in the core, three transports
+          behind it, and why this is what makes offline work without a certificate. Status:
+          DECIDED. See main README.md for full license information.
 -->
 
 # ADR 0003 — One core interface, three transports

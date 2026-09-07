@@ -1,9 +1,12 @@
 # Project:  Privatium™  |  File: .github/workflows/ci.yml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 # Created:  2026-08-31  |  Modified: 2026-09-06
-# Summary:  The gate. Three platforms, because "runs on Linux, Windows and macOS from a
-#           single binary" is a Phase 1 acceptance bullet and finding out at M13 that the
-#           bundled SQLite build never worked on one of them would be too late.
+# Summary:  The gate: formatting, Clippy, the test suite, the conformance items by name, the
+#           embedded example, the fresh-clone check, the header check, the browser tests,
+#           the generated skill references, the lint corpus, a release build and its
+#           packaging — on Linux, macOS and Windows, because one binary has to run on all
+#           three and an engine compiled from source that fails on one of them is found
+#           here, not by an owner. See main README.md for full license information.
 
 name: CI
 

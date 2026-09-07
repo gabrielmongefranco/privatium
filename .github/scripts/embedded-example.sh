@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Project:  Privatium™  |  File: .github/scripts/embedded-example.sh
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-09-05  |  Modified: 2026-09-05
-# Summary:  Run examples/embedded.rs the way an embedder would (spec/app-contract.md §2.3,
-#           docs/plans/phase-1.md M13): a fresh data directory, one append and one query
-#           printed, an own axum router behind auth_layer answering on loopback and
-#           refusing a foreign Host. Bash on all three CI platforms; `curl` is preinstalled.
+# Created:  2026-09-05  |  Modified: 2026-09-06
+# Summary:  Run examples/embedded.rs the way an embedder would (spec/app-contract.md §2.3):
+#           a fresh data directory, one append and one query printed, an own axum router
+#           behind auth_layer answering on loopback and refusing a foreign Host. Bash on all
+#           three CI platforms; `curl` is preinstalled.
+#           See main README.md for full license information.
 
 set -euo pipefail
 
