@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/log.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-05
+// Created:  2026-09-01  |  Modified: 2026-09-06
 // Summary:  The event log against spec/protocol.md §4 — the envelope, gapless `seq`, a
 //           reader that tolerates a gap, the Lamport clock across a restart, §4.4 clock
 //           hygiene, and what a batch can promise on a file that must stay appendable by
@@ -116,9 +116,9 @@ fn ts_offset_secs(seconds: i64) -> String {
 /// `spec/protocol.md §4.1` — every required field, correctly typed, and `d` present on a
 /// `put` and **absent** on a `del`.
 ///
-/// The tombstone half is the one M1 could not have: its envelope struct had `op` as a
-/// constant and `d` as a required field, so "MUST be absent when `op` is `del`" had nothing
-/// to be true of.
+/// The tombstone half is the one that constrains the envelope struct: `op` cannot be a
+/// constant and `d` cannot be a required field, or "MUST be absent when `op` is `del`"
+/// would have nothing to be true of.
 #[test]
 fn test_spec_4_1_envelope_shape() {
     let root = tempfile::tempdir().unwrap();
@@ -210,7 +210,7 @@ fn test_spec_4_1_seq_gapless_on_write() {
 /// `§4.1` — a reader MUST NOT reject, reorder, or repair a `seq` gap in a local log file.
 ///
 /// Gap rejection belongs to sync (`§10.2`), where the missing range can actually be
-/// requested, and it arrives in Phase 3. Here the gap is simply history: the reader yields
+/// requested. Here the gap is simply history: the reader yields
 /// all three lines and the writer continues from what is in the file, so the events it adds
 /// are gapless from the head without the hole ever being touched.
 #[test]
@@ -371,8 +371,8 @@ fn test_spec_4_3_lamport_monotonic() {
     assert_eq!(session.log.lam(), 5);
     session.close();
 
-    // `lam_max_seen` is the other half of the max, and it is what a hand-appended line — or,
-    // from Phase 3, a peer's event — supplies. The next write must land past it.
+    // `lam_max_seen` is the other half of the max, and it is what a hand-appended line — or
+    // a peer's event — supplies. The next write must land past it.
     let path = root.path().join("data").join(APP).join("log");
     let dev = Session::open(root.path()).dev();
     hand_append(
@@ -573,8 +573,8 @@ fn test_spec_4_4_backwards_clock_warns() {
 /// A line that is not an envelope at all does not stop the reader.
 ///
 /// Not audited, and deliberately. `§4.4` requires a *clock* rejection to reach `sys_audit`;
-/// "envelope parses" is `§10.2`'s validation, which belongs to the sync receiver in Phase 3
-/// and can only be acted on there. `§4.1` says a reader carries on.
+/// "envelope parses" is `§10.2`'s validation, which belongs to the sync receiver and can
+/// only be acted on there. `§4.1` says a reader carries on.
 #[test]
 fn test_a_malformed_line_does_not_stop_the_reader() {
     let root = tempfile::tempdir().unwrap();
@@ -606,10 +606,9 @@ fn test_a_malformed_line_does_not_stop_the_reader() {
 
 /// `AGENTS.md` 2 and `spec/protocol.md §3.1` — a node appends only to its own log.
 ///
-/// The Phase 1 subset of `§13`'s conformance item, which also covers `§10.2`'s receiver and
-/// therefore cannot be claimed until Phase 3. Two halves: another device's file is not
-/// touched by ordinary operation, and a writer pointed at one is refused rather than
-/// trusted.
+/// The half of `§13`'s conformance item this build can hold: `§10.2`'s receiver is the
+/// other half. Two parts here — another device's file is not touched by ordinary
+/// operation, and a writer pointed at one is refused rather than trusted.
 #[test]
 fn test_spec_3_1_never_writes_other_device_log() {
     let root = tempfile::tempdir().unwrap();
@@ -619,7 +618,7 @@ fn test_spec_3_1_never_writes_other_device_log() {
     let log_dir = session.log.log_dir().to_path_buf();
     session.close();
 
-    // A peer's log, as sync would leave it in Phase 3.
+    // A peer's log, as sync would leave it.
     let foreign_dev = "k7m2q9xf";
     let foreign = log_dir.join(format!("{foreign_dev}.jsonl"));
     let foreign_line = format!(

@@ -16,9 +16,9 @@ authors.workspace      = true
 repository.workspace   = true
 
 [dependencies]
-# The two foreign engines. They are here rather than under dev-dependencies because risk
-# R1 is about the shipped artefact: if either were test-only, the binary size CI reports
-# would not be the size of the binary we ship.
+# The two foreign engines. They are here rather than under dev-dependencies so that the
+# binary size CI reports is the size of the shipped binary; test-only engines would hide
+# the cost that matters.
 #
 # SQLite, via rusqlite (docs/decisions/0006). `bundled` compiles the amalgamation vendored
 # inside libsqlite3-sys — one C file, about a minute — with JSON1 and FTS5 compiled in and
@@ -28,43 +28,41 @@ repository.workspace   = true
 # (spec/data-dictionary.md §2.1, `store::decimal`); `hooks` is the authorizer that makes
 # an app's connection read-only (spec/app-contract.md §7, `store::sandbox`).
 #
-# `column_metadata` (M7) compiles the amalgamation with SQLITE_ENABLE_COLUMN_METADATA, so
+# `column_metadata` compiles the amalgamation with SQLITE_ENABLE_COLUMN_METADATA, so
 # a result column reports the table and column it originates in — through views too —
 # which is how pv.query finds a column's declared type (spec/lua-api.md §3.2): the cache
 # declares storage types, and DECIMAL or BIGINT lives only in the schema.
 rusqlite  = { workspace = true, features = ["bundled", "functions", "window", "collation", "hooks", "column_metadata"] }
 mlua      = { workspace = true, features = ["lua54", "vendored", "send"] }
-# M12 — the linter reads app.lua, lib/*.lua and every template's Lua as an AST rather than
-# as text (docs/plans/phase-1.md M12: rules over a full_moon AST, never regex). `lua54` is
-# the dialect the host runs; the default `serde` feature is off, since nothing here
-# serializes a tree. MPL-2.0, allowed in deny.toml since M0 for exactly this crate.
+# The linter reads app.lua, lib/*.lua and every template's Lua as an AST rather than as
+# text, so a rule never has to guess at syntax with a regex. `lua54` is the dialect the
+# host runs; the default `serde` feature is off, since nothing here serializes a tree.
+# MPL-2.0, allowed in deny.toml for exactly this crate.
 full_moon = { workspace = true, features = ["lua54"] }
 thiserror = { workspace = true }
 
-# M1 — node identity (spec/protocol.md §2.1). Promoted from [dev-dependencies], where M0
-# put them so that rand_core/digest skew across the three would fail before M1 depended
-# on it. `zeroize` is on by default and clears SigningKey's own bytes on drop; it is named
-# anyway, and taken as a direct dependency, because identity.rs also has to wipe the
-# buffer it reads node.key into — that one belongs to us, not to the crate.
+# Node identity (spec/protocol.md §2.1). `zeroize` is on by default and clears
+# SigningKey's own bytes on drop; it is named anyway, and taken as a direct dependency,
+# because identity.rs also has to wipe the buffer it reads node.key into — that buffer
+# belongs to this crate, not to ed25519-dalek.
 ed25519-dalek = { workspace = true, features = ["rand_core", "zeroize"] }
 x25519-dalek = { workspace = true }
 chacha20poly1305 = { workspace = true }
 # RFC 9382 SPAKE2 over edwards25519 for pairing (spec/protocol.md §7.4.1), written over
 # the curve crate ed25519-dalek already brings in; no PAKE crate carries the RFC's
-# constants on both sides of the wire (docs/plans/phase-2.md §2.4).
+# constants on both sides of the wire.
 curve25519-dalek = { workspace = true }
 rand          = { workspace = true }
 sha2          = { workspace = true }
 base64        = { workspace = true }
 zeroize       = { workspace = true }
 
-# M2 — sys_audit rows are keyed by a ULID (spec/data-dictionary.md §3.10). The only
-# minting site in Phase 1: §4.1 makes a ULID the default row key, but sys_device and
-# sys_node are keyed by Node ID, and the Lua and HTTP callers that mint their own arrive
-# in M7 and M9.
+# sys_audit rows are keyed by a ULID (spec/data-dictionary.md §3.10). §4.1 makes a ULID
+# the default row key, but sys_device and sys_node are keyed by Node ID instead, so this
+# crate mints one only where a caller has not supplied a key of its own.
 ulid = { workspace = true }
 
-# M1 — the §3 data root, the `ts` field, config.toml, and the two bootstrap events.
+# The §3 data root, the `ts` field, config.toml, and the bootstrap events.
 # `raw_value` is for the materializer (`store::events`): it reads each event's `d` as raw
 # JSON text so a number keeps its own digits and never passes through a double
 # (spec/data-dictionary.md §2.1). Reading only; nothing re-serializes a line (§4.2).
@@ -74,17 +72,16 @@ serde       = { workspace = true }
 serde_json  = { workspace = true, features = ["raw_value"] }
 toml        = { workspace = true }
 
-# M6 — the wire (ADR 0003) and the shell. `axum` with default features off is taken for the
+# The wire (ADR 0003) and the shell. `axum` with default features off is taken for the
 # `http` types and the boxed streaming `Body` that `Request` and `Response` carry — no
 # router, no `serve`; nothing in this crate listens on a socket. `tower` is the
 # `Layer`/`Service` shape `auth_layer` has (spec/app-contract.md §6). `tower-http`'s
 # `ServeDir` streams a Tier 2 app's `web/` in 64 KiB frames and refuses `..`; `tokio` is
-# what it reads files through, and (`rt`, M7) what hands a Lua handler to a blocking
-# thread — the runtime itself belongs to the adapter. `hmac` and
-# `hkdf` derive the CSRF key of docs/plans/phase-1.md §2.2 from the node key, so no
-# secret is written anywhere. `include_dir` embeds the icons, the shell's assets and
-# `skills/` (docs/icons.md, spec/cli.md §6).
-# M13 — `tokio` is the one axum feature the core takes: `ConnectInfo<SocketAddr>`, the
+# what it reads files through, and (`rt`) what hands a Lua handler to a blocking thread —
+# the runtime itself belongs to the adapter. `hmac` and `hkdf` derive the CSRF key from
+# the node key, so no secret is written anywhere. `include_dir` embeds the icons, the
+# shell's assets and `skills/` (docs/icons.md, spec/cli.md §6).
+# `tokio` is the one axum feature the core takes: `ConnectInfo<SocketAddr>`, the
 # extension an embedder's `into_make_service_with_connect_info` router attaches and
 # `auth_layer` reads the peer from (spec/app-contract.md §2.3, §6), is gated behind it.
 # Still no router and no `serve` here; the feature's own additions — hyper-util and
@@ -93,7 +90,7 @@ toml        = { workspace = true }
 axum        = { workspace = true, features = ["tokio", "ws"] }
 tower       = { workspace = true, features = ["util"] }
 tower-http  = { workspace = true, features = ["fs"] }
-# M9 — `sync` is the per-app broadcast every append goes out on and the channel an SSE
+# `sync` is the per-app broadcast every append goes out on and the channel an SSE
 # body is read from; `time` is the stream's 30-second ping (spec/data-api.md §3);
 # `macros` is `select!` in the stream's pump, already in the release graph through the
 # binary crate. `futures-core` is the `Stream` trait `Body::from_stream` takes.
@@ -108,8 +105,8 @@ qrcode = { version = "0.14.1", default-features = false }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-# M6 — the route tests drive `Handler::handle` on a runtime; there is no listener in them.
-# M13 — examples/embedded.rs is an embedder: its own listener (`net`), its own Ctrl-C
+# The route tests drive `Handler::handle` on a runtime; there is no listener in them.
+# examples/embedded.rs is an embedder: its own listener (`net`), its own Ctrl-C
 # (`signal`), and `axum::serve` over its own router (`http1`, `tokio`). Features on crates
 # already here, for the example and the tests alone; the library takes none of them, and
 # the workspace's release graph already carries all four through the binary crate.

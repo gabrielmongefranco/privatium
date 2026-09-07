@@ -1926,7 +1926,7 @@ async fn test_reference_apps_load_and_route() {
 }
 
 // ---------------------------------------------------------------------------------------
-// §4 — LSP templates (M8)
+// §4 — LSP templates
 // ---------------------------------------------------------------------------------------
 
 /// `spec/lua-api.md §4` — `<?= ?>` escapes, in text and in an attribute, with no flag to

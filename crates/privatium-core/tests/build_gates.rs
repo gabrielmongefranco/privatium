@@ -90,9 +90,9 @@ fn test_r2_mlua_vendored_links_and_is_lua_54() {
     assert_eq!(engines.lua, "Lua 5.4");
 }
 
-/// M1's dependency skew, caught early: `ed25519-dalek`, `rand`, and `sha2` must agree on
-/// one `rand_core` and one `digest`, or node identity (`spec/protocol.md §2.1`) cannot be
-/// written at all. Generate, sign, verify, and hash — the exact four operations M1 needs.
+/// Dependency skew, caught early: `ed25519-dalek`, `rand`, and `sha2` must agree on one
+/// `rand_core` and one `digest`, or node identity (`spec/protocol.md §2.1`) cannot be
+/// written at all. Generate, sign, verify, and hash — the four operations identity needs.
 #[test]
 fn test_m1_ed25519_and_sha256_agree_on_rand_core_and_digest() {
     let mut rng = rand::rng();
@@ -104,7 +104,7 @@ fn test_m1_ed25519_and_sha256_agree_on_rand_core_and_digest() {
     assert!(verifying.verify(message, &signature).is_ok());
 
     // §2.1 derives the node ID from SHA-256 of the public key. This is not that derivation
-    // — that is M1's, with its own spec-named test — only proof that the digest crate and
+    // — that has its own spec-named test — only proof that the digest crate and
     // the signature crate can be handed the same bytes in one build.
     let digest = Sha256::digest(verifying.as_bytes());
     assert_eq!(digest.len(), 32);

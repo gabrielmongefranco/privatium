@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/lua/sandbox.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  The state an app runs in (spec/lua-api.md §5): the retained standard libraries
 //           and nothing else, the closed list of removed names, `require` replaced by a
 //           loader confined to the app's lib/ plus 'privatium', `print` routed to the
@@ -92,7 +92,7 @@ pub(crate) fn clear_scratch(lua: &Lua) -> mlua::Result<()> {
     scratch.clear()
 }
 
-/// The framework modules `require` serves. `'privatium'` and nothing else in Phase 1.
+/// The framework modules `require` serves. `'privatium'` and nothing else.
 const FRAMEWORK_MODULES: [&str; 1] = ["privatium"];
 
 /// What `os` loses. `spec/lua-api.md §5`'s six, plus `setlocale`, which is process-wide
@@ -242,7 +242,7 @@ pub(crate) fn diagnostic(lua: &Lua, level: &str, message: &str) {
 }
 
 /// The sandbox globals of `spec/lua-api.md §4.0`: `url`, `icon`, `fmt.date`, `fmt.money`,
-/// `fmt.rel`, `t`. Available in handler code now and shared with templates in M8.
+/// `fmt.rel`, `t`. The same set is visible to handler code and to templates.
 pub(crate) fn install_globals(lua: &Lua) -> mlua::Result<()> {
     let globals = lua.globals();
     globals.raw_set("url", lua.create_function(url)?)?;

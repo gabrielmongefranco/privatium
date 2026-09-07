@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/app/manifest.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-02  |  Modified: 2026-09-02
+// Created:  2026-09-02  |  Modified: 2026-09-06
 // Summary:  app.toml (spec/app-contract.md §3) — the manifest as a type, its validation
 //           against §3.1, protocol §1.1's reserved slugs and §12's api ceiling, and the
 //           [permissions] table of §5.4 with the plain-language widenings it implies.
@@ -19,8 +19,8 @@ pub const MANIFEST_FILE: &str = "app.toml";
 
 /// The app contract this build implements (`spec/app-contract.md`'s `api = 1`).
 ///
-/// `spec/protocol.md §12`: a node MUST refuse an app declaring a higher `api`. A Phase 1
-/// build qualifies its `--version` as partial (`spec/cli.md §1`), and that is a claim about
+/// `spec/protocol.md §12`: a node MUST refuse an app declaring a higher `api`. A build
+/// that qualifies its `--version` as partial (`spec/cli.md §1`) is making a claim about
 /// `§13` conformance, not about which contract apps are written against — `pv/1` speaks
 /// `api = 1`, partial or not.
 pub const SUPPORTED_API: u32 = 1;
@@ -121,8 +121,8 @@ pub struct AppTable {
     /// Free text.
     #[serde(default)]
     pub description: Option<String>,
-    /// A Bootstrap Icons file name (`docs/icons.md`). Checked against the vendored set in
-    /// M6; here it is carried.
+    /// A Bootstrap Icons file name (`docs/icons.md`). Checked against the vendored set
+    /// where the shell renders it; here it is only carried.
     #[serde(default)]
     pub icon: Option<String>,
     /// Authors.

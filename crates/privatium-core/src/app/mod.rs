@@ -176,8 +176,8 @@ pub enum Warning {
         widening: Widening,
     },
     /// `nav.advertise = true` on a slug longer than a DNS label allows
-    /// (`spec/protocol.md §6.1`: MUST be surfaced at load). Phase 1 advertises nothing;
-    /// the warning is still owed.
+    /// (`spec/protocol.md §6.1`: MUST be surfaced at load). Owed whether or not discovery
+    /// is running, because the owner finds out at load or not at all.
     SlugTooLongToAdvertise {
         /// The app.
         slug: String,
@@ -499,7 +499,7 @@ impl App {
 
     /// The mount path — `/a/<slug>/` in host mode, `/` for the solo app — or `None` for
     /// an app that exists without being served: a tier 3 index entry, or any other app in
-    /// solo mode. This is where `§8`'s "mount" lands until M6's router reads it.
+    /// solo mode. This is where `§8`'s "mount" lands, and what the router reads.
     #[must_use]
     pub fn mount(&self) -> Option<&str> {
         self.mount.as_deref()
@@ -721,8 +721,8 @@ impl Node {
         self.apps.get(slug)
     }
 
-    /// The mount table: `(path, app)` for every app that is served, which is what M6's
-    /// router will be built from.
+    /// The mount table: `(path, app)` for every app that is served, which is what the
+    /// router is built from.
     pub fn mounts(&self) -> impl Iterator<Item = (&str, &App)> {
         self.apps
             .values()

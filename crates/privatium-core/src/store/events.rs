@@ -77,15 +77,15 @@ struct Line<'a> {
 /// envelope — unparseable, or missing `seq`, `lam`, `tbl` or `id` — has no place in a
 /// causal ordering and is skipped; `§4.2`'s unknown *fields* are kept by never being read.
 /// `§4.4`: an event more than the horizon ahead of this node's clock must not win a row
-/// permanently, so a `ts` past `cutoff` is skipped too — with the same mercy M2's reader
-/// grants, that a `ts` this node cannot parse carries no information and is accepted,
+/// permanently, so a `ts` past `cutoff` is skipped too — with the same mercy the log
+/// reader grants, that a `ts` this node cannot parse carries no information and is accepted,
 /// because rejecting it would be gap rejection by another name and `§4.1` forbids a
 /// reader that. And `§4.1`'s batch rule: the lines of a batch that reached the disk short
 /// are skipped as one, so a `pv.batch` is every event or none here as well as on the
 /// write path.
 ///
-/// No audit row is written from here. M2's `recover()` reports each rejection and each
-/// short batch once.
+/// No audit row is written from here. The log reader's `recover()` reports each rejection
+/// and each short batch once.
 pub(crate) fn read_log(log_dir: &Path, app: &str, cutoff: &str) -> Result<Vec<Event>, StoreError> {
     let mut segments: Vec<(PathBuf, u64)> = match fs::read_dir(log_dir) {
         Ok(entries) => entries

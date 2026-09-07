@@ -128,7 +128,7 @@ const SEVERITY_ALERT: &str = "alert";
 
 /// The `d` of a `sys_device` row.
 ///
-/// Every column of `§3.2` appears here, including the ones Phase 1 leaves NULL, so that
+/// Every column of `§3.2` appears here, including the ones a given row leaves NULL, so that
 /// the shape of the row is auditable against the data dictionary in one place. A NULL is
 /// written by omitting the key, which `spec/data-dictionary.md §2.1` defines as equivalent
 /// to `null`.
@@ -238,7 +238,7 @@ impl<'a> NodeRow<'a> {
 /// is typed `VARCHAR` and described as "JSON object", and `spec/data-dictionary.md §2.1`
 /// encodes `VARCHAR` as a **string**. So `detail` is a JSON string that *contains* JSON —
 /// `"detail":"{\"dev\":\"…\"}"` — not a nested object. `§3.9`'s `row_counts` is the same
-/// shape. Emitting a real object here would type the column as `JSON` in M3 and diverge
+/// shape. Emitting a real object here would type the column as `JSON` in the cache and diverge
 /// from the dictionary on the one table whose job is to be trustworthy.
 ///
 /// `at` is this row's own timestamp and will differ from the envelope's `ts` by whatever
@@ -278,7 +278,7 @@ impl<'a> AuditRow<'a> {
     }
 
     /// An `alert` from the framework itself. `§3.10` reserves this for four kinds;
-    /// `restore.tier3` is the one Phase 1 can produce.
+    /// `restore.tier3` is the one this crate raises.
     pub(crate) fn alert(
         at: &'a str,
         kind: &'a str,

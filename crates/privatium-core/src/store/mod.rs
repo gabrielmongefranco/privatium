@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-05
+// Created:  2026-09-01  |  Modified: 2026-09-06
 // Summary:  One app's cache/<slug>.sqlite: the framework's connection that materializes it
 //           from the log or from a snapshot (spec/protocol.md §5.3), the read-only
 //           sandboxed connection app SQL gets (spec/app-contract.md §7), the watermark that
@@ -117,7 +117,7 @@ pub struct Materialized {
     /// `echo >>` becomes visible without a restart.
     #[serde(default)]
     pub segments: BTreeMap<String, u64>,
-    /// Which restore tier built the tables (M4). `None` in a record written before M4.
+    /// Which restore tier built the tables. `None` in a record that predates the field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub restore: Option<RestoreRecord>,
 }
@@ -283,8 +283,8 @@ impl Store {
 
     /// Apply one event this node just appended, without replaying the log.
     ///
-    /// See [`materialize::apply`] for why overwriting blindly is correct and for the exact
-    /// moment in Phase 3 when it stops being.
+    /// See [`materialize::apply`] for why overwriting blindly is correct, and for the exact
+    /// moment — a second writer — when it stops being.
     pub fn apply<D: Serialize>(
         &mut self,
         tbl: &str,
@@ -355,7 +355,7 @@ impl Store {
     /// become the key of a different one. It does not forbid re-asserting a
     /// caller-supplied stable key: `sys_node` and `sys_device` are keyed by Node ID, and
     /// `apps/animals` deletes and recreates its `'cursor'` singleton every round, both
-    /// blessed by `§4.1`. So this reports the fact and does not decide policy. M9's data
+    /// blessed by `§4.1`. So this reports the fact and does not decide policy. The data
     /// API — the only caller that accepts an id from something untrusted, and which
     /// `spec/data-api.md §2` already restricts to ULIDs — is where the refusal lives.
     pub fn is_tombstoned(&self, tbl: &str, id: &str) -> Result<bool, StoreError> {
@@ -527,9 +527,9 @@ impl Store {
     /// in-memory database that has no `pv_health` for a view to bind against. The table
     /// survives rebuilds (`IF NOT EXISTS`); the view is recreated with the rest.
     ///
-    /// Four columns the dictionary asks for, as far as Phase 1 can answer: the restore
-    /// tier in use, the last snapshot's age, the log size, and `unsynced_peers`, which is
-    /// NULL until Phase 3 has peers to count.
+    /// Four columns the dictionary asks for: the restore tier in use, the last snapshot's
+    /// age, the log size, and `unsynced_peers`, which stays NULL until there are peers to
+    /// count.
     fn ensure_health(&self) -> Result<(), StoreError> {
         self.conn
             .execute_batch(&format!(

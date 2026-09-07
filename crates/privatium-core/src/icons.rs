@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/icons.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
+// Created:  2026-09-03  |  Modified: 2026-09-06
 // Summary:  Bootstrap Icons, vendored in full under assets/icons/ and embedded in the
 //           binary (docs/icons.md). The one helper that turns a name into an inline <svg>,
 //           with the accessibility attributes the icon system makes mandatory and the
@@ -81,7 +81,8 @@ fn render(name: &str, label: Option<&str>) -> String {
 /// The children of the vendored `<svg>` — its `<path>` elements — as text.
 ///
 /// Every file in the set has the shape `<svg …>…</svg>`; the opening tag is discarded
-/// because ours carries different attributes, and the closing one because we write it.
+/// because the framework's own tag carries different attributes, and the closing one
+/// because it is written back out here.
 fn body(name: &str) -> Option<&'static str> {
     if name.is_empty()
         || !name

@@ -796,8 +796,8 @@ fn test_discovery_settings_disable_each_mechanism() {
 
 /// `§6.1` — a real daemon: the node's registration of `_privatium._tcp.local.` is browsed
 /// back by the same daemon with its TXT record, keyed by `id`, and a facts update is
-/// reflected in what is browsed. If a CI runner has no multicast, this is the test the
-/// plan gates behind `PRIVATIUM_TEST_MDNS` (docs/plans/phase-2.md, risk R10).
+/// reflected in what is browsed. It needs multicast, which a CI runner may not have, so
+/// it runs only when `PRIVATIUM_TEST_MDNS` is set.
 #[test]
 fn test_spec_6_1_mdns_registration_is_browsable_and_keyed_by_id() {
     // Tests in this process register on the same host at once, and the stack renames a

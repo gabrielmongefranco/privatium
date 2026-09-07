@@ -283,9 +283,9 @@ document.getElementById('download').onclick = () => {
 };
 
 // ---- live updates --------------------------------------------------------
-// Every stroke drawn in another window arrives here now; from Phase 3, every stroke from
-// any paired device, including ones that reached this node from another node while this
-// tab was closed.
+// Every stroke drawn in another window on this node arrives here. Once nodes sync, so
+// does every stroke from a paired device, including ones that landed while this tab was
+// closed.
 pv.subscribe(ev => {
   if (ev.tbl !== 'stroke') return;
   history.apply(ev);

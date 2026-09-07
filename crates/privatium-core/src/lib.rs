@@ -65,8 +65,8 @@ use store::{
 /// The protocol this build speaks (`spec/protocol.md §12`).
 ///
 /// Not the `--version` string: `spec/cli.md §1` requires a build that does not satisfy
-/// every item of `§13` to qualify what it prints, and Phase 1 does not. That
-/// qualification belongs to the CLI (M11), not here — this constant is the wire format,
+/// every item of `§13` to qualify what it prints. That qualification belongs to the CLI,
+/// which knows what this build implements, not here — this constant is the wire format,
 /// and the wire format really is `pv/1`.
 pub const PROTOCOL: &str = "pv/1";
 
@@ -375,9 +375,9 @@ pub struct Maintenance {
 /// Opening a node is the bootstrap order of `docs/plans/phase-1.md §2.6`, and the order
 /// is not negotiable: the framework's own `sys_device` row has to be written through the
 /// same log an app would use, before a materialized `_sys` or an app loader exists to help.
-/// M2 completed steps 1 to 3 of that order — the tree and the keypair, the `_sys` log with
-/// its recovered `seq` and Lamport counter, and this node's two rows in it. M3 adds step 4,
-/// materializing `_sys` into `cache/_sys.sqlite`; M4 makes that a three-tier restore.
+/// `open` performs steps 1 to 4 — the tree and the keypair, the `_sys` log with its
+/// recovered `seq` and Lamport counter, this node's two rows in it, and a three-tier
+/// restore of `_sys` into `cache/_sys.sqlite`.
 /// Step 5, loading `apps/`, is [`load_apps`](Self::load_apps): explicit rather than part
 /// of `open`, because embedded mode (`spec/app-contract.md §2.3`) opens a node and has no
 /// folders to scan, and because only the caller knows where a development checkout's
@@ -521,14 +521,14 @@ impl Node {
         self.state.flush()
     }
 
-    /// Rematerialize `_sys` if its log has grown behind the tables — the read-path check
-    /// M6 will make per request. Returns whether it rebuilt.
+    /// Rematerialize `_sys` if its log has grown behind the tables — the check the read
+    /// path makes per request. Returns whether it rebuilt.
     pub fn refresh(&mut self) -> Result<bool> {
         self.store.refresh(&store::cutoff_now()).map_err(boxed)
     }
 
     // -----------------------------------------------------------------------------------
-    // spec/app-contract.md §6 — `snapshot`, `restore`, `restore_tier` (M4)
+    // spec/app-contract.md §6 — `snapshot`, `restore`, `restore_tier`
     // -----------------------------------------------------------------------------------
 
     /// Write a snapshot of `app` now (`spec/protocol.md §5`), and record it as a
@@ -745,7 +745,7 @@ impl Node {
     }
 
     /// `auth_layer` (`spec/app-contract.md §6`): the tower middleware that decides who a
-    /// request is from. Phase 1: a loopback caller is this node's own device row, anything
+    /// request is from: a loopback caller is this node's own device row, anything
     /// else is 403 (`docs/plans/phase-1.md §2.2`). [`Handler::handle`] applies its own
     /// copy itself, so every adapter gets it; this one is for an embedder to wrap their
     /// own router with (`§2.3`), and it refuses a request whose peer it cannot see — serve
@@ -1333,8 +1333,8 @@ fn audit_recovery(sys_log: &mut AppLog, app: &str, recovered: &log::Recovered) -
 /// Turn what a `spec/protocol.md §5.3` restore did into a `sys_audit` row, when it is
 /// worth one. Returns whether a row was written.
 ///
-/// Bounded on purpose, because `Store::refresh` may run per request once M6 exists and a
-/// row per refresh would append to `sys_audit` forever:
+/// Bounded on purpose, because `Store::refresh` runs per request and a row per refresh
+/// would append to `sys_audit` forever:
 ///
 /// - `restore.tier2` (warn) when CSV rescued a snapshot whose SQLite file failed, once per
 ///   `(tier, snapshot)` — `previous` is what `local/state.jsonl` last recorded.
@@ -1426,7 +1426,8 @@ pub enum EngineError {
 /// Open an in-memory SQLite database and a fresh Lua state, and ask each its version.
 ///
 /// This exists to fail loudly on any platform where the bundled C build of either engine
-/// is broken, rather than at M3 or M7 when there is real code to blame it on.
+/// is broken, rather than deep in the store or the Lua host, where there is real code to
+/// blame it on.
 pub fn linked_engines() -> std::result::Result<LinkedEngines, EngineError> {
     let conn = rusqlite::Connection::open_in_memory()?;
     let sqlite: String = conn.query_row("SELECT sqlite_version()", [], |row| row.get(0))?;

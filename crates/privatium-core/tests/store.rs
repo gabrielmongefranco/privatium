@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/store.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-05
+// Created:  2026-09-01  |  Modified: 2026-09-06
 // Summary:  Materialization against spec/protocol.md §4.5 and §4.6 — last-write-wins at row
 //           granularity, tombstones, the §4.4 horizon, the §2.1 encodings, a cache that can
 //           be deleted, a log anyone may append to by hand, and the §2.5 property that the
@@ -209,7 +209,7 @@ fn test_spec_4_6_tombstone_removes_row() {
 ///
 /// Three halves, and the split matters:
 ///
-/// 1. The materializer **reports** the tombstone. That is the fact M9's data API refuses
+/// 1. The materializer **reports** the tombstone. That is the fact the data API refuses
 ///    on, since `spec/data-api.md §2` already restricts client-supplied ids to ULIDs, and
 ///    a browser is the only caller `§4.1` does not trust to choose a row key.
 /// 2. A caller-supplied stable key may be re-asserted after a tombstone; the row returns.
@@ -224,7 +224,7 @@ fn test_spec_4_6_deleted_id_not_reusable() {
     let dev = fixture.dev.clone();
     let ulid = "01J9YQ2W7C8XKF3M0N5RTVB6ZP";
 
-    // 1. A minted ULID, deleted. The tombstone is the fact M9 will refuse on.
+    // 1. A minted ULID, deleted. The tombstone is the fact the data API refuses on.
     fixture.append(&event(
         1,
         1,
@@ -372,7 +372,7 @@ fn test_spec_3_1_delete_cache_loses_nothing() {
 /// built from, the logs have not moved, so a store that adopted that watermark would see
 /// nothing to rebuild and leave a database with schemas and no tables. Both halves are
 /// checked — `_sys` through `Node::open`, which restores the watermark itself, and an app
-/// store through the same two calls M5's loader will make.
+/// store through the same two calls the app loader makes.
 #[test]
 fn test_spec_3_1_delete_cache_only_still_materializes() {
     let mut fixture = Fixture::open(HELLO_DDL);
@@ -637,11 +637,11 @@ fn test_spec_4_2_unknown_fields_do_not_break_materialization() {
 
 /// `§4.4` — an event more than 24 hours ahead does not win its row.
 ///
-/// M2 excludes such an event from the Lamport fold, but the line is still in the file and
+/// The log reader excludes such an event from the Lamport fold, but the line is still in the file and
 /// the materializer reads it. If it materialized it would own the row permanently, and a
 /// rejection that only withholds a counter increment is not a rejection.
 ///
-/// The second half is the mercy M2's reader also grants: a `ts` this node cannot parse
+/// The second half is the mercy the log reader also grants: a `ts` this node cannot parse
 /// carries no information and is **accepted**, because dropping it would be gap rejection
 /// by another name and `§4.1` forbids a reader that.
 #[test]
@@ -688,7 +688,7 @@ fn test_spec_4_4_future_event_does_not_win_the_row() {
     assert_eq!(
         fixture.cell("profile", "odd", "display_name"),
         "unparseable ts",
-        "an unparseable ts is accepted, exactly as M2's reader accepts it"
+        "an unparseable ts is accepted, exactly as the log reader accepts it"
     );
 
     // An event just inside the horizon is ordinary and must materialize.
@@ -708,7 +708,7 @@ fn test_spec_4_4_future_event_does_not_win_the_row() {
     );
 }
 
-/// `§4.4` — materializing does not re-audit what M2 already reported once.
+/// `§4.4` — materializing does not re-audit what the log reader already reported once.
 ///
 /// A log cannot be edited to remove the offending line, so a node that reported it on every
 /// materialization would append to `sys_audit` forever.
@@ -755,7 +755,7 @@ fn test_a_future_event_is_not_audited_twice_by_materializing() {
 ///
 /// Run twice, and the second time is the one that matters. PowerShell's `>>` terminates
 /// lines with `0d 0a`, so a Windows owner following the README writes a `\r` the writer
-/// never emits. M2's reader tolerates it because JSON treats it as whitespace; the
+/// never emits. The log reader tolerates it because JSON treats it as whitespace; the
 /// materializer's own reader has to as well.
 #[test]
 fn test_hand_appended_line_appears() {
@@ -1238,7 +1238,7 @@ fn test_spec_app_contract_4_5_unique_is_refused_at_load() {
 /// `spec/protocol.md §4.6` with `spec/data-api.md §2` — a `del` in an app with no
 /// `schema.sql` is still a tombstone, and `is_tombstoned` reports it.
 ///
-/// This is what M9's data API has to consult to refuse a client-supplied ULID naming a
+/// This is what the data API consults to refuse a client-supplied ULID naming a
 /// deleted row, and `apps/sketch` is exactly such an app. Both paths are checked: the
 /// replay, for a hand-appended `del`, and the incremental apply, for one this node wrote.
 #[test]

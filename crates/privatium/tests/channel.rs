@@ -792,8 +792,7 @@ async fn test_spec_3_2_revoking_a_device_closes_its_open_channel_at_once() {
 /// `spec/protocol.md §8.1`, `§2.3.2` — a node whose `identity/` was replaced (a new node
 /// key and a new cluster over the same `data/`) is refused by a client that paired with
 /// the old one: the certificate fails the pinned cluster key before any confirm is
-/// sent, with no way past it but pairing again. The roadmap's "changing the node key"
-/// bullet.
+/// sent, with no way past it but pairing again.
 #[tokio::test]
 async fn test_spec_8_1_a_reinitialized_node_is_refused_by_a_paired_client() {
     let f = Fixture::new().await;

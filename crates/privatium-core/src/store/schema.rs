@@ -265,7 +265,7 @@ fn read_tables(conn: &Connection) -> Result<Vec<Table>, StoreError> {
             });
         }
         // `spec/app-contract.md §4.5`: every table needs `id VARCHAR PRIMARY KEY`. A load
-        // refusal rather than lint (`PV106`, M12), because `§4.5` groups events by `id`: a
+        // refusal rather than a lint finding (`PV106`), because `§4.5` groups events by `id`: a
         // table without one cannot be materialized at all.
         if !has_id {
             return Err(StoreError::Schema {

@@ -39,9 +39,9 @@ pub fn paths(global: &Global) -> Result<Paths> {
 /// is what runs. A bare binary — a CI artefact, a release download — has no such folder:
 /// it carries the same apps embedded (`privatium_core::app::examples`) and writes them
 /// into the owner's `apps/` while that folder holds no app ([`apps_dir_is_empty`],
-/// `spec/cli.md §2`). A package
-/// that ships the folder at a path of its own is Phase 6 (`spec/data-dictionary.md
-/// §3.4`, `source = bundled`). The path is fixed at compile time and simply absent
+/// `spec/cli.md §2`). A package that ships the folder at a path of its own is not
+/// supported here (`spec/data-dictionary.md §3.4`, `source = bundled`), which is what a
+/// distribution build would add. The path is fixed at compile time and simply absent
 /// anywhere else; the test suite, which always runs from a checkout, sets
 /// `PRIVATIUM_TEST_NO_CHECKOUT` to exercise the release binary's path.
 #[must_use]

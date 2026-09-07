@@ -35,7 +35,7 @@ pub struct Record {
     /// what a sync receiver compares a peer's heads against (`§10.1`).
     #[serde(default)]
     pub heads: BTreeMap<String, u64>,
-    /// What the app's `cache/<slug>.sqlite` was last built from (M3).
+    /// What the app's `cache/<slug>.sqlite` was last built from.
     ///
     /// The `schema.sql` hash and a length per log segment. Two jobs, both of them
     /// "notice that the tables are stale": a changed hash is `spec/app-contract.md §4.5`'s
@@ -49,11 +49,11 @@ pub struct Record {
     /// rematerializes, which costs work and no data.
     ///
     ///
-    /// M4 adds which restore tier built the tables and from which snapshot
+    /// It also carries which restore tier built the tables and from which snapshot
     /// (`store::RestoreRecord`). Node-local for the same reason as the rest: a tier is a
     /// fact about this node's cache, and copying it to another machine would be a lie.
     ///
-    /// `#[serde(default)]` so a `state.jsonl` written by M2 still loads.
+    /// `#[serde(default)]` so a `state.jsonl` written without this field still loads.
     #[serde(default)]
     pub materialized: crate::store::Materialized,
     /// When the record was written. For a human reading the file; nothing parses it.
@@ -124,7 +124,7 @@ impl State {
         });
     }
 
-    /// Record what one app's `cache/<slug>.sqlite` was built from (M3).
+    /// Record what one app's `cache/<slug>.sqlite` was built from.
     pub fn set_materialized(&mut self, app: &str, materialized: crate::store::Materialized) {
         self.update(app, |record| record.materialized = materialized);
     }
@@ -133,8 +133,8 @@ impl State {
     ///
     /// The comparison deliberately ignores `at`. It is a human-readable breadcrumb that
     /// nothing parses, and including it would make every call a change — which would
-    /// rewrite `local/state.jsonl` on every request once M6 calls `refresh` on the read
-    /// path.
+    /// rewrite `local/state.jsonl` on every request, because the read path calls
+    /// `refresh`.
     fn update<F: FnOnce(&mut Record)>(&mut self, app: &str, amend: F) {
         let existing = self.records.get(app);
         let mut amended = existing.cloned().unwrap_or_else(|| Record {

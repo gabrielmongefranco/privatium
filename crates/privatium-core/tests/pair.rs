@@ -922,7 +922,7 @@ fn test_spec_7_6_a_registered_device_key_cannot_pair_again() {
 fn test_spec_app_contract_6_pair_opens_a_window_and_returns_the_code() {
     let root = tempfile::tempdir().unwrap();
     let mut node = open(&root);
-    // A Phase 1 build refused this call; now it opens the window of §7.1.
+    // Opens the window of §7.1 and hands back the code the owner reads out.
     let snapshot = node.pair_at(Duration::from_secs(120), now()).unwrap();
     assert_eq!(snapshot.emoji.len(), 4);
     assert_eq!(snapshot.labels.len(), 4);
@@ -1169,7 +1169,7 @@ fn test_spec_7_4_a_second_attempt_cannot_finish_once_the_window_is_consumed_or_e
 }
 
 // -------------------------------------------------------------------------------------
-// The vector file both languages read (docs/plans/phase-2.md §2.4, risk R9)
+// The vector file both the Rust and the browser implementations read
 // -------------------------------------------------------------------------------------
 
 /// The identity fixtures of `tests/fixtures/identity/` as a loaded `Identity`: the

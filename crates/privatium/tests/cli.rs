@@ -194,8 +194,7 @@ fn synopsis_flags(text: &str) -> BTreeSet<(String, String)> {
 }
 
 /// `§1` — `--version` prints the build version and a qualified protocol string, since a
-/// build without sync does not satisfy `spec/protocol.md §13` (`docs/plans/phase-2.md
-/// §2.11`).
+/// build without sync does not satisfy `spec/protocol.md §13`.
 #[test]
 fn test_spec_cli_1_version_qualifies_protocol() {
     let root = tempfile::tempdir().unwrap();
@@ -214,7 +213,8 @@ fn test_spec_cli_1_version_qualifies_protocol() {
     assert_eq!(out2, out);
 }
 
-/// `§1` — `0` success, `1` runtime error, `2` usage error. (`3`, lint findings, is M12's.)
+/// `§1` — `0` success, `1` runtime error, `2` usage error. (`3` is lint findings, held
+/// by the linter's own tests.)
 #[test]
 fn test_cli_exit_codes() {
     let root = tempfile::tempdir().unwrap();
@@ -264,8 +264,8 @@ fn test_cli_exit_codes() {
     }
 }
 
-/// `docs/plans/phase-1.md` M11 — the flags the binary accepts are the flags `spec/cli.md`
-/// names, per command, in both directions: nothing undocumented, nothing missing.
+/// The flags the binary accepts are the flags `spec/cli.md` names, per command, in both
+/// directions: nothing undocumented, nothing missing.
 #[test]
 fn test_no_undocumented_flags() {
     let spec = fs::read_to_string(repo().join("spec").join("cli.md")).unwrap();

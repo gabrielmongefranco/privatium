@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/log/envelope.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-05
+// Created:  2026-09-01  |  Modified: 2026-09-06
 // Summary:  The two halves of spec/protocol.md §4.1 — the struct a writer serializes, and
 //           the much smaller struct a reader deserializes. They are separate types on
 //           purpose: §4.2 makes preservation a property of the bytes, so nothing here ever
@@ -69,9 +69,9 @@ pub(crate) struct Envelope<'a, D: Serialize> {
 /// a node that refused them could not read a log written by a `pv/2` peer — which is the
 /// whole mechanism forward compatibility rests on.
 ///
-/// `app`, `tbl`, `id`, and `d` are absent because nothing in M2 needs them. M3 materializes
-/// by reading the log files itself (`store::events`), so parsing them here would
-/// be the beginning of a second materializer that no one asked for.
+/// `app`, `tbl`, `id`, and `d` are absent because nothing that reads an envelope needs
+/// them. The materializer reads the log files itself (`store::events`), so parsing them
+/// here would be the beginning of a second materializer that no one asked for.
 ///
 /// `Cow` rather than `&str`: serde_json can only borrow a string that contains no escapes,
 /// and `"dev"` is a legal spelling of `dev`. Borrowing where possible and allocating

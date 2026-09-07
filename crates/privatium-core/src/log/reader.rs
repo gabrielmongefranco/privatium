@@ -1,14 +1,13 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/log/reader.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-05
+// Created:  2026-09-01  |  Modified: 2026-09-06
 // Summary:  Reading an app's log: the segment list of spec/protocol.md §3.2, a line
 //           iterator per segment, and the one startup scan that recovers `seq` and the
 //           Lamport counter and applies §4.4's clock hygiene.
 //           See main README.md for full license information.
 //
-//           This is NOT the materialization path. M3's store reads the log files itself at
-//           data/<slug>/log/*.jsonl directly (docs/plans/phase-1.md, M3). What lives here
-//           exists for recovery now and for §10 sync in Phase 3, and it is deliberately
+//           This is NOT the materialization path: the store reads data/<slug>/log/*.jsonl
+//           itself. What lives here serves recovery and §10 sync, and is deliberately
 //           incurious about anything those two do not need.
 
 use std::collections::BTreeMap;
@@ -365,8 +364,8 @@ struct Parsed {
 /// `known_heads` are for. They exist so the counter stays monotonic when the *files* move
 /// backwards — a log restored from an older copy, a `snap/` rolled back — which a scan alone
 /// cannot notice, and so that a line already reported once is not reported again on every
-/// restart. Phase 1 logs are small and a scan is cheap; when that stops being true, the
-/// thing to add is a byte cursor, not a second meaning for these two.
+/// restart. A scan is cheap while logs are small; when that stops being true, the thing to
+/// add is a byte cursor, not a second meaning for these two.
 ///
 /// **On `heads`.** A head advances past a rejected line. That reads wrong for a moment and
 /// is right: `seq` is a position in a file, `lam` is causal order. Refusing to acknowledge a

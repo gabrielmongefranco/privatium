@@ -145,8 +145,7 @@ rule_tests! {
     PV506 => (test_lint_rule_pv506_passes, test_lint_rule_pv506_fails),
 }
 
-/// `docs/plans/phase-1.md` M12 — the meta-test: every rule has a pass and a fail
-/// fixture, and the pair of tests above.
+/// The meta-test: every rule has a pass and a fail fixture, and the pair of tests above.
 #[test]
 fn test_every_rule_has_fixtures() {
     let tested: BTreeSet<RuleId> = TESTED.iter().copied().collect();
