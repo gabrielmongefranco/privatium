@@ -74,7 +74,7 @@ use privatium_core::{Event, Node, new_ulid};
 let mut node = Node::open(&data_dir)?;
 node.open_app("myapp", "CREATE TABLE score (id VARCHAR PRIMARY KEY, points BIGINT);")?;
 node.serve_discovery()?;          // mDNS, UDP, pairing
-node.start_sync()?;               // iroh + LAN peers
+node.start_sync()?;               // LAN peers over the encrypted channel
 
 // your own writes — seq, lam, ts and dev are the node's to stamp
 node.append("myapp", Event::put("score", new_ulid(), json!({"points": 42})))?;

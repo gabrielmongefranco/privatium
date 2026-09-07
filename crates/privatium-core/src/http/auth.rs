@@ -49,9 +49,24 @@ pub struct Session {
     pub(crate) device: NodeId,
     pub(crate) node: NodeId,
     pub(crate) x25519: String,
+    pub(crate) kind: SessionKind,
+}
+
+/// Capability established from the pairing registry, never supplied by a request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionKind {
+    /// A paired browser or native application client.
+    Device,
+    /// A cluster node, confined to synchronization and public discovery routes.
+    Node,
 }
 
 impl Session {
+    /// Whether this is an authenticated node-to-node channel.
+    #[must_use]
+    pub fn is_node(&self) -> bool {
+        self.kind == SessionKind::Node
+    }
     /// The authenticated device; no key material is exposed.
     #[must_use]
     pub fn device(&self) -> &NodeId {

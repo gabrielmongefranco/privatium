@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/embedded.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-06
+// Created:  2026-09-05  |  Modified: 2026-09-07
 // Summary:  spec/app-contract.md §2.3 and §6 against the crate as a library: a node opened
 //           with no app folders, an app this binary owns with its schema inline, append,
 //           append_batch, query with bound parameters and the data API's typing, subscribe,
@@ -331,37 +331,19 @@ fn test_spec_app_contract_6_snapshot_and_restore_reach_an_embedded_app() {
     assert_eq!(rows[0]["points"], json!("3"));
 }
 
-/// `§6` — `start_sync` and `sync_now` are present with their signatures and answer with
-/// a typed error naming the phase they arrive in. Never `Ok`: a no-op that succeeded is
-/// what an embedder would build on. `pair` is real and
-/// is held by `tests/pair.rs`; `serve_discovery` is real and is held by
-/// `tests/discover.rs`.
+/// `spec/app-contract.md §6`: an embedder needs no runtime, and start is idempotent.
 #[test]
-fn test_spec_app_contract_6_phase_2_methods_never_ok() {
+fn test_spec_app_contract_6_start_sync_and_sync_now_are_real() {
     let root = tempfile::tempdir().unwrap();
     let mut node = open(root.path());
-    let outcomes: [(&str, privatium_core::Result<()>); 2] = [
-        ("start_sync", node.start_sync()),
-        ("sync_now", node.sync_now()),
-    ];
-    for (name, outcome) in outcomes {
-        let error = outcome.expect_err(name);
-        match &error {
-            Error::Unimplemented {
-                feature,
-                phase,
-                spec,
-            } => {
-                assert_eq!(*feature, name);
-                assert_eq!(*phase, "3", "{name}: phase {phase}");
-                assert!(spec.starts_with("spec/protocol.md §"), "{name}: {spec}");
-            }
-            other => panic!("{name}: {other}"),
-        }
-        let text = error.to_string();
-        assert!(text.contains("not in this build"), "{text}");
-        assert!(text.contains("docs/roadmap.md"), "{text}");
-    }
+    assert!(node.sync_events().is_none());
+    assert!(node.sync_now().unwrap().peers.is_empty());
+    assert!(node.sync_events().is_none());
+    node.start_sync().unwrap();
+    let wake = node.sync_events().unwrap();
+    node.start_sync().unwrap();
+    assert!(wake.same_channel(&node.sync_events().unwrap()));
+    assert!(node.sync_now().unwrap().peers.is_empty());
 }
 
 /// `§6` `auth_layer` around an embedder's own router (`§2.3`): a request from loopback, as

@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/app/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-02  |  Modified: 2026-09-06
+// Created:  2026-09-02  |  Modified: 2026-09-07
 // Summary:  The app loader — the lifecycle of spec/app-contract.md §8 up to and including
 //           mount. Discovers app folders, refuses per app and loudly (§3.1), keeps sys_app
 //           as events (§3.4), and owns each app's log, store and — for Tier 1 — its Lua
@@ -378,8 +378,8 @@ pub struct App {
     mount: Option<String>,
     csp: Csp,
     warnings: Vec<Warning>,
-    log: AppLog,
-    store: Store,
+    pub(crate) log: AppLog,
+    pub(crate) store: Store,
     /// The VM pool, for a Tier 1 app. Shared with a request in flight, which runs its
     /// handler outside the node lock.
     lua: Option<Arc<Host>>,
@@ -390,7 +390,9 @@ pub struct App {
     reload_error: Option<ReloadError>,
     /// The live stream (`spec/data-api.md §3`): every append and every resync, to
     /// whoever is subscribed. Survives a reload; only the load creates one.
-    stream: broadcast::Sender<StreamEvent>,
+    pub(crate) stream: broadcast::Sender<StreamEvent>,
+    /// Durable received batches awaiting Lua callbacks outside the node lock.
+    pub(crate) unfired: Vec<(Appended, String)>,
 }
 
 /// `(mtime, len)` of every file whose change reloads the app in place: `app.toml`,
@@ -829,8 +831,10 @@ impl Node {
     ///
     /// Once written, each line goes out on the app's stream ([`App::stream`]).
     pub fn append_batch(&mut self, slug: &str, events: Vec<Event>) -> Result<Appended> {
+        self.drain()?;
         let mut changes = events;
         let order = self.date_order()?;
+        let bound = crate::wire::ApiSettings::read(self).max_body;
         let app = self.apps.get_mut(slug).ok_or_else(|| Error::AppNotLoaded {
             slug: slug.to_owned(),
         })?;
@@ -875,6 +879,7 @@ impl Node {
         }
 
         let mut ts = String::new();
+        app.log.set_append_bound(bound);
         let lines = app.log.batch(|batch| {
             ts = batch.ts().to_owned();
             for change in &changes {
@@ -936,6 +941,7 @@ impl Node {
                 });
             }
         }
+        self.notify_append();
         Ok(Appended {
             ts,
             seq,
@@ -1010,6 +1016,7 @@ impl Node {
                 fingerprint: Fingerprint::default(),
                 reload_error: None,
                 stream: broadcast::channel(STREAM_CAPACITY).0,
+                unfired: Vec::new(),
             },
         );
         self.flush()
@@ -1070,6 +1077,7 @@ impl Node {
     /// loads again: the error is what the author is shown, not the code from before it.
     /// Returns whether the cache was rebuilt.
     pub fn refresh_app(&mut self, slug: &str) -> Result<bool> {
+        self.drain()?;
         let code_changed = {
             let app = self.apps.get_mut(slug).ok_or_else(|| Error::AppNotLoaded {
                 slug: slug.to_owned(),
@@ -1356,6 +1364,7 @@ impl Node {
                 fingerprint,
                 reload_error: None,
                 stream: broadcast::channel(STREAM_CAPACITY).0,
+                unfired: Vec::new(),
             }))),
             Err(error) => {
                 let failure = LoadFailure {

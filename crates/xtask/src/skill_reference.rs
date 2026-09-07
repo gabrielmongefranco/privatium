@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/xtask/src/skill_reference.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-06
+// Created:  2026-09-05  |  Modified: 2026-09-07
 // Summary:  `cargo xtask gen-skill-reference [--check]` (docs/skills.md §7): the reference/
 //           files of every skill, written from the crate — the lint rule table, the pv
 //           surface, the sandbox's removed names, the limits, the permissions and their
@@ -578,9 +578,9 @@ fn rust_api(root: &Path) -> Result<String> {
          (`spec/protocol.md §7`); `join(url, code)` joins that node's cluster, or admits it, \
          as `§2.3.1` decides; `serve_discovery` starts mDNS and the UDP responder together \
          (`§6.5`), `discovered` lists the nodes seen, by ID, and `peers` and `strangers` split \
-         them by cluster (`§6.1`). `start_sync` and `sync_now` are present with their \
-         signatures and return `Error::Unimplemented` naming Phase 3 (`docs/roadmap.md`) — \
-         never `Ok`.\n\n```rust\n{list}```\n",
+         them by cluster (`§6.1`). `start_sync` starts the LAN engine; blocking `sync_now` \
+         returns a `SyncReport` after durably draining the pass. `sync_events` wakes an \
+         embedder to refresh and deliver accepted synced events outside its node lock.\n\n```rust\n{list}```\n",
         section(root, "spec/app-contract.md", "2.3")?,
         section(root, "spec/app-contract.md", "6")?
     ))

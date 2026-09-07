@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/wire/router.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-06
+// Created:  2026-09-03  |  Modified: 2026-09-07
 // Summary:  The route namespaces of spec/protocol.md §9.1 as one function from a path to a
 //           Route. Framework prefixes win in both modes; everything else belongs to
 //           whichever app is mounted there, and the mount table is Node::mounts(). This is
@@ -108,6 +108,12 @@ pub enum Route {
     Health,
     /// `GET /api/v1/manifest`.
     Manifest,
+    /// `GET /api/v1/sync/heads`, node sessions only.
+    SyncHeads,
+    /// `GET /api/v1/sync/pull`, node sessions only.
+    SyncPull,
+    /// `POST /api/v1/sync/push`, node sessions only.
+    SyncPush,
     /// `POST` and `GET /api/v1/pair` — the pairing window, for the owner alone
     /// (`spec/protocol.md §9.2`).
     PairApi,
@@ -223,6 +229,9 @@ impl Router {
             return match rest {
                 "/v1/health" => Route::Health,
                 "/v1/manifest" => Route::Manifest,
+                "/v1/sync/heads" => Route::SyncHeads,
+                "/v1/sync/pull" => Route::SyncPull,
+                "/v1/sync/push" => Route::SyncPush,
                 "/v1/pair" => Route::PairApi,
                 "/v1/join" => Route::JoinApi,
                 // In solo mode the mount is `/`, so `/api/…` is also the solo app's data
@@ -457,6 +466,10 @@ mod tests {
             assert_eq!(router.resolve("/api/v1/manifest"), Route::Manifest);
             assert_eq!(router.resolve("/api/v1/pair"), Route::PairApi);
             assert_eq!(router.resolve("/api/v1/join"), Route::JoinApi);
+            assert_eq!(router.resolve("/api/v1/sync/heads"), Route::SyncHeads);
+            assert_eq!(router.resolve("/api/v1/sync/pull"), Route::SyncPull);
+            assert_eq!(router.resolve("/api/v1/sync/push"), Route::SyncPush);
+            assert_eq!(router.resolve("/api/v1/sync/nope"), Route::NotFound);
             assert_eq!(router.resolve("/api/v1/nope"), Route::NotFound);
             assert_eq!(router.resolve("/api"), Route::NotFound);
             assert_eq!(router.resolve("/api/"), Route::NotFound);

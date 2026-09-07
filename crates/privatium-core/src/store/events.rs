@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/store/events.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-06
+// Created:  2026-09-03  |  Modified: 2026-09-07
 // Summary:  The staged log: every sane event of one app, read from data/<slug>/log/*.jsonl
 //           once, and spec/protocol.md §4.5's ranking over it. The materializer, the three
 //           restore tiers and the snapshot writer all work from this one reading, which is
@@ -127,7 +127,10 @@ pub(crate) fn read_log_upto(
         let bytes = read_prefix(segment, *len).map_err(|error| StoreError::Schema {
             problem: format!("{}: {error}", segment.display()),
         })?;
-        let text = String::from_utf8_lossy(&bytes);
+        // A syntactically complete JSON object without its newline is still a torn
+        // append; the origin must finish it before replay (spec/protocol.md §4.1).
+        let end = bytes.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
+        let text = String::from_utf8_lossy(&bytes[..end]);
         let parsed: Vec<Line<'_>> = text
             .lines()
             .map(|raw| raw.trim_end_matches('\r'))

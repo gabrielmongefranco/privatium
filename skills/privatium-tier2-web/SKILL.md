@@ -65,6 +65,10 @@ integrity hash; the channel cannot proxy another origin. Imported modules still 
 per-import integrity, and every plain-HTTP load exposes client code and stored device
 keys to active replacement (`protocol.md §7.7`). Prefer vendored resources.
 
+`pv.subscribe` includes events received from other nodes, even below the current
+Lamport mark. A reconnect using `after=` cannot replay such an event if it arrived
+while disconnected. Re-read state after reconnect and on `resync`.
+
 ## MUST
 
 - Use `pv.url()` for internal links — hardcoded `/a/<slug>/` breaks solo mode

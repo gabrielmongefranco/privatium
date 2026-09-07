@@ -355,7 +355,9 @@ peer's ID, its X25519 public key, and the URL it was joined at or the owner type
 one is known. The line is written at admission (`§2.3.1`) — the joiner records its
 admitter, so it can reach it before `_sys` has carried the admitter's `sys_device` row —
 and it holds no secret. A `sys_device` row for the peer, revoked or not, supersedes the
-hint the moment it arrives.
+hint the moment it arrives, even when that row is invalid. Endpoints and per-pass heads
+are held in memory and rebuilt at start; the table shapes here describe their facts,
+not replicated SQL tables.
 
 ### 3.7b `sys_endpoint` — **local store only**
 
@@ -366,7 +368,7 @@ one device is meaningless on another.
 |---|---|---|
 | `id` | `VARCHAR` | ULID |
 | `url` | `VARCHAR` | e.g. `http://192.168.1.5:8420` |
-| `kind` | `VARCHAR` | `lan-mdns` \| `lan-udp` \| `lan-ip` \| `pkarr` \| `dns` \| `ddns` \| `tunnel` \| `vpn` \| `p2p` \| `relay` |
+| `kind` | `VARCHAR` | `lan-mdns` \| `lan-udp` \| `lan-ip` \| `pkarr` \| `dns` \| `ddns` \| `tunnel` \| `vpn` \| `p2p` \| `relay` \| `static` |
 | `via` | `VARCHAR` | Nullable. Which discovery mechanism produced this entry. |
 | `node_id` | `VARCHAR` | Which node this reaches, once known |
 | `last_ok` | `TIMESTAMPTZ` | Primary sort key — recency beats category |
@@ -377,6 +379,9 @@ Browser clients hold exactly one row: their own origin. Multi-endpoint failover 
 native-client capability.
 
 ### 3.8 `sys_sync_state` — **local store only**
+
+The reference node keeps these facts in memory for a pass and reads fresh heads from
+logs at start. There is no persisted cursor table and no cursor event.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -494,8 +499,12 @@ cannot: the attachment is read-only, as `main` is, and cannot be detached.
 |---|---|
 | `sys.v_app_nav` | Enabled apps, ordered, with icon and title — powers the launcher |
 | `sys.v_device_active` | Devices where `revoked_at IS NULL` |
-| `sys.v_health` | Restore tier in use, last snapshot age, log sizes, unsynced peer count |
+| `sys.v_health` | Restore tier in use, last snapshot age, log sizes, `unsynced_peers`: active node peers other than this node that have not completed a pass since this process started; NULL before `start_sync` |
 | `sys.v_audit_recent` | Last 200 audit rows, newest first |
+
+The reference cache records process-local completion in `pv_peer(id, synced)`, one row
+per active node peer and one for this node after `start_sync`. This is a disposable
+cache, cleared on process open, never an event. Invalid and revoked peers are removed.
 
 ---
 

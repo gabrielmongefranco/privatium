@@ -1040,11 +1040,8 @@ fn test_spec_app_contract_6_pair_opens_a_window_and_returns_the_code() {
         node.pair_at(Duration::ZERO, later(7)),
         Err(Error::Pair(PairError::Ttl))
     ));
-    // Sync, the §6 network method that is still a later phase's, refuses naming it.
-    assert!(matches!(
-        node.start_sync(),
-        Err(Error::Unimplemented { phase: "3", .. })
-    ));
+    node.start_sync().unwrap();
+    assert!(node.sync_events().is_some());
 }
 
 /// The node's side of one attempt, held between `pA` and `cA`, as a socket would hold it.

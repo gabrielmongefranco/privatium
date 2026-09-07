@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/architecture.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-05
+Modified: 2026-09-07
 Summary:  Explanatory architecture overview. Non-normative; see spec/ for the contract.
           See main README.md for full license information.
 -->
@@ -223,7 +223,8 @@ Each installation uses the node and cluster identity verified from its local key
 certificate. The public registry keeps the records that restore and sync bring in, so it
 can describe more than one node or cluster. Readers select this installation's records
 by its identity. Losing local keys does not retire a cluster that another machine may
-still use (`spec/data-dictionary.md §3.1, §3.1b`). Network sync is not built yet.
+still use (`spec/data-dictionary.md §3.1, §3.1b`). LAN sync runs over the encrypted
+channel; remote discovery and transports remain planned.
 
 Nodes belonging to one owner form a **cluster** sharing a keypair (`spec/protocol.md §2.3`).
 A device pins the *cluster* key at pairing, not a node key, so pairing a phone once makes it
@@ -285,10 +286,14 @@ Each fallback tier is logged loudly. A node that restored from tier 3 says so.
 
 ### Sync
 ```
-peer A ──── "what's your highest lam per device?" ────▶ peer B
+peer A ──── "what's your highest seq per device?" ────▶ peer B
 peer A ◀─── {dev1: 4192, dev2: 87, dev7: 12} ──────────  peer B
-peer A ──── events for any (dev, lam) B is missing ────▶ peer B
+peer A ──── lines for any (dev, seq) B is missing ────▶ peer B
 ```
+
+For each app, peers exchange sequence heads and transfer missing raw lines inside the
+encrypted channel. The receiver writes the origin device's file byte for byte, then
+rebuilds the cache from the log. System logs arrive before app logs.
 
 Any peer, any direction, any number of them. A node that was powered off for a week is not a
 special case — it is the ordinary catch-up path.

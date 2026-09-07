@@ -61,6 +61,10 @@ const RENEWAL_WINDOW: jiff::SignedDuration = jiff::SignedDuration::from_secs(90 
 pub struct NodeId(String);
 
 impl NodeId {
+    /// Accept an opaque peer ID only after checking its filename-safe protocol shape.
+    pub(crate) fn from_peer(text: &str) -> Option<Self> {
+        Self::is_valid(text).then(|| Self(text.into()))
+    }
     /// Derive the Node ID of a public key.
     ///
     /// Pure and total: the same key yields the same ID on every platform and every run,

@@ -31,8 +31,8 @@ pub struct Record {
     /// The highest `seq` seen per device, whether the event was accepted or not.
     ///
     /// Two jobs. It tells a later start which lines it has already looked at, so a
-    /// `§4.4` rejection is reported once rather than on every restart; and in Phase 3 it is
-    /// what a sync receiver compares a peer's heads against (`§10.1`).
+    /// `§4.4` rejection is reported once rather than on every restart; and it is what a
+    /// peer's heads are compared against (`§10.1`).
     #[serde(default)]
     pub heads: BTreeMap<String, u64>,
     /// What the app's `cache/<slug>.sqlite` was last built from.

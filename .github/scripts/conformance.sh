@@ -17,7 +17,9 @@ run() {
   shift 2
   local expected=$#
   local out
-  out="$(cargo test -p "$package" --locked --test "$binary" -- --exact "$@" 2>&1)" || {
+  local target=(--test "$binary")
+  [ "$binary" = lib ] && target=(--lib)
+  out="$(cargo test -p "$package" --locked "${target[@]}" -- --exact "$@" 2>&1)" || {
     echo "$out"
     exit 1
   }
@@ -137,4 +139,43 @@ run privatium-core admission   test_spec_2_3_3_the_cluster_key_goes_to_a_node_an
 # The owner's standing is a request from this machine, held to its Host (§8.4).
 run privatium-core wire   test_spec_8_4_a_request_from_this_machines_own_address_is_the_owner
 
-echo "conformance: Phase 1, identity, pairing, encrypted-channel, discovery, devices and admission items hold by name"
+# Raw synchronization, causal folding and app delivery (§4, §10.2).
+run privatium-core sync \
+  test_spec_10_2_push_validates_dev_seq_app_and_envelope \
+  test_spec_10_2_a_seq_gap_is_refused_and_the_range_is_pulled \
+  test_spec_10_2_received_lines_land_in_the_origin_devices_file_byte_for_byte \
+  test_spec_10_2_a_short_batch_and_a_non_envelope_line_are_copied_and_skipped_everywhere \
+  test_spec_10_2_the_receiver_is_the_only_writer_of_another_devices_file \
+  test_spec_4_3_lamport_folds_received_events_and_stays_monotonic_across_restart \
+  test_spec_4_4_a_future_dated_synced_line_is_stored_skipped_and_audited_once \
+  test_spec_10_2_a_torn_foreign_segment_is_completed_by_its_suffix_never_truncated \
+  test_spec_10_2_an_append_past_the_page_bound_is_refused_before_it_is_written \
+  test_spec_10_2_foreign_torn_tail_survives_restart_and_is_not_materialized \
+  test_spec_10_2_unmounted_logs_are_audited_without_a_local_writer \
+  test_spec_data_3_stream_carries_synced_events \
+  test_spec_data_3_live_sse_delivers_below_the_resume_mark \
+  test_spec_lua_3_4_on_append_fires_for_synced_events_with_the_origin_device
+run privatium-core lib \
+  sync::tests::test_spec_10_2_sync_state_is_never_an_event \
+  sync::tests::test_sync_inbox_is_drained_by_refresh_and_by_sync_now \
+  sync::tests::test_spec_2_3_1_certificate_renews_after_a_completed_pass \
+  sync::tests::test_spec_2_3_1_expired_membership_refuses_sync_without_starting_a_thread \
+  sync::endpoints::tests::test_spec_10_4_candidates_are_ordered_by_last_ok_then_kind_and_bounded
+run privatium-core embedded test_spec_app_contract_6_start_sync_and_sync_now_are_real
+# Peers over encrypted TCP sockets, including the browser and power-cut cases (§10.3).
+run privatium cluster \
+  test_spec_10_1_heads_pull_and_push_are_a_set_union \
+  test_spec_9_2_sync_routes_answer_a_node_session_alone \
+  test_spec_8_3_either_side_can_start_the_first_pass_after_admission \
+  test_spec_2_3_2_a_device_pinned_to_the_cluster_reaches_an_unmet_node \
+  test_spec_10_3_power_cut_desktop_catches_up_through_the_laptop \
+  test_spec_10_3_offline_edits_on_both_nodes_converge \
+  test_spec_10_3_no_node_is_primary \
+  test_spec_10_4_killing_the_active_endpoint_fails_over_in_under_five_seconds \
+  test_spec_10_2_pull_keeps_batches_whole_and_defers_only_trailing_filler \
+  test_spec_10_2_short_tail_heads_and_filler_converge_by_sequence \
+  test_spec_10_2_push_refuses_invalid_ranges_atomically_over_the_channel \
+  test_spec_10_2_a_log_that_cannot_be_offered_does_not_stop_the_apps_after_it \
+  test_sync_wakes_an_idle_drain_and_debounces_local_appends
+
+echo "conformance: storage, identity, pairing, channel, discovery, admission and LAN sync items hold by name"

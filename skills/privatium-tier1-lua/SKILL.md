@@ -79,6 +79,10 @@ Helpers in every template: `render`, `layout`, `icon`, `url`, `fmt.date`, `fmt.m
   internal `require`s resolve; there is no package manager, and a rock with C sources
   cannot load (`docs/frameworks.md §3`). Record where it came from and its licence.
 
+`pv.on('append')` also receives accepted events from other devices. Its VM is checked
+out by the drain, outside the node lock, and `pv.device()` names the origin device.
+Guard callbacks against append loops as you do for local events.
+
 ## MUST
 
 - Bind SQL parameters: `pv.query('... WHERE drug = ?', {name})`

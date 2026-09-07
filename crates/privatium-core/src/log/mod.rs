@@ -19,8 +19,11 @@ use crate::{Result, io_at};
 
 pub(crate) mod batch;
 mod envelope;
+/// The append-only receiver for another device's original log bytes.
+pub mod foreign;
 mod lamport;
 mod reader;
+pub(crate) use reader::recover;
 mod writer;
 
 pub use envelope::Op;
@@ -143,6 +146,12 @@ impl AppLog {
     ///
     /// See [`Writer::batch`] for what "atomically" can and cannot mean on a file that has to
     /// stay appendable by `echo`.
+    /// Bound what one append may write, so a peer's bounded request body can carry it
+    /// (`spec/protocol.md §10.2`). Unset, the writer keeps `api.max_body`'s default.
+    pub(crate) fn set_append_bound(&mut self, bound: usize) {
+        self.writer.set_append_bound(bound);
+    }
+
     pub fn batch<F>(&mut self, build: F) -> Result<Vec<Vec<u8>>>
     where
         F: FnOnce(&mut Batch<'_>) -> Result<()>,

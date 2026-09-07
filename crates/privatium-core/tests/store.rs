@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/store.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-06
+// Created:  2026-09-01  |  Modified: 2026-09-07
 // Summary:  Materialization against spec/protocol.md §4.5 and §4.6 — last-write-wins at row
 //           granularity, tombstones, the §4.4 horizon, the §2.1 encodings, a cache that can
 //           be deleted, a log anyone may append to by hand, and the §2.5 property that the
@@ -1086,19 +1086,33 @@ fn test_spec_4_5_a_reader_sees_a_batch_whole_or_not_at_all() {
     let mut fixture = Fixture::open(TYPED_DDL);
     let reader = fixture.store.app_conn().unwrap();
     let stop = Arc::new(AtomicBool::new(false));
+    let ready = Arc::new(std::sync::Barrier::new(2));
     let seen: Arc<Mutex<BTreeSet<i64>>> = Arc::new(Mutex::new(BTreeSet::new()));
     let polling = {
         let stop = Arc::clone(&stop);
         let seen = Arc::clone(&seen);
+        let ready = Arc::clone(&ready);
         std::thread::spawn(move || {
-            while !stop.load(Ordering::Relaxed) {
+            let mut first = true;
+            loop {
+                // Read once after observing the commit, even if the writer finished
+                // before this thread was scheduled again.
+                let committed = stop.load(Ordering::Acquire);
                 let count: i64 = reader
                     .query_row("SELECT count(*) FROM thing", [], |row| row.get(0))
                     .unwrap();
                 seen.lock().unwrap().insert(count);
+                if first {
+                    first = false;
+                    ready.wait();
+                }
+                if committed {
+                    break;
+                }
             }
         })
     };
+    ready.wait();
 
     let d = serde_json::json!({ "name": "n" });
     let ids: Vec<String> = (0..200).map(|n| format!("t{n}")).collect();
@@ -1108,7 +1122,7 @@ fn test_spec_4_5_a_reader_sees_a_batch_whole_or_not_at_all() {
         .collect();
     fixture.store.apply_batch(changes).unwrap();
 
-    stop.store(true, Ordering::Relaxed);
+    stop.store(true, Ordering::Release);
     polling.join().unwrap();
     let seen = seen.lock().unwrap();
     assert!(

@@ -19,7 +19,7 @@ use privatium_core::{Event, Node, new_ulid};
 let mut node = Node::open(&data_dir)?;
 node.open_app("myapp", "CREATE TABLE score (id VARCHAR PRIMARY KEY, points BIGINT);")?;
 node.serve_discovery()?;          // mDNS, UDP, pairing
-node.start_sync()?;               // iroh + LAN peers
+node.start_sync()?;               // LAN peers over the encrypted channel
 
 // your own writes — seq, lam, ts and dev are the node's to stamp
 node.append("myapp", Event::put("score", new_ulid(), json!({"points": 42})))?;
@@ -62,19 +62,32 @@ express: a serial port, a scheduled job, a filesystem watcher, a non-HTTP protoc
 | `query` / `subscribe` | Sandboxed SQLite reads with bound parameters, rows typed as `spec/data-api.md §1` types them; the app's event stream |
 | `serve_discovery` / `pair` | mDNS and UDP, started together (`spec/protocol.md §6.5`); `pair(ttl)` opens a pairing window for devices and `pair_node(ttl)` one for a node, each handing back the code in both renderings, the URL and the expiry (`§7`) — the device registry is what a completed pairing writes; `peers()` lists the cluster's other nodes discovery has seen and `strangers()` the rest (`§6.1`) |
 | `join(url, code)` | Join the cluster of the node at `url`, whose owner opened a window for a node and read out `code` (`spec/protocol.md §2.3.1`, `§7.4.2`): the node dials `<url>/ws/pair`, both sides prove their keys, and whichever side the exchange admits adopts the other's cluster — this node discards the cluster it founded only while it is disposable (`§2.3`), or is re-admitted to its own after its certificate expired. Answers which side joined, the cluster and the peer, or the refusal by name; refused while sync would be unsafe, and never over a session |
-| `start_sync` / `sync_now` | iroh + LAN peers |
+| `start_sync` / `sync_now` | LAN peers over the encrypted channel; `start_sync` starts an idempotent background engine, and blocking `sync_now` returns `SyncReport` with peer ID, URL, completion, durable pulled/pushed line counts, and refusals |
 | `auth_layer` | Tower middleware enforcing session and grants. `core::handle` applies it itself, so every adapter gets it without doing anything (`docs/decisions/0003`); an embedder wraps their own router with it, as §2.3 shows, and the layer reads the peer from axum's `ConnectInfo`. A request whose peer it cannot see is refused, naming the missing call, so a router served without `into_make_service_with_connect_info` admits nobody rather than everybody; a call an embedder makes in-process inserts the `Peer` extension the framework's own adapter inserts |
 | `snapshot` / `restore` | Manual snapshot and three-tier restore |
 
 A build that does not implement an area — one that says so in `--version`
-(`spec/cli.md §1`), as `pv/1 (partial: phase 2)` does for sync —
-MUST keep the method and answer it with a typed error naming the phase the area arrives
-in. It MUST NOT return success from a no-op: a program built on an `Ok` from `start_sync`
+(`spec/cli.md §1`), as `pv/1 (partial: phase 2)` does — MUST keep the method and answer
+it with a typed error naming the phase the area arrives in. It MUST NOT return success from a no-op: a program built on an `Ok` from `start_sync`
 would believe it was syncing.
+
+`append` and `append_batch` refuse, writing nothing, when one append's log lines exceed
+`api.max_body` — a batch crosses to another node whole or not at all
+(`spec/protocol.md §4.1`). Split the batch, or store less in one row.
+
+`start_sync` and `sync_now` are implemented; both refuse expired or revoked membership.
+`sync_now` uses the running engine, or a temporary thread and runtime if it is stopped.
+It drains all incoming ranges before returning. `refresh`, `refresh_app` and the append
+methods also drain pending ranges before using the cache; `query` reads the cache as it
+stands and drains nothing. An idle embedder sees incoming data at its next draining call;
+subscribe to `sync_events()` and refresh on each wake to receive it promptly. `subscribe(app)` includes accepted synced events, even below a
+previous Lamport mark. Lua callbacks run outside the node lock through
+`Handler::fire_pending` or `Handler::drain_sync`. Closing or dropping the node stops
+sockets and joins the engine before releasing the data-root lock.
 
 ## `Node`'s public methods at this version
 
-From every `impl Node` block under `crates/privatium-core/src/`. `pair(ttl)` opens a pairing window for devices and `pair_node(ttl)` one for another node (`spec/protocol.md §7`); `join(url, code)` joins that node's cluster, or admits it, as `§2.3.1` decides; `serve_discovery` starts mDNS and the UDP responder together (`§6.5`), `discovered` lists the nodes seen, by ID, and `peers` and `strangers` split them by cluster (`§6.1`). `start_sync` and `sync_now` are present with their signatures and return `Error::Unimplemented` naming Phase 3 (`docs/roadmap.md`) — never `Ok`.
+From every `impl Node` block under `crates/privatium-core/src/`. `pair(ttl)` opens a pairing window for devices and `pair_node(ttl)` one for another node (`spec/protocol.md §7`); `join(url, code)` joins that node's cluster, or admits it, as `§2.3.1` decides; `serve_discovery` starts mDNS and the UDP responder together (`§6.5`), `discovered` lists the nodes seen, by ID, and `peers` and `strangers` split them by cluster (`§6.1`). `start_sync` starts the LAN engine; blocking `sync_now` returns a `SyncReport` after durably draining the pass. `sync_events` wakes an embedder to refresh and deliver accepted synced events outside its node lock.
 
 ```rust
 pub fn open(data_dir: impl Into<PathBuf>) -> Result<Self>
@@ -109,8 +122,6 @@ pub fn peers(&self) -> Vec<discover::Discovered>
 pub fn strangers(&self) -> Vec<discover::Discovered>
 pub fn discovery_facts(&self) -> Result<discover::Facts>
 pub fn publish_facts(&self) -> Result<()>
-pub fn start_sync(&mut self) -> Result<()>
-pub fn sync_now(&mut self) -> Result<()>
 pub fn paths(&self) -> &Paths
 pub fn lock(&self) -> &DataLock
 pub fn config(&self) -> &Config
@@ -168,4 +179,9 @@ pub fn revoke_device( &mut self, device: &str, reason: Option<&str>, now: jiff::
 pub fn note_device_seen(&mut self, device: &str, now: jiff::Timestamp) -> Result<bool>
 pub fn paired_node_count(&self) -> Result<u64>
 pub fn has_paired_device(&self) -> Result<bool>
+pub fn start_sync(&mut self) -> Result<()>
+pub fn sync_now(&mut self) -> Result<SyncReport>
+pub fn sync_events(&self) -> Option<watch::Receiver<u64>>
+pub fn receive(&mut self, app: &str, dev: &str, bytes: &[u8]) -> Result<ReceiveReport>
+pub fn take_unfired(&mut self, slug: &str) -> Vec<(Appended, String)>
 ```

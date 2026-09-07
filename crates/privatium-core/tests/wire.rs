@@ -98,6 +98,9 @@ fn header<'a>(response: &'a Response, name: &axum::http::HeaderName) -> &'a str 
 
 /// The paths every test reaches for, with the status a fresh host-mode node answers.
 const HOST_ROUTES: &[(&str, u16)] = &[
+    ("/api/v1/sync/heads", 403),
+    ("/api/v1/sync/pull", 403),
+    ("/api/v1/sync/push", 403),
     ("/", 200),
     ("/settings", 200),
     ("/settings/apps", 200),

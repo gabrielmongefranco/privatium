@@ -36,6 +36,12 @@ pub const KIND_CERT_RENEWED: &str = "cert.renewed";
 /// (`spec/protocol.md §2.3.1`). Warn.
 pub const KIND_CERT_EXPIRED: &str = "cert.expired";
 
+/// First authenticated sync contact with a peer during this process (`§3.10`).
+pub const KIND_SYNC_PEER_SEEN: &str = "sync.peer_seen";
+
+/// An alternate endpoint answered after the previous endpoint failed (`§3.10`).
+pub const KIND_ENDPOINT_FAILOVER: &str = "endpoint.failover";
+
 /// A node was admitted to the cluster, written by the admitter once the joiner answered
 /// `joined` (`spec/protocol.md §2.3.1`). Alert.
 pub const KIND_NODE_ADMITTED: &str = "node.admitted";

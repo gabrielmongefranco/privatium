@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/discover/mod.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-06  |  Modified: 2026-09-06
+// Created:  2026-09-06  |  Modified: 2026-09-07
 // Summary:  LAN discovery (spec/protocol.md §6): the facts a node advertises, the two
 //           mechanisms that carry them — mDNS (§6.1) and the UDP responder (§6.4) — started
 //           together and never in sequence (§6.5), and the nodes seen on the network keyed
@@ -249,6 +249,11 @@ pub struct Discovery {
 }
 
 impl Discovery {
+    /// Share current discovery facts with a reader that owns no node or log writer.
+    #[must_use]
+    pub fn shared(&self) -> Arc<Shared> {
+        Arc::clone(&self.shared)
+    }
     /// Start every mechanism `options` asks for, at once (`§6.5`). A mechanism the
     /// platform refuses — no multicast interface, the UDP port taken — is an
     /// [`Outcome::Failed`] in the status and never a reason for the other not to run,

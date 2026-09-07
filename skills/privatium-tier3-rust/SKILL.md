@@ -7,7 +7,7 @@ description: Write Tier 3 Privatium apps in Rust by linking the privatium-core c
 
 Your binary, your `main()`, your routing. `privatium-core` supplies the log, the
 materializer, the auth layer, discovery, pairing and node admission as a library now;
-sync is on the same `Node` and is not built yet.
+LAN sync runs on the same `Node` through the encrypted peer channel.
 
 ## When Tier 3 is right
 
@@ -67,8 +67,8 @@ method of `Node` at this version, generated from the source.
 | Lifecycle | `Node::open`, `Node::open_with`, `open_app`, `close` |
 | Write | `append` (one `Event`), `append_batch` (all or nothing) |
 | Read | `query(app, sql, params)` — sandboxed, `?` bound, rows as `serde_json::Map` typed as `spec/data-api.md §1` types them |
-| React | `subscribe(app)` — a `broadcast::Receiver<StreamEvent>` of every append and every resync; will carry events arriving by sync too |
-| Network | `pair(ttl)` opens a pairing window for devices and `pair_node(ttl)` one for another node, each handing back the code in both renderings, the URL and the expiry (`spec/protocol.md §7`); `join(url, code)` joins the cluster of the node at `url` whose owner opened a node window and read out the code (`§2.3.1`) — whichever side the exchange admits, this node ends in one cluster with that node; `serve_discovery` starts mDNS and the UDP responder together, `discovered()` lists the nodes seen, by ID, `peers()` those of this node's cluster and `strangers()` the rest (`§6`); `standing(now)` says whether this node is a member, expired, or revoked (`§2.3.1`, `§2.3.4`); `start_sync` and `sync_now` are present and return `Error::Unimplemented` naming Phase 3; never `Ok` |
+| React | `subscribe(app)` — a `broadcast::Receiver<StreamEvent>` of every append and every resync; includes accepted events arriving by sync too |
+| Network | `pair(ttl)` opens a pairing window for devices and `pair_node(ttl)` one for another node, each handing back the code in both renderings, the URL and the expiry (`spec/protocol.md §7`); `join(url, code)` joins the cluster of the node at `url` whose owner opened a node window and read out the code (`§2.3.1`) — whichever side the exchange admits, this node ends in one cluster with that node; `serve_discovery` starts mDNS and the UDP responder together, `discovered()` lists the nodes seen, by ID, `peers()` those of this node's cluster and `strangers()` the rest (`§6`); `standing(now)` says whether this node is a member, expired, or revoked (`§2.3.1`, `§2.3.4`); `start_sync` starts an idempotent LAN engine; blocking `sync_now` runs one pass and returns a `SyncReport` with peer ID, URL, completion, durable line counts and refusals |
 | Auth | `auth_layer` — Tower middleware; `core::handle` applies it itself, so wrap your own router with it only in embedded mode, and give the router `into_make_service_with_connect_info::<SocketAddr>()` so the layer sees the peer |
 | Data | `snapshot`, `restore`, `restore_tier`, `maintain` |
 | Ids | `new_ulid()` — the row key, minted by whoever writes the row |
@@ -89,13 +89,16 @@ method of `Node` at this version, generated from the source.
 - Call `open_app` at every start, before the first `append` or `query`; an app never
   opened is `Error::AppNotLoaded`, not a silent success
 - Bind ports ≥ 1024; ACME is DNS-01 only
-- Match on `Error::Unimplemented` from the network calls and say so to your user, rather
-  than assuming a sync happened
+- Inspect `SyncReport`: a refused or interrupted range does not complete a pass
 - Check `standing(now)` before offering anything a cluster member does: an expired or
   revoked node serves its owner alone until it is re-admitted or re-initialized
   (`spec/protocol.md §2.3.1`, `§2.3.4`), and `pair` for devices refuses on it
-- Handle `subscribe` events from other devices, not just your own writes, once sync
-  delivers them
+- Handle `subscribe` events from other devices, even below a previously seen Lamport mark
+- Refresh on `sync_events()` wakes for prompt delivery. If you call nothing, incoming
+  pages wait for your next `refresh`, `refresh_app`, append or `sync_now` — `query` reads
+  the cache as it stands and drains nothing; the inbox is bounded
+- Deliver Lua callbacks outside the node lock with `Handler::fire_pending`, or use
+  `Handler::drain_sync` to refresh apps and deliver their callbacks
 
 ## MUST NOT
 

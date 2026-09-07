@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/wire/data.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-06
+// Created:  2026-09-03  |  Modified: 2026-09-07
 // Summary:  The data API of spec/data-api.md beneath an app's mount — the one namespace the
 //           framework reserves there (spec/protocol.md §9.1). Reads run on the sandboxed
 //           connection off the node lock; writes go through Node::append like every other
@@ -76,7 +76,7 @@ impl Default for ApiSettings {
 
 impl ApiSettings {
     /// Read the five keys, keeping the default for one that is unset or not a number.
-    pub(super) fn read(node: &Node) -> Self {
+    pub(crate) fn read(node: &Node) -> Self {
         let read = |key: &str| -> Option<u64> {
             let text = node.setting_value(key).ok().flatten()?;
             let value: Value = serde_json::from_str(&text).ok()?;
@@ -1193,6 +1193,14 @@ impl Handler {
                         format!("400 Bad Request: events[{index}]: {tbl}: {problem}"),
                     );
                 }
+                Err(Error::AppendTooLarge { bytes, limit, .. }) => {
+                    return refuse(
+                        StatusCode::PAYLOAD_TOO_LARGE,
+                        format!(
+                            "413 Payload Too Large: {bytes} bytes in one append; the most is {limit} (api.max_body) — send fewer events in this batch"
+                        ),
+                    );
+                }
                 Err(error) => {
                     return refuse(
                         StatusCode::INTERNAL_SERVER_ERROR,
@@ -1294,7 +1302,7 @@ impl Handler {
             tx,
             receiver,
             backlog,
-            Arc::clone(&self.node),
+            self.clone(),
             slug.to_owned(),
             self.api.ping,
             slot,
@@ -1368,12 +1376,14 @@ async fn pump(
     tx: mpsc::Sender<Bytes>,
     mut events: broadcast::Receiver<StreamEvent>,
     backlog: Vec<Bytes>,
-    node: Arc<Mutex<Node>>,
+    handler: Handler,
     slug: String,
     ping: Duration,
     _slot: StreamSlot,
     mut sent: u64,
 ) {
+    let node = handler.node();
+    let mut sync = handler.lock().sync_events();
     for line in backlog {
         if tx.send(frame("append", &line)).await.is_err() {
             return;
@@ -1384,23 +1394,44 @@ async fn pump(
     loop {
         tokio::select! {
             () = tx.closed() => return,
+            notice = async {
+                match sync.as_mut() {
+                    Some(wake) => wake.changed().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                if notice.is_err() {
+                    sync = None;
+                }
+                let refreshed = { handler.lock().refresh_app(&slug) };
+                if refreshed.is_err() {
+                    eprintln!(
+                        "privatium: could not apply synchronized app events; check node storage"
+                    );
+                }
+                handler.fire_pending(&slug).await;
+            },
             _ = ticker.tick() => {
+                if sync.is_none() { sync = handler.lock().sync_events(); }
                 let lam = {
                     let mut node = node.lock().unwrap_or_else(PoisonError::into_inner);
                     let _ = node.refresh_app(&slug);
                     node.app(&slug).map_or(0, |app| app.log().lam())
                 };
-                let data = json!({ "lam": lam }).to_string();
+                handler.fire_pending(&slug).await;
+                sent = sent.max(lam);
+                let data = json!({ "lam": sent }).to_string();
                 if tx.send(frame("ping", data.as_bytes())).await.is_err() {
                     return;
                 }
             }
             received = events.recv() => match received {
+                // An event from another device carries its origin's counter, which is
+                // often below this node's mark, so nothing here filters on `lam`. The
+                // backlog and this subscription were taken under one hold of the lock,
+                // so a live event is never also in the backlog (`spec/data-api.md §3`).
                 Ok(StreamEvent::Append { lam, line }) => {
-                    if lam <= sent {
-                        continue;
-                    }
-                    sent = lam;
+                    sent = sent.max(lam);
                     if tx.send(frame("append", &line)).await.is_err() {
                         return;
                     }
