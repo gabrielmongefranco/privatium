@@ -1,6 +1,6 @@
 /* Project:  Privatium™  |  File: crates/privatium-core/assets/shell/shell.css
  * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
- * Created:  2026-09-03  |  Modified: 2026-09-06
+ * Created:  2026-09-03  |  Modified: 2026-09-08
  * Summary:  The shell's only stylesheet — launcher, settings, error pages, and the frame a
  *           Tier 1 view renders inside. Served at /static/shell.css under the default CSP
  *           of spec/protocol.md §9.3, which is why nothing in the shell carries a style=
@@ -340,6 +340,15 @@ footer a { color: inherit; }
   .pv-brand-logo { width:112px; }
   .pv-menu nav { width:min(16rem, calc(100vw - 2rem)); }
 }
+
+/* The space's name is edited where it is read: the pencil is a disclosure summary, so the
+   form opens in place with no script and stays keyboard-operable. */
+.pv-name-edit { display:inline-block; vertical-align:middle; }
+.pv-name-edit > summary { display:inline-flex; align-items:center; justify-content:center; width:44px; min-height:44px; cursor:pointer; border:1px solid var(--pv-muted); border-radius:6px; list-style:none; }
+.pv-name-edit > summary::-webkit-details-marker { display:none; }
+.pv-name-edit > summary .pv-icon { width:1.125rem; height:1.125rem; }
+.pv-name-edit > form { margin-top:.5rem; }
+.pv-name-edit input { max-width:100%; }
 
 .pv-footer { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 1rem; text-align:left; }
 .pv-footer > a { display:inline-flex; align-items:center; min-height:44px; }

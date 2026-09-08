@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     spec/cli.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-30
-Modified: 2026-09-07
+Modified: 2026-09-08
 Summary:  NORMATIVE. The command-line interface, including the linter that makes the skills
           system enforceable rather than advisory.
           See main README.md for full license information.
@@ -42,9 +42,30 @@ naming it, never a silent fall-through to the platform directory. Every run of a
 prints the root it chose and which of the three rules chose it, and the settings data
 page shows the same.
 
-`--version` prints the build version and the protocol version it implements. An
-implementation that does not satisfy every item in `spec/protocol.md §13` MUST qualify the
-protocol string rather than print a bare `pv/1` — for example `pv/1 (partial: phase 1)`.
+`--version` prints the build version and the protocol version it implements on its first
+line, then the project's own facts: the product name, the author, the copyright, the
+licence, the project URL and the author's site. An implementation that does not satisfy
+every item in `spec/protocol.md §13` MUST qualify the protocol string rather than print a
+bare `pv/1` — for example `pv/1 (partial: phase 1)`. Only the first line is normative; an
+implementation MUST print it, and the rest is what this one prints:
+
+```
+privatium 0.2.0 pv/1 (partial: phase 2)
+Privatium™ is a framework for building small, personal apps that sync across your devices seamlessly without cloud services
+Product:       Privatium
+Author:        Gabriel Mongefranco (@gabrielmongefranco)
+Copyright:     © 2026 Gabriel Mongefranco
+Licence:       GPL-3.0-or-later — see main README.md for full license information.
+Project:       https://github.com/gabrielmongefranco/privatium
+Author's site: https://gabriel.mongefranco.com
+```
+
+These are the same facts a platform's own file properties carry where it has somewhere to
+put them. On Windows that is the `VS_VERSION_INFO` resource, which fills the Details tab
+of the properties dialog. A Mach-O binary and an ELF binary have no equivalent section a
+file manager reads, so `--version` is the whole answer on macOS and Linux; a `.app`
+bundle's `Info.plist` would be the macOS counterpart and this specification does not
+require one.
 
 `--verbose` widens what a command reports on standard error from what failed to what
 happened: the apps a node loaded and the maintenance it decided on. It changes no

@@ -1396,6 +1396,18 @@ async fn test_pantry_end_to_end() {
         app_js.contains("$('batches').toggleAttribute('hidden', bare)"),
         "app.js no longer hides the batch half until a shelf exists"
     );
+    // A Tier 2 app gets no framework header, so the way back to the launcher is the app's
+    // own: an icon in the band, with the destination filled in from `pv.mount`, because in
+    // solo mode there is no launcher to return to.
+    assert!(
+        index.contains("<a class=\"exit\" id=\"exit\" hidden>"),
+        "{index}"
+    );
+    assert!(index.contains("#i-grid-3x3-gap"), "{index}");
+    assert!(
+        app_js.contains("exit.href = pv.url(solo ? 'settings' : '../../')"),
+        "app.js no longer points the way out at the launcher"
+    );
 
     for (file, kind) in [
         ("app.js", "javascript"),

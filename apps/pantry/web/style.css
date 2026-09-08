@@ -105,10 +105,50 @@ h1 {
 
 .status {
   margin: 0;
-  flex: 1 1 18rem;
+  flex: 1 1 12rem;
   min-height: 1.5rem;
   text-align: right;
   color: var(--muted);
+}
+
+/* The way back to the launcher, at the end of the band. Icon only, so it stays out of the
+   way of the app's own name; 44 pixels square, so a thumb can reach it. */
+
+.exit {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: -0.5rem -0.5rem -0.5rem 0;
+  border-radius: 6px;
+  color: var(--cold);
+}
+
+.exit .ic {
+  width: 1.25rem;
+  height: 1.25rem;
+  fill: currentColor;
+}
+
+.exit:hover {
+  background: var(--frost);
+}
+
+/* Narrow: the status line is too wide to share a row with the title, so it takes its own
+   and the way out stays where a thumb expects it — the top right corner, on every width. */
+
+@media (max-width: 33rem) {
+  .status {
+    order: 3;
+    flex: 1 1 100%;
+    text-align: left;
+  }
+
+  .exit {
+    margin-left: auto;
+  }
 }
 
 /* Two independent stacks, joined by one rule. */
