@@ -406,6 +406,16 @@ async function boot() {
   }
   $('b-stored').value = new Date().toISOString().slice(0, 10);
 
+  // Where the way out goes. Mounted under a launcher, it goes back to the launcher; in
+  // solo mode the app *is* the node's front page, so there is no launcher and the settings
+  // page is the only place left to go (spec/cli.md §2).
+  const solo = pv.mount === '/';
+  const exit = $('exit');
+  exit.href = pv.url(solo ? 'settings' : '../../');
+  exit.title = solo ? 'Settings' : 'Apps';
+  $('exit-label').textContent = exit.title;
+  exit.hidden = false;
+
   $('shelf-form').addEventListener('submit', onAddShelf);
   $('batch-form').addEventListener('submit', onAddBatch);
   $('earlier').addEventListener('click', onEarlier);

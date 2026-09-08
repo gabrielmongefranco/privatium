@@ -85,6 +85,13 @@ the right to the bottom of a box on the left, and the two halves drift out of li
 as one list grows. The empty states are the other half of that rule — with no shelf the
 batch half is not rendered at all, because its Shelf field would have nothing to offer.
 
+**Draw your own way out.** A Tier 2 app serves its own pages and the framework injects
+nothing into them, so nothing puts a link back to the launcher there but you. Pantry ends
+its title band with one: an icon-only link, 44 pixels square, whose destination `app.js`
+fills in — `pv.url('../../')` under a launcher, and `pv.url('settings')` when `pv.mount`
+is `/`, because solo mode has no launcher to return to. Leaving it out strands anyone who
+opened the app from the launcher and has no Back button to hand.
+
 ## Accessibility conventions
 
 - One `<h1>`, then `<h2>` per region (`PV404`). Real tables with `<th scope>` (`PV407`).

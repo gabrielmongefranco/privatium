@@ -151,7 +151,8 @@ app  = "pantry"
 ```
 
 Now the binary *is* Pantry: mounted at `/`, no launcher, its icon and title become the
-node's.
+node's. The grid icon at the top right, which returns to the launcher in the ordinary
+setup, goes to the settings page instead — there is no launcher left to go back to.
 
 ---
 
