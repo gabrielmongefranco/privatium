@@ -1,7 +1,7 @@
 /*
  * Project:  Privatium™  |  File: apps/pantry/web/app.js
  * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
- * Created:  2026-09-07  |  Modified: 2026-09-07
+ * Created:  2026-09-07  |  Modified: 2026-09-08
  * Summary:  Boot, the queries, and what each control does. The screen is read two ways at
  *           once, and that is the point of this app: the shelves, the batches and the tray
  *           come from named views in schema.sql through pv.query, which say what is true
@@ -38,7 +38,8 @@ const state = {
   earlier: false,
   /** Change id to `{ id, lam, d, undone }`, read from the log. */
   log: new Map(),
-  /** Batch id to its name, read from the log, so an activity row can name a batch. */
+  /** Batch id to `{ name, unit }`, read from the log, so an activity row can name what
+   * it changed and say it in the batch's own unit. */
   names: new Map(),
 };
 
@@ -61,9 +62,9 @@ function say(message) {
  */
 function sayRejection(entry) {
   const conflict = entry.error && entry.error.conflict;
-  const name = conflict && state.names.get(conflict.id);
+  const batch = conflict && state.names.get(conflict.id);
   say(conflict
-    ? `Not recorded: ${name || 'that batch'} changed while you were offline, so your queued change was refused. Look at what is there now and record it again.`
+    ? `Not recorded: ${batch ? batch.name : 'that batch'} changed while you were offline, so your queued change was refused. Look at what is there now and record it again.`
     : `Not recorded: ${entry.error ? entry.error.message : 'the node refused the change'}.`);
 }
 
@@ -108,15 +109,23 @@ async function refresh() {
       pv.query('v_expiring', { days: EXPIRING_DAYS }),
       pv.query('v_stock_by_unit'),
     ]);
-    for (const row of batches) state.names.set(row.id, row.name);
+    for (const row of batches) state.names.set(row.id, { name: row.name, unit: row.unit });
 
+    const bare = state.shelves.length === 0;
     renderShelves($('shelves'), state.shelves, state.open, openShelf);
-    $('shelves-empty').toggleAttribute('hidden', state.shelves.length > 0);
+    $('shelves-empty').toggleAttribute('hidden', !bare);
+    $('add-shelf').open = $('add-shelf').open || bare;
     fillShelfChoice();
 
+    // A batch has to go on a shelf, so until there is one the batch half is not shown at
+    // all: an empty shelf list under an empty table is two dead ends instead of one start.
+    $('batches').toggleAttribute('hidden', bare);
+    const open = state.shelves.find(shelf => shelf.id === state.open);
+    $('shelf-name').textContent = open ? open.name : 'this shelf';
     renderBatches($('batch-rows'), batches, state.shelves, { take: onTake, move: onMove });
     $('batches-empty').toggleAttribute('hidden', batches.length > 0);
     $('batch-table').toggleAttribute('hidden', batches.length === 0);
+    if (batches.length === 0 && !bare) $('add-batch').open = true;
 
     const outCount = renderTray($('out-cards'), outs, onPutBack);
     $('tray-empty').toggleAttribute('hidden', outCount > 0);
@@ -172,7 +181,7 @@ function noteChange(event) {
 async function readLog() {
   try {
     await readTable('batch', event => {
-      if (event.op === 'put') state.names.set(event.id, event.d.name);
+      if (event.op === 'put') state.names.set(event.id, { name: event.d.name, unit: event.d.unit });
     });
     await readTable('quantity_change', noteChange);
     drawActivity();
@@ -184,7 +193,7 @@ async function readLog() {
 /** Draw the activity list from what the log said, newest first. */
 function drawActivity() {
   const entries = Array.from(state.log.values())
-    .sort((a, b) => b.lam - a.lam)
+    .sort((a, b) => (a.d.at === b.d.at ? b.lam - a.lam : (a.d.at < b.d.at ? 1 : -1)))
     .slice(0, ACTIVITY_SHOWN);
   renderActivity($('activity-rows'), entries, state.names, onUndo);
   $('activity-empty').toggleAttribute('hidden', entries.length > 0);
@@ -212,7 +221,9 @@ function scheduleRefresh() {
  * @param {object} event The envelope the stream carried.
  */
 function onStream(event) {
-  if (event.tbl === 'batch' && event.op === 'put') state.names.set(event.id, event.d.name);
+  if (event.tbl === 'batch' && event.op === 'put') {
+    state.names.set(event.id, { name: event.d.name, unit: event.d.unit });
+  }
   if (event.tbl === 'quantity_change') noteChange(event);
   scheduleRefresh();
 }

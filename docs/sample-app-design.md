@@ -57,13 +57,20 @@ widths, reduce padding and stack controls; do not shrink text to make it fit.
   into the page's sprite. Keyboard drawing remains available; one finger draws, while the
   sheet permits pinch zoom.
 
-- **Pantry:** a shelf map and the batches on the open shelf on the left, and the tray of
-  what is out, the activity list and the checks on the right. Below 820 pixels the two
-  columns become one, in the order map, batches, tray, activity, checks. The batches and
-  the activity are real tables with column headers, and each scrolls sideways on its own
-  rather than widening the page. A date carries a word — Expired, Use soon, or "no date" —
-  beside its icon, so no state is a colour alone. Every form field has its own label and
-  its own error paragraph, and a refusal from the node lands under the field it names.
+- **Pantry:** one sheet divided by a rule rather than cut into boxes. The work — the shelf
+  map, and the batches on the open shelf — sits left of the rule; the rail — what is out,
+  what needs checking, and the activity read from the log — sits right of it. Each side is
+  its own stack, so a long list on one never drags the other's headings out of line, which
+  is the failure a shared grid produces. A shelf is drawn as a slat with a coloured lip,
+  and the open one is frosted; a balance is set large in tabular figures with its unit
+  beneath, because the amount is what the person came to read. Below 820 pixels the two
+  stacks become one, in the order shelves, batches, tray, checks, activity; the batch
+  table drops "days in", then "stored on", and its row control becomes its icon, so the
+  table fits a phone without scrolling sideways. A date carries a word — Expired, Use
+  soon, or "no date" — beside its icon, so no state is a colour alone. Every form field
+  has its own label and its own error paragraph, and a refusal from the node lands under
+  the field it names. With no shelf yet the batch half is not shown at all: a batch has to
+  go somewhere, so the page asks for a shelf first and opens the field to type it in.
 
 The sheet is a fixed 1600 by 1200 coordinate space, sized in CSS and drawn through a
 context transform, so a mark lands on the same pixels on every device that shares it. The

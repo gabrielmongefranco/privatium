@@ -389,6 +389,20 @@ The table becomes part of `README.md`, so these are applied before it lands.
 - **One spec edit was needed after all**, against §10's expectation: `spec/cli.md §2` and
   `§4` name the example apps the binary carries, so both now name `pantry`. Nothing else
   under `spec/` changed, and no generated skill reference moved.
+- **A design pass followed the first landing**, after the owner read the screen: the two
+  halves of the page were laid out as rows of one grid, so every heading in the rail lined
+  up with the bottom of a box in the work column and the page read as scattered boxes; the
+  batch half was rendered with no shelf to put a batch on, and its Shelf field had nothing
+  to offer; and the whole thing was a kit of identical cards with no hierarchy. The page is
+  now one ruled sheet with two independent stacks, shelves drawn as slats, and the balance
+  set large in tabular figures. `docs/sample-app-design.md` carries the layout and
+  `apps/pantry/SKILL.md` the rule that keeps it, and `test_pantry_end_to_end` holds both
+  the two stacks and the hidden batch half.
+- **Checked in a real browser** at 1440, 390 and 320 pixels, in both colour schemes, with
+  the seeded app and with an empty one: no horizontal page scroll at any of them, the batch
+  table fits a phone without scrolling sideways, and the reflow trap that broke 320 pixels —
+  a visually hidden label inside a scrolling table escaping its box — is fixed in
+  `style.css`.
 - **Still owed: the manual accessibility pass.** Keyboard-only traversal of every form and
   the tray, visible focus, 200 % zoom, reflow at 320 px, and a screen reader over add →
   take out → put back → undo. Browser automation does not run on the owner's machine

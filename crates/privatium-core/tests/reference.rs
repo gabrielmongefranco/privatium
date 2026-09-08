@@ -1377,6 +1377,25 @@ async fn test_pantry_end_to_end() {
         "{index}"
     );
     assert_clean("pantry index.html", &index, Unit::Document);
+    let app_js = fs::read_to_string(web.join("app.js")).unwrap();
+    // The work and the rail are separate stacks. Laying both out as rows of one grid ties
+    // each heading on the right to the bottom of a box on the left, which is what made the
+    // two halves of this page drift out of line.
+    assert_eq!(index.matches("class=\"work\"").count(), 1, "{index}");
+    assert_eq!(index.matches("class=\"rail\"").count(), 1, "{index}");
+    // A batch has to go on a shelf, so the batch half is not served until there is one:
+    // an empty batch table over an empty shelf list is a dead end, and its Shelf field
+    // would have nothing to offer.
+    assert!(
+        index.contains(
+            "<section class=\"pane\" id=\"batches\" aria-labelledby=\"h-batches\" hidden>"
+        ),
+        "{index}"
+    );
+    assert!(
+        app_js.contains("$('batches').toggleAttribute('hidden', bare)"),
+        "app.js no longer hides the batch half until a shelf exists"
+    );
 
     for (file, kind) in [
         ("app.js", "javascript"),
@@ -1396,7 +1415,6 @@ async fn test_pantry_end_to_end() {
     }
     // The two readings this app is built to show: the views say what is true now, the log
     // says what happened.
-    let app_js = fs::read_to_string(web.join("app.js")).unwrap();
     for call in [
         "pv.query('v_shelf')",
         "pv.query('v_batch', { shelf: state.open })",

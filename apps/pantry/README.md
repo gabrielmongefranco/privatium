@@ -14,7 +14,8 @@ when you look. That one decision is what the rest of this page explains.
 ## 1. Open it
 
 A shelf, a batch on it, and the amount you have. Load the sample data from **Settings →
-Apps → Load sample data** to start with a stocked freezer, or add a shelf and go.
+Apps → Load sample data** to start with a stocked freezer, or add a shelf and go — with
+nothing stored yet the page asks for a shelf first, because a batch has to go somewhere.
 
 ## 2. Add a batch
 
@@ -107,7 +108,7 @@ Copy `data/` and you have copied everything.
 |---|---|
 | **Shelf map** | One `<h1>` and headings in order (`PV404`), and a labelled control for each shelf (`PV401`). Which shelf is open is `localStorage`, never an event. |
 | **Add batch form** | A `<label for>` on every field (`PV402`) and the icon choice inside `fieldset`/`legend` (`PV403`). Errors are rendered in place, the client checks first and the node checks again from the DDL, and the batch row and its first change go in **one** `pv.append` — which is what `PV306` is about. |
-| **Batch list** | A real `<table>` with `<th scope="col">` (`PV407`). The columns are **stored on**, days in and use by; the balance beside them is a view's `decimal_sum`, not a column. |
+| **Batch list** | A real `<table>` with `<th scope="col">` (`PV407`). The columns are **stored on**, days in and use by; the balance beside them is a view's `decimal_sum`, not a column, and it is set large because it is what you came to read. Narrow screens drop the columns that say least rather than scrolling sideways. |
 | **Expiry** | A date column plus an **Expired** or **Use soon** label and an "Expiring soon" list. It teaches `PV308`'s date half: `date('now', '+30 days')`, never `expires_on + 30`, which SQLite would read as integer arithmetic. A missing date is shown as "no date", not as fresh. |
 | **Tray** | `$since` bound from the query string into a view (`spec/data-api.md §1`), and a return that points at the withdrawal it undoes part of. |
 | **Activity list** | Driven by **the log**, not by a view: materialization drops a tombstoned row entirely, so SQL can show an undo's effect but never the undo. The tables are what is true now; the log is what happened. |
@@ -132,12 +133,12 @@ Copy `data/` and you have copied everything.
 |---|---|
 | `app.toml` | The manifest, with every permission at its default and said out loud |
 | `schema.sql` | Three tables, two indexes, seven views, each view with the grain it returns |
-| `web/index.html` | The page: four regions, every form field labelled, the icon sprite |
+| `web/index.html` | The page: the work, the rail, every form field labelled, the icon sprite |
 | `web/app.js` | Boot, the queries, and what each control does |
 | `web/views.js` | Everything drawn, with `createElement` and `textContent` |
 | `web/forms.js` | Reading the forms, and saying what is wrong with them in place |
 | `web/writes.js` | The six changes this app can make, one `pv.append` each |
-| `web/style.css` | Two columns above 820 pixels, one below, and every colour |
+| `web/style.css` | The sheet, the rule that divides it, the shelf slats, and every colour |
 | `sample/seed.jsonl` | Four shelves, six batches and twelve changes, all invented |
 
 ## Solo mode

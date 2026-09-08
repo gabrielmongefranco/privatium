@@ -76,6 +76,15 @@ batch is hidden by `HAVING decimal_cmp(decimal_sum(c.amount), '0') <> 0` and nev
 Adding a view means adding its `-- grain:` comment. Adding a column that could be derived
 means asking whether it should be a view instead; the answer is almost always yes.
 
+## Layout
+
+One sheet, ruled rather than boxed. `.work` (shelves, then the batches on the open shelf)
+and `.rail` (the tray, the checks, the activity) are **two independent stacks** either side
+of one hairline. Do not lay them out as rows of a single grid: that ties every heading on
+the right to the bottom of a box on the left, and the two halves drift out of line as soon
+as one list grows. The empty states are the other half of that rule — with no shelf the
+batch half is not rendered at all, because its Shelf field would have nothing to offer.
+
 ## Accessibility conventions
 
 - One `<h1>`, then `<h2>` per region (`PV404`). Real tables with `<th scope>` (`PV407`).
@@ -84,7 +93,12 @@ means asking whether it should be a view instead; the answer is almost always ye
 - A refusal from the node names a `column`; `showRefusal()` puts the message under that
   field. The client's own checks come first, and neither replaces the other.
 - Every state is a word — Expired, Use soon, no date, undone, check stock — beside its
-  icon, never a colour alone (`PV405`). Controls keep 44 pixels.
+  icon, never a colour alone (`PV405`). Controls keep 44 pixels; the row control that
+  becomes icon-only on a phone keeps its `aria-label`.
+- A table that scrolls sideways sits in a `.scroll` box, and that box is
+  `position: relative`: a visually hidden label inside a scroller is absolutely positioned
+  and, without it, escapes the box and widens the whole page — which is what breaks reflow
+  at 320 pixels.
 
 ## Verify
 

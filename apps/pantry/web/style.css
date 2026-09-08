@@ -1,39 +1,44 @@
 /* Project: Privatium™ | File: apps/pantry/web/style.css
    Authors: Gabriel Mongefranco (@gabrielmongefranco)
-   Created: 2026-09-07 | Modified: 2026-09-07
-   Summary: Two columns on a desktop and one on a phone, from a grid that reorders itself
-            at 820 pixels — the shelf map and the batches, then the tray, the activity and
-            the checks. Every colour lives here, because the default CSP has no style-src
-            and an inline style is dropped. Nothing says anything with colour alone: a
-            state is a word beside an icon, and the colours only make it easier to find.
-            Controls keep a 44-pixel touch size at every width, text wraps rather than
-            shrinking, and the focus ring is drawn, never removed.
+   Created: 2026-09-07 | Modified: 2026-09-08
+   Summary: One sheet, ruled rather than boxed. The work and the rail are two independent
+            stacks either side of a hairline, so a long list on one side never pushes the
+            other's headings out of line. A shelf is drawn as a slat with a lip, because
+            that is what a shelf is; the amount in a batch is the app's real content and is
+            set large in tabular figures so a column of them reads as a column. Colour
+            carries one thing only — the cold accent marks what is open or actionable, the
+            warm one marks what needs a look — and every state also carries its word, so
+            nothing is said by colour alone. Every value here lives in this file, because
+            the default CSP has no style-src and an inline style is dropped.
             See main README.md for full license information. */
 
 :root {
-  --bg: #F7F5F2;
-  --panel: #FFFFFF;
-  --ink: #1F2421;
-  --muted: #4E5851;
-  --line: #D8D3CC;
-  --accent: #1F5D4C;
-  --accent-ink: #FFFFFF;
-  --flag: #7A3B10;
-  --focus: #1F5D4C;
+  --paper: #F2F4F3;
+  --sheet: #FFFFFF;
+  --ink: #16211F;
+  --muted: #4A5754;
+  --rule: #CBD5D1;
+  --edge: #6E7C78;
+  --cold: #0E5C63;
+  --cold-ink: #FFFFFF;
+  --frost: #E3EAE8;
+  --flag: #8A3A12;
   --hit: 44px;
+  --gap: 1.5rem;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #14181A;
-    --panel: #1D2325;
-    --ink: #F1EEE9;
-    --muted: #B3BCB6;
-    --line: #333C3E;
-    --accent: #8ED3B8;
-    --accent-ink: #10201A;
-    --flag: #F0B98A;
-    --focus: #8ED3B8;
+    --paper: #0F1513;
+    --sheet: #17201E;
+    --ink: #EAF0ED;
+    --muted: #A6B4AF;
+    --rule: #2A3733;
+    --edge: #707E7A;
+    --cold: #6FD3D0;
+    --cold-ink: #08201F;
+    --frost: #1E2A28;
+    --flag: #F0A87A;
   }
 }
 
@@ -43,11 +48,12 @@
 
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--paper);
   color: var(--ink);
   font: 16px/1.5 system-ui, sans-serif;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 .sprite { display: none; }
@@ -64,161 +70,293 @@ body {
 }
 
 main {
-  max-width: 76rem;
+  max-width: 74rem;
   margin: 0 auto;
-  padding: 1rem;
+  padding: 1.25rem 1.25rem 4rem;
 }
 
-.top {
+/* The band: the name of the place, and what just happened to it. */
+
+.band {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.5rem 1rem;
-  padding: 0.25rem 0 0.75rem;
+  justify-content: space-between;
+  gap: 0.25rem 1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid var(--ink);
 }
 
 h1 {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: 1.4rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
 
-h2 {
-  margin: 0 0 0.5rem;
-  font-size: 1.15rem;
+.mark {
+  width: 1.15em;
+  height: 1.15em;
+  fill: var(--cold);
 }
 
 .status {
   margin: 0;
+  flex: 1 1 18rem;
   min-height: 1.5rem;
+  text-align: right;
   color: var(--muted);
 }
 
-.ic {
-  width: 1.1em;
-  height: 1.1em;
-  flex: none;
-  fill: currentColor;
-}
+/* Two independent stacks, joined by one rule. */
 
-/* Two columns above the breakpoint: the map and the batches on the left, the tray, the
-   activity and the checks on the right. One column below it, in reading order. */
-.cols {
+.split {
   display: grid;
-  gap: 1rem;
+  gap: var(--gap);
   grid-template-columns: 1fr;
 }
 
 @media (min-width: 820px) {
-  .cols {
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-    align-items: start;
+  .split {
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    gap: 0 2.5rem;
   }
 
-  .map, .batches { grid-column: 1; }
-  .tray, .activity, .checks { grid-column: 2; }
+  .rail {
+    border-left: 1px solid var(--rule);
+    padding-left: 2.5rem;
+    margin-left: -1.25rem;
+  }
 }
 
-.card {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 1rem;
+.work, .rail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
+
+.pane {
+  padding: 1.5rem 0;
+  border-bottom: 1px solid var(--rule);
+  min-width: 0;
+}
+
+.pane:last-child { border-bottom: 0; }
+
+.pane-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.pane-head h2 { margin-bottom: 0.75rem; }
 
 .note, .empty, .help {
-  margin: 0 0 0.5rem;
+  margin: 0 0 0.75rem;
   color: var(--muted);
+  max-width: 42rem;
 }
 
+.help { font-size: 0.9rem; }
+
 .err {
-  margin: 0.25rem 0 0;
+  margin: 0.35rem 0 0;
   color: var(--flag);
   font-weight: 600;
 }
 
-.flag {
-  color: var(--flag);
-  white-space: nowrap;
+.ic {
+  width: 1.05em;
+  height: 1.05em;
+  flex: none;
+  fill: currentColor;
 }
 
-/* Shelves */
+/* Shelves, drawn as slats: a lip on the left, and the open one frosted. */
 
-.shelves {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.shelf {
-  min-height: var(--hit);
-  padding: 0.5rem 0.75rem;
+.slats {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 0.1rem;
-  background: var(--panel);
+  gap: 2px;
+  margin-bottom: 0.75rem;
+}
+
+.slat {
+  min-height: var(--hit);
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  background: var(--sheet);
   color: var(--ink);
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border: 0;
+  border-left: 4px solid var(--rule);
   font: inherit;
+  text-align: left;
   cursor: pointer;
 }
 
-.shelf[aria-pressed="true"] {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 2px var(--accent);
+.slat:hover { border-left-color: var(--edge); }
+
+.slat[aria-pressed="true"] {
+  background: var(--frost);
+  border-left-color: var(--cold);
+  font-weight: 650;
 }
 
-.shelf .count {
+.slat .count {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.9rem;
+  font-weight: 400;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
-/* Tables */
+/* Tables: a ledger, not a grid of boxes. */
 
-.scroll { overflow-x: auto; }
+/* `position: relative` matters: a visually hidden label inside a scrolling table is
+   absolutely positioned, and without a positioned scroll container it escapes the box and
+   widens the whole page — which is what breaks reflow at 320 pixels. */
+.scroll {
+  overflow-x: auto;
+  min-width: 0;
+  position: relative;
+}
 
 table {
   width: 100%;
   border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
 }
 
 caption { text-align: left; }
 
 th, td {
   text-align: left;
-  vertical-align: top;
-  padding: 0.5rem 0.6rem 0.5rem 0;
-  border-bottom: 1px solid var(--line);
+  vertical-align: baseline;
+  padding: 0.6rem 0.75rem 0.6rem 0;
+  border-bottom: 1px solid var(--rule);
 }
 
+th:last-child, td:last-child { padding-right: 0; }
+
 thead th {
+  padding-top: 0;
   color: var(--muted);
-  font-size: 0.85rem;
-  text-transform: none;
+  font-size: 0.8rem;
+  font-weight: 600;
   white-space: nowrap;
 }
 
 tbody th {
   font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
+  min-width: 7rem;
 }
 
-.num { white-space: nowrap; }
+/* The item column takes the slack, so a name has room and the numbers stay together. */
+#batch-table th[scope="row"], #expiring-table th[scope="row"] { width: 99%; }
+
+#batch-table td, #expiring-table td { width: 1%; }
+
+/* The activity table lives in the narrow rail: the time and the amount hold their line,
+   and only the description wraps. */
+#activity-table .when, #activity-table .right { white-space: nowrap; }
+
+/* The description keeps enough width to wrap on word boundaries; the table scrolls
+   sideways in its own box before a word is broken. */
+#activity-table td:nth-child(2) { min-width: 7rem; }
+
+.item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.item .ic {
+  align-self: center;
+  color: var(--muted);
+}
+
+.right { text-align: right; }
+
+/* The number is the content. */
+
+.qty {
+  white-space: nowrap;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.qty .unit {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+
+.when, .stored { white-space: nowrap; color: var(--muted); }
+
+.flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--flag);
+  font-weight: 650;
+  white-space: nowrap;
+}
 
 .is-undone th, .is-undone td { text-decoration: line-through; }
 
 .undone {
   color: var(--muted);
   text-decoration: none;
+  white-space: nowrap;
 }
 
-/* Cards in the tray and the check list */
+/* Narrow screens drop the columns that say least: how long it has been in, and then the
+   day it went in. What is left — the item, the balance and the use-by date — is what the
+   person came for, and it fits without a sideways scroll. */
+@media (max-width: 819px) {
+  .days { display: none; }
+}
+
+@media (max-width: 599px) {
+  #batch-table .stored-col { display: none; }
+
+  th, td { padding-right: 0.4rem; }
+
+  .qty { font-size: 1.1rem; }
+
+  .act span { display: none; }
+
+  .act {
+    min-width: var(--hit);
+    padding: 0.25rem;
+  }
+
+  /* The word and the date stack, so the column costs half the width. */
+  #batch-table .stored { white-space: normal; }
+
+  #batch-table .flag { display: flex; }
+}
+
+/* The tray and the check list */
 
 .cards {
   list-style: none;
@@ -226,70 +364,121 @@ tbody th {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1rem;
 }
 
 .card-out, .check {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 0.75rem;
+  border-left: 4px solid var(--cold);
+  background: var(--sheet);
+  padding: 0.75rem 0.9rem;
 }
+
+.check { border-left-color: var(--flag); }
 
 .card-out p, .check p { margin: 0 0 0.4rem; }
 
+.card-out p:last-child, .check p:last-child { margin-bottom: 0; }
+
 .out-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 0.4rem;
   flex-wrap: wrap;
+  font-weight: 650;
 }
 
-.out-when { color: var(--muted); }
+.out-head .ic { align-self: center; }
 
-.check strong { display: block; }
+.out-when, .check p { color: var(--muted); }
+
+.check strong { display: block; color: var(--ink); }
 
 /* Forms */
 
 .add { margin-top: 1rem; }
 
+.more + .more { margin-top: 0.25rem; }
+
 summary {
   min-height: var(--hit);
   display: flex;
   align-items: center;
+  gap: 0.4rem;
   cursor: pointer;
   font-weight: 600;
+  color: var(--cold);
+}
+
+/* display:flex on a summary drops the marker the browser would draw, so the disclosures
+   carry their own caret, which turns when the section opens. */
+.caret {
+  width: 0.8em;
+  height: 0.8em;
+  flex: none;
+  fill: currentColor;
+  transform: rotate(-90deg);
+}
+
+details[open] > summary .caret { transform: rotate(0deg); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .caret { transition: transform 120ms ease; }
+}
+
+.more summary { color: var(--ink); }
+
+.row2 {
+  display: grid;
+  gap: 0 1rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 560px) {
+  .row2 { grid-template-columns: 1fr 1fr; }
 }
 
 .field {
-  margin: 0 0 0.75rem;
+  margin: 0 0 0.9rem;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  max-width: 28rem;
+  gap: 0.3rem;
+  min-width: 0;
+  max-width: 26rem;
 }
 
 label { font-weight: 600; }
 
 input, select {
   min-height: var(--hit);
-  padding: 0.4rem 0.5rem;
-  background: var(--panel);
+  padding: 0.4rem 0.6rem;
+  background: var(--sheet);
   color: var(--ink);
-  border: 1px solid var(--line);
-  border-radius: 6px;
+  border: 1px solid var(--edge);
+  border-radius: 0;
   font: inherit;
 }
 
-input[aria-invalid="true"] { border-color: var(--flag); }
+input:hover, select:hover { border-color: var(--ink); }
 
-.icons {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  margin: 0 0 0.75rem;
-  padding: 0.5rem 0.75rem 0.75rem;
+input[aria-invalid="true"] {
+  border-color: var(--flag);
+  border-left-width: 4px;
 }
 
-legend { font-weight: 600; }
+.icons {
+  border: 1px solid var(--rule);
+  border-left: 4px solid var(--rule);
+  margin: 0 0 1rem;
+  padding: 0.5rem 0.9rem 0.75rem;
+  display: grid;
+  gap: 0 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+}
+
+legend {
+  font-weight: 600;
+  padding: 0 0.35rem 0 0;
+}
 
 .pick {
   margin: 0;
@@ -303,6 +492,7 @@ legend { font-weight: 600; }
   min-height: 0;
   width: 1.1rem;
   height: 1.1rem;
+  accent-color: var(--cold);
 }
 
 .pick label {
@@ -314,60 +504,75 @@ legend { font-weight: 600; }
 
 button {
   min-height: var(--hit);
+  white-space: nowrap;
   padding: 0.5rem 0.9rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.4rem;
-  background: var(--panel);
+  background: var(--sheet);
   color: var(--ink);
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border: 1px solid var(--edge);
+  border-radius: 0;
   font: inherit;
   cursor: pointer;
 }
 
+button:hover { border-color: var(--ink); }
+
 .go {
-  background: var(--accent);
-  color: var(--accent-ink);
-  border-color: var(--accent);
+  background: var(--cold);
+  color: var(--cold-ink);
+  border-color: var(--cold);
+  font-weight: 650;
+}
+
+.quiet {
+  min-height: 2rem;
+  padding: 0.25rem 0.5rem;
+  border-color: transparent;
+  background: none;
+  color: var(--cold);
   font-weight: 600;
 }
 
-.link {
-  background: none;
-  border: none;
-  padding: 0.5rem 0;
-  color: var(--ink);
-  text-decoration: underline;
-  text-align: left;
+.quiet:hover { border-color: var(--edge); }
+
+/* A row's own controls: small, and named for the batch they act on. */
+
+.act {
+  min-height: 2.25rem;
+  padding: 0.25rem 0.6rem;
+  white-space: nowrap;
 }
 
-.more {
-  width: 100%;
-  justify-content: flex-start;
-  text-align: left;
+.acts {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: flex-end;
 }
 
 .inline {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-end;
   gap: 0.5rem;
-  margin: 0.5rem 0;
+  margin: 0.75rem 0 0;
 }
 
-.inline input, .inline select { max-width: 12rem; }
+.inline .field { margin: 0; }
+
+.inline input, .inline select { max-width: 11rem; }
 
 .panel {
-  border-top: 1px dashed var(--line);
   margin-top: 0.5rem;
-  padding-top: 0.5rem;
+  padding: 0.25rem 0 0.75rem 0.9rem;
+  border-left: 4px solid var(--frost);
 }
 
 /* The focus ring is drawn everywhere and removed nowhere. */
 :focus-visible {
-  outline: 3px solid var(--focus);
+  outline: 3px solid var(--cold);
   outline-offset: 2px;
 }
 

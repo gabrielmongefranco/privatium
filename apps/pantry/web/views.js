@@ -1,14 +1,15 @@
 /*
  * Project:  Privatium™  |  File: apps/pantry/web/views.js
  * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
- * Created:  2026-09-07  |  Modified: 2026-09-07
+ * Created:  2026-09-07  |  Modified: 2026-09-08
  * Summary:  Everything this app puts on the screen, built with createElement and
  *           textContent. No innerHTML anywhere: markup built from a value is the injection
  *           a Content Security Policy cannot see (spec/app-contract.md §5.4). Amounts
  *           arrive from the data API as strings and are shown as strings — a DECIMAL is
  *           text on purpose, and turning one into a JavaScript number is the bug the
- *           framework's exact arithmetic exists to prevent. A state is always a word
- *           beside its icon, never a colour on its own.
+ *           framework's exact arithmetic exists to prevent. Every state is a word beside
+ *           its icon, never a colour on its own, and every control that acts on one row
+ *           names that row, so a screen reader hears which batch it is about.
  *           See main README.md for full license information.
  */
 
@@ -22,7 +23,7 @@ export const ICONS = [
 const SPRITE = ICONS.concat([
   'plus-lg', 'box-arrow-right', 'box-arrow-in-left', 'arrow-down-up', 'clock-history',
   'exclamation-triangle', 'calendar-x', 'calendar-event', 'check2', 'cloud-slash',
-  'arrow-repeat', 'list-ul',
+  'arrow-repeat', 'list-ul', 'caret-down-fill',
 ]);
 
 /**
@@ -80,17 +81,41 @@ export function isZero(amount) {
 const EXPIRY = { past: 'Expired', soon: 'Use soon', fresh: '', unknown: '' };
 
 /**
- * A timestamp from the log, in the reader's own time zone.
+ * A timestamp from the log, in the reader's own time zone and short enough for a column.
  * @param {string} at The column's RFC 3339 UTC value.
  * @returns {string} A local date and time, or the raw value if it cannot be read.
  */
 export function localTime(at) {
   const when = new Date(at);
-  return Number.isNaN(when.getTime()) ? String(at) : when.toLocaleString();
+  if (Number.isNaN(when.getTime())) return String(at);
+  return when.toLocaleString(undefined, {
+    day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+  });
 }
 
 /**
- * The shelf map.
+ * The unit as it reads beside one particular amount. Units are written plural — bags,
+ * containers — so exactly one of something drops the s.
+ * @param {string} amount The amount as text, trimmed.
+ * @param {string} unit The batch's unit.
+ * @returns {string} The unit, singular when the amount is one.
+ */
+function units(amount, unit) {
+  const one = amount === '1' || amount === '-1';
+  return one && unit.endsWith('s') ? unit.slice(0, -1) : unit;
+}
+
+/** An amount and its unit: the number large, the unit quiet beneath it. */
+function quantity(amount, unit) {
+  const shown = trim(amount);
+  return el('td', { class: 'right qty' }, [
+    el('span', { text: shown }),
+    el('span', { class: 'unit', text: units(shown, unit) }),
+  ]);
+}
+
+/**
+ * The shelf map: one slat per shelf, the open one marked.
  * @param {HTMLElement} into The container to fill.
  * @param {Array<object>} shelves Rows of `v_shelf`.
  * @param {string} open The id of the open shelf.
@@ -99,13 +124,14 @@ export function localTime(at) {
 export function renderShelves(into, shelves, open, choose) {
   into.replaceChildren();
   for (const shelf of shelves) {
+    const held = shelf.batches === 1 ? '1 batch' : `${shelf.batches} batches`;
     const button = el('button', {
       type: 'button',
-      class: 'shelf',
+      class: 'slat',
       'aria-pressed': shelf.id === open ? 'true' : 'false',
     }, [
-      el('span', { class: 'shelf-name', text: shelf.name }),
-      el('span', { class: 'count', text: `${shelf.batches} in stock` }),
+      el('span', { text: shelf.name }),
+      el('span', { class: 'count', text: held }),
     ]);
     button.addEventListener('click', () => choose(shelf.id));
     into.append(button);
@@ -119,14 +145,19 @@ function rowPanel(row, shelves, on) {
   const errId = `err-${row.id}`;
   const error = el('p', { class: 'err', id: errId, hidden: 'hidden' });
 
+  const takeInput = el('input', {
+    id: takeId, type: 'text', inputmode: 'decimal', 'aria-describedby': errId,
+  });
   const takeForm = el('form', { class: 'inline' }, [
-    el('label', { for: takeId, text: `Take out (${row.unit})` }),
-    el('input', { id: takeId, type: 'text', inputmode: 'decimal', 'aria-describedby': errId }),
+    el('div', { class: 'field' }, [
+      el('label', { for: takeId, text: `Take out (${row.unit})` }),
+      takeInput,
+    ]),
     el('button', { type: 'submit', class: 'go', text: 'Take out' }),
   ]);
   takeForm.addEventListener('submit', event => {
     event.preventDefault();
-    on.take(row, takeForm.querySelector('input'), error);
+    on.take(row, takeInput, error);
   });
 
   const select = el('select', { id: moveId });
@@ -136,16 +167,19 @@ function rowPanel(row, shelves, on) {
     select.append(option);
   }
   const moveForm = el('form', { class: 'inline' }, [
-    el('label', { for: moveId, text: 'Move to' }),
-    select,
-    el('button', { type: 'submit', class: 'go', text: 'Move' }),
+    el('div', { class: 'field' }, [
+      el('label', { for: moveId, text: 'Move to' }),
+      select,
+    ]),
+    el('button', { type: 'submit', text: 'Move' }),
   ]);
   moveForm.addEventListener('submit', event => {
     event.preventDefault();
     on.move(row, select.value, error);
   });
 
-  return el('div', { class: 'panel', hidden: 'hidden' }, [takeForm, moveForm, error]);
+  const panel = el('div', { class: 'panel', hidden: 'hidden' }, [takeForm, moveForm, error]);
+  return { panel, takeInput };
 }
 
 /**
@@ -159,31 +193,41 @@ export function renderBatches(into, rows, shelves, on) {
   into.replaceChildren();
   for (const row of rows) {
     const flag = EXPIRY[row.expiry] || '';
-    const useBy = el('td', {}, [el('span', { text: row.expires_on || 'no date' })]);
+    const useBy = el('td', { class: 'stored' });
     if (flag) {
-      useBy.append(' ', icon(row.expiry === 'past' ? 'calendar-x' : 'calendar-event'),
-        el('strong', { class: 'flag', text: flag }));
+      useBy.append(el('span', { class: 'flag' }, [
+        icon(row.expiry === 'past' ? 'calendar-x' : 'calendar-event'),
+        el('span', { text: flag }),
+      ]), ' ');
     }
+    useBy.append(el('span', { text: row.expires_on || 'no date' }));
 
-    const panel = rowPanel(row, shelves, on);
-    const open = el('button', { type: 'button', class: 'more', 'aria-expanded': 'false' }, [
+    const { panel, takeInput } = rowPanel(row, shelves, on);
+    const open = el('button', {
+      type: 'button',
+      class: 'act',
+      'aria-expanded': 'false',
+      'aria-label': `Take out or move ${row.name}`,
+    }, [
       icon('box-arrow-right'),
-      el('span', { text: `Take out or move ${row.name}` }),
+      el('span', { text: 'Take out' }),
     ]);
     open.addEventListener('click', () => {
       const shown = panel.hasAttribute('hidden');
       panel.toggleAttribute('hidden', !shown);
       open.setAttribute('aria-expanded', shown ? 'true' : 'false');
-      if (shown) panel.querySelector('input').focus();
+      if (shown) takeInput.focus();
     });
 
     into.append(el('tr', {}, [
-      el('th', { scope: 'row' }, [icon(row.icon), el('span', { text: row.name })]),
-      el('td', { class: 'num', text: `${trim(row.balance)} ${row.unit}` }),
-      el('td', { text: row.stored_on }),
-      el('td', { class: 'num', text: `${row.days_in}` }),
+      el('th', { scope: 'row' }, [
+        el('span', { class: 'item' }, [icon(row.icon), el('span', { text: row.name })]),
+      ]),
+      quantity(row.balance, row.unit),
+      el('td', { class: 'stored stored-col', text: row.stored_on }),
+      el('td', { class: 'right days', text: `${row.days_in}` }),
       useBy,
-      el('td', {}, [open, panel]),
+      el('td', {}, [el('div', { class: 'acts' }, [open]), panel]),
     ]));
   }
 }
@@ -204,10 +248,14 @@ export function renderTray(into, rows, back) {
     const fieldId = `back-${row.id}`;
     const errId = `back-err-${row.id}`;
     const error = el('p', { class: 'err', id: errId, hidden: 'hidden' });
-    const input = el('input', { id: fieldId, type: 'text', inputmode: 'decimal', 'aria-describedby': errId });
+    const input = el('input', {
+      id: fieldId, type: 'text', inputmode: 'decimal', 'aria-describedby': errId,
+    });
     const form = el('form', { class: 'inline' }, [
-      el('label', { for: fieldId, text: `Put back (${row.unit})` }),
-      input,
+      el('div', { class: 'field' }, [
+        el('label', { for: fieldId, text: `Put back (${row.unit})` }),
+        input,
+      ]),
       el('button', { type: 'submit', class: 'go' }, [
         icon('box-arrow-in-left'),
         el('span', { text: 'Put back' }),
@@ -225,11 +273,12 @@ export function renderTray(into, rows, back) {
     into.append(el('li', { class: 'card-out' }, [
       el('p', { class: 'out-head' }, [
         icon(row.icon),
-        el('strong', { text: row.batch_name }),
-        el('span', { text: ` — ${still}` }),
+        el('span', { text: row.batch_name }),
+        el('span', { class: 'count', text: still }),
       ]),
-      el('p', { class: 'out-when', text: `${row.shelf_name}, ${localTime(row.at)}` }),
+      el('p', { class: 'out-when', text: `${row.shelf_name} · ${localTime(row.at)}` }),
       form,
+      error,
     ]));
   }
   return shown;
@@ -241,29 +290,34 @@ const REASON = { stocked: 'Stocked', taken: 'Took out', returned: 'Put back' };
 /**
  * The activity list, read from the log rather than from a table.
  * @param {HTMLElement} into The `<tbody>` to fill.
- * @param {Array<object>} entries `{ id, d, at, undone }`, newest first.
- * @param {Map<string, string>} names Batch id to batch name, for what is still known.
+ * @param {Array<object>} entries `{ id, d, undone }`, newest first.
+ * @param {Map<string, object>} batches Batch id to `{ name, unit }` for the batches still known.
  * @param {Function} undo Called with a change id when Undo is pressed.
  */
-export function renderActivity(into, entries, names, undo) {
+export function renderActivity(into, entries, batches, undo) {
   into.replaceChildren();
   for (const entry of entries) {
-    const what = `${REASON[entry.d.reason] || entry.d.reason} ${names.get(entry.d.batch_id) || 'a batch that is no longer listed'}`;
-    const amount = trim(entry.d.amount);
-    const action = el('td');
+    const batch = batches.get(entry.d.batch_id);
+    const name = batch ? batch.name : 'a batch that is no longer listed';
+    const what = `${REASON[entry.d.reason] || entry.d.reason} ${name}`;
+    const shown = trim(entry.d.amount);
+    const amount = batch ? `${shown} ${units(shown, batch.unit)}` : shown;
+    const action = el('td', { class: 'right' });
     if (entry.undone) {
       action.append(el('span', { class: 'undone', text: 'undone' }));
     } else {
-      const button = el('button', { type: 'button', class: 'link' }, [
-        el('span', { text: `Undo: ${what}` }),
-      ]);
+      const button = el('button', {
+        type: 'button',
+        class: 'quiet',
+        'aria-label': `Undo: ${what}`,
+      }, [el('span', { text: 'Undo' })]);
       button.addEventListener('click', () => undo(entry.id));
       action.append(button);
     }
     into.append(el('tr', { class: entry.undone ? 'is-undone' : null }, [
-      el('th', { scope: 'row', text: localTime(entry.d.at) }),
+      el('th', { scope: 'row', class: 'when', text: localTime(entry.d.at) }),
       el('td', { text: what }),
-      el('td', { class: 'num', text: amount }),
+      el('td', { class: 'right', text: amount }),
       action,
     ]));
   }
@@ -280,22 +334,21 @@ export function renderChecks(into, batches, outs) {
   into.replaceChildren();
   for (const row of batches) {
     into.append(el('li', { class: 'check' }, [
-      icon('exclamation-triangle'),
-      el('strong', { text: `Check stock: ${row.name}` }),
+      el('strong', { text: `${row.name}: ${trim(row.balance)} ${row.unit}` }),
       el('p', {
-        text: `${row.shelf_name} — the log adds up to ${trim(row.balance)} ${row.unit}. `
-          + 'Two devices took the same last portion. Nothing was lost and nothing was '
-          + 'clamped: put back what is really there, or record what you found.',
+        text: `On ${row.shelf_name}. Two devices took the same last portion, so the log `
+          + 'adds up to less than nothing. Both takings are kept and neither was clamped: '
+          + 'put back what is really there, or record what you found.',
       }),
     ]));
   }
   for (const row of outs) {
     into.append(el('li', { class: 'check' }, [
-      icon('exclamation-triangle'),
-      el('strong', { text: `Check a return: ${row.batch_name}` }),
+      el('strong', {
+        text: `${row.batch_name}: ${trim(row.returned)} back of ${trim(row.taken)} ${row.unit}`,
+      }),
       el('p', {
-        text: `${trim(row.returned)} ${row.unit} came back from a withdrawal of `
-          + `${trim(row.taken)}. Both returns are recorded; neither was dropped.`,
+        text: 'More came back than went out. Both returns are recorded; neither was dropped.',
       }),
     ]));
   }
@@ -310,14 +363,21 @@ export function renderChecks(into, batches, outs) {
 export function renderExpiring(into, rows) {
   into.replaceChildren();
   for (const row of rows) {
-    const useBy = el('td', {}, [el('span', { text: row.expires_on })]);
-    useBy.append(' ', icon(row.expiry === 'past' ? 'calendar-x' : 'calendar-event'),
-      el('strong', { class: 'flag', text: row.expiry === 'past' ? 'Expired' : 'Use soon' }));
+    const useBy = el('td', { class: 'stored' }, [
+      el('span', { class: 'flag' }, [
+        icon(row.expiry === 'past' ? 'calendar-x' : 'calendar-event'),
+        el('span', { text: row.expiry === 'past' ? 'Expired' : 'Use soon' }),
+      ]),
+      ' ',
+      el('span', { text: row.expires_on }),
+    ]);
     into.append(el('tr', {}, [
-      el('th', { scope: 'row' }, [icon(row.icon), el('span', { text: row.name })]),
+      el('th', { scope: 'row' }, [
+        el('span', { class: 'item' }, [icon(row.icon), el('span', { text: row.name })]),
+      ]),
       el('td', { text: row.shelf_name }),
       useBy,
-      el('td', { class: 'num', text: `${trim(row.balance)} ${row.unit}` }),
+      quantity(row.balance, row.unit),
     ]));
   }
 }
@@ -332,8 +392,8 @@ export function renderSummary(into, rows) {
   for (const row of rows) {
     into.append(el('tr', {}, [
       el('th', { scope: 'row', text: row.unit }),
-      el('td', { class: 'num', text: trim(row.balance) }),
-      el('td', { class: 'num', text: `${row.batches}` }),
+      el('td', { class: 'right', text: trim(row.balance) }),
+      el('td', { class: 'right', text: `${row.batches}` }),
     ]));
   }
 }
