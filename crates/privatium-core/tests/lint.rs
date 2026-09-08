@@ -191,7 +191,7 @@ fn test_spec_cli_5_4_lint_corpus_files_all_belong_to_a_rule() {
 /// `spec/cli.md §5.4` — the reference apps are the corpus's clean end.
 #[test]
 fn test_reference_apps_lint_clean() {
-    for slug in ["hello", "animals", "sketch"] {
+    for slug in ["hello", "animals", "sketch", "pantry"] {
         let dir = repo().join("apps").join(slug);
         let findings = lint::lint_app(&dir, &format!("apps/{slug}"), &Options::default());
         assert!(findings.is_empty(), "apps/{slug}:\n{}", describe(&findings));

@@ -87,7 +87,7 @@ far as Alpine is concerned, and every `x-data` is an "Undefined variable" in the
 Each use is commented in the source with *why that tool*, not *how it works*. The teaching
 happens in the contrast, on one page.
 
-Across the three reference apps a reader sees all three postures without a comparison
+Across the reference apps a reader sees all three postures without a comparison
 document: server-owned state (`animals`, HTMX), client-owned ephemeral state (`animals`,
 Alpine), and client-owned everything (`sketch`).
 

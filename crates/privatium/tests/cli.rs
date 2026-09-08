@@ -719,7 +719,7 @@ fn test_spec_cli_5_lint_exit_codes_and_formats() {
     // No path: every installed app plus the checkout's reference apps.
     let (code, out, err) = privatium(&repo, &["--data-dir", &dir, "lint"]);
     assert_eq!(code, 0, "{out}{err}");
-    assert!(err.contains("3 app(s)"), "{err}");
+    assert!(err.contains("4 app(s)"), "{err}");
 
     // A path that is not an app.
     let (code, out, _) = privatium(&repo, &["--data-dir", &dir, "lint", "docs"]);
@@ -1129,7 +1129,7 @@ fn test_spec_cli_2_first_run_writes_the_example_apps() {
         &["--data-dir", &dir, "--port", "0", "--no-discovery"],
         &[("PRIVATIUM_TEST_NO_CHECKOUT", "1")],
     );
-    for slug in ["hello", "animals", "sketch"] {
+    for slug in ["hello", "animals", "sketch", "pantry"] {
         assert!(apps.join(slug).join("app.toml").is_file(), "{slug}");
     }
     assert!(
@@ -1236,11 +1236,16 @@ fn test_spec_cli_4_new_examples_writes_all_three_and_never_overwrites() {
 
     let (code, out, err) = privatium(root.path(), &["--data-dir", &dir, "new", "--examples"]);
     assert_eq!(code, 0, "{err}");
-    for path in ["hello/app.lua", "animals/lib/tree.lua", "sketch/web/app.js"] {
+    for path in [
+        "hello/app.lua",
+        "animals/lib/tree.lua",
+        "sketch/web/app.js",
+        "pantry/schema.sql",
+    ] {
         assert!(out.contains(path), "{path}: {out}");
         assert!(apps.join(path).is_file(), "{path}");
     }
-    assert!(err.contains("hello, animals, sketch"), "{err}");
+    assert!(err.contains("hello, animals, sketch, pantry"), "{err}");
     let manifest = fs::read_to_string(apps.join("hello").join("app.toml")).unwrap();
     assert!(manifest.contains("slug        = \"hello\""), "{manifest}");
 
@@ -1301,7 +1306,7 @@ fn test_new_from_hello_works_without_a_checkout() {
         .unwrap();
     assert_eq!(output.status.code(), Some(1));
     let err = String::from_utf8_lossy(&output.stderr);
-    assert!(err.contains("hello, animals, sketch"), "{err}");
+    assert!(err.contains("hello, animals, sketch, pantry"), "{err}");
 }
 
 /// `§1` — the data root is `--data-dir` when given, else a `privatium-data` folder beside

@@ -1,7 +1,7 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/app/examples.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 // Created:  2026-09-06  |  Modified: 2026-09-06
-// Summary:  The example apps of apps/README.md — hello, animals and sketch — embedded in
+// Summary:  The example apps of apps/README.md — hello, animals, sketch and pantry — embedded in
 //           the binary as the files they are in the repository, so a release download has
 //           them to write into <data-dir>/apps/ on a first run and for `privatium new
 //           --examples` and `--from` (spec/cli.md §2, §4). A checkout mounts the same
@@ -18,15 +18,18 @@ static HELLO: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/../../apps/hello"
 static ANIMALS: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/../../apps/animals");
 /// `apps/sketch` — the escape hatch: a Tier 2 app with no SQL at all.
 static SKETCH: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/../../apps/sketch");
+/// `apps/pantry` — the same tier with tables: named views, exact decimals, forms.
+static PANTRY: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/../../apps/pantry");
 
 /// The example apps by slug, in the order `apps/README.md` lists them.
-pub const SLUGS: [&str; 3] = ["hello", "animals", "sketch"];
+pub const SLUGS: [&str; 4] = ["hello", "animals", "sketch", "pantry"];
 
 fn dir_of(slug: &str) -> Option<&'static Dir<'static>> {
     match slug {
         "hello" => Some(&HELLO),
         "animals" => Some(&ANIMALS),
         "sketch" => Some(&SKETCH),
+        "pantry" => Some(&PANTRY),
         _ => None,
     }
 }

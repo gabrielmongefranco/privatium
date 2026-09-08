@@ -92,8 +92,8 @@ for the node not to serve, and the `discovery.method` audit row names what start
 
 **First run.** When `<data-dir>/apps/` holds no app folder — it does not exist yet, or
 nothing in it is a directory — the node writes the example apps the binary carries —
-`hello`, `animals` and `sketch`, the folders of `apps/README.md`, unchanged — into it
-before it loads anything, so the launcher is never empty. The rest of the data directory
+`hello`, `animals`, `sketch` and `pantry`, the folders of `apps/README.md`, unchanged —
+into it before it loads anything, so the launcher is never empty. The rest of the data directory
 is not consulted: a root used before the binary carried the examples gets them too. Once
 any app folder is there, the owner's or an example's, nothing is written again, so an
 example the owner edits or deletes stays edited or deleted; `privatium new --examples`
@@ -146,9 +146,9 @@ The slug is validated as `spec/app-contract.md §3` requires and a reserved one 
 error; the title is the slug's words capitalised, for the author to change.
 
 - `--from hello` copies an example app and rewrites its slug and title. `<existing-app>`
-  is an installed app's slug, an example app's — `hello`, `animals` or `sketch`, from the
-  checkout's `apps/` or, on a binary with no checkout beside it, the copy the binary
-  carries — or a folder holding an `app.toml`. What is rewritten is what names the app —
+  is an installed app's slug, an example app's — `hello`, `animals`, `sketch` or
+  `pantry`, from the checkout's `apps/` or, on a binary with no checkout beside it, the
+  copy the binary carries — or a folder holding an `app.toml`. What is rewritten is what names the app —
   the manifest's `slug` and `title`, the `apps/<old>` path in file headers and READMEs,
   the `privatium-app-<old>` skill name, a heading that is the bare slug, an HTML
   `<title>` equal to the old title — and prose is left alone. The tier is the copied

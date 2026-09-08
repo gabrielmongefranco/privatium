@@ -1,0 +1,581 @@
+/* Project: Privatium™ | File: apps/pantry/web/style.css
+   Authors: Gabriel Mongefranco (@gabrielmongefranco)
+   Created: 2026-09-07 | Modified: 2026-09-08
+   Summary: One sheet, ruled rather than boxed. The work and the rail are two independent
+            stacks either side of a hairline, so a long list on one side never pushes the
+            other's headings out of line. A shelf is drawn as a slat with a lip, because
+            that is what a shelf is; the amount in a batch is the app's real content and is
+            set large in tabular figures so a column of them reads as a column. Colour
+            carries one thing only — the cold accent marks what is open or actionable, the
+            warm one marks what needs a look — and every state also carries its word, so
+            nothing is said by colour alone. Every value here lives in this file, because
+            the default CSP has no style-src and an inline style is dropped.
+            See main README.md for full license information. */
+
+:root {
+  --paper: #F2F4F3;
+  --sheet: #FFFFFF;
+  --ink: #16211F;
+  --muted: #4A5754;
+  --rule: #CBD5D1;
+  --edge: #6E7C78;
+  --cold: #0E5C63;
+  --cold-ink: #FFFFFF;
+  --frost: #E3EAE8;
+  --flag: #8A3A12;
+  --hit: 44px;
+  --gap: 1.5rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #0F1513;
+    --sheet: #17201E;
+    --ink: #EAF0ED;
+    --muted: #A6B4AF;
+    --rule: #2A3733;
+    --edge: #707E7A;
+    --cold: #6FD3D0;
+    --cold-ink: #08201F;
+    --frost: #1E2A28;
+    --flag: #F0A87A;
+  }
+}
+
+* { box-sizing: border-box; }
+
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.5 system-ui, sans-serif;
+  overflow-wrap: break-word;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+.sprite { display: none; }
+
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+main {
+  max-width: 74rem;
+  margin: 0 auto;
+  padding: 1.25rem 1.25rem 4rem;
+}
+
+/* The band: the name of the place, and what just happened to it. */
+
+.band {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid var(--ink);
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.mark {
+  width: 1.15em;
+  height: 1.15em;
+  fill: var(--cold);
+}
+
+.status {
+  margin: 0;
+  flex: 1 1 18rem;
+  min-height: 1.5rem;
+  text-align: right;
+  color: var(--muted);
+}
+
+/* Two independent stacks, joined by one rule. */
+
+.split {
+  display: grid;
+  gap: var(--gap);
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 820px) {
+  .split {
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    gap: 0 2.5rem;
+  }
+
+  .rail {
+    border-left: 1px solid var(--rule);
+    padding-left: 2.5rem;
+    margin-left: -1.25rem;
+  }
+}
+
+.work, .rail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pane {
+  padding: 1.5rem 0;
+  border-bottom: 1px solid var(--rule);
+  min-width: 0;
+}
+
+.pane:last-child { border-bottom: 0; }
+
+.pane-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.pane-head h2 { margin-bottom: 0.75rem; }
+
+.note, .empty, .help {
+  margin: 0 0 0.75rem;
+  color: var(--muted);
+  max-width: 42rem;
+}
+
+.help { font-size: 0.9rem; }
+
+.err {
+  margin: 0.35rem 0 0;
+  color: var(--flag);
+  font-weight: 600;
+}
+
+.ic {
+  width: 1.05em;
+  height: 1.05em;
+  flex: none;
+  fill: currentColor;
+}
+
+/* Shelves, drawn as slats: a lip on the left, and the open one frosted. */
+
+.slats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 0.75rem;
+}
+
+.slat {
+  min-height: var(--hit);
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  background: var(--sheet);
+  color: var(--ink);
+  border: 0;
+  border-left: 4px solid var(--rule);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.slat:hover { border-left-color: var(--edge); }
+
+.slat[aria-pressed="true"] {
+  background: var(--frost);
+  border-left-color: var(--cold);
+  font-weight: 650;
+}
+
+.slat .count {
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 400;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tables: a ledger, not a grid of boxes. */
+
+/* `position: relative` matters: a visually hidden label inside a scrolling table is
+   absolutely positioned, and without a positioned scroll container it escapes the box and
+   widens the whole page — which is what breaks reflow at 320 pixels. */
+.scroll {
+  overflow-x: auto;
+  min-width: 0;
+  position: relative;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+caption { text-align: left; }
+
+th, td {
+  text-align: left;
+  vertical-align: baseline;
+  padding: 0.6rem 0.75rem 0.6rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+th:last-child, td:last-child { padding-right: 0; }
+
+thead th {
+  padding-top: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+tbody th {
+  font-weight: 600;
+  min-width: 7rem;
+}
+
+/* The item column takes the slack, so a name has room and the numbers stay together. */
+#batch-table th[scope="row"], #expiring-table th[scope="row"] { width: 99%; }
+
+#batch-table td, #expiring-table td { width: 1%; }
+
+/* The activity table lives in the narrow rail: the time and the amount hold their line,
+   and only the description wraps. */
+#activity-table .when, #activity-table .right { white-space: nowrap; }
+
+/* The description keeps enough width to wrap on word boundaries; the table scrolls
+   sideways in its own box before a word is broken. */
+#activity-table td:nth-child(2) { min-width: 7rem; }
+
+.item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.item .ic {
+  align-self: center;
+  color: var(--muted);
+}
+
+.right { text-align: right; }
+
+/* The number is the content. */
+
+.qty {
+  white-space: nowrap;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.qty .unit {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+
+.when, .stored { white-space: nowrap; color: var(--muted); }
+
+.flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--flag);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.is-undone th, .is-undone td { text-decoration: line-through; }
+
+.undone {
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+/* Narrow screens drop the columns that say least: how long it has been in, and then the
+   day it went in. What is left — the item, the balance and the use-by date — is what the
+   person came for, and it fits without a sideways scroll. */
+@media (max-width: 819px) {
+  .days { display: none; }
+}
+
+@media (max-width: 599px) {
+  #batch-table .stored-col { display: none; }
+
+  th, td { padding-right: 0.4rem; }
+
+  .qty { font-size: 1.1rem; }
+
+  .act span { display: none; }
+
+  .act {
+    min-width: var(--hit);
+    padding: 0.25rem;
+  }
+
+  /* The word and the date stack, so the column costs half the width. */
+  #batch-table .stored { white-space: normal; }
+
+  #batch-table .flag { display: flex; }
+}
+
+/* The tray and the check list */
+
+.cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.card-out, .check {
+  border-left: 4px solid var(--cold);
+  background: var(--sheet);
+  padding: 0.75rem 0.9rem;
+}
+
+.check { border-left-color: var(--flag); }
+
+.card-out p, .check p { margin: 0 0 0.4rem; }
+
+.card-out p:last-child, .check p:last-child { margin-bottom: 0; }
+
+.out-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  font-weight: 650;
+}
+
+.out-head .ic { align-self: center; }
+
+.out-when, .check p { color: var(--muted); }
+
+.check strong { display: block; color: var(--ink); }
+
+/* Forms */
+
+.add { margin-top: 1rem; }
+
+.more + .more { margin-top: 0.25rem; }
+
+summary {
+  min-height: var(--hit);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--cold);
+}
+
+/* display:flex on a summary drops the marker the browser would draw, so the disclosures
+   carry their own caret, which turns when the section opens. */
+.caret {
+  width: 0.8em;
+  height: 0.8em;
+  flex: none;
+  fill: currentColor;
+  transform: rotate(-90deg);
+}
+
+details[open] > summary .caret { transform: rotate(0deg); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .caret { transition: transform 120ms ease; }
+}
+
+.more summary { color: var(--ink); }
+
+.row2 {
+  display: grid;
+  gap: 0 1rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 560px) {
+  .row2 { grid-template-columns: 1fr 1fr; }
+}
+
+.field {
+  margin: 0 0 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+  max-width: 26rem;
+}
+
+label { font-weight: 600; }
+
+input, select {
+  min-height: var(--hit);
+  padding: 0.4rem 0.6rem;
+  background: var(--sheet);
+  color: var(--ink);
+  border: 1px solid var(--edge);
+  border-radius: 0;
+  font: inherit;
+}
+
+input:hover, select:hover { border-color: var(--ink); }
+
+input[aria-invalid="true"] {
+  border-color: var(--flag);
+  border-left-width: 4px;
+}
+
+.icons {
+  border: 1px solid var(--rule);
+  border-left: 4px solid var(--rule);
+  margin: 0 0 1rem;
+  padding: 0.5rem 0.9rem 0.75rem;
+  display: grid;
+  gap: 0 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+}
+
+legend {
+  font-weight: 600;
+  padding: 0 0.35rem 0 0;
+}
+
+.pick {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: var(--hit);
+}
+
+.pick input {
+  min-height: 0;
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--cold);
+}
+
+.pick label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 400;
+}
+
+button {
+  min-height: var(--hit);
+  white-space: nowrap;
+  padding: 0.5rem 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  background: var(--sheet);
+  color: var(--ink);
+  border: 1px solid var(--edge);
+  border-radius: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover { border-color: var(--ink); }
+
+.go {
+  background: var(--cold);
+  color: var(--cold-ink);
+  border-color: var(--cold);
+  font-weight: 650;
+}
+
+.quiet {
+  min-height: 2rem;
+  padding: 0.25rem 0.5rem;
+  border-color: transparent;
+  background: none;
+  color: var(--cold);
+  font-weight: 600;
+}
+
+.quiet:hover { border-color: var(--edge); }
+
+/* A row's own controls: small, and named for the batch they act on. */
+
+.act {
+  min-height: 2.25rem;
+  padding: 0.25rem 0.6rem;
+  white-space: nowrap;
+}
+
+.acts {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
+.inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+  margin: 0.75rem 0 0;
+}
+
+.inline .field { margin: 0; }
+
+.inline input, .inline select { max-width: 11rem; }
+
+.panel {
+  margin-top: 0.5rem;
+  padding: 0.25rem 0 0.75rem 0.9rem;
+  border-left: 4px solid var(--frost);
+}
+
+/* The focus ring is drawn everywhere and removed nowhere. */
+:focus-visible {
+  outline: 3px solid var(--cold);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}
