@@ -495,7 +495,11 @@ a section outright rather than writing "none".
 - The change solves the requested problem, securely and accessibly.
 - No secret and no personal data left the places they belong.
 - `spec/`, `docs/` and `skills/` match the code, and CI's gates pass on all three
-  platforms.
+  platforms. A pull request runs Linux alone, because a macOS minute is billed at ten
+  times a Linux one; the other two run on the merge to `main`. Put the `ci-full-matrix`
+  label on the pull request when the change touches a path, a process, a file lock, a
+  clock or a C dependency, so the platform that will break it is exercised before review
+  rather than after.
 - Copyright, licence, trademark and attribution notices are untouched.
 
 When quality, security, accessibility and speed conflict, the order is: safety and

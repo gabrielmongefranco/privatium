@@ -1,12 +1,15 @@
 # Project:  Privatium™  |  File: .github/workflows/ci.yml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-08-31  |  Modified: 2026-09-06
+# Created:  2026-08-31  |  Modified: 2026-09-08
 # Summary:  The gate: formatting, Clippy, the test suite, the conformance items by name, the
 #           embedded example, the fresh-clone check, the header check, the browser tests,
 #           the generated skill references, the lint corpus, a release build and its
 #           packaging — on Linux, macOS and Windows, because one binary has to run on all
 #           three and an engine compiled from source that fails on one of them is found
-#           here, not by an owner. See main README.md for full license information.
+#           here, not by an owner. A pull request runs Linux alone and a merge to main runs
+#           all three, so nothing reaches a release untested on a platform while the two
+#           expensive runners stay off the review loop; `ci-full-matrix` on a pull request
+#           asks for all three early. See main README.md for full license information.
 
 name: CI
 
@@ -35,7 +38,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Linux on a pull request, all three on main. A minute on macOS is billed at ten
+        # times a minute on Linux and a minute on Windows at twice, so the two of them are
+        # nine tenths of what this workflow costs while catching a small fraction of what
+        # it catches. Every branch still meets the full matrix before it can be released,
+        # because a merge to main runs it; a pull request that is expected to break a
+        # platform — anything touching a path, a process, a file lock or a C dependency —
+        # asks for the matrix early by carrying the `ci-full-matrix` label.
+        # One line, because a folded scalar would keep the newlines: continuation lines
+        # indented past the first are literal in YAML, and the expression would not parse.
+        os: ${{ (github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'ci-full-matrix')) && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') }}
 
     steps:
       - uses: actions/checkout@v4
@@ -124,11 +136,15 @@ jobs:
         id: artifact
         run: python .github/scripts/release_tools.py package "${{ runner.os }}"
 
+      # Seven days, not the default ninety. These are a convenience for whoever is looking
+      # at the run that produced them; a build worth keeping is a tagged release, and
+      # release.yml builds its own. Storage is billed by the gigabyte-month either way.
       - uses: actions/upload-artifact@v7
         with:
           path: ${{ steps.artifact.outputs.path }}
           archive: false
           if-no-files-found: error
+          retention-days: 7
 
       # The Windows portable zip (spec/cli.md §1): one file per step with `archive: false`.
       - uses: actions/upload-artifact@v7
@@ -137,6 +153,7 @@ jobs:
           path: ${{ steps.artifact.outputs.portable }}
           archive: false
           if-no-files-found: error
+          retention-days: 7
 
   # A second opinion from current stable, so a compiler change that will break the build
   # lands as one failing job rather than as a surprise the next time the MSRV moves.

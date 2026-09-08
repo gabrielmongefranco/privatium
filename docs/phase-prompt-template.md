@@ -107,7 +107,10 @@ While working:
 - Reuse what exists. No new crate without a stated reason, a maintenance check and a
   clean `cargo deny`; no dependency the plan's dependency table does not name without
   saying why.
-- Keep Linux, macOS and Windows working; the CI matrix runs all three.
+- Keep Linux, macOS and Windows working. CI runs Linux on a pull request and all three
+  on the merge to `main`; the `ci-full-matrix` label asks for all three on the pull
+  request, which is what a change to a path, a process, a file lock or a C dependency
+  wants.
 - Everything from outside the process is untrusted. Fail closed. Parameterize SQL.
   Escape output. Vetted cryptography only.
 - No secret and no personal data in a log, an error, a comment, a test fixture or a

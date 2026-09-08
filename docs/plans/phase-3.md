@@ -39,7 +39,12 @@ on: `identity.rs`, `registry.rs`, `sys.rs`, `pair/`, `session/`, `discover/`,
 One milestone per branch, one PR per milestone, in order — M20 to M26, continuing Phase
 2's numbering, then one hardening round. A milestone is done when its named tests are
 green on all three platforms and its checklist is ticked on that run, not when it
-compiles. Write the named tests first. Do not start M(n+1) before M(n) merges.
+compiles. Since 2026-09-08 the run that proves all three is the merge to `main`: a pull
+request runs Linux alone unless it carries the `ci-full-matrix` label, because macOS and
+Windows minutes are billed at ten and two times a Linux minute and were nine tenths of
+what CI cost. Tick the checklist against the main run, and label the pull request when
+the milestone touches a path, a process, a file lock, a clock or a C dependency. Write
+the named tests first. Do not start M(n+1) before M(n) merges.
 
 Section 2 lists the decisions this plan makes. **All fourteen are decided.** Most follow
 from what Phase 2's code and spec already fix; the ones that change the wire, the
