@@ -66,6 +66,7 @@ Why a choice was made, kept so it is not argued again from scratch.
 | [0004](decisions/0004-declined-alternatives.md) | Gun, RxDB, libp2p, SharkTrustX and Barracuda-in-Rust evaluated and declined. |
 | [0005](decisions/0005-mobile-role.md) | What a phone is in a cluster: a full replica, never a server. |
 | [0006](decisions/0006-sqlite-engine.md) | SQLite as the query engine, and where the guarantees DuckDB gave now live. |
+| [0007](decisions/0007-household-profiles.md) | Household profiles as a partition, no at-rest encryption, and what is reserved so real multi-user stays reachable. |
 
 ## Project reference
 

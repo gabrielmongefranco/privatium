@@ -5,22 +5,25 @@ Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-09-07
 Modified: 2026-09-07
 Summary:  Decision record. Household profiles as a pv/1 partition, at-rest encryption
-          declined, an ephemeral app channel for per-frame traffic, and the reservations
-          that keep real multi-user reachable in pv/2. Status: DECIDED for the pv/1
-          hooks; the pv/2 model and the ephemeral channel are DEFERRED.
+          declined, an ephemeral app channel for per-frame traffic, no profile merge, and
+          the reservations that keep real multi-user reachable in pv/2. Status: DECIDED;
+          the pv/2 model is DEFERRED.
           See main README.md for full license information.
 -->
 
 # ADR 0007 — Household profiles, segmented data, and the pv/2 multi-user path
 
-**Status: DECIDED for the `pv/1` hooks. The `pv/2` multi-user model is DEFERRED, and the
-ephemeral channel of D16 is DEFERRED, with the reservations of section 5 held open
-deliberately.**
+**Status: DECIDED. The `pv/2` multi-user model is DEFERRED, and the reservations of
+section 5 are held open deliberately. D9 and D11 are withdrawn: there is no profile merge.**
 
-**Nothing in this record is scheduled for Phase 3.** `docs/plans/phase-3.md` is in flight
-and its milestones own `spec/protocol.md §10`, `§2.3.1` and `§3` for the duration. Section
-6 below is a list of edits a later phase makes, not a backlog for the current one. An
-agent reading this while Phase 3 is open should change nothing but this file.
+**Scheduled as Phase 3c, planned as M27 of `docs/plans/phase-3.md`.** The six questions an
+earlier revision left open are decided; section 7 says where each went. The milestone's
+body can be written from this record.
+
+**Nothing here is implemented by M22 through M26.** M20 and M21 have landed, so the sync
+wire this record changes is shipped surface rather than surface being written: section 6's
+rows are edits to what exists. An agent reading this while an earlier milestone is open
+should change nothing but this file.
 
 ## Context
 
@@ -57,10 +60,12 @@ domains only the second works, and that is the entire content of the `pv/1` to `
 
 > Profiles keep household members out of each other's data *in the app*. They do not hide
 > anything from anyone with access to the node's files. Everyone's data is backed up on
-> every node equally.
+> every node equally, and data that reached a cluster stays in that cluster: leaving the
+> household does not unwrite it.
 
-That sentence is normative UI copy, not commentary. Following D8 it is permanently true
-rather than provisional pending encryption, and it should be written that way.
+That paragraph is normative UI copy, not commentary. Following D8 it is permanently true
+rather than provisional pending encryption, and following D18 the last clause is true as
+well; it should be written that way.
 
 It is the same deal a family NAS or a shared media server offers, and it is defensible
 precisely because it is stated rather than implied. Same disclosure posture as
@@ -92,6 +97,21 @@ the app opens at all**. They compose: the grant decides the mount, the segment d
 rows. Any implementation that finds itself re-deriving grant resolution has taken a wrong
 turn.
 
+**The grant gains a profile subject, and it gains it in `pv/1`.** A household's actual
+request is "the children do not see the medication tracker", which is app visibility, not a
+row filter — a segment cannot express it, because a segment only hides rows inside an app
+already open. So `sys_app_grant` grows a `profile_id` alongside `device_id` and `app_id`,
+each still accepting `*`, resolved by the same most-specific-match rule it uses today, with
+`write` still the default when nothing matches. Where two rows tie on specificity the order
+is **profile, then device, then app** — the profile is the more particular fact about who
+is asking, and the shared tablet is exactly the case that needs it to win.
+
+This is not the ACL that `spec/protocol.md §14` item 3 rules out. That item is about
+sharing across trust domains, where the answer is a capability model; this is one owner's
+own visibility table gaining the third column the household case needs. An earlier
+revision reserved this shape rather than building it; section 5 records why the
+reservation is gone.
+
 **Tier 3 is explicitly out of scope for this enforcement.** A Tier 3 app links
 `privatium-core` and is not sandboxed; it can already read `identity/node.key` and every
 log file directly. Profile scoping there is a convenience of the core API, not a boundary,
@@ -109,7 +129,7 @@ design, because `docs/architecture.md §7` promises solo mode is indistinguishab
 purpose-built application. If profile display required a Privatium header, solo mode would
 be dead and Tier 3 would be unreachable.
 
-Resolution, in five parts, none of which mandates chrome:
+Resolution, in six parts, none of which mandates chrome:
 
 1. **The profile is selected before the app loads.** A session carries exactly one active
    profile, chosen at the PIN screen. An app never chooses, and cannot change, the profile
@@ -131,13 +151,32 @@ Resolution, in five parts, none of which mandates chrome:
    `restore_tier` (`spec/data-api.md §4`); the profile joins it as a sibling of `dev`, and
    is `null` on a node with no profiles configured. Apps MAY display it; the launcher and
    the native shells MUST.
-5. **A profile choice must survive a reconnect, and the channel does not carry it.**
+5. **The node remembers the last profile per device, and a reconnect resumes it.**
    `spec/protocol.md §8.3` is explicit: "The session is the connection: no cookie carries
    it, and a new connection is a new handshake", and the handshake authenticates `dev`
-   alone. A profile held only against a WebSocket is lost every time the network blips.
-   Either the client re-asserts the profile as its first framed request after each
-   handshake, or the node remembers the last profile per device. The second is friendlier
-   and the first is safer; the choice is OQ6.
+   alone. A profile held only against the WebSocket would be lost every time the network
+   blipped, which throws a child back to the PIN screen mid-game. Usability wins: the node
+   holds the last profile chosen on each device and a new handshake resumes it, with no
+   PIN. Selecting a *different* profile asks for that profile's PIN; resuming the one
+   already chosen does not.
+
+   That memory is **node-local**, in `local/state.jsonl` beside the peer hints, never an
+   event. It is a convenience, not a fact about the household, and `AGENTS.md` forbids
+   syncing `local/`. Two consequences to accept: the same device paired to a second node
+   starts at that node's picker, and clearing `local/` returns every device to the picker
+   — both harmless, both better than replicating a UI preference to every machine.
+
+   Stated plainly because it is a real posture: **a device left unattended stays in its
+   profile.** This is the television model, the same one `§7.6` already applies to pairing
+   — pair once, trusted thereafter. The switcher of part 2 is the way out, and it is
+   reachable from every app.
+
+6. **An app a profile may not open says so, and offers the switcher.** When
+   `sys_app_grant` refuses a profile, the app is still listed and still reachable; opening
+   it renders an explanatory screen naming the profile that is active and carrying a link
+   to `/settings/profile`. A D13 lockout uses the same screen with a countdown. Hiding it
+   from `sys.v_app_nav` was considered and refused: an app that vanishes teaches a
+   household member that the node is broken, and a message teaches them to switch.
 
 Consequence to accept rather than fix: a Tier 2 app owning its whole viewport can render
 whatever it likes and is not obliged to tell the user which profile is active. It also
@@ -196,13 +235,16 @@ This decision was originally justified largely by per-segment encryption, which 
 declines. It was re-examined against a plain `profile` column and **stands**, on three
 remaining grounds:
 
-1. **Removal is otherwise impossible.** `spec/protocol.md §4.6` states that the supported
-   way to destroy data irrecoverably is to destroy `data/` — the whole directory, every
-   app, every person. With a column, a member who leaves the household can never have
-   their data removed from any node, ever, because that would require rewriting logs. With
-   a directory it is one path, on each node, and the append-only invariant is intact. Note
-   what this is: not a narrower spelling of something §4.6 already allows, but the first
-   removal narrower than the whole store. OQ5 is where that is paid for.
+1. **Removal is otherwise structurally impossible.** `spec/protocol.md §4.6` states that
+   the supported way to destroy data irrecoverably is to destroy `data/` — the whole
+   directory, every app, every person. With a column, one person's rows are interleaved
+   into files shared with everyone else's, so removing them would require rewriting a log
+   and is therefore never possible at all. With a directory it is one path, and the
+   append-only invariant is intact. **D18 bounds what this buys:** the act is local, no
+   peer is ever told to follow suit, and a node that still holds the segment will hand it
+   back. So this ground is the difference between *impossible* and *possible on a node the
+   owner chooses*, which is real but smaller than it first appears, and grounds 2 and 3
+   carry more of the weight than they did in an earlier revision.
 2. **`pv/2` sharing is a subtree sync.** Sync is already a set union over files keyed by
    `(app, dev, seq)`. Scoping it to a subtree is natural; filtering every line by a field
    is a different algorithm.
@@ -215,6 +257,22 @@ writing to two segments of one app would otherwise produce gaps in both files. �
 requires app and device names to be validated before a path is constructed; the segment ID
 becomes a third component under the same rule. That is a normative change to §10 and the
 main complexity this decision buys.
+
+**`lam` stays per app. It is not segmented.** `spec/protocol.md §4.3` gives each node one
+Lamport counter per app, and that is correct as it stands. Segmenting it would leave
+`(lam, ts, dev)` unable to order a `_shared` row against a private one — two counters that
+never met, compared as though they had — and `§4.5` needs that ordering to resolve a
+last-write-wins conflict on a shared table, which D14 makes routine rather than
+theoretical. So `seq` is per `(app, segment, device)` and `lam` is per app, and the two
+disagreeing about their grain is deliberate: `seq` names a position in one file, `lam`
+orders events against each other across all of them. `§4.3` says so normatively.
+
+The heads exchange carries `seq`, not `lam`, so it follows `seq`: `{slug: {dev: seq}}`
+today becomes `{slug: {segment: {dev: seq}}}`. The segment gets its own level and is
+**not** folded into the outer key as `"<slug>/<segment>"` — the reference receiver
+validates a destination as `_sys` or a valid unreserved slug, `§1.1`'s pattern has no `/`,
+and admitting one would loosen the guard that keeps a path separator out of a name used to
+build a path, which is the opposite of what `§10.2`'s validation rule is for.
 
 ### D7. Reserve `usr` in the event envelope now.
 
@@ -267,29 +325,31 @@ correct encryption, is *metadata*: file sizes, line counts, and write timing exp
 activity patterns. That was never the reason to decline encryption, and this decision does
 not rest on it. The backup constraint does all the work on its own.
 
-### D9. Merging profiles is an alias. Nothing moves and nothing is rewritten.
+### D9. **Withdrawn.** There is no profile merge, and no alias.
 
-**Why events cannot simply be rewritten and re-synced**, since this is the obvious
-question:
+An earlier revision merged two profiles with a `sys_profile_alias` event that asserted
+segment B belonged to the same person as segment A, unioned at read time. It is removed:
+the feature bought a rare convenience and charged for it in every read path, every
+snapshot, and every sync head, and the question of how far the union reached had no
+obvious answer.
 
-- Sync is a set union over `(app, dev, seq)` (`spec/protocol.md §10.1`). That union is
-  correct only because those three fields uniquely determine a line's content. Rewrite a
-  line's `usr` on one node and two nodes hold different content for the same identity,
-  with no conflict-resolution rule anywhere in the protocol, because the design
-  deliberately has none. The result is silent divergence, not a merge.
-- Peers already hold the old lines. Rewriting on one node does not unwrite them elsewhere.
-- `§10.2` requires a receiver not to re-serialize, normalize or remove anything: bytes in,
-  bytes out.
-- Snapshot manifests carry SHA-256 of the materialized output (`§5.2`) and would mismatch.
+Two profiles that turn out to be one person stay two profiles. If their owner wants the
+rows together, an app can read both and show them together, which is an app's decision and
+costs the framework nothing.
 
-So: a `sys_profile_alias` event asserts that segment B belongs to the same person as
-segment A. The read path unions both. No bytes move, the invariant holds, and the
-assertion is reversible because it is just another event.
+**What the withdrawal does not change:** rewriting `usr` on existing events was never an
+option and still is not. Sync is a set union over `(app, dev, seq)`
+(`spec/protocol.md §10.1`), correct only because those three fields determine a line's
+content; rewrite one on a node and two nodes hold different bytes for the same identity,
+with no conflict-resolution rule anywhere in the protocol because the design deliberately
+has none. `§10.2` forbids a receiver to re-serialize or normalize, peers already hold the
+old lines, and snapshot manifests carry SHA-256 of the materialized output (`§5.2`) and
+would mismatch. That reasoning is recorded here because it is the first thing anyone
+proposing a merge will try.
 
-The escape hatch, if a physical merge is ever genuinely wanted: append *copies* of the rows
-into the target segment as new events with new ULIDs. That is a fork, not a move. The
-originals remain readable forever and the data is duplicated. The alias is better in every
-case identified so far.
+Retiring a profile needs no new mechanism. `sys_profile` is an ordinary row, so an
+amendment marks it retired under `§4.5`, its segment stays where it is, and nothing is
+unwritten — which is what D18 says happens to it.
 
 ### D10. Profile ID is a ULID. Display name is mutable and may collide.
 
@@ -299,20 +359,16 @@ recorded for `sys_app.id` being the slug, where renaming an app is replacing an 
 
 Display collisions are a UI problem. The picker shows "Ana (desktop)" and "Ana (laptop)".
 
-### D11. Moving a profile between nodes reuses the §7 pairing flow.
+### D11. **Withdrawn.** There is no ceremony for moving a profile between nodes.
 
-Same PAKE, same 16 bits, same 120-second TTL, same 5-attempt cap, same `sys_audit` event.
-Different subject: a profile rather than a device.
+It fell with D9, and it was already thinner than it looked. D5 replicates every segment to
+every node, so a profile is on all of them the moment it exists; there was never anything
+to move. What the earlier revision described was authorizing an alias across two nodes,
+and there is no alias.
 
-With D8 there is no key material to transfer, so this reduces to authorizing the alias of
-D9 across two nodes rather than moving secrets. The ceremony is still warranted: an alias
-asserts that two data sets belong to one person, which is not something an unauthenticated
-party should be able to claim.
-
-Two §7 rules carry over unchanged. The PAKE authenticates and derives in one operation, so
-an implementation MUST NOT run it and then send the code as a bearer credential. And §7.8
-forbids a short-authentication-string confirmation screen; a profile move does not earn one
-either.
+Moving a profile between *clusters* — one household to another — is a different problem
+that needs identities two strangers can prove to each other. That is `pv/2`'s, and section
+1's principal-versus-partition distinction is exactly why.
 
 ### D12. `role` is `owner` or `member`.
 
@@ -340,7 +396,7 @@ destroyed and a new one issued" has no analogue: a PIN survives its own lockout.
 
 `sys_audit.kind` is a **normative closed list** (`spec/data-dictionary.md §3.10`), so this
 adds to it rather than reusing `pair.*`: `profile.created`, `profile.attempt`,
-`profile.failed`, `profile.locked`, `profile.switched`, `profile.aliased`. The PIN itself
+`profile.failed`, `profile.locked`, `profile.switched`, `profile.retired`. The PIN itself
 never reaches `detail`, which is the general rule in `AGENTS.md` about secrets and row
 contents, not a special case for this table.
 
@@ -457,15 +513,42 @@ tree contradicts itself:
 - `docs/roadmap.md`'s "Explicitly not on the roadmap" list opens with multi-user sharing.
   The honest correction is narrower than deletion: multi-user *sharing as a hosted
   service* stays off the roadmap, which is what the paragraph's own reason says — each
-  item there "turns a personal tool into a service". Household profiles do not. They
-  belong under the roadmap's "Open questions, not yet scheduled", whose framing — worth
-  prototyping before worth specifying, none a deliverable — is exactly right for both this
-  and D16.
+  item there "turns a personal tool into a service". Household profiles do not, and they
+  are scheduled as **Phase 3c**, planned as M27 of `docs/plans/phase-3.md`.
 
 Without this, a future session correctly following the project's own no-invented-spec rule
 will find unused machinery, conclude it is scope creep, and delete it. `docs/decisions/0004`
 records the inverse failure (an invented `--bind` flag, an invented `kind = "console"`);
 this is the same class of error running the other way.
+
+### D18. No node is ever instructed to delete data. Leaving the household does not unwrite anything.
+
+The obvious next move after D6 is a replicated `sys_segment_removed` marker: delete a
+segment, tell the peers, and have a node that was offline honour the marker instead of
+handing the segment back at its next pass. It is rejected.
+
+That marker would be the first thing in the system that instructs a node to *not* hold data
+it is entitled to, and it sits directly against `spec/protocol.md §10.2`, which requires a
+receiver to refuse a gap rather than skip it. A removed segment is a gap every peer must
+agree to stop asking about — a new invariant, load-bearing, and wrong the first time
+somebody's node honours a marker it should not have.
+
+**So the rule is the plain one: data that reached a cluster stays in that cluster.** A
+member who leaves can have their segment deleted from any node the owner is willing to
+delete it on, and it will come back from any peer that still holds it. That is the price of
+sharing a cluster, and it is the same price `§4.6` already charges — a tombstone is not a
+deletion, and destroying `data/` is the supported way to destroy data.
+
+Consequences, all of which belong in the UI copy rather than in a footnote:
+
+- Deleting a segment is a local act with no cluster-wide guarantee behind it. The interface
+  MUST NOT describe it as removing someone's data, because on any other node it has not.
+- Every backup still holds it, which `docs/backup-and-restore.md` already implies and this
+  makes concrete.
+- Section 2's honest statement grows one sentence, below.
+
+This is the household analogue of D8: the boundary that does not exist is stated rather
+than implied, and no mechanism is built that would imply otherwise.
 
 ## 4. Rejected
 
@@ -475,14 +558,19 @@ this is the same class of error running the other way.
 | A per-profile data key, and escrow | Follows from the above |
 | A per-profile identity key in `pv/1` | Proves nothing retroactive; mintable in `pv/2` against the ULID `usr` already records (D7) |
 | Per-profile sync scoping | No security gain inside a cluster; costs durability (D5) |
-| A `profile` column instead of a segment directory | Re-examined after D8 and still rejected: makes per-person removal impossible, and makes `pv/2` sharing a line filter rather than a subtree sync (D6) |
+| A `profile` column instead of a segment directory | Re-examined after D8 and D18 and still rejected: makes per-person removal structurally impossible rather than merely local, and makes `pv/2` sharing a line filter rather than a subtree sync (D6) |
 | Enforcement in each app | Partition is only as strong as the worst app, and it fails silently (D2) |
-| A second access-resolution table beside `sys_app_grant` | It already resolves device × app with `*` and most-specific-match; segments filter rows within an app and compose with it (D2) |
+| A second access-resolution table beside `sys_app_grant` | It already resolves device × app with `*` and most-specific-match, and grows a profile subject rather than a sibling; segments filter rows within an app and compose with it (D2) |
 | A seventh framework route prefix for `/profile` | `/settings` already survives solo mode and is already shadow-resolved in the framework's favour; `pair` is a reserved slug, not a top-level route (D3) |
 | A `fullscreen` key in `app.toml` | No such key exists, and a config key describing a UI is what `AGENTS.md` forbids; tier and deployment mode already carry the distinction (D3) |
 | **Forbidding** household members from running nodes | Not the project's call. Recommend thin, state the consequence, let the owner decide (D4) |
 | Rewriting `usr` on existing events and re-syncing | Breaks the `(app, dev, seq)` set-union property; silent divergence with no resolution rule (D9) |
-| Deleting a profile | Append-only; alias instead (D9) |
+| Merging two profiles, by alias or otherwise | Withdrawn to simplify: it charged every read, snapshot and sync head for a rare convenience, and how far the union reached had no obvious answer. An app may read two profiles and show them together (D9) |
+| A ceremony for moving a profile between nodes | D5 already replicates every segment to every node, so there is nothing to move (D11) |
+| A replicated `sys_segment_removed` marker | Would be the first thing instructing a node not to hold data it is entitled to, and stands against `§10.2`'s refusal of a gap. Data that reached a cluster stays there (D18) |
+| Hiding an app a profile may not open | An app that vanishes teaches a household member the node is broken; a message teaches them to switch (D3) |
+| Re-asserting the profile on every reconnect | Correct and unusable: a network blip returns a child to the PIN screen mid-game. The node remembers per device, node-local (D3) |
+| Segmenting `lam` alongside `seq` | `(lam, ts, dev)` could then not order a `_shared` row against a private one, which D14 makes routine (D6) |
 | `[node]-[user]` as a profile ID | Mutable label inside an immutable path (D10) |
 | A mandatory framework header for profile display | Kills solo mode and cannot reach Tier 3 (D3) |
 | Appending per-frame state, at any rate | 20 Hz is thousands of permanent replicated lines per session (D16) |
@@ -493,21 +581,22 @@ this is the same class of error running the other way.
 
 ## 5. Reservations that keep `pv/2` reachable
 
-Reduced from six to four by D7 and D8, then restored to five by what `sys_audit` needs.
+Four. D7 and D8 removed two, `sys_audit` added one, and D2 cashed R4 in `pv/1` rather
+than reserving it.
 
 | # | Reservation | Cost if skipped |
 |---|---|---|
 | R1 | `usr` in the envelope | Historical events are permanently unattributable to a person |
-| R2 | Segment directories rather than a column | `pv/2` sharing becomes a line filter; per-person removal becomes impossible |
+| R2 | Segment directories rather than a column | `pv/2` sharing becomes a line filter rather than a subtree sync; removing one person's data becomes structurally impossible rather than merely local (D18) |
 | R3 | A segment scope parameter on the sync endpoints, even if `pv/1` always passes `*` | `/api/v1/sync/heads`, `pull` and `push` are keyed by `app` and `dev` alone and assume total trust; the shape becomes a one-way door |
-| R4 | `sys_app_grant` resolution written as "resolve subject", not "look up device" | A polymorphic subject becomes a rewrite rather than a column |
-| R5 | `sys_audit.actor` documented as a subject, not as "device ID or `system`" | Every security-relevant act in the household is permanently attributed to a machine rather than a person |
+| R4 | `sys_audit.actor` documented as a subject, not as "device ID or `system`" | Every security-relevant act in the household is permanently attributed to a machine rather than a person |
 
-**R4 is about code shape, not about growing the table.** `spec/protocol.md §14` item 3 is
-explicit that multi-owner "will need a capability model, not an ACL bolted onto
-`sys_app_grant`", and this ADR does not reopen that. What R4 buys is that the *resolution
-function* does not hard-code "the subject is a device", so a capability model can replace
-what it consults without rewriting every caller.
+**The former R4 is gone because D2 spends it.** An earlier revision reserved
+`sys_app_grant` resolution written against a subject rather than a device lookup, against
+the day a profile needed one. D2 gives the profile its column in `pv/1`, so the shape is
+built rather than reserved. `spec/protocol.md §14` item 3 still stands and is still not
+reopened: multi-owner sharing across trust domains needs a capability model, and a third
+column in one owner's own visibility table is not that.
 
 The ephemeral channel's profile-pair addressing (D16) is not listed, because nothing in
 `pv/1` implements the channel and therefore nothing can foreclose it. Its outbound event
@@ -516,8 +605,9 @@ neither touches the wire, so both are reachable from HEAD at any time.
 
 ## 6. Spec changes this implies
 
-**A later phase's work, not Phase 3's.** The rows naming `spec/protocol.md §2.3.1`, `§3`,
-`§4.1`, `§10` and `§14` touch sections `docs/plans/phase-3.md` is editing now.
+**M27's work.** The rows naming `spec/protocol.md §10` and `§4.1` change surface M21 has
+already shipped — the heads shape and three sync routes — and M25 adds three more routes
+with the same keying, so six routes and the heads shape move together or not at all.
 
 | File | Change |
 |---|---|
@@ -525,22 +615,23 @@ neither touches the wire, so both are reachable from HEAD at any time.
 | `spec/protocol.md §2.3.1` | Node admission shows the full-replica consequence (D4) |
 | `spec/protocol.md §3` | Segment level in the storage layout; `_sys` exempt (D6) |
 | `spec/protocol.md §4.1` | `usr` in the envelope; `seq` per `(app, segment, device)` (D6, D7) |
+| `spec/protocol.md §4.3` | `lam` stays per app and is not segmented (D6) |
 | `spec/protocol.md §10` | Heads, pull and push scoped by segment; the segment name validated before a path is built (D6, R3) |
 | `spec/protocol.md §14` | The open questions below appended |
 | `spec/data-api.md §2` | The inbound ephemeral endpoint, and why "Nothing else" still holds (D16) |
 | `spec/data-api.md §3` | An ephemeral SSE event type carrying no `seq` (D16) |
 | `spec/data-api.md §7` | A rate setting for ephemeral messages; no existing `api.*` limit bounds them (D16) |
 | `spec/data-api.md §4` | `/api/node` returns the active profile; `pv.node()` likewise (D3) |
-| `spec/data-dictionary.md §3.5` | `sys_app_grant` resolution restated over a subject (R4) |
-| `spec/data-dictionary.md §3.10` | Six `profile.*` audit kinds; `actor` restated as a subject (D13, R5) |
-| `spec/data-dictionary.md §3` | `sys_profile`, `sys_profile_alias`, `role` (D9, D10, D12) |
+| `spec/data-dictionary.md §3.5` | `sys_app_grant` gains `profile_id`; resolution restated over a subject, with the profile-device-app tie-break (D2) |
+| `spec/data-dictionary.md §3.10` | Six `profile.*` audit kinds; `actor` restated as a subject (D13, R4) |
+| `spec/data-dictionary.md §3` | `sys_profile` and `role`; no alias table (D9, D10, D12) |
 | `spec/app-contract.md §3` | `[tables]` sharing declarations in `app.toml` (D14) |
 | `spec/cli.md §5.1` | New rules appended, never renumbered: `PV1xx` for an undeclared `[tables]` entry, `PV2xx` for an unscoped read, `PV3xx` for a profile affordance a Tier 2 app never offers (D2, D3, D14) |
 | `docs/architecture.md §8` | Rewrite the absent-features entry (D17) |
 | `docs/roadmap.md` | Narrow the not-on-roadmap entry; add profiles and D16 to the open questions (D17) |
 | `docs/deployment.md §2` | Member nodes get the same treatment as a VPS full node, framed as a choice (D4) |
 | `docs/security.md §1` | A household member on this node joins the adversary table (D1, D8) |
-| `docs/security.md §9` | Per-segment removal, and why it is not a hard delete (D6, OQ5) |
+| `docs/security.md §9` | Deleting a segment is local, no peer is told, and a peer that holds it hands it back (D18) |
 | `skills/privatium-security/SKILL.md` | The above, plus Tier 3 exempt from profile scoping (D2) |
 | `skills/privatium-tier3-rust/SKILL.md` | The core's segment scope is a convenience, not a boundary (D2) |
 | `skills/privatium-games/SKILL.md` | The ephemeral channel, once it exists, beside the save-on-boundaries rule (D16) |
@@ -551,43 +642,22 @@ is regenerated by `cargo xtask gen-skill-reference`.
 
 ## 7. Open questions
 
-Reduced from ten to six. Five of the removed were consequences of encryption; OQ6 is new.
+**None outstanding.** The six this record carried are decided, and each is written into the
+decision it belongs to rather than left here:
 
-**OQ1. `lam` under segmented logs.** D6 settles `seq` as per `(app, segment, device)`.
-`lam` is the ordering clock for last-write-wins and is per app today
-(`spec/protocol.md §4.3`). Segmenting it too would prevent `(lam, ts, dev)` from ordering a
-`_shared` row against a private one, so leaving it per app is the working assumption and
-needs stating normatively. The heads exchange carries `seq`, not `lam`, and its shape today
-is `{dev: seq}` for one app and `{slug: {dev: seq}}` without one (`§10.1`); segments extend
-the nested form to `{slug: {segment: {dev: seq}}}`.
+| Was | Now | Where |
+|---|---|---|
+| `lam` under segmented logs | Stays per app; only `seq` is segmented, and heads nest rather than compounding the key | D6 |
+| How deep an alias union goes | Withdrawn — there is no merge and no alias | D9 |
+| Whether `sys_app_grant` gains a profile subject in `pv/1` or `pv/2` | `pv/1`, as a `profile_id` column with a profile-device-app tie-break | D2 |
+| What a member sees when a profile may not open an app | The app stays listed; opening it explains and offers the switcher | D3 part 6 |
+| Per-person removal in practice | No peer is ever told to delete; deletion is local and a peer that holds the segment hands it back | D18 |
+| Where the active profile lives across a reconnect | The node remembers it per device, node-local, and a new handshake resumes it | D3 part 5 |
 
-**OQ2. How deep does an alias union go?** Reads, clearly. Snapshots? Sync heads? Does an
-aliased-away segment still accept writes, or become read-only at the alias event?
-
-**OQ3. Does `sys_app_grant` gain a profile subject in `pv/1` or `pv/2`?** R4 keeps the code
-shape open either way, so this is scheduling, not design — bounded by §14 item 3, which
-rules out growing it into an ACL.
-
-**OQ4. What a member sees when their profile is not the active one.** Resolved in principle:
-an explanatory screen, with a countdown when the reason is a D13 lockout. Open in detail:
-whether the app is hidden from `sys.v_app_nav` (`spec/data-dictionary.md §4`) or shown and
-gated.
-
-**OQ5. Per-person removal in practice.** D6 makes removing a segment possible, but it must
-happen on every node, and a node that is offline at the time will re-sync the segment back
-from a peer on reconnect. Removal therefore needs a replicated `sys_segment_removed` marker
-that peers honour, and that marker is the first thing in the system that instructs a node to
-*not* hold data it is entitled to. It also sits directly against `spec/protocol.md §10.2`,
-which requires a receiver to refuse a gap rather than skip it: a removed segment is a gap
-every peer must agree to stop asking about. Worth designing carefully; it is the one place
-this ADR touches the edge of the append-only invariant.
-
-**OQ6. Where the active profile lives across a reconnect.** From D3 part 5. A WebSocket
-session is the connection (`§8.3`) and a new connection is a new handshake authenticating
-`dev` alone. Re-asserting the profile per connection is safer; remembering the last profile
-per device is friendlier and means a dropped connection does not throw a child back to the
-PIN screen mid-game. This interacts with D16, where a reconnect during play must not change
-who the player is.
+Two things are deliberately left to the milestone rather than decided here, because both
+are values rather than shapes and neither forecloses anything: the default rate limit for
+D16's ephemeral endpoint, and the PIN's own length and character rules. `spec/data-api.md
+§7`'s table is where the first lands.
 
 ## Would reopen if
 

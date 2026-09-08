@@ -180,6 +180,34 @@ ordinary cluster member.
 - [ ] Destroying and rebuilding the VPS node loses nothing
 - [ ] Nothing in the codebase distinguishes it from any other node
 
+## Phase 3c — Household profiles
+
+**Deliverable:** the people in one home each get their own view of an app, behind an
+optional PIN, and an app can exchange fast-moving state between devices without writing it
+to the log.
+
+Scope: profiles as a partition, segment directories under each app, `usr` in the envelope,
+shared tables declared in `app.toml`, and an ephemeral message channel for apps that update
+many times a second — a racing game's positions, not its results.
+
+Decided in `docs/decisions/0007-household-profiles.md`. Planned in
+`docs/plans/phase-3.md`.
+
+**What it is not.** Profiles are not accounts and never hide anything from someone holding
+the node's files. There is no profile merge. **No node is ever told to delete data:** a
+segment can be deleted locally, and a peer that still holds it will hand it back. That is
+the price of sharing a cluster, and the interface says so rather than implying otherwise.
+
+**Done when:**
+- [ ] Two profiles on one node cannot read each other's rows, in Tier 1 and Tier 2 alike
+- [ ] An app hidden from a profile by `sys_app_grant` explains itself and offers the switcher
+- [ ] A profile's data can be deleted from a node without rewriting any log
+- [ ] A table declared `shared` is readable and writable by every profile
+- [ ] A PIN locks out after 5 attempts and every attempt is audited
+- [ ] Solo mode still renders no framework chrome, and the switcher is still reachable
+- [ ] A dropped connection resumes the same profile without a PIN prompt
+- [ ] Two devices exchange 20 messages a second with no line appended to any log
+
 ## Phase 4 — Native shells
 
 **Deliverable:** installable desktop app, and Android and iOS apps.
@@ -337,9 +365,14 @@ library (`docs/decisions/0004 §2`).
 
 ## Explicitly not on the roadmap
 
-Multi-user sharing, an app registry, a plugin API, cloud hosting, a mobile SDK for third
-parties, and a hosted sync relay. Each of these turns a personal tool into a service, which
-is the thing this project exists to avoid.
+Multi-user sharing **as a hosted service**, an app registry, a plugin API, cloud hosting, a
+mobile SDK for third parties, and a hosted sync relay. Each of these turns a personal tool
+into a service, which is the thing this project exists to avoid.
+
+Sharing between two households is a different thing, and it is not excluded — it needs
+identities that can be proved, so it waits for `pv/2`
+(`docs/decisions/0007-household-profiles.md`). Household profiles on one node are Phase 3c
+below.
 
 And no `doctor` subcommand. Failures should be detected and explained where they occur.
 

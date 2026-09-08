@@ -327,7 +327,7 @@ different. Use it when you are shipping *your app* rather than *a node that runs
 
 | Not doing | Why |
 |---|---|
-| Multi-user accounts | Single-owner is the product. Sharing is a future protocol version, not a v1 feature bolted on. |
+| Multi-user accounts | Still absent, and the word *account* stays wrong. Household profiles are coming as a partition, and real multi-user is deferred to `pv/2`. See below. |
 | A server, or a primary node | Every node is a peer. An always-on node is a peer that happens to be reachable. If a "server" role appears in an implementation, that is a defect. |
 | A discovery registry | pkarr rides the mainline DHT. Nothing to bootstrap, nobody to operate it, nothing to register. |
 | A dedupe table for the outbox | ULIDs make replay idempotent. Adding one signals a misreading of the merge rule. |
@@ -339,6 +339,38 @@ different. Use it when you are shipping *your app* rather than *a node that runs
 | A charting library in the framework | Anything real is Tier 2, where you pick your own. See `docs/frameworks.md`. |
 | An opinion about your front end | The framework serves your `web/` directory and gets out of the way. |
 | Cloudflare Tunnel automation | Documented, not implemented. Requires a domain on their DNS; the value/maintenance ratio is poor. |
+
+### On multi-user, and what is reserved for it
+
+The first row above changed, so here is the whole picture in one place.
+
+**Household profiles** let the people in one home keep out of each other's data inside an
+app — a partition, chosen at a screen that can ask for a PIN. They are not accounts, and
+the documentation must never call them that. Anyone who can read the node's files can read
+everyone's data, because `data/` is plain text by design and every node holds the cluster
+key. That is the same deal a family NAS offers, and it is stated rather than implied.
+
+**Real multi-user — separate people, provable to each other — is `pv/2`.** It needs
+identities that can be authenticated, not just a partition key, and that is a protocol
+major version rather than a feature.
+
+Four things are reserved in `pv/1` so `pv/2` stays reachable. They look unused, and they
+are load-bearing. **Do not remove them as scope creep:**
+
+1. `usr` in the event envelope — without it, events already written can never be
+   attributed to a person.
+2. Segment directories rather than a `profile` column — with a column, one person's rows
+   are interleaved with everyone else's, so removing them would mean rewriting a log and
+   is never possible at all.
+3. A segment scope on the sync endpoints.
+4. `sys_audit.actor` as a subject rather than a device.
+
+One thing profiles deliberately do **not** get: a way to tell other nodes to delete
+something. A segment can be deleted on a node, and a peer that still holds it will send it
+back at the next sync. Data that reached a cluster stays in that cluster.
+
+`docs/decisions/0007-household-profiles.md` decides all of this and explains each one.
+Read it before changing anything in the list.
 
 ---
 

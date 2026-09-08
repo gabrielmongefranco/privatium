@@ -7,8 +7,9 @@ Modified: 2026-09-07
 Summary:  Implementation plan for Phase 3 — more than one node: node admission over the
           pairing handshake, certificate renewal on sync, the sync protocol over the Phase
           2 channel, the foreign-log receiver, multi-writer materialization, logs that
-          arrive by file sync, endpoint failover, attachments, and the always-on node of
-          Phase 3b. Non-normative. Where this plan and spec/ disagree, spec/ wins and this
+          arrive by file sync, endpoint failover, attachments, the always-on node of
+          Phase 3b, and the household profiles of Phase 3c.
+          Non-normative. Where this plan and spec/ disagree, spec/ wins and this
           file is wrong. See main README.md for full license information.
 -->
 
@@ -70,6 +71,12 @@ endpoint candidate list and failover of `§10.4`; discovery filtered to the clus
 `cl`; logs that arrive by file sync; the `animals` live demo; attachments
 (`docs/roadmap.md` Phase 3, `spec/protocol.md §14` item 8); `privatium pair --join`; the
 always-on node's documentation; `--version` claiming `pv/1 (partial: phase 3)`.
+
+**Phase 3c, added after M21 landed:** household profiles as a partition, segment
+directories under each app, `usr` in the envelope, shared tables declared in `app.toml`,
+and an ephemeral message channel for apps that update many times a second. Decided in
+`docs/decisions/0007-household-profiles.md`, whose §7 records that nothing is left open;
+the milestone is M27.
 
 ### Out — do not implement, do not stub, do not leave TODOs referencing
 
@@ -540,6 +547,14 @@ logical types to controls (`spec/data-dictionary.md §2`).
   snapshot is a cache of tables, and a blob is already immutable and self-verifying.
   In the backup by being under `data/`; `restore --from` copies blobs this node lacks,
   verifying each, and a mismatch refuses that blob by name while the rest proceed.
+  **`blob/` sits beside `log/` at the app level, above the profile segments of
+  `docs/decisions/0007-household-profiles.md` D6, and stays there.** A blob is named by its
+  own hash, so two people who attach the same file share one copy; per-segment blobs would
+  give up that deduplication and would still not isolate anything, since the hash is the
+  name. The consequence has to be written down rather than discovered later: removing a
+  profile's segment removes its events and **not** the blobs they referenced. Reclaiming
+  those is the garbage collection this milestone already defers, and `§14` item 8 is where
+  it is asked. `§4.7` says both sentences.
 - **Reference.** A JSON object in `d`: `{"sha256":"<hex>","type":"image/png","bytes":
   1234,"name":"receipt.png"}`. `spec/data-dictionary.md §2` gains the logical type
   `attachment` — declared `JSON`, stored as text, the scaffold's control `input
@@ -1534,6 +1549,58 @@ and `test_spec_2_3_2_a_device_pinned_to_the_cluster_reaches_an_unmet_node`.
 
 ---
 
+### M27 — Phase 3c: household profiles
+
+Scope, decided in `docs/decisions/0007-household-profiles.md`: profiles as a partition
+(D1–D3), framework-level scoping that composes with `sys_app_grant` rather than
+duplicating it, with the grant gaining a `profile_id` (D2), segment directories under each
+app with `_sys` exempt (D6), `usr` in the envelope (D7), PIN policy translated from `§7.5`
+(D13), `[tables]` sharing declarations (D14), the ephemeral message channel as two
+additions to the data API (D16), and the removal posture of D18. The ADR's §6 lists every
+document each of those edits, and its §7 records that nothing is left open.
+
+**There is no profile merge.** D9 and D11 are withdrawn. Two profiles that turn out to be
+one person stay two profiles; an app that wants them together reads both. Nothing here
+implements an alias, a `sys_profile_alias` table, or a union at read time.
+
+**No node is ever told to delete data** (D18). A segment can be deleted locally; a peer
+that still holds it hands it back at the next pass. Do not add a `sys_segment_removed`
+marker, and do not let the interface claim a deletion is cluster-wide.
+
+Five facts already settled, so none is relitigated:
+
+- **`lam` stays per app; only `seq` is segmented** (D6). `seq` becomes per
+  `(app, segment, device)`; `§4.3` is amended to say `lam` does not follow it, because
+  `(lam, ts, dev)` has to order a `_shared` row against a private one.
+- **The heads shape needs a nesting level, not a compound key.** Folding the segment into
+  the outer key as `"<slug>/<segment>"` was considered and refused: `validate_destination`
+  in `log/foreign.rs` admits `_sys` or a valid unreserved slug, and `§1.1`'s slug pattern
+  has no `/`. Permitting one would loosen the guard that keeps a path separator out of a
+  name used to build a path, which is the wrong direction for `§10.2`'s validation rule.
+  `{slug: {dev: seq}}` becomes `{slug: {segment: {dev: seq}}}`.
+- **The wire cost is real and already partly paid.** M21 shipped the heads shape and three
+  routes keyed `?app=&dev=`; M25 adds three more. Six routes and the heads shape change
+  together, or not at all.
+- **`blob/` stays above the segment** (M25), so deleting a segment does not delete its
+  attachments. That is the same GC question `§14` item 8 already defers.
+- **The active profile is remembered per device, node-local, in `local/state.jsonl`** (D3
+  part 5), never an event and never synced. A new handshake resumes it with no PIN;
+  choosing a different profile asks for that profile's PIN.
+
+**Order.** The envelope field and the segment path first, because later events depend on
+them; then materialization and query scoping; then the grant's `profile_id`, the PIN
+screen, the switcher under `/settings/profile` and `/api/node`; then `[tables]`; then the
+ephemeral channel, which touches nothing the others touch and could equally go first.
+
+**Two values this milestone chooses**, both left open by the ADR deliberately because
+neither forecloses anything: the default rate limit for the ephemeral endpoint, which joins
+`spec/data-api.md §7`'s table, and the PIN's length and character rules.
+
+**Documentation:** the ADR's §6 table in full, `skills/` regenerated in the same change,
+and this plan's §3 gaining a row per spec edit as the milestone meets it.
+
+---
+
 ### Hardening after M26
 
 Phase 1 needed four rounds and Phase 2 one; expect at least one here. The review reads
@@ -1542,7 +1609,10 @@ and `log/foreign.rs` against OWASP ASVS 5.0 V2, V9 and V12, the admission state 
 of §2.1 under concurrency and against `§7.5`'s limits, the blob routes against V12, the
 receiver against a peer that lies about `seq`, `dev`, lengths and hashes, and the engine
 against a peer that answers slowly, partially, or forever. Fix the spec in the same PR,
-as always, and record the round here with its rows.
+as always, and record the round here with its rows. M27 lands after this round and earns
+its own: profile scoping is an authorization boundary in the framework's read path, the
+grant's three-way resolution is where a wrong precedence shows the wrong person's rows, and
+`AGENTS.md`'s fail-closed rule is what both have to be read against.
 
 ---
 
@@ -1680,6 +1750,7 @@ cluster binding, if one is ever wanted, is a `pv/2` question beside `§14` item 
 | 54 | `m25-attachments` | M24 | rows 22, 23, 32 |
 | 55 | `m26-always-on` | M25 | rows 28, 29; roadmap: tick Phase 3 and 3b |
 | 56 | `phase3-hardening` | M26 | as found |
+| 57 | `m27-profiles` | M26, and the hardening round after it | ADR 0007 §6 in full |
 
 Cluster succession (§2.14) is a separate follow-up after M21; its PR number and final
 spec rows are assigned when that milestone is planned.
