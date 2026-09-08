@@ -1,11 +1,14 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/devices.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-06  |  Modified: 2026-09-07
+// Created:  2026-09-06  |  Modified: 2026-09-08
 // Summary:  The devices page and the code page (spec/protocol.md §7.1, §7.2, §9.2;
 //           spec/data-dictionary.md §3.2) — a window for devices or for a node — and the
-//           owner's part of the node page: the display-name form, the join form
-//           (§2.3.1), this node's standing, and the nodes discovered on the network as
-//           peers and strangers (§6.1), by ID. Every label, user agent and display name
+//           owner's part of the node page: the display-name cell with the pencil that
+//           edits it in place, the join form (§2.3.1), this node's standing, and the nodes
+//           discovered on the network as peers and strangers (§6.1), by ID — each named
+//           once, since a space with no display name advertises its own ID as its name.
+//           The code is shown in both renderings, words first (§7.2). Every label, user
+//           agent and display name
 //           is a device's or the owner's text and is escaped on the way into the page;
 //           the forms appear for the owner alone.
 //           See main README.md for full license information.
@@ -28,13 +31,20 @@ struct DeviceRow {
     paired_at: Option<String>,
     last_seen_at: Option<String>,
     user_agent: Option<String>,
+    /// `sys_node.display_name` for a device that is also a space in this store, so the
+    /// row can name it the way the discovered-spaces lists do.
+    display_name: Option<String>,
 }
 
 fn active_devices(cx: &Context<'_>) -> Result<Vec<DeviceRow>> {
     query(
         cx.node,
-        "SELECT id, kind, replica, label, paired_at, last_seen_at, user_agent \
-         FROM v_device_active ORDER BY id",
+        &format!(
+            "SELECT d.id, d.kind, d.replica, d.label, d.paired_at, d.last_seen_at, \
+             d.user_agent, n.display_name \
+             FROM v_device_active d LEFT JOIN {} n ON n.id = d.id ORDER BY d.id",
+            sys::NODE
+        ),
         |row| {
             Ok(DeviceRow {
                 id: row.get(0)?,
@@ -44,6 +54,7 @@ fn active_devices(cx: &Context<'_>) -> Result<Vec<DeviceRow>> {
                 paired_at: row.get(4)?,
                 last_seen_at: row.get(5)?,
                 user_agent: row.get(6)?,
+                display_name: row.get(7)?,
             })
         },
     )
@@ -157,7 +168,7 @@ pub fn page(cx: &Context<'_>, body: &mut String) -> Result<()> {
         };
         let _ = writeln!(
             body,
-            "<tr role=\"row\"><td role=\"cell\"><span class=\"pv-cell-label\" aria-hidden=\"true\">Device</span>{} <code>{id}</code>{}</td>\
+            "<tr role=\"row\"><td role=\"cell\"><span class=\"pv-cell-label\" aria-hidden=\"true\">Device</span>{} <code>{id}</code>{}{}</td>\
              <td role=\"cell\"><span class=\"pv-cell-label\" aria-hidden=\"true\">Kind</span>{}</td>\
              <td role=\"cell\"><span class=\"pv-cell-label\" aria-hidden=\"true\">Replica</span>{}</td>\
              <td role=\"cell\"><span class=\"pv-cell-label\" aria-hidden=\"true\">Label</span>{label_cell}</td>\
@@ -170,6 +181,7 @@ pub fn page(cx: &Context<'_>, body: &mut String) -> Result<()> {
             } else {
                 icon("phone")
             },
+            found_name(&row.id, row.display_name.as_deref().unwrap_or("")),
             if this_node {
                 " <span class=\"pv-badge pv-badge-ok\">this space</span>"
             } else {
@@ -250,7 +262,7 @@ pub fn pairing_card(
             out,
             "<p>On the other space, run <strong><code>privatium pair --join {url}</code></strong> \
              in a terminal — or open its Space settings and use <em>Join a cluster</em> with \
-             this address — then type the two words, or the four emoji labels, shown here. \
+             this address — then type the two words shown here, or the four emoji labels. \
              Whichever space is new joins the other's cluster.</p>",
             url = escape(&window.url)
         );
@@ -258,7 +270,7 @@ pub fn pairing_card(
         let _ = writeln!(
             out,
             "<p>On the other device, open <strong><code>{url}</code></strong> — or scan the code — \
-             then tap the four emoji shown here, or type the two words.</p>",
+             then type the two words shown here, or tap the four emoji.</p>",
             url = escape(&window.url)
         );
     }
@@ -279,7 +291,15 @@ pub fn pairing_card(
             );
         }
     }
-    out.push_str("<div class=\"pv-code\"><h4>Tap these four emoji</h4>\n<ol class=\"pv-glyphs\">");
+    // Both renderings are shown, always (`spec/protocol.md §7.2`), words first: the words
+    // are the rendering a screen reader and a telephone can both carry, and the pad is the
+    // one that needs no reading. The order is the same here and on the connect screen.
+    let _ = write!(
+        out,
+        "<div class=\"pv-code\"><h4>Type these two words</h4>\n<p class=\"pv-words\">{} {}</p>\n\
+         <h4>Or tap these four emoji</h4>\n<ol class=\"pv-glyphs\">",
+        window.words[0], window.words[1]
+    );
     for (glyph, label) in window.emoji.iter().zip(window.labels.iter()) {
         let _ = write!(
             out,
@@ -287,11 +307,7 @@ pub fn pairing_card(
              <span class=\"pv-glyph-label\">{label}</span></li>"
         );
     }
-    let _ = writeln!(
-        out,
-        "</ol>\n<h4>Or type these two words</h4>\n<p class=\"pv-words\">{} {}</p></div>\n</div>",
-        window.words[0], window.words[1]
-    );
+    out.push_str("</ol></div>\n</div>\n");
     match consumed {
         Some(device) => {
             let name = device_label(cx, device)?;
@@ -357,27 +373,83 @@ fn device_label(cx: &Context<'_>, device: &str) -> Result<Option<String>> {
     }
 }
 
-/// The owner's part of the node page: the display-name form (`spec/protocol.md §6.1`),
-/// this node's standing in its cluster (`§2.3.1`, `§2.3.4`), the join form (`§2.3.1`),
-/// and the nodes discovered on this network as the cluster's peers and as strangers,
-/// keyed by ID (`§6.1`, `Node::peers`, `Node::strangers`).
-pub fn node_section(cx: &Context<'_>, display_name: Option<&str>, body: &mut String) {
-    if cx.owner {
-        let action = "/settings/name";
-        let _ = writeln!(
-            body,
-            "<form method=\"post\" action=\"{action}\">{}\
-             <label for=\"display-name\">Display name</label>\
-             <input id=\"display-name\" name=\"display_name\" maxlength=\"{}\" value=\"{}\" \
-             autocomplete=\"off\">\
-             <button type=\"submit\" class=\"pv-btn pv-btn-primary\">Save name</button>\
-             <p class=\"pv-help\">Shown to your other devices when they look for this space. Leave \
-             it empty to show the Space ID instead.</p></form>",
-            cx.csrf.field(action),
-            crate::registry::DISPLAY_NAME_MAX,
-            escape(display_name.unwrap_or(""))
-        );
+/// The machine's own name, when the platform hands it over without a system call:
+/// `COMPUTERNAME` on Windows, `HOSTNAME` where the environment carries it, else the first
+/// line of `/etc/hostname`. Trailing domain parts are kept; control characters and
+/// surrounding space are not. `None` where none of the three answers, which is the
+/// ordinary case on macOS.
+///
+/// This fills the settings page alone. What this space calls itself on the network is
+/// still `sys_node.display_name` or the Node ID (`spec/protocol.md §6.1`): a machine name
+/// the owner never chose is a poor thing to broadcast, and reading one here does not make
+/// it one.
+#[must_use]
+pub fn machine_name() -> Option<String> {
+    let from_env = std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .ok();
+    let raw = match from_env {
+        Some(name) => name,
+        None => std::fs::read_to_string("/etc/hostname").ok()?,
+    };
+    let cleaned: String = raw
+        .lines()
+        .next()
+        .unwrap_or("")
+        .chars()
+        .filter(|c| !c.is_control())
+        .collect();
+    let cleaned = cleaned.trim();
+    (!cleaned.is_empty()).then(|| cleaned.to_owned())
+}
+
+/// The Display name cell of the node page, escaped and ready to place: the name the owner
+/// set, else this machine's name marked as the stand-in it is, else `(not set)`.
+#[must_use]
+pub fn display_name_value(stored: Option<&str>, machine: Option<&str>) -> String {
+    match (stored, machine) {
+        (Some(name), _) => escape(name),
+        (None, Some(machine)) => format!(
+            "{} <span class=\"pv-muted\">— this computer's name, until you set one</span>",
+            escape(machine)
+        ),
+        (None, None) => "<span class=\"pv-muted\">(not set)</span>".to_owned(),
     }
+}
+
+/// The Display name cell with the owner's pencil beside it: a disclosure whose summary is
+/// the pencil and whose content is the naming form, so the name is edited where it is read
+/// rather than in a second form further down the page. A session that is not the owner
+/// sees the value alone.
+pub fn display_name_cell(cx: &Context<'_>, stored: Option<&str>) -> String {
+    let value = display_name_value(stored, machine_name().as_deref());
+    if !cx.owner {
+        return value;
+    }
+    let action = "/settings/name";
+    format!(
+        "{value} <details class=\"pv-name-edit\"><summary aria-label=\"Edit display name\" \
+         title=\"Edit display name\">{pencil}</summary>\
+         <form method=\"post\" action=\"{action}\">{token}\
+         <label for=\"display-name\" class=\"pv-visually-hidden\">Display name</label>\
+         <input id=\"display-name\" name=\"display_name\" maxlength=\"{max}\" value=\"{current}\" \
+         autocomplete=\"off\">\
+         <button type=\"submit\" class=\"pv-btn pv-btn-primary\">Save name</button>\
+         <p class=\"pv-help\">Shown to your other devices when they look for this space. Leave \
+         it empty to show the Space ID instead.</p></form></details>",
+        pencil = icon("pencil"),
+        token = cx.csrf.field(action),
+        max = crate::registry::DISPLAY_NAME_MAX,
+        current = escape(stored.unwrap_or("")),
+    )
+}
+
+/// The owner's part of the node page: this node's standing in its cluster (`§2.3.1`,
+/// `§2.3.4`), the join form (`§2.3.1`), and the nodes discovered on this network as the
+/// cluster's peers and as strangers, keyed by ID (`§6.1`, `Node::peers`,
+/// `Node::strangers`). The display name is edited in its own cell above
+/// (`display_name_cell`).
+pub fn node_section(cx: &Context<'_>, body: &mut String) {
     standing_section(cx, body);
     if cx.owner {
         join_form(cx, body);
@@ -497,6 +569,17 @@ fn join_form(cx: &Context<'_>, body: &mut String) {
     );
 }
 
+/// A space as a line names it: the ID, then the display name when there is one. A space
+/// with no display name advertises its Node ID as its name (`spec/protocol.md §6.1`), so
+/// printing both unconditionally would print the ID twice.
+fn found_name(id: &str, name: &str) -> String {
+    if name == id || name.trim().is_empty() {
+        String::new()
+    } else {
+        format!(" {}", escape(name))
+    }
+}
+
 fn found_list(body: &mut String, found: &[crate::Discovered]) {
     body.push_str("<ul class=\"pv-found\">\n");
     for seen in found {
@@ -506,12 +589,16 @@ fn found_list(body: &mut String, found: &[crate::Discovered]) {
             .map(|ip| format!("http://{}", std::net::SocketAddr::new(*ip, seen.port)));
         let _ = writeln!(
             body,
-            "<li>{} <code>{}</code> {} — {} — pairing {}</li>",
+            "<li>{} <code>{}</code>{} — {} — {}</li>",
             icon("hdd-network"),
             escape(&seen.id),
-            escape(&seen.name),
+            found_name(&seen.id, &seen.name),
             address.map_or_else(|| "no address yet".to_owned(), |a| code(&a)),
-            if seen.pair { "open" } else { "closed" }
+            if seen.pair {
+                "accepting new devices now"
+            } else {
+                "not accepting new devices"
+            }
         );
     }
     body.push_str("</ul>\n");

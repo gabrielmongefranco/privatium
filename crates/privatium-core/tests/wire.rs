@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/wire.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-07
+// Created:  2026-09-03  |  Modified: 2026-09-08
 // Summary:  core::handle against spec/protocol.md §9 and ADR 0003 — every route reachable
 //           with no listener, the headers of §9.3 on every response, nothing leaked
 //           unauthenticated (§9.2), solo mode at `/` with the framework prefixes winning
@@ -865,7 +865,7 @@ async fn test_settings_pages_render_the_node() {
     let node_page = body_of(handler.handle(get("/settings")).await).await;
     assert!(node_page.contains(&id), "{node_page}");
     assert!(node_page.contains("pv/1"), "{node_page}");
-    assert!(node_page.contains("host —"), "{node_page}");
+    assert!(node_page.contains(">host<"), "{node_page}");
     assert!(node_page.contains("No alerts"), "{node_page}");
 
     let apps_page = body_of(handler.handle(get("/settings/apps")).await).await;
@@ -877,7 +877,7 @@ async fn test_settings_pages_render_the_node() {
         "not in the vendored Bootstrap Icons set",
         "Not loaded at startup",
         "<code>broken</code>",
-        "tier 3 — full replay",
+        "web (web app)",
         "no schema.sql — the event log is the store",
     ] {
         assert!(apps_page.contains(expected), "{expected}\n{apps_page}");
@@ -889,9 +889,10 @@ async fn test_settings_pages_render_the_node() {
         "{data_page}"
     );
     assert!(
-        data_page.contains("Copy the <code>data</code> folder"),
-        "{data_page}"
+        data_page.contains("simply copy the <a href=\"file:///"),
+        "the data folder is a link: {data_page}"
     );
+    assert!(data_page.contains(">Backup and Restore</a>"), "{data_page}");
 
     let devices = body_of(handler.handle(get("/settings/devices")).await).await;
     assert!(devices.contains(&id), "{devices}");

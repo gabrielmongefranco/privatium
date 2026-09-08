@@ -1,9 +1,10 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/pairing.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-06
+// Created:  2026-09-05  |  Modified: 2026-09-08
 // Summary:  The data-free browser bootstrap (§8.4) with the pairing screen inside it (§7.2,
-//           §7.7): the sixteen-glyph pad with a label beneath every glyph, the word field
-//           beside it, and the status region the three outcomes are said in. The markup is
+//           §7.7): the word field first, then the sixteen-glyph pad with a label beneath
+//           every glyph, and the status region the three outcomes are said in. Both
+//           renderings of the code are always offered (§7.2). The markup is
 //           rendered here so the PV4xx checks hold it; client.js shows it when the browser
 //           holds no pairing and wires it, and a <noscript> browser never reaches it.
 //           See main README.md for full license information.
@@ -60,9 +61,13 @@ fn pairing_screen(out: &mut String, node: &str, name: &str) {
         out,
         "<section id=\"pv-pair\" hidden aria-labelledby=\"pv-pair-title\">\n\
          <h2 id=\"pv-pair-title\">Pair this device with {} <code>{}</code></h2>\n\
-         <p>Read the pairing code from the space's screen. Tap its four emoji here, in order, or \
-         type its two words.</p>\n\
-         <div class=\"pv-pad\" role=\"group\" aria-label=\"Emoji pad\">\n",
+         <p>Read the pairing code from the space's screen. Type its two words here, or tap its \
+         four emoji in order.</p>\n\
+         <form id=\"pv-pair-form\" method=\"post\" action=\"#\">\n\
+         <label for=\"pv-words\">Type the two words</label>\n\
+         <input id=\"pv-words\" name=\"words\" autocomplete=\"off\" autocapitalize=\"none\" \
+         spellcheck=\"false\" placeholder=\"amber otter\">\n\
+         <div class=\"pv-pad\" role=\"group\" aria-label=\"Or tap the four emoji\">\n",
         escape(name),
         escape(node)
     );
@@ -79,10 +84,6 @@ fn pairing_screen(out: &mut String, node: &str, name: &str) {
          <p class=\"pv-chosen\">Chosen: <output id=\"pv-chosen\" aria-live=\"polite\">none yet</output> \
          <button type=\"button\" id=\"pv-undo\" class=\"pv-btn\">Remove last</button> \
          <button type=\"button\" id=\"pv-clear\" class=\"pv-btn\">Clear</button></p>\n\
-         <form id=\"pv-pair-form\" method=\"post\" action=\"#\">\n\
-         <label for=\"pv-words\">Or type the two words</label>\n\
-         <input id=\"pv-words\" name=\"words\" autocomplete=\"off\" autocapitalize=\"none\" \
-         spellcheck=\"false\" placeholder=\"amber otter\">\n\
          <label for=\"pv-label\">Name this device (optional)</label>\n\
          <input id=\"pv-label\" name=\"label\" maxlength=\"80\" autocomplete=\"off\">\n\
          <button type=\"submit\" id=\"pv-pair-submit\" class=\"pv-btn pv-btn-primary\">Pair</button>\n\

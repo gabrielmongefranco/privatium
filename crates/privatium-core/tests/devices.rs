@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/devices.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-06  |  Modified: 2026-09-07
+// Created:  2026-09-06  |  Modified: 2026-09-08
 // Summary:  The owner's surfaces through core::handle: the pairing API of spec/protocol.md
 //           §9.2 and the manifest's pair flag, the code page with the §7.7 disclosure, the
 //           devices page with its label and revoke forms, the display-name form of §6.1,
@@ -649,7 +649,7 @@ async fn test_settings_node_display_name_is_set_by_the_owner_and_reaches_the_man
     let h = handler(&root);
     let id = h.node().lock().unwrap().id().as_str().to_owned();
     let page = body_of(h.handle(owner(Method::GET, "/settings")).await).await;
-    assert!(page.contains("<label for=\"display-name\">"), "{page}");
+    assert!(page.contains("<label for=\"display-name\" "), "{page}");
     assert!(page.contains("Your other spaces on this network"), "{page}");
     assert!(page.contains("<label for=\"join-url\">"), "{page}");
     assert!(page.contains("http://"), "the LAN URL is on the page");
@@ -715,6 +715,129 @@ async fn test_settings_node_display_name_is_set_by_the_owner_and_reaches_the_man
         node.identity().public_key_base64(),
         "the rest of the row survives"
     );
+}
+
+// ---------------------------------------------------------------------------------------
+// The settings page's own wording
+// ---------------------------------------------------------------------------------------
+
+/// The Display name cell falls back to the machine's name where the owner has set none,
+/// and says `(not set)` where the platform hands no name over. The stored name always
+/// wins, and every one of the three is escaped.
+#[test]
+fn test_settings_display_name_falls_back_to_the_machine_name() {
+    use privatium_core::http::devices::{display_name_value, machine_name};
+
+    assert_eq!(display_name_value(Some("Study"), Some("laptop")), "Study");
+    assert_eq!(
+        display_name_value(Some("<b>x</b>"), None),
+        "&lt;b&gt;x&lt;/b&gt;"
+    );
+    let fallback = display_name_value(None, Some("kitchen-<pc>"));
+    assert!(fallback.starts_with("kitchen-&lt;pc&gt; "), "{fallback}");
+    assert!(fallback.contains("this computer's name"), "{fallback}");
+    assert_eq!(
+        display_name_value(None, None),
+        "<span class=\"pv-muted\">(not set)</span>"
+    );
+
+    // Whatever this machine answers, it is one non-empty line with no control characters.
+    if let Some(name) = machine_name() {
+        assert!(!name.is_empty());
+        assert!(!name.chars().any(char::is_control), "{name}");
+        assert_eq!(name.trim(), name, "{name}");
+    }
+}
+
+/// The node page renders the Display name cell with the owner's pencil beside it and the
+/// naming form inside the disclosure, and shows the fallback rather than the Space ID
+/// while no name is set. A session that is not the owner gets the value and no form.
+#[tokio::test]
+async fn test_settings_display_name_is_edited_in_place() {
+    use privatium_core::http::devices::{display_name_value, machine_name};
+
+    let root = tempfile::tempdir().unwrap();
+    let h = handler(&root);
+    let page = body_of(h.handle(owner(Method::GET, "/settings")).await).await;
+    assert!(
+        page.contains("<summary aria-label=\"Edit display name\""),
+        "{page}"
+    );
+    assert!(page.contains("class=\"pv-name-edit\""), "{page}");
+    assert!(
+        page.contains(&display_name_value(None, machine_name().as_deref())),
+        "{page}"
+    );
+    assert!(
+        !page.contains("the Space ID stands in for it"),
+        "the old wording is gone: {page}"
+    );
+    assert_clean("node page, unnamed", &page);
+}
+
+/// The Devices table names a space by its ID and its display name, in the shape the
+/// discovered-space lists use — and prints the ID once where there is no display name,
+/// which is what a space with no name advertises as its own (`spec/protocol.md §6.1`).
+#[tokio::test]
+async fn test_settings_devices_show_the_id_and_the_display_name() {
+    let root = tempfile::tempdir().unwrap();
+    let h = handler(&root);
+    with_device(&h, "Pixel 9", "synthetic agent");
+
+    let page = body_of(h.handle(owner(Method::GET, "/settings/devices")).await).await;
+    let cell = format!("<code>{DEVICE}</code>");
+    assert_eq!(
+        page.matches(&cell).count(),
+        1,
+        "the ID is printed once while the space has no display name: {page}"
+    );
+
+    {
+        let mut node = h.node().lock().unwrap();
+        node.sys_log_mut()
+            .put(sys::NODE, DEVICE, &json!({ "display_name": "Kitchen" }))
+            .unwrap();
+        node.refresh().unwrap();
+    }
+    let page = body_of(h.handle(owner(Method::GET, "/settings/devices")).await).await;
+    assert!(page.contains(&format!("{cell} Kitchen")), "{page}");
+    assert_clean("devices page, named space", &page);
+}
+
+/// `spec/protocol.md §7.2` — both renderings are shown, and the words come first: on the
+/// space's own code page, and on the connect screen where they are typed and tapped.
+#[tokio::test]
+async fn test_spec_7_2_both_renderings_with_the_words_first() {
+    let root = tempfile::tempdir().unwrap();
+    let h = handler(&root);
+    assert_eq!(
+        h.handle(form(&h, "/settings/devices/pair", ""))
+            .await
+            .status(),
+        StatusCode::SEE_OTHER
+    );
+    let window = h.node().lock().unwrap().pairing().unwrap().code();
+    let page = body_of(
+        h.handle(owner(Method::GET, "/settings/devices/pairing"))
+            .await,
+    )
+    .await;
+    let words = page.find("Type these two words").expect("the words");
+    let emoji = page.find("Or tap these four emoji").expect("the emoji");
+    assert!(words < emoji, "words before emoji: {page}");
+    for word in window.words() {
+        assert!(page.contains(word), "{word} is shown");
+    }
+    for glyph in window.glyphs() {
+        assert!(page.contains(glyph.glyph), "glyph {}", glyph.label);
+    }
+    assert_clean("pairing page, open", &page);
+
+    let connect = body_of(h.handle(lan_html("/")).await).await;
+    let words = connect.find("id=\"pv-words\"").expect("the word field");
+    let pad = connect.find("class=\"pv-pad\"").expect("the pad");
+    assert!(words < pad, "the word field before the pad: {connect}");
+    assert_clean("connect screen", &connect);
 }
 
 // ---------------------------------------------------------------------------------------

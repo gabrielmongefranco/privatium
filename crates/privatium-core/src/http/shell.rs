@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium-core/src/http/shell.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-06
+// Created:  2026-09-03  |  Modified: 2026-09-08
 // Summary:  The framework's own pages — launcher, settings, errors — as server-rendered
 //           HTML with HTMX and inlined Bootstrap Icons (docs/architecture.md §2.5,
 //           docs/icons.md). No client framework, no bundler, no inline script or style:
@@ -17,7 +17,6 @@ use crate::config::Mode;
 use crate::http::csrf::Csrf;
 use crate::icons::{escape, icon};
 use crate::lua::SourceContext;
-use crate::store::Tier;
 use crate::wire::router::{SettingsPage, url};
 use crate::{Node, Result, StoreError, sys};
 
@@ -350,10 +349,7 @@ fn node_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
     dl(
         body,
         "Display name",
-        &display_name.as_deref().map_or_else(
-            || "<span class=\"pv-muted\">not set — the Space ID stands in for it</span>".to_owned(),
-            escape,
-        ),
+        &crate::http::devices::display_name_cell(cx, display_name.as_deref()),
     );
     dl(body, "Public key", &code(pubkey.as_deref().unwrap_or("")));
     dl(
@@ -375,15 +371,12 @@ fn node_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
                 format!("solo — <code>{}</code> at <code>/</code>", escape(app))
             }
             (Mode::Solo, None) => "solo".to_owned(),
-            (Mode::Host, _) => {
-                "host — apps at <code>/a/&lt;slug&gt;/</code>, launcher at <code>/</code>"
-                    .to_owned()
-            }
+            (Mode::Host, _) => "host".to_owned(),
         },
     );
     crate::http::devices::listening_rows(cx, body);
     body.push_str("</dl></div>\n");
-    crate::http::devices::node_section(cx, display_name.as_deref(), body);
+    crate::http::devices::node_section(cx, body);
 
     // §3.10: alerts MUST surface in the UI, not only in the log.
     let alerts = query(
@@ -485,7 +478,7 @@ fn apps_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
             "Version",
             &escape(row.version.as_deref().unwrap_or("")),
         );
-        dl(body, "Tier", &escape(row.tier.as_deref().unwrap_or("")));
+        dl(body, "App type", &escape(&app_type(row.tier.as_deref())));
         dl(body, "Source", &escape(row.source.as_deref().unwrap_or("")));
         dl(
             body,
@@ -520,13 +513,6 @@ fn apps_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
                         )
                     },
                 ),
-            );
-            dl(
-                body,
-                "Cache built by",
-                &node
-                    .restore_tier(&row.slug)
-                    .map_or_else(|| "—".to_owned(), |tier| tier_text(tier).to_owned()),
             );
             let mut tables = String::new();
             let tier2 = app.manifest().app.tier == crate::app::Tier::Web;
@@ -636,12 +622,17 @@ fn status_badge(row: &AppIndexRow, loaded: bool) -> String {
     }
 }
 
-fn tier_text(tier: Tier) -> &'static str {
-    match tier {
-        Tier::Sqlite => "tier 1 — SQLite snapshot plus log tail",
-        Tier::Csv => "tier 2 — CSV snapshot plus log tail",
-        Tier::Replay => "tier 3 — full replay of the log",
-    }
+/// How the index's `tier` reads on the page: the value `app.toml` carries
+/// (`spec/app-contract.md §2`) and, beside it, what that kind of app is in words. A tier
+/// this build does not know is shown as it was stored rather than guessed at.
+fn app_type(tier: Option<&str>) -> String {
+    let words = match tier {
+        Some("lua") => "lua app",
+        Some("web") => "web app",
+        Some("rust") => "binary app",
+        _ => return tier.unwrap_or("").to_owned(),
+    };
+    format!("{} ({words})", tier.unwrap_or(""))
 }
 
 /// Rows in one of an app's tables, through the sandboxed connection the data API also
@@ -669,60 +660,93 @@ fn data_page(cx: &Context<'_>, body: &mut String) {
     body.push_str(" Where your data is</h3>\n<dl>\n");
     dl(
         body,
-        "Data directory",
-        &format!(
-            "{} — {}",
-            code(&paths.root().display().to_string()),
-            escape(paths.source().describe())
-        ),
+        "App Directory",
+        &code(&paths.root().display().to_string()),
     );
     dl(
         body,
-        "Your information",
-        &format!(
-            "{} — every event, as plain text you can open in any editor",
-            code(&paths.data_dir().display().to_string())
-        ),
+        "Your data",
+        &code(&paths.data_dir().display().to_string()),
     );
     dl(
         body,
         "Your space's key",
-        &format!(
-            "{} — back up separately and privately; leaking it is worse than losing it",
-            code(&paths.identity_dir().display().to_string())
-        ),
+        &code(&paths.identity_dir().display().to_string()),
     );
     dl(
         body,
         "App folders",
-        &format!(
-            "{} — optional; re-downloadable",
-            code(&paths.apps_dir().display().to_string())
-        ),
+        &code(&paths.apps_dir().display().to_string()),
     );
     dl(
         body,
         "Disposable",
         &format!(
-            "{} and {} — rebuilt on demand; never back these up",
+            "{} and {}",
             code(&paths.cache_dir().display().to_string()),
             code(&paths.local_dir().display().to_string())
         ),
     );
-    body.push_str("</dl></div>\n");
-    body.push_str(
+    // `spec/cli.md §1`: the page names the root and which of the three rules chose it,
+    // the same as the line every run prints. It reads as a sentence under the table rather
+    // than as a note appended to a path.
+    let _ = write!(
+        body,
+        "</dl>\n<p class=\"pv-help\">This space keeps its files there because that folder is \
+         {}.</p>\n</div>\n",
+        escape(paths.source().describe())
+    );
+    let _ = write!(
+        body,
         "<h3>Backup</h3>\n\
-         <p><strong>Copy the <code>data</code> folder. That is the backup.</strong> \
-         <strong>Copy it back. That is the restore.</strong></p>\n\
-         <p>Point Syncthing, Dropbox, OneDrive, or a monthly USB stick at the folder above. No \
-         Privatium configuration is needed for any of them: two devices never write the same \
-         file, so a file syncer can never produce a conflict.</p>\n\
+         <p><strong>To backup your data, simply copy the {} folder.</strong></p>\n\
+         <p>Point Syncthing, Dropbox, OneDrive, or a monthly USB stick at the folder above.</p>\n\
          <p>Snapshots under <code>data/&lt;app&gt;/snap/</code> and the SQLite files under \
          <code>cache/</code> are caches. Deleting every one of them loses no data.</p>\n\
-         <p>Backups are plain text by design. Encrypt the destination if the destination needs \
-         it; the filesystem is where at-rest encryption belongs.</p>\n\
-         <p class=\"pv-muted\">The full procedure is <code>docs/backup-and-restore.md</code>.</p>\n",
+         <p>Backups are plain text by design.</p>\n\
+         <p class=\"pv-muted\">For more information, see \
+         <a href=\"{}/blob/main/docs/backup-and-restore.md\">Backup and Restore</a>.</p>\n",
+        folder_link(&paths.data_dir(), "data"),
+        PROJECT_URL
     );
+}
+
+/// The repository the shell links documentation to. Documentation is not shipped beside
+/// the binary, so a page an owner reads under stress points at the copy that is always
+/// there rather than at a path that may not exist on this machine.
+const PROJECT_URL: &str = "https://github.com/gabrielmongefranco/privatium";
+
+/// A folder as a link the owner's file manager can open, with `text` as the link's words.
+/// A `file:` URL is built from the path's components rather than from its display form, so
+/// a Windows backslash and a space both arrive intact; a path that cannot be encoded is
+/// rendered as plain code instead of a link that would go nowhere.
+fn folder_link(path: &std::path::Path, text: &str) -> String {
+    let Some(url) = file_url(path) else {
+        return format!("<code>{}</code>", escape(text));
+    };
+    format!(
+        "<a href=\"{}\"><code>{}</code></a>",
+        escape(&url),
+        escape(text)
+    )
+}
+
+/// `file:///…` for an absolute path, percent-encoding everything outside the unreserved
+/// set of RFC 3986 §2.3 so no character in a folder name can end the URL early.
+fn file_url(path: &std::path::Path) -> Option<String> {
+    let text = path.to_str()?;
+    let mut out = String::from("file:///");
+    for byte in text.replace('\\', "/").trim_start_matches('/').bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' | b':' => {
+                out.push(char::from(byte));
+            }
+            _ => {
+                let _ = write!(out, "%{byte:02X}");
+            }
+        }
+    }
+    Some(out)
 }
 
 /// The 404 page.
