@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/plans/phase-3.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-09-05
-Modified: 2026-09-07
+Modified: 2026-09-08
 Summary:  Implementation plan for Phase 3 — more than one node: node admission over the
           pairing handshake, certificate renewal on sync, the sync protocol over the Phase
           2 channel, the foreign-log receiver, multi-writer materialization, logs that
@@ -850,6 +850,7 @@ Every Phase 2 addition carried its reason and its `cargo deny` result in
 | mDNS | `mdns-sd` | 0.21.2, Apache-2.0 OR MIT | unchanged; R17 stands |
 | QR | `qrcode` | 0.14.1, MIT OR Apache-2.0 | unchanged |
 | Tests | `tempfile` | 3.27.0, MIT OR Apache-2.0 | unchanged |
+| Windows file properties | `embed-resource` (build only) | 3.0.11 (2026-07-02), MIT | **taken by the binary**: `crates/privatium/build.rs` writes the `VS_VERSION_INFO` script from `[workspace.package]` and this crate compiles it, locating `rc.exe`, `llvm-rc` or `windres` itself. `winres` was declined — last release 0.1.12 in September 2021 — and `winresource`, its maintained fork, was not needed, because it reads a manifest of its own and the script here is generated. No RustSec advisory for any of the three; a no-op on every non-Windows target; `cargo deny check` clean with it in the graph |
 | Multipart upload | `multer` | check the current release and its advisory history at M25; MIT | **decide at M25** against a bounded reader of one file part written by hand, with the crate's issue tracker open; the plan does not take it |
 | htmx SSE extension | `htmx-ext-sse` | the release current at M24; licence confirmed from the `htmx-extensions` repository | vendored under `apps/animals/static/` with its own `VENDOR.md`, an app's file and not the framework's |
 

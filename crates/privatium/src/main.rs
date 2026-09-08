@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium/src/main.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-08-31  |  Modified: 2026-09-06
+// Created:  2026-08-31  |  Modified: 2026-09-08
 // Summary:  Entry point: spec/cli.md. Bare `privatium` runs a node; `dev`, `new`, `lint`,
 //           `skill`, `snapshot`, `restore` and `pair` are the subcommands this build has;
 //           `firewall` is not built yet, and it parses and says so rather than being
@@ -29,12 +29,30 @@ fn protocol_claim() -> String {
     format!("{} (partial: phase 2)", privatium_core::PROTOCOL)
 }
 
-/// `--version`: the build version and the protocol it implements, on one line.
+/// `--version` (`spec/cli.md §1`): the build version and the protocol claim on the first
+/// line, then the project's own facts — product, author, copyright, licence and the two
+/// URLs. Every value below the first line comes from `[workspace.package]` through the
+/// `CARGO_PKG_*` variables, or from `build.rs` for the two Cargo has no field for, so
+/// nothing here is a second copy of a name or a licence.
 fn version_line() -> String {
     format!(
-        "privatium {} {}",
-        env!("CARGO_PKG_VERSION"),
-        protocol_claim()
+        "privatium {version} {protocol}\n\
+         {description}\n\
+         Product:       Privatium\n\
+         Author:        {authors}\n\
+         Copyright:     © {year} {holder}\n\
+         Licence:       {license} — see main README.md for full license information.\n\
+         Project:       {repository}\n\
+         Author's site: {author_url}",
+        version = env!("CARGO_PKG_VERSION"),
+        protocol = protocol_claim(),
+        description = env!("CARGO_PKG_DESCRIPTION"),
+        authors = env!("CARGO_PKG_AUTHORS"),
+        year = env!("PV_COPYRIGHT_YEAR"),
+        holder = env!("PV_COPYRIGHT_HOLDER"),
+        license = env!("CARGO_PKG_LICENSE"),
+        repository = env!("CARGO_PKG_REPOSITORY"),
+        author_url = env!("PV_AUTHOR_URL"),
     )
 }
 

@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium/tests/cli.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-06
+// Created:  2026-09-04  |  Modified: 2026-09-08
 // Summary:  spec/cli.md against the real binary, section by section: the qualified
 //           --version (§1) and the exit codes; the flags, which are exactly the spec's
 //           synopsis lines (§1–§9, both directions); a node on loopback with --port, --solo
@@ -194,23 +194,70 @@ fn synopsis_flags(text: &str) -> BTreeSet<(String, String)> {
 }
 
 /// `§1` — `--version` prints the build version and a qualified protocol string, since a
-/// build without sync does not satisfy `spec/protocol.md §13`.
+/// build without sync does not satisfy `spec/protocol.md §13`, and beneath it the
+/// project's own facts. Those are asserted as the literal text a person reads, so a
+/// change to the manifest or to `build.rs` that moves what `--version` says shows up in
+/// this diff rather than only in a release.
 #[test]
 fn test_spec_cli_1_version_qualifies_protocol() {
     let root = tempfile::tempdir().unwrap();
     let (code, out, _) = privatium(root.path(), &["--version"]);
     assert_eq!(code, 0);
+    let mut lines = out.trim().lines();
     assert_eq!(
-        out.trim(),
+        lines.next().unwrap(),
         format!(
             "privatium {} pv/1 (partial: phase 2)",
             env!("CARGO_PKG_VERSION")
         )
     );
+    let rest: Vec<&str> = lines.collect();
+    for expected in [
+        "Product:       Privatium",
+        "Author:        Gabriel Mongefranco (@gabrielmongefranco)",
+        "Copyright:     © 2026 Gabriel Mongefranco",
+        "Licence:       GPL-3.0-or-later — see main README.md for full license information.",
+        "Project:       https://github.com/gabrielmongefranco/privatium",
+        "Author's site: https://gabriel.mongefranco.com",
+    ] {
+        assert!(
+            rest.contains(&expected),
+            "{expected}
+{out}"
+        );
+    }
     // Terminal wherever it stands.
     let (code, out2, _) = privatium(root.path(), &["dev", "--version"]);
     assert_eq!(code, 0);
     assert_eq!(out2, out);
+}
+
+/// The Windows binary carries the version resource `build.rs` writes, so the Details tab
+/// of the file properties dialog is filled in. The strings live in the PE's `.rsrc`
+/// section as UTF-16, which is what this looks for; the fields themselves are the ones
+/// `--version` prints. Nothing user-facing lands in a Mach-O or an ELF binary, so there is
+/// no counterpart on the other two platforms (`spec/cli.md §1`).
+#[test]
+#[cfg(windows)]
+fn test_windows_binary_carries_version_information() {
+    let bytes = std::fs::read(BIN).unwrap();
+    let utf16 =
+        |text: &str| -> Vec<u8> { text.encode_utf16().flat_map(u16::to_le_bytes).collect() };
+    let holds = |text: &str| {
+        let needle = utf16(text);
+        bytes.windows(needle.len()).any(|w| w == needle)
+    };
+    for expected in [
+        "StringFileInfo",
+        "ProductName",
+        "Privatium",
+        "privatium.exe",
+        "Copyright (c) 2026 Gabriel Mongefranco. Licensed under GPL-3.0-or-later.",
+        "Gabriel Mongefranco (@gabrielmongefranco)",
+        "https://gabriel.mongefranco.com",
+    ] {
+        assert!(holds(expected), "the version resource has no {expected:?}");
+    }
 }
 
 /// `§1` — `0` success, `1` runtime error, `2` usage error. (`3` is lint findings, held

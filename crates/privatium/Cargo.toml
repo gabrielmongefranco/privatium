@@ -1,6 +1,6 @@
 # Project:  Privatium™  |  File: crates/privatium/Cargo.toml
 # Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-# Created:  2026-08-31  |  Modified: 2026-09-06
+# Created:  2026-08-31  |  Modified: 2026-09-08
 # Summary:  The binary — spec/cli.md, parsed by hand (src/cli.rs) — and beside it the axum
 #           adapter as a library target so its tests can reach it (ADR 0003: socket and peer
 #           address in, `core::handle` out — no routes of its own).
@@ -8,7 +8,7 @@
 
 [package]
 name        = "privatium"
-description = "Privatium node — a personal data framework that syncs without a server."
+description = "Privatium™ is a framework for building small, personal apps that sync across your devices seamlessly without cloud services"
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true
@@ -45,6 +45,16 @@ serde_json     = { workspace = true }
 axum  = { workspace = true, features = ["http1", "tokio"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "net", "macros", "io-util", "signal", "time"] }
 tower = { workspace = true, features = ["util"] }
+
+# The Windows VS_VERSION_INFO resource (build.rs), so the Details tab of the file
+# properties dialog carries the product name, the author, the copyright and the licence.
+# It is a no-op for every other target. Chosen over winres, whose last release was 2021,
+# and over winresource, its maintained fork: this crate finds the resource compiler for
+# both the MSVC and the GNU toolchain, is an order of magnitude more used, and reads no
+# manifest of its own — build.rs writes the script from [workspace.package], which is
+# where these values are supposed to live.
+[build-dependencies]
+embed-resource = { workspace = true }
 
 [dev-dependencies]
 tokio-tungstenite = { workspace = true }
