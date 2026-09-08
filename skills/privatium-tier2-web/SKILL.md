@@ -126,6 +126,19 @@ or a drawing app this is usually right. With a `schema.sql`, every write is type
 `DATE` typed as `3/9/2026` lands as `2026-03-09`, a `DECIMAL(18,2)` sent as `12.5` as
 `"12.50"` — and `NOT NULL` and `CHECK` refuse the whole batch naming the event's index.
 
+**Two worked examples, one per choice.** `apps/sketch` is the no-SQL one: no `schema.sql`
+at all, every mark a document. `apps/pantry` is the SQL one: three tables, seven views read
+through `pv.query`, exact decimals kept as strings end to end, and forms whose errors are
+rendered in place — the client checks first and the node checks again from the DDL. Read
+`apps/pantry` when your app has records, numbers or forms; read `apps/sketch` when it has
+none of those.
+
+**A total is a view, not a column.** Anything you could keep updated — a balance, a count,
+a running sum — is a value two devices can disagree about, and the log has no way to merge
+two claims about one row. Sum the rows in a view instead (`decimal_sum()` for a `DECIMAL`),
+and let a disagreement show as the number it really adds up to. `apps/pantry` reports a
+negative balance rather than clamping it, which is why it can say what happened.
+
 ## Permissions
 
 ```toml

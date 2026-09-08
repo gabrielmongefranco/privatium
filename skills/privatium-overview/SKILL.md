@@ -82,7 +82,7 @@ Never propose shipping a native Lua interpreter that downloads and executes an a
 
 ```bash
 privatium new <slug> [--tier lua|web|rust] [--from hello] [--scaffold <table>]
-privatium new --examples        # hello, animals and sketch, written to <data-dir>/apps/
+privatium new --examples        # hello, animals, sketch and pantry, written to <data-dir>/apps/
 privatium dev --app <slug>
 privatium lint apps/<slug>
 privatium lint apps/<slug> --format json

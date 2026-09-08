@@ -915,7 +915,7 @@ fn test_spec_app_contract_6_serve_discovery_runs_from_the_nodes_facts() {
         let target = SocketAddr::from((Ipv4Addr::LOCALHOST, udp::PORT));
         let found = udp::probe_at(target, Duration::from_millis(800)).unwrap();
         let me = found.iter().find(|d| d.id == node.id().as_str()).unwrap();
-        assert_eq!(me.apps, ["animals", "hello", "sketch"]);
+        assert_eq!(me.apps, ["animals", "hello", "pantry", "sketch"]);
         assert_eq!(me.port, node.config().node.port);
     }
 }

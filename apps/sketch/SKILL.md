@@ -194,7 +194,7 @@ survives, and every reference held elsewhere — the other entries in both stack
 fill anchored to the mark — is re-pointed through the map `compensate()` returns.
 
 The node refuses a batch over `api.max_batch` and writes none of it
-(`spec/data-api.md §3`). Anything that can name more marks than that — clearing a full
+(`spec/data-api.md §2`, tabled in `§7`). Anything that can name more marks than that — clearing a full
 sheet, a large paste, a move over a big selection — is written in ceiling-sized chunks by
 `commitGroups()`, which keeps a mark's tombstone and its replacement in the same chunk and
 says in `#status` how many undo presses the action now takes.

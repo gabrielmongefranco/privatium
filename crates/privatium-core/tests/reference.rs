@@ -1,12 +1,14 @@
 // Project:  Privatium™  |  File: crates/privatium-core/tests/reference.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-06
+// Created:  2026-09-04  |  Modified: 2026-09-07
 // Summary:  The three reference apps end to end through core::handle with no listener,
 //           exactly as their READMEs describe them: hello (write, amend, break the cache,
 //           and the README's own `echo >>` line run for real), animals (the seed, a round
 //           over htmx and over plain form posts, the three-event teach, the recursive
 //           knowledge page, reset as tombstones, and the CSP the Alpine build runs under),
-//           sketch (every call app.js makes, against the log). Then the accessibility
+//           sketch (every call app.js makes, against the log), pantry (the seed through
+//           its seven views, a batch added as one batch of the log, and the merge rule's
+//           own cases: a move, a double undo, a balance below zero). Then the accessibility
 //           baseline: the PV4xx rules of spec/cli.md §5 held over the shell's own pages,
 //           the Tier 1 page frame and the reference views (§5.4), and the declared colour
 //           tokens at their contrast floors (PV406).
@@ -30,7 +32,7 @@ use axum::http::{Method, StatusCode};
 use common::a11y::{self, Unit};
 use common::{hand_append, log_lines, lua_manifest, repo_apps_dir, write_app, write_web_app};
 use privatium_core::http::shell;
-use privatium_core::{AppRoot, Handler, LoadReport, Node, Request, Response};
+use privatium_core::{AppRoot, Error, Handler, LoadReport, Node, Request, Response};
 use serde_json::{Value, json};
 
 /// A small VM pool, as tests/lua.rs uses.
@@ -1237,6 +1239,846 @@ async fn test_sketch_end_to_end() {
     let (status, node) = json_of(handler.handle(get("/a/sketch/api/node")).await).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(node["id"], dev, "{node}");
+}
+
+// ---------------------------------------------------------------------------------------
+// pantry
+// ---------------------------------------------------------------------------------------
+
+/// A node with the reference apps, `pantry` seeded from `sample/seed.jsonl`.
+fn pantry(root: &tempfile::TempDir) -> Handler {
+    let (mut node, report) = open(root);
+    node.load_seed("pantry").unwrap();
+    Handler::new(node, report)
+}
+
+/// One view, through `/api/q`, as `pv.query` reads it.
+async fn view(handler: &mut Handler, path: &str) -> Vec<Value> {
+    let (status, body) = json_of(handler.handle(get(path)).await).await;
+    assert_eq!(status, StatusCode::OK, "{path}: {body}");
+    body["rows"].as_array().cloned().unwrap_or_default()
+}
+
+/// One batch of events, through `/api/events`, as `pv.append` writes it.
+async fn pantry_append(handler: &mut Handler, events: Value) -> (StatusCode, Value) {
+    json_of(
+        handler
+            .handle(post_json(
+                "/a/pantry/api/events",
+                &json!({ "events": events }),
+            ))
+            .await,
+    )
+    .await
+}
+
+/// `sql` without its `--` comments, so a rule about the SQL is not answered by the prose
+/// that explains the rule.
+fn sql_only(sql: &str) -> String {
+    sql.lines()
+        .map(|line| line.split("--").next().unwrap_or_default())
+        .collect::<Vec<_>>()
+        .join(
+            "
+",
+        )
+}
+
+/// A day, in UTC, as `date('now')` reads it — the clock the views compare against.
+fn utc_day(offset: i64) -> String {
+    jiff::Timestamp::now()
+        .to_zoned(jiff::tz::TimeZone::UTC)
+        .date()
+        .checked_add(jiff::Span::new().days(offset))
+        .unwrap()
+        .to_string()
+}
+
+/// A batch on `shelf`, with the stock it arrived with, in one batch of the log — exactly
+/// what `writes.js` sends. Returns the batch's id.
+async fn stock(handler: &mut Handler, shelf: &str, name: &str, amount: &str) -> String {
+    let id = ulid();
+    let (status, body) = pantry_append(
+        handler,
+        json!([
+            { "op": "put", "tbl": "batch", "id": id, "d": {
+                "name": name, "icon": "snow", "unit": "bags", "shelf_id": shelf,
+                "stored_on": utc_day(0), "expires_on": null } },
+            { "op": "put", "tbl": "quantity_change", "id": ulid(), "d": {
+                "batch_id": id, "amount": amount, "reason": "stocked", "of_id": null,
+                "at": "2026-09-07T10:00:00Z" } },
+        ]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    id
+}
+
+/// One recorded change against `batch`. Returns its id.
+async fn change(
+    handler: &mut Handler,
+    batch: &str,
+    amount: &str,
+    reason: &str,
+    of_id: Option<&str>,
+) -> String {
+    let id = ulid();
+    let (status, body) = pantry_append(
+        handler,
+        json!([{ "op": "put", "tbl": "quantity_change", "id": id, "d": {
+            "batch_id": batch, "amount": amount, "reason": reason, "of_id": of_id,
+            "at": "2026-09-07T11:00:00Z" } }]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    id
+}
+
+/// What `v_batch` says one batch's balance is, or `None` when it is not on the shelf.
+async fn balance_on(handler: &mut Handler, shelf: &str, id: &str) -> Option<String> {
+    view(handler, &format!("/a/pantry/api/q/v_batch?shelf={shelf}"))
+        .await
+        .iter()
+        .find(|row| row["id"] == id)
+        .map(|row| row["balance"].as_str().unwrap().to_owned())
+}
+
+/// The id of the seeded shelf whose name starts with `prefix`.
+async fn seeded_shelf(handler: &mut Handler, prefix: &str) -> String {
+    view(handler, "/a/pantry/api/q/v_shelf")
+        .await
+        .into_iter()
+        .find(|row| row["name"].as_str().unwrap_or_default().starts_with(prefix))
+        .unwrap_or_else(|| panic!("no seeded shelf named {prefix}"))["id"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// `apps/pantry/README.md` — the page and every file it loads; the seed through the views;
+/// `/api/schema` naming the three tables and the seven views with their placeholders; a
+/// batch added as one batch of the log; a withdrawal, a return and an undo, each of them
+/// one event; and the balance the views report after every one of them.
+#[tokio::test]
+async fn test_pantry_end_to_end() {
+    let root = tempfile::tempdir().unwrap();
+    let mut handler = pantry(&root);
+    let web = repo_apps_dir().join("pantry").join("web");
+
+    let index = handler.handle(get("/a/pantry/")).await;
+    assert_eq!(index.status(), StatusCode::OK);
+    assert!(header(&index, &CONTENT_TYPE).starts_with("text/html"));
+    let index = body_of(index).await;
+    assert_eq!(index, fs::read_to_string(web.join("index.html")).unwrap());
+    assert!(index.contains("<html lang=\"en\">"), "{index}");
+    assert!(!index.contains("user-scalable=no"), "{index}");
+    assert!(
+        index.contains("<script type=\"module\" src=\"app.js\">"),
+        "{index}"
+    );
+    assert_clean("pantry index.html", &index, Unit::Document);
+
+    for (file, kind) in [
+        ("app.js", "javascript"),
+        ("views.js", "javascript"),
+        ("forms.js", "javascript"),
+        ("writes.js", "javascript"),
+        ("style.css", "text/css"),
+    ] {
+        let response = handler.handle(get(&format!("/a/pantry/{file}"))).await;
+        assert_eq!(response.status(), StatusCode::OK, "{file}");
+        assert!(header(&response, &CONTENT_TYPE).contains(kind), "{file}");
+        assert_eq!(
+            body_of(response).await,
+            fs::read_to_string(web.join(file)).unwrap(),
+            "{file}"
+        );
+    }
+    // The two readings this app is built to show: the views say what is true now, the log
+    // says what happened.
+    let app_js = fs::read_to_string(web.join("app.js")).unwrap();
+    for call in [
+        "pv.query('v_shelf')",
+        "pv.query('v_batch', { shelf: state.open })",
+        "pv.events({ tbl, limit: page, offset })",
+        "pv.subscribe(onStream)",
+        "pv.on('resync'",
+    ] {
+        assert!(app_js.contains(call), "app.js no longer calls {call}");
+    }
+    let writes_js = fs::read_to_string(web.join("writes.js")).unwrap();
+    assert_eq!(
+        writes_js.matches("pv.append(").count(),
+        6,
+        "one append per flow, and every flow in one file"
+    );
+    assert!(
+        writes_js.contains("pv.ulid()"),
+        "ids are minted client-side"
+    );
+
+    // `/api/schema`: what a client that has never seen this app would read.
+    let (status, schema) = json_of(handler.handle(get("/a/pantry/api/schema")).await).await;
+    assert_eq!(status, StatusCode::OK);
+    let tables: Vec<&str> = schema["tables"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(tables, vec!["batch", "quantity_change", "shelf"]);
+    let views: BTreeMap<String, Value> = schema["views"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| (v["name"].as_str().unwrap().to_owned(), v["params"].clone()))
+        .collect();
+    assert_eq!(
+        views.keys().cloned().collect::<Vec<_>>(),
+        vec![
+            "v_batch",
+            "v_check_batch",
+            "v_check_out",
+            "v_expiring",
+            "v_out",
+            "v_shelf",
+            "v_stock_by_unit"
+        ]
+    );
+    assert_eq!(views["v_batch"], json!(["shelf"]));
+    assert_eq!(views["v_out"], json!(["since"]));
+    assert_eq!(views["v_expiring"], json!(["days"]));
+    assert!(
+        schema["tables"].as_array().unwrap().iter().all(|table| {
+            table["columns"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|column| column["name"] != "balance")
+        }),
+        "a balance is never a column: {schema}"
+    );
+
+    // The seed, through the views.
+    let shelves = view(&mut handler, "/a/pantry/api/q/v_shelf").await;
+    assert_eq!(shelves.len(), 4, "{shelves:?}");
+    assert_eq!(shelves[0]["name"], "Freezer drawer 1");
+    assert_eq!(shelves[0]["batches"], 2);
+    let baking = shelves
+        .iter()
+        .find(|row| row["name"] == "Baking shelf")
+        .unwrap();
+    assert_eq!(
+        baking["batches"], 0,
+        "the flour reached zero and left the shelf, and its history stayed"
+    );
+
+    let drawer = shelves[0]["id"].as_str().unwrap().to_owned();
+    let rows = view(
+        &mut handler,
+        &format!("/a/pantry/api/q/v_batch?shelf={drawer}"),
+    )
+    .await;
+    let balances: BTreeMap<&str, &str> = rows
+        .iter()
+        .map(|row| {
+            (
+                row["name"].as_str().unwrap(),
+                row["balance"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        balances,
+        BTreeMap::from([("Chicken soup", "5.000"), ("Waffles", "8.000")]),
+        "6 - 2 + 1 stocked, and 12 - 4, added up from the log"
+    );
+
+    let out = view(
+        &mut handler,
+        "/a/pantry/api/q/v_out?since=2026-01-01T00:00:00Z",
+    )
+    .await;
+    let soup = out
+        .iter()
+        .find(|row| row["batch_name"] == "Chicken soup")
+        .unwrap();
+    assert_eq!(soup["taken"], "2.000");
+    assert_eq!(soup["returned"], "1.000");
+    assert_eq!(soup["still_out"], "1.000");
+    let stew = out
+        .iter()
+        .find(|row| row["batch_name"] == "Beef stew")
+        .unwrap();
+    assert_eq!(
+        stew["still_out"], "0.000",
+        "fully returned, so out of the tray"
+    );
+
+    let summary = view(&mut handler, "/a/pantry/api/q/v_stock_by_unit").await;
+    let by_unit: BTreeMap<&str, &str> = summary
+        .iter()
+        .map(|row| {
+            (
+                row["unit"].as_str().unwrap(),
+                row["balance"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        by_unit,
+        BTreeMap::from([
+            ("bags", "3.000"),
+            ("containers", "9.000"),
+            ("kg", "2.500"),
+            ("pieces", "8.000"),
+        ])
+    );
+    assert!(
+        view(&mut handler, "/a/pantry/api/q/v_check_batch")
+            .await
+            .is_empty(),
+        "nothing to check in a seeded app"
+    );
+
+    // Adding a batch is two events and one batch of the log: a batch never exists with no
+    // stock, because decimal_sum over no rows is NULL, not zero.
+    let log = log_path(&handler, "pantry");
+    let before = log_lines(&log).len();
+    let id = stock(&mut handler, &drawer, "Green beans", "4").await;
+    let lines = log_lines(&log);
+    assert_eq!(lines.len(), before + 2);
+    let (first, second) = (&lines[before], &lines[before + 1]);
+    assert_eq!(first["ts"], second["ts"], "one batch, one ts");
+    assert_eq!(
+        second["seq"].as_u64().unwrap(),
+        first["seq"].as_u64().unwrap() + 1
+    );
+    assert_eq!(first["tbl"], "batch");
+    assert_eq!(second["tbl"], "quantity_change");
+    assert_eq!(second["d"]["amount"], "4.000", "at the column's scale");
+
+    // Take some out, put some back, and read the balance after each.
+    let balance_of = |rows: &[Value], id: &str| -> Option<String> {
+        rows.iter()
+            .find(|row| row["id"] == id)
+            .map(|row| row["balance"].as_str().unwrap().to_owned())
+    };
+    let taken = change(&mut handler, &id, "-1.5", "taken", None).await;
+    let rows = view(
+        &mut handler,
+        &format!("/a/pantry/api/q/v_batch?shelf={drawer}"),
+    )
+    .await;
+    assert_eq!(balance_of(&rows, &id).as_deref(), Some("2.500"));
+
+    change(&mut handler, &id, "0.5", "returned", Some(&taken)).await;
+    let rows = view(
+        &mut handler,
+        &format!("/a/pantry/api/q/v_batch?shelf={drawer}"),
+    )
+    .await;
+    assert_eq!(balance_of(&rows, &id).as_deref(), Some("3.000"));
+    let out = view(
+        &mut handler,
+        "/a/pantry/api/q/v_out?since=2026-01-01T00:00:00Z",
+    )
+    .await;
+    let card = out.iter().find(|row| row["id"] == taken.as_str()).unwrap();
+    assert_eq!(card["taken"], "1.500");
+    assert_eq!(card["returned"], "0.500");
+    assert_eq!(card["still_out"], "1.000");
+
+    // Undo the withdrawal: the row is gone from the tables and both lines are in the log.
+    let (status, body) = pantry_append(
+        &mut handler,
+        json!([{ "op": "del", "tbl": "quantity_change", "id": taken }]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let rows = view(
+        &mut handler,
+        &format!("/a/pantry/api/q/v_batch?shelf={drawer}"),
+    )
+    .await;
+    assert_eq!(
+        balance_of(&rows, &id).as_deref(),
+        Some("4.500"),
+        "the withdrawal is gone; the return is not"
+    );
+    let events = body_of(
+        handler
+            .handle(get(&format!(
+                "/a/pantry/api/events?tbl=quantity_change&id={taken}"
+            )))
+            .await,
+    )
+    .await;
+    let ops: Vec<String> = events
+        .lines()
+        .map(|line| {
+            serde_json::from_str::<Value>(line).unwrap()["op"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(ops, vec!["put", "del"], "the log kept both");
+}
+
+/// `spec/app-contract.md §4.5`, `spec/data-dictionary.md §2.1` — a balance is nowhere in
+/// the schema. What `v_batch` reports is `decimal_sum` over the batch's own changes, and
+/// it equals the sum of the amounts the log holds, added up here in thousandths.
+#[tokio::test]
+async fn test_pantry_balance_is_never_stored() {
+    let root = tempfile::tempdir().unwrap();
+    let mut handler = pantry(&root);
+    let declarations =
+        sql_only(&fs::read_to_string(repo_apps_dir().join("pantry").join("schema.sql")).unwrap());
+    let tables = declarations
+        .split("CREATE VIEW")
+        .next()
+        .expect("the tables come first");
+    assert!(
+        !tables.contains("balance"),
+        "no table declares a balance: {tables}"
+    );
+
+    let shelf = seeded_shelf(&mut handler, "Freezer drawer 1").await;
+    let id = stock(&mut handler, &shelf, "Stock parcels", "7.25").await;
+    change(&mut handler, &id, "-2.125", "taken", None).await;
+    change(&mut handler, &id, "-0.125", "taken", None).await;
+
+    // The log, added up in thousandths — the same arithmetic decimal_sum does exactly.
+    let thousandths = |amount: &str| -> i64 {
+        let (whole, fraction) = amount.split_once('.').unwrap_or((amount, "0"));
+        let sign = if amount.starts_with('-') { -1 } else { 1 };
+        let fraction = format!("{fraction:0<3}");
+        whole.parse::<i64>().unwrap() * 1000 + sign * fraction[..3].parse::<i64>().unwrap()
+    };
+    let total: i64 = log_lines(&log_path(&handler, "pantry"))
+        .iter()
+        .filter(|line| line["tbl"] == "quantity_change" && line["d"]["batch_id"] == id.as_str())
+        .map(|line| thousandths(line["d"]["amount"].as_str().unwrap()))
+        .sum();
+    assert_eq!(total, 5000);
+
+    let rows = view(
+        &mut handler,
+        &format!("/a/pantry/api/q/v_batch?shelf={shelf}"),
+    )
+    .await;
+    let balance = rows.iter().find(|row| row["id"] == id.as_str()).unwrap()["balance"]
+        .as_str()
+        .unwrap();
+    assert_eq!(balance, "5.000");
+    assert_eq!(thousandths(balance), total);
+}
+
+/// `spec/data-dictionary.md §2.1` — a DECIMAL keeps the scale its column declares, whoever
+/// wrote it: a JSON number through the API, a string through the API, and the seed's own
+/// `"2.5"`. Every one of them arrives back as a string, because a JSON number is a double.
+#[tokio::test]
+async fn test_pantry_decimal_scale_is_preserved() {
+    let root = tempfile::tempdir().unwrap();
+    let mut handler = pantry(&root);
+    let shelf = seeded_shelf(&mut handler, "Pantry shelf").await;
+
+    let id = stock(&mut handler, &shelf, "Typed as text", "12.5").await;
+    let numeric = ulid();
+    let (status, body) = pantry_append(
+        &mut handler,
+        json!([{ "op": "put", "tbl": "quantity_change", "id": numeric, "d": {
+            "batch_id": id, "amount": 0.5, "reason": "returned", "of_id": numeric,
+            "at": "2026-09-07T12:00:00Z" } }]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let stored: Vec<String> = log_lines(&log_path(&handler, "pantry"))
+        .iter()
+        .filter(|line| line["tbl"] == "quantity_change" && line["d"]["batch_id"] == id.as_str())
+        .map(|line| line["d"]["amount"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(stored, vec!["12.500".to_owned(), "0.500".to_owned()]);
+
+    let rows = view(
+        &mut handler,
+        &format!("/a/pantry/api/q/v_batch?shelf={shelf}"),
+    )
+    .await;
+    let batch = rows.iter().find(|row| row["id"] == id.as_str()).unwrap();
+    assert_eq!(batch["balance"], "13.000");
+    assert!(batch["balance"].is_string(), "a decimal is never a number");
+    let rice = rows
+        .iter()
+        .find(|row| row["name"] == "Basmati rice")
+        .unwrap();
+    assert_eq!(
+        rice["balance"], "2.500",
+        "the seed's own scale, from \"2.5\""
+    );
+}
+
+/// `spec/data-api.md §2` — the author's own `CHECK` refuses a reason the app does not have,
+/// the refusal names the event's `index`, and nothing of the batch is appended.
+#[tokio::test]
+async fn test_pantry_schema_rejects_bad_reason() {
+    let root = tempfile::tempdir().unwrap();
+    let mut handler = pantry(&root);
+    let shelf = seeded_shelf(&mut handler, "Freezer drawer 2").await;
+    let id = stock(&mut handler, &shelf, "Sorbet", "2").await;
+    let log = log_path(&handler, "pantry");
+    let before = log_lines(&log).len();
+
+    let (status, body) = pantry_append(
+        &mut handler,
+        json!([
+            { "op": "put", "tbl": "quantity_change", "id": ulid(), "d": {
+                "batch_id": id, "amount": "-1", "reason": "taken", "of_id": null,
+                "at": "2026-09-07T12:00:00Z" } },
+            { "op": "put", "tbl": "quantity_change", "id": ulid(), "d": {
+                "batch_id": id, "amount": "-1", "reason": "eaten", "of_id": null,
+                "at": "2026-09-07T12:00:01Z" } },
+        ]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["index"], 1, "{body}");
+    assert_eq!(
+        log_lines(&log).len(),
+        before,
+        "all of a batch or none of it"
+    );
+
+    // A return with no withdrawal to point at is refused by the second CHECK.
+    let (status, body) = pantry_append(
+        &mut handler,
+        json!([{ "op": "put", "tbl": "quantity_change", "id": ulid(), "d": {
+            "batch_id": id, "amount": "1", "reason": "returned", "of_id": null,
+            "at": "2026-09-07T12:00:02Z" } }]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["index"], 0, "{body}");
+    assert_eq!(log_lines(&log).len(), before);
+}
+
+/// `spec/app-contract.md §9` — a seed populates an empty app or nothing. The second load
+/// is refused, and it is refused after any event of any device.
+#[test]
+fn test_pantry_seed_loads_into_empty_app_only() {
+    let root = tempfile::tempdir().unwrap();
+    let (mut node, _report) = open(&root);
+    let seeded = node.load_seed("pantry").unwrap();
+    assert_eq!(
+        seeded.events, 22,
+        "four shelves, six batches, twelve changes"
+    );
+    assert!(
+        matches!(node.load_seed("pantry"), Err(Error::SeedRefused { .. })),
+        "a seed populates an empty app or nothing"
+    );
+}
+
+/// `spec/protocol.md §4.5` — two devices move one batch to different shelves. The rows
+/// have one id, so one row survives, and it is the one that ranks last by `(lam, ts, dev)`.
+/// `§4.6` — the surviving row keeps the id, so every change still points at a batch.
+#[tokio::test]
+async fn test_spec_4_5_pantry_move_is_last_write_wins() {
+    let root = tempfile::tempdir().unwrap();
+    let mut handler = pantry(&root);
+    let drawer = seeded_shelf(&mut handler, "Freezer drawer 1").await;
+    let rack = seeded_shelf(&mut handler, "Pantry shelf").await;
+    let id = stock(&mut handler, &drawer, "Pastry", "3").await;
+
+    // Another device moved the same batch to the pantry shelf, later in the order §4.5
+    // ranks by, and its own log file is what carries it.
+    let lam = log_lines(&log_path(&handler, "pantry")).last().unwrap()["lam"]
+        .as_u64()
+        .unwrap()
+        + 10;
+    let elsewhere = handler
+        .node()
+        .lock()
+        .unwrap()
+        .paths()
+        .app_log_dir("pantry")
+        .join("zzzzzzzz.jsonl");
+    // Its rank is higher because its `lam` is; a line stamped in the future would be kept
+    // in the log and left out of the tables (`spec/protocol.md §4.4`), which is a different
+    // rule from this one.
+    let ts = privatium_core::log::format_ts(jiff::Timestamp::now());
+    let stored_on = utc_day(0);
+    let line = format!(
+        r##"{{"seq":1,"lam":{lam},"ts":"{ts}","dev":"zzzzzzzz","app":"pantry","op":"put","tbl":"batch","id":"{id}","d":{{"name":"Pastry","icon":"snow","unit":"bags","shelf_id":"{rack}","stored_on":"{stored_on}","expires_on":null}}}}"##
+    );
+    hand_append(&elsewhere, &line, "\n");
+
+    let here = view(
+        &mut handler,
+        &format!("/a/pantry/api/q/v_batch?shelf={drawer}"),
+    )
+    .await;
+    assert!(
+        !here.iter().any(|row| row["id"] == id.as_str()),
+        "the batch is not on two shelves: {here:?}"
+    );
+    let there = view(
+        &mut handler,
+        &format!("/a/pantry/api/q/v_batch?shelf={rack}"),
+    )
+    .await;
+    let moved: Vec<&Value> = there
+        .iter()
+        .filter(|row| row["id"] == id.as_str())
+        .collect();
+    assert_eq!(moved.len(), 1, "one row, not two: {there:?}");
+    assert_eq!(
+        moved[0]["balance"], "3.000",
+        "§4.6: the id survived the move, so the change still points at the batch"
+    );
+}
+
+/// `spec/protocol.md §4.6` — a move is a put on the live id, never a tombstone and a new
+/// one: the schema's own `batch_id` values all resolve after it, and the app's flows write
+/// no such pair.
+#[tokio::test]
+async fn test_spec_4_6_pantry_move_does_not_orphan_changes() {
+    let root = tempfile::tempdir().unwrap();
+    let mut handler = pantry(&root);
+    let drawer = seeded_shelf(&mut handler, "Freezer drawer 1").await;
+    let rack = seeded_shelf(&mut handler, "Baking shelf").await;
+    let id = stock(&mut handler, &drawer, "Puff pastry", "6").await;
+    change(&mut handler, &id, "-2", "taken", None).await;
+
+    let (status, body) = pantry_append(
+        &mut handler,
+        json!([{ "op": "put", "tbl": "batch", "id": id, "d": {
+            "name": "Puff pastry", "icon": "snow", "unit": "bags", "shelf_id": rack,
+            "stored_on": utc_day(0), "expires_on": null } }]),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    let rows = view(
+        &mut handler,
+        &format!("/a/pantry/api/q/v_batch?shelf={rack}"),
+    )
+    .await;
+    let moved = rows.iter().find(|row| row["id"] == id.as_str()).unwrap();
+    assert_eq!(moved["balance"], "4.000", "6 - 2, kept across the move");
+
+    // Every batch a change names is a batch that is there.
+    let batches: BTreeSet<String> = log_lines(&log_path(&handler, "pantry"))
+        .iter()
+        .filter(|line| line["tbl"] == "batch")
+        .map(|line| line["id"].as_str().unwrap().to_owned())
+        .collect();
+    for line in log_lines(&log_path(&handler, "pantry"))
+        .iter()
+        .filter(|line| line["tbl"] == "quantity_change")
+    {
+        let names = line["d"]["batch_id"].as_str().unwrap();
+        assert!(batches.contains(names), "{names} names no batch");
+    }
+    assert!(
+        !fs::read_to_string(repo_apps_dir().join("pantry").join("web").join("writes.js"))
+            .unwrap()
+            .contains("'del', tbl: 'batch'"),
+        "a move never tombstones the batch"
+    );
+}
+
+/// `spec/protocol.md §4.5` — two devices undo the same change. Both write the tombstone,
+/// the group's last event is a tombstone either way, and undoing twice leaves what undoing
+/// once leaves. No counter and no guard anywhere in the app.
+#[tokio::test]
+async fn test_spec_4_5_pantry_double_undo_is_one_undo() {
+    let root = tempfile::tempdir().unwrap();
+    let mut handler = pantry(&root);
+    let shelf = seeded_shelf(&mut handler, "Freezer drawer 2").await;
+    let id = stock(&mut handler, &shelf, "Berries", "5").await;
+    let taken = change(&mut handler, &id, "-2", "taken", None).await;
+
+    assert_eq!(
+        balance_on(&mut handler, &shelf, &id).await.as_deref(),
+        Some("3.000")
+    );
+
+    for _ in 0..2 {
+        let (status, body) = pantry_append(
+            &mut handler,
+            json!([{ "op": "del", "tbl": "quantity_change", "id": taken }]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "a repeated del is a replay: {body}");
+    }
+    assert_eq!(
+        balance_on(&mut handler, &shelf, &id).await.as_deref(),
+        Some("5.000"),
+        "undone once, undone twice, the same state"
+    );
+    let events = body_of(
+        handler
+            .handle(get(&format!(
+                "/a/pantry/api/events?tbl=quantity_change&id={taken}"
+            )))
+            .await,
+    )
+    .await;
+    assert_eq!(events.lines().count(), 3, "put, del, del — all kept");
+    let (status, _) = json_of(
+        handler
+            .handle(get(&format!("/a/pantry/api/row/quantity_change/{taken}")))
+            .await,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "the row is absent, once");
+}
+
+/// `spec/protocol.md §4.5` — two devices each take the last portion while apart. Both
+/// withdrawals are their own rows, both are kept, and the balance the log adds up to is
+/// below zero. The app reports it and clamps nothing.
+#[tokio::test]
+async fn test_pantry_negative_balance_is_reported_not_clamped() {
+    let root = tempfile::tempdir().unwrap();
+    let mut handler = pantry(&root);
+    let shelf = seeded_shelf(&mut handler, "Freezer drawer 1").await;
+    let id = stock(&mut handler, &shelf, "Last portion", "1").await;
+    change(&mut handler, &id, "-1", "taken", None).await;
+    change(&mut handler, &id, "-1", "taken", None).await;
+
+    let checks = view(&mut handler, "/a/pantry/api/q/v_check_batch").await;
+    let row = checks.iter().find(|row| row["id"] == id.as_str()).unwrap();
+    assert_eq!(row["balance"], "-1.000", "the recorded number, not a floor");
+    assert_eq!(row["name"], "Last portion");
+    assert_eq!(row["shelf_name"], "Freezer drawer 1");
+
+    let rows = view(
+        &mut handler,
+        &format!("/a/pantry/api/q/v_batch?shelf={shelf}"),
+    )
+    .await;
+    assert_eq!(
+        rows.iter().find(|row| row["id"] == id.as_str()).unwrap()["balance"],
+        "-1.000",
+        "a batch below zero is not hidden either"
+    );
+}
+
+/// `spec/protocol.md §4.5` — two devices put the same withdrawal back. Both returns are
+/// rows of their own, both are kept, and `v_check_out` says the withdrawal has had more
+/// back than went out.
+#[tokio::test]
+async fn test_pantry_over_return_is_reported() {
+    let root = tempfile::tempdir().unwrap();
+    let mut handler = pantry(&root);
+    let shelf = seeded_shelf(&mut handler, "Freezer drawer 1").await;
+    let id = stock(&mut handler, &shelf, "Waffle box", "8").await;
+    let taken = change(&mut handler, &id, "-4", "taken", None).await;
+    change(&mut handler, &id, "4", "returned", Some(&taken)).await;
+    change(&mut handler, &id, "4", "returned", Some(&taken)).await;
+
+    let checks = view(&mut handler, "/a/pantry/api/q/v_check_out").await;
+    let row = checks
+        .iter()
+        .find(|row| row["id"] == taken.as_str())
+        .unwrap();
+    assert_eq!(row["taken"], "4.000");
+    assert_eq!(row["returned"], "8.000");
+    assert_eq!(row["batch_name"], "Waffle box");
+}
+
+/// `spec/cli.md §5.1` (`PV308`), `spec/data-dictionary.md §2` — a date is compared with
+/// SQLite's own modifier, never by adding to the column. `v_expiring` binds `$days` as
+/// text into `date('now', '+' || $days || ' days')`, and it answers for a batch already
+/// past its date, one inside the window, one far off, and one with no date at all.
+#[tokio::test]
+async fn test_pantry_expiry_uses_the_date_modifier() {
+    let root = tempfile::tempdir().unwrap();
+    let mut handler = pantry(&root);
+    let shelf = seeded_shelf(&mut handler, "Baking shelf").await;
+
+    let schema =
+        sql_only(&fs::read_to_string(repo_apps_dir().join("pantry").join("schema.sql")).unwrap());
+    assert!(
+        schema.contains("date('now', '+' || $days || ' days')"),
+        "the modifier spelling is what the view runs"
+    );
+    assert!(
+        !schema.contains("expires_on +") && !schema.contains("expires_on -"),
+        "a DATE is never an integer to add to"
+    );
+
+    let mut ids = BTreeMap::new();
+    for (name, expires) in [
+        ("Past", Some(utc_day(-10))),
+        ("Soon", Some(utc_day(3))),
+        ("Fresh", Some(utc_day(400))),
+        ("Undated", None),
+    ] {
+        let id = ulid();
+        let (status, body) = pantry_append(
+            &mut handler,
+            json!([
+                { "op": "put", "tbl": "batch", "id": id, "d": {
+                    "name": name, "icon": "snow", "unit": "bags", "shelf_id": shelf,
+                    "stored_on": utc_day(-20), "expires_on": expires } },
+                { "op": "put", "tbl": "quantity_change", "id": ulid(), "d": {
+                    "batch_id": id, "amount": "1", "reason": "stocked", "of_id": null,
+                    "at": "2026-09-07T10:00:00Z" } },
+            ]),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        ids.insert(name, id);
+    }
+
+    let rows = view(
+        &mut handler,
+        &format!("/a/pantry/api/q/v_batch?shelf={shelf}"),
+    )
+    .await;
+    let state: BTreeMap<&str, &str> = rows
+        .iter()
+        .map(|row| {
+            (
+                row["name"].as_str().unwrap(),
+                row["expiry"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(state["Past"], "past");
+    assert_eq!(state["Soon"], "soon");
+    assert_eq!(state["Fresh"], "fresh");
+    assert_eq!(
+        state["Undated"], "unknown",
+        "no date is honestly its own state, not fresh"
+    );
+
+    let expiring = view(&mut handler, "/a/pantry/api/q/v_expiring?days=30").await;
+    let named: BTreeSet<&str> = expiring
+        .iter()
+        .map(|row| row["name"].as_str().unwrap())
+        .collect();
+    assert!(named.contains("Past"), "{named:?}");
+    assert!(named.contains("Soon"), "{named:?}");
+    assert!(!named.contains("Fresh"), "{named:?}");
+    assert!(!named.contains("Undated"), "{named:?}");
+    assert_eq!(
+        expiring.iter().find(|row| row["name"] == "Past").unwrap()["expiry"],
+        "past"
+    );
+
+    // The window is the placeholder's, bound as text: one day ahead names neither.
+    let tight = view(&mut handler, "/a/pantry/api/q/v_expiring?days=1").await;
+    let named: BTreeSet<&str> = tight
+        .iter()
+        .map(|row| row["name"].as_str().unwrap())
+        .collect();
+    assert!(named.contains("Past"), "{named:?}");
+    assert!(!named.contains("Soon"), "{named:?}");
 }
 
 // ---------------------------------------------------------------------------------------

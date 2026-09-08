@@ -3,7 +3,7 @@ Project:  Privatium™
 File:     docs/roadmap.md
 Authors:  Gabriel Mongefranco (@gabrielmongefranco)
 Created:  2026-08-28
-Modified: 2026-09-06
+Modified: 2026-09-07
 Summary:  Build phases with explicit acceptance criteria. Non-normative. Phases 2 and 3 have
           plans under docs/plans/; later phases have stubs there.
           See main README.md for full license information.
@@ -39,7 +39,7 @@ CI matrix runs every one on Linux, macOS and Windows:
       the pool size by `test_spec_lua_5_limit_does_not_kill_node` (a pool of one)
 - [x] Solo mode serves one app at `/` with no launcher — `test_solo_mode_mounts_at_root`,
       `test_launcher_absent_in_solo_mode`
-- [x] `privatium lint` passes on all three reference apps and fails on seeded violations —
+- [x] `privatium lint` passes on every reference app and fails on seeded violations —
       `test_reference_apps_lint_clean`, `test_spec_cli_5_lint_exit_codes_and_formats`
 - [x] Every lint rule in `spec/cli.md §5` has both a passing and a failing case under
       `apps/_lint/pass/<rule>/<slug>/` and `apps/_lint/fail/<rule>/<slug>/` — not in

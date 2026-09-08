@@ -8,14 +8,18 @@ demos — the framework's own tests run against them.
 | [`hello`](hello) | 1 — Lua | Three routes, one table, two LSP templates. **Start here.** |
 | [`animals`](animals) | 1 — Lua | Atomic multi-event writes, recursive SQL, stored session state, `lib/` modules — and the clearest place to *see* that nothing is ever updated. Also where HTMX and Alpine.js sit side by side. |
 | [`sketch`](sketch) | 2 — Web | Your own HTML and JavaScript, no SQL at all. The framework as a syncing datastore. |
+| [`pantry`](pantry) | 2 — Web | The same tier with tables: `schema.sql`, named views through `pv.query`, exact decimals, forms that validate twice, and two devices disagreeing in the open. |
 
-Three apps, three jobs: **`hello` is the floor, `animals` is the ceiling, `sketch` is the
-escape hatch.** There is deliberately no fourth.
+Four apps, four jobs: **`hello` is the floor, `animals` is the ceiling, `sketch` is the
+escape hatch, and `pantry` is the same escape hatch with a schema.** The pair of Tier 2
+apps is the point: `sketch` shows the log used as a document store, `pantry` shows the log
+materialized into tables you query. Nothing else is planned for Tier 2.
 
 `hello` and `animals` contain no build step, because Tier 1 renders server-side; `animals`
 carries a few lines of Alpine.js for state that is not worth persisting, which is the point
-of §"HTMX and Alpine" in its README. `sketch` is nothing but JavaScript, because Tier 2
-renders itself. All of this is normal.
+of §"HTMX and Alpine" in its README. `sketch` and `pantry` are nothing but JavaScript,
+because Tier 2 renders itself, and neither has a build step or a vendored library either.
+All of this is normal.
 
 A fourth reference app, **`lantern`** (Tier 3, LÖVE linking the C ABI with no node process),
 arrives with `privatium-ffi`, the C ABI, which is not built yet.
@@ -35,7 +39,7 @@ Apps in this directory are *bundled*: in a checkout they sit beside the binary a
 the launcher without copying, and a packaged install will carry them read-only beside the
 program (a Flatpak install directory is not writable).
 
-A release binary carries the same three folders inside it. When you run it and your
+A release binary carries the same four folders inside it. When you run it and your
 data directory's `apps/` holds no app yet, it writes them there, so the launcher has
 something to show and you have something to edit; `privatium new --examples` writes them
 again if you want a fresh copy (`spec/cli.md §2`, `§4`).

@@ -714,7 +714,7 @@ fn test_spec_4_5_append_heals_a_cache_the_apply_could_not_update() {
 // §8 — the lifecycle, on the reference apps
 // ---------------------------------------------------------------------------------------
 
-/// The three reference apps load as `bundled`, and their `sys_app` rows say exactly what
+/// The four reference apps load as `bundled`, and their `sys_app` rows say exactly what
 /// their `app.toml` says (`spec/data-dictionary.md §3.4`, every column). A second load
 /// appends nothing.
 #[test]
@@ -726,18 +726,19 @@ fn test_reference_apps_load_and_index_rows_match() {
         .unwrap();
     assert_eq!(
         report.loaded,
-        vec!["animals", "hello", "sketch"],
+        vec!["animals", "hello", "pantry", "sketch"],
         "{report:?}"
     );
     assert!(report.failed.is_empty(), "{report:?}");
     assert!(report.warnings.is_empty(), "{report:?}");
     assert!(report.missing.is_empty());
-    assert_eq!(node.mounts().count(), 3);
+    assert_eq!(node.mounts().count(), 4);
 
     for (slug, title, tier, icon, order, tables) in [
         ("hello", "Hello", "lua", "chat-heart", 10, 1),
         ("animals", "Animals", "lua", "diagram-3", 20, 2),
         ("sketch", "Sketch", "web", "pencil-square", 30, 0),
+        ("pantry", "Pantry", "web", "box-seam", 40, 3),
     ] {
         let app = node
             .app(slug)
@@ -792,19 +793,19 @@ fn test_reference_apps_load_and_index_rows_match() {
     };
     assert_eq!(
         nav,
-        vec!["hello", "animals", "sketch"],
+        vec!["hello", "animals", "sketch", "pantry"],
         "nav_order, then title"
     );
 
     // The identity rows and founding audit, then one row and one `app.installed` per app, and nothing more
     // on a second load: the upsert is idempotent.
-    assert_eq!(sys_lines(&node).len(), 4 + 3 * 2);
-    assert_eq!(audit_rows(&node, "app.installed").len(), 3);
+    assert_eq!(sys_lines(&node).len(), 4 + 4 * 2);
+    assert_eq!(audit_rows(&node, "app.installed").len(), 4);
     let again = node
         .load_apps(&[AppRoot::bundled(repo_apps_dir())])
         .unwrap();
     assert_eq!(again.loaded, report.loaded);
-    assert_eq!(sys_lines(&node).len(), 10, "a second load appended to _sys");
+    assert_eq!(sys_lines(&node).len(), 12, "a second load appended to _sys");
     assert!(audit_rows(&node, "app.load_failed").is_empty());
 }
 

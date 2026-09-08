@@ -58,7 +58,7 @@ You can run Privatium on Windows, macOS, or Linux. Lua and SQLite are included.
    ```
 
    On Windows, use `./privatium.exe` in place of `./privatium`. The first run writes the
-   three [example apps](#example-applications) into its data folder and prints where
+   four [example apps](#example-applications) into its data folder and prints where
    that folder is. To keep everything in one place instead, create a folder named
    `privatium-data` beside the program: the program uses that folder whenever it
    exists, and the example apps are written into it on the first run.
@@ -101,6 +101,8 @@ and a source checkout serves them straight from `apps/`:
 - **[Hello](apps/hello)** — a simple Lua app with a form and a list. Start here.
 - **[Animals](apps/animals)** — a guessing game that learns new animals as you play.
 - **[Sketch](apps/sketch)** — a drawing app built with HTML and JavaScript.
+- **[Pantry](apps/pantry)** — what is in the freezer and on the shelf, and what you took
+  out of it.
 
 [AI assistant guides](docs/skills.md) help an assistant build apps that follow Privatium's
 requirements, including security and accessibility.

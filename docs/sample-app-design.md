@@ -57,6 +57,14 @@ widths, reduce padding and stack controls; do not shrink text to make it fit.
   into the page's sprite. Keyboard drawing remains available; one finger draws, while the
   sheet permits pinch zoom.
 
+- **Pantry:** a shelf map and the batches on the open shelf on the left, and the tray of
+  what is out, the activity list and the checks on the right. Below 820 pixels the two
+  columns become one, in the order map, batches, tray, activity, checks. The batches and
+  the activity are real tables with column headers, and each scrolls sideways on its own
+  rather than widening the page. A date carries a word — Expired, Use soon, or "no date" —
+  beside its icon, so no state is a colour alone. Every form field has its own label and
+  its own error paragraph, and a refusal from the node lands under the field it names.
+
 The sheet is a fixed 1600 by 1200 coordinate space, sized in CSS and drawn through a
 context transform, so a mark lands on the same pixels on every device that shares it. The
 canvas's backing store still follows its CSS box at the device pixel ratio. Zoom is
@@ -72,7 +80,7 @@ when their fill does not clear 3:1 by itself. The Apps link returns to the launc
 
 ## Check a change
 
-Run `privatium lint apps/hello apps/animals apps/sketch`. The repository's
+Run `privatium lint apps/hello apps/animals apps/sketch apps/pantry`. The repository's
 `cargo test --locked -p privatium-core --test reference` also exercises the apps and
 checks rendered accessibility structure and declared color contrast.
 

@@ -1727,7 +1727,7 @@ async fn test_reference_apps_load_and_route() {
     let root = tempfile::tempdir().unwrap();
     configure(&root, LUA_CONFIG);
     let (node, report) = open(&root, true);
-    assert_eq!(report.loaded, ["animals", "hello", "sketch"]);
+    assert_eq!(report.loaded, ["animals", "hello", "pantry", "sketch"]);
     assert!(report.failed.is_empty(), "{:?}", report.failed);
     let routes = |slug: &str| -> Vec<String> {
         node.app(slug)

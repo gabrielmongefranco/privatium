@@ -363,13 +363,13 @@ async fn test_spec_cli_4_from_copy_rewrites_slug_and_title() {
 }
 
 /// `spec/cli.md §2`, `§4` — the example apps the binary carries are the repository's
-/// `apps/hello`, `apps/animals` and `apps/sketch`, every file byte for byte and nothing
+/// `apps/hello`, `apps/animals`, `apps/sketch` and `apps/pantry`, every file byte for byte and nothing
 /// else, so a first run or `new --examples` writes exactly what a checkout mounts.
 #[test]
 fn test_spec_cli_4_embedded_examples_match_the_repository_apps() {
     use privatium_core::app::examples;
 
-    assert_eq!(examples::SLUGS, ["hello", "animals", "sketch"]);
+    assert_eq!(examples::SLUGS, ["hello", "animals", "sketch", "pantry"]);
     assert!(examples::files("_lint").is_none());
     assert!(examples::files("nope").is_none());
     for (slug, files) in examples::all() {

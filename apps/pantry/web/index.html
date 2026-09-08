@@ -1,0 +1,267 @@
+<!--
+  Project:  Privatium™  |  File: apps/pantry/web/index.html
+  Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+  Created:  2026-09-07  |  Modified: 2026-09-07
+  Summary:  Tier 2 entry point. The framework serves this file verbatim at the app's mount
+            point and injects nothing. The four regions — the shelf map, the batches on the
+            open shelf, the tray of what is out, and the activity read from the log — are
+            laid out by style.css alone: nothing here carries a style attribute, because
+            the default CSP (spec/protocol.md §9.3) has no style-src and an inline one is
+            dropped. Every form field carries its own label and its own error paragraph, so
+            a message from the node lands beside the field it names. The viewport stays
+            zoomable. See main README.md for full license information.
+-->
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pantry</title>
+<link rel="stylesheet" href="style.css">
+
+<body>
+
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-box-seam" viewBox="0 0 16 16"><path d="M8.186 1.113a.5.5 0 0 0-.372 0L1.846 3.5l2.404.961L10.404 2zm3.564 1.426L5.596 5 8 5.961 14.154 3.5zm3.25 1.7-6.5 2.6v7.922l6.5-2.6V4.24zM7.5 14.762V6.838L1 4.239v7.923zM7.443.184a1.5 1.5 0 0 1 1.114 0l7.129 2.852A.5.5 0 0 1 16 3.5v8.662a1 1 0 0 1-.629.928l-7.185 2.874a.5.5 0 0 1-.372 0L.63 13.09a1 1 0 0 1-.63-.928V3.5a.5.5 0 0 1 .314-.464z"/></symbol>
+  <symbol id="i-snow" viewBox="0 0 16 16"><path d="M8 16a.5.5 0 0 1-.5-.5v-1.293l-.646.647a.5.5 0 0 1-.707-.708L7.5 12.793V8.866l-3.4 1.963-.496 1.85a.5.5 0 1 1-.966-.26l.237-.882-1.12.646a.5.5 0 0 1-.5-.866l1.12-.646-.884-.237a.5.5 0 1 1 .26-.966l1.848.495L7 8 3.6 6.037l-1.85.495a.5.5 0 0 1-.258-.966l.883-.237-1.12-.646a.5.5 0 1 1 .5-.866l1.12.646-.237-.883a.5.5 0 1 1 .966-.258l.495 1.849L7.5 7.134V3.207L6.147 1.854a.5.5 0 1 1 .707-.708l.646.647V.5a.5.5 0 1 1 1 0v1.293l.647-.647a.5.5 0 1 1 .707.708L8.5 3.207v3.927l3.4-1.963.496-1.85a.5.5 0 1 1 .966.26l-.236.882 1.12-.646a.5.5 0 0 1 .5.866l-1.12.646.883.237a.5.5 0 1 1-.26.966l-1.848-.495L9 8l3.4 1.963 1.849-.495a.5.5 0 0 1 .259.966l-.883.237 1.12.646a.5.5 0 0 1-.5.866l-1.12-.646.236.883a.5.5 0 1 1-.966.258l-.495-1.849-3.4-1.963v3.927l1.353 1.353a.5.5 0 0 1-.707.708l-.647-.647V15.5a.5.5 0 0 1-.5.5z"/></symbol>
+  <symbol id="i-cup-hot" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M.5 6a.5.5 0 0 0-.488.608l1.652 7.434A2.5 2.5 0 0 0 4.104 16h5.792a2.5 2.5 0 0 0 2.44-1.958l.131-.59a3 3 0 0 0 1.3-5.854l.221-.99A.5.5 0 0 0 13.5 6zM13 12.5a2 2 0 0 1-.316-.025l.867-3.898A2.001 2.001 0 0 1 13 12.5M2.64 13.825 1.123 7h11.754l-1.517 6.825A1.5 1.5 0 0 1 9.896 15H4.104a1.5 1.5 0 0 1-1.464-1.175"/><path d="m4.4.8-.003.004-.014.019a4 4 0 0 0-.204.31 2 2 0 0 0-.141.267c-.026.06-.034.092-.037.103v.004a.6.6 0 0 0 .091.248c.075.133.178.272.308.445l.01.012c.118.158.26.347.37.543.112.2.22.455.22.745 0 .188-.065.368-.119.494a3 3 0 0 1-.202.388 5 5 0 0 1-.253.382l-.018.025-.005.008-.002.002A.5.5 0 0 1 3.6 4.2l.003-.004.014-.019a4 4 0 0 0 .204-.31 2 2 0 0 0 .141-.267c.026-.06.034-.092.037-.103a.6.6 0 0 0-.09-.252A4 4 0 0 0 3.6 2.8l-.01-.012a5 5 0 0 1-.37-.543A1.53 1.53 0 0 1 3 1.5c0-.188.065-.368.119-.494.059-.138.134-.274.202-.388a6 6 0 0 1 .253-.382l.025-.035A.5.5 0 0 1 4.4.8m3 0-.003.004-.014.019a4 4 0 0 0-.204.31 2 2 0 0 0-.141.267c-.026.06-.034.092-.037.103v.004a.6.6 0 0 0 .091.248c.075.133.178.272.308.445l.01.012c.118.158.26.347.37.543.112.2.22.455.22.745 0 .188-.065.368-.119.494a3 3 0 0 1-.202.388 5 5 0 0 1-.253.382l-.018.025-.005.008-.002.002A.5.5 0 0 1 6.6 4.2l.003-.004.014-.019a4 4 0 0 0 .204-.31 2 2 0 0 0 .141-.267c.026-.06.034-.092.037-.103a.6.6 0 0 0-.09-.252A4 4 0 0 0 6.6 2.8l-.01-.012a5 5 0 0 1-.37-.543A1.53 1.53 0 0 1 6 1.5c0-.188.065-.368.119-.494.059-.138.134-.274.202-.388a6 6 0 0 1 .253-.382l.025-.035A.5.5 0 0 1 7.4.8m3 0-.003.004-.014.019a4 4 0 0 0-.204.31 2 2 0 0 0-.141.267c-.026.06-.034.092-.037.103v.004a.6.6 0 0 0 .091.248c.075.133.178.272.308.445l.01.012c.118.158.26.347.37.543.112.2.22.455.22.745 0 .188-.065.368-.119.494a3 3 0 0 1-.202.388 5 5 0 0 1-.252.382l-.019.025-.005.008-.002.002A.5.5 0 0 1 9.6 4.2l.003-.004.014-.019a4 4 0 0 0 .204-.31 2 2 0 0 0 .141-.267c.026-.06.034-.092.037-.103a.6.6 0 0 0-.09-.252A4 4 0 0 0 9.6 2.8l-.01-.012a5 5 0 0 1-.37-.543A1.53 1.53 0 0 1 9 1.5c0-.188.065-.368.119-.494.059-.138.134-.274.202-.388a6 6 0 0 1 .253-.382l.025-.035A.5.5 0 0 1 10.4.8"/></symbol>
+  <symbol id="i-egg-fried" viewBox="0 0 16 16"><path d="M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6"/><path d="M13.997 5.17a5 5 0 0 0-8.101-4.09A5 5 0 0 0 1.28 9.342a5 5 0 0 0 8.336 5.109 3.5 3.5 0 0 0 5.201-4.065 3.001 3.001 0 0 0-.822-5.216zm-1-.034a1 1 0 0 0 .668.977 2.001 2.001 0 0 1 .547 3.478 1 1 0 0 0-.341 1.113 2.5 2.5 0 0 1-3.715 2.905 1 1 0 0 0-1.262.152 4 4 0 0 1-6.67-4.087 1 1 0 0 0-.2-1 4 4 0 0 1 3.693-6.61 1 1 0 0 0 .8-.2 4 4 0 0 1 6.48 3.273z"/></symbol>
+  <symbol id="i-basket" viewBox="0 0 16 16"><path d="M5.757 1.071a.5.5 0 0 1 .172.686L3.383 6h9.234L10.07 1.757a.5.5 0 1 1 .858-.514L13.783 6H15a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1v4.5a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 1 13.5V9a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h1.217L5.07 1.243a.5.5 0 0 1 .686-.172zM2 9v4.5A1.5 1.5 0 0 0 3.5 15h9a1.5 1.5 0 0 0 1.5-1.5V9zM1 7v1h14V7zm3 3a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-1 0v-3A.5.5 0 0 1 4 10m2 0a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-1 0v-3A.5.5 0 0 1 6 10m2 0a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-1 0v-3A.5.5 0 0 1 8 10m2 0a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-1 0v-3a.5.5 0 0 1 .5-.5m2 0a.5.5 0 0 1 .5.5v3a.5.5 0 0 1-1 0v-3a.5.5 0 0 1 .5-.5"/></symbol>
+  <symbol id="i-droplet" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M7.21.8C7.69.295 8 0 8 0q.164.544.371 1.038c.812 1.946 2.073 3.35 3.197 4.6C12.878 7.096 14 8.345 14 10a6 6 0 0 1-12 0C2 6.668 5.58 2.517 7.21.8m.413 1.021A31 31 0 0 0 5.794 3.99c-.726.95-1.436 2.008-1.96 3.07C3.304 8.133 3 9.138 3 10a5 5 0 0 0 10 0c0-1.201-.796-2.157-2.181-3.7l-.03-.032C9.75 5.11 8.5 3.72 7.623 1.82z"/><path fill-rule="evenodd" d="M4.553 7.776c.82-1.641 1.717-2.753 2.093-3.13l.708.708c-.29.29-1.128 1.311-1.907 2.87z"/></symbol>
+  <symbol id="i-cookie" viewBox="0 0 16 16"><path d="M6 7.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0m4.5.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3m-.5 3.5a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0"/><path d="M8 0a7.96 7.96 0 0 0-4.075 1.114q-.245.102-.437.28A8 8 0 1 0 8 0m3.25 14.201a1.5 1.5 0 0 0-2.13.71A7 7 0 0 1 8 15a6.97 6.97 0 0 1-3.845-1.15 1.5 1.5 0 1 0-2.005-2.005A6.97 6.97 0 0 1 1 8c0-1.953.8-3.719 2.09-4.989a1.5 1.5 0 1 0 2.469-1.574A7 7 0 0 1 8 1c1.42 0 2.742.423 3.845 1.15a1.5 1.5 0 1 0 2.005 2.005A6.97 6.97 0 0 1 15 8c0 .596-.074 1.174-.214 1.727a1.5 1.5 0 1 0-1.025 2.25 7 7 0 0 1-2.51 2.224Z"/></symbol>
+  <symbol id="i-bag" viewBox="0 0 16 16"><path d="M8 1a2.5 2.5 0 0 1 2.5 2.5V4h-5v-.5A2.5 2.5 0 0 1 8 1m3.5 3v-.5a3.5 3.5 0 1 0-7 0V4H1v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4zM2 5h12v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-plus-lg" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"/></symbol>
+  <symbol id="i-box-arrow-right" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M10 12.5a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v2a.5.5 0 0 0 1 0v-2A1.5 1.5 0 0 0 9.5 2h-8A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h8a1.5 1.5 0 0 0 1.5-1.5v-2a.5.5 0 0 0-1 0z"/><path fill-rule="evenodd" d="M15.854 8.354a.5.5 0 0 0 0-.708l-3-3a.5.5 0 0 0-.708.708L14.293 7.5H5.5a.5.5 0 0 0 0 1h8.793l-2.147 2.146a.5.5 0 0 0 .708.708z"/></symbol>
+  <symbol id="i-box-arrow-in-left" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M10 3.5a.5.5 0 0 0-.5-.5h-8a.5.5 0 0 0-.5.5v9a.5.5 0 0 0 .5.5h8a.5.5 0 0 0 .5-.5v-2a.5.5 0 0 1 1 0v2A1.5 1.5 0 0 1 9.5 14h-8A1.5 1.5 0 0 1 0 12.5v-9A1.5 1.5 0 0 1 1.5 2h8A1.5 1.5 0 0 1 11 3.5v2a.5.5 0 0 1-1 0z"/><path fill-rule="evenodd" d="M4.146 8.354a.5.5 0 0 1 0-.708l3-3a.5.5 0 1 1 .708.708L5.707 7.5H14.5a.5.5 0 0 1 0 1H5.707l2.147 2.146a.5.5 0 0 1-.708.708z"/></symbol>
+  <symbol id="i-arrow-down-up" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M11.5 15a.5.5 0 0 0 .5-.5V2.707l3.146 3.147a.5.5 0 0 0 .708-.708l-4-4a.5.5 0 0 0-.708 0l-4 4a.5.5 0 1 0 .708.708L11 2.707V14.5a.5.5 0 0 0 .5.5m-7-14a.5.5 0 0 1 .5.5v11.793l3.146-3.147a.5.5 0 0 1 .708.708l-4 4a.5.5 0 0 1-.708 0l-4-4a.5.5 0 0 1 .708-.708L4 13.293V1.5a.5.5 0 0 1 .5-.5"/></symbol>
+  <symbol id="i-clock-history" viewBox="0 0 16 16"><path d="M8.515 1.019A7 7 0 0 0 8 1V0a8 8 0 0 1 .589.022zm2.004.45a7 7 0 0 0-.985-.299l.219-.976q.576.129 1.126.342zm1.37.71a7 7 0 0 0-.439-.27l.493-.87a8 8 0 0 1 .979.654l-.615.789a7 7 0 0 0-.418-.302zm1.834 1.79a7 7 0 0 0-.653-.796l.724-.69q.406.429.747.91zm.744 1.352a7 7 0 0 0-.214-.468l.893-.45a8 8 0 0 1 .45 1.088l-.95.313a7 7 0 0 0-.179-.483m.53 2.507a7 7 0 0 0-.1-1.025l.985-.17q.1.58.116 1.17zm-.131 1.538q.05-.254.081-.51l.993.123a8 8 0 0 1-.23 1.155l-.964-.267q.069-.247.12-.501m-.952 2.379q.276-.436.486-.908l.914.405q-.24.54-.555 1.038zm-.964 1.205q.183-.183.35-.378l.758.653a8 8 0 0 1-.401.432z"/><path d="M8 1a7 7 0 1 0 4.95 11.95l.707.707A8.001 8.001 0 1 1 8 0z"/><path d="M7.5 3a.5.5 0 0 1 .5.5v5.21l3.248 1.856a.5.5 0 0 1-.496.868l-3.5-2A.5.5 0 0 1 7 9V3.5a.5.5 0 0 1 .5-.5"/></symbol>
+  <symbol id="i-exclamation-triangle" viewBox="0 0 16 16"><path d="M7.938 2.016A.13.13 0 0 1 8.002 2a.13.13 0 0 1 .063.016.15.15 0 0 1 .054.057l6.857 11.667c.036.06.035.124.002.183a.2.2 0 0 1-.054.06.1.1 0 0 1-.066.017H1.146a.1.1 0 0 1-.066-.017.2.2 0 0 1-.054-.06.18.18 0 0 1 .002-.183L7.884 2.073a.15.15 0 0 1 .054-.057m1.044-.45a1.13 1.13 0 0 0-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767z"/><path d="M7.002 12a1 1 0 1 1 2 0 1 1 0 0 1-2 0M7.1 5.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0z"/></symbol>
+  <symbol id="i-calendar-x" viewBox="0 0 16 16"><path d="M6.146 7.146a.5.5 0 0 1 .708 0L8 8.293l1.146-1.147a.5.5 0 1 1 .708.708L8.707 9l1.147 1.146a.5.5 0 0 1-.708.708L8 9.707l-1.146 1.147a.5.5 0 0 1-.708-.708L7.293 9 6.146 7.854a.5.5 0 0 1 0-.708"/><path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5M1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4z"/></symbol>
+  <symbol id="i-calendar-event" viewBox="0 0 16 16"><path d="M11 6.5a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5z"/><path d="M3.5 0a.5.5 0 0 1 .5.5V1h8V.5a.5.5 0 0 1 1 0V1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h1V.5a.5.5 0 0 1 .5-.5M1 4v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V4z"/></symbol>
+  <symbol id="i-check2" viewBox="0 0 16 16"><path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0"/></symbol>
+  <symbol id="i-cloud-slash" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M3.112 5.112a3 3 0 0 0-.17.613C1.266 6.095 0 7.555 0 9.318 0 11.366 1.708 13 3.781 13H11l-1-1H3.781C2.231 12 1 10.785 1 9.318c0-1.365 1.064-2.513 2.46-2.666l.446-.05v-.447q0-.113.018-.231zm2.55-1.45-.725-.725A5.5 5.5 0 0 1 8 2c2.69 0 4.923 2 5.166 4.579C14.758 6.804 16 8.137 16 9.773a3.2 3.2 0 0 1-1.516 2.711l-.733-.733C14.498 11.378 15 10.626 15 9.773c0-1.216-1.02-2.228-2.313-2.228h-.5v-.5C12.188 4.825 10.328 3 8 3c-.875 0-1.678.26-2.339.661z"/><path d="m13.646 14.354-12-12 .708-.708 12 12z"/></symbol>
+  <symbol id="i-arrow-repeat" viewBox="0 0 16 16"><path d="M11.534 7h3.932a.25.25 0 0 1 .192.41l-1.966 2.36a.25.25 0 0 1-.384 0l-1.966-2.36a.25.25 0 0 1 .192-.41m-11 2h3.932a.25.25 0 0 0 .192-.41L2.692 6.23a.25.25 0 0 0-.384 0L.342 8.59A.25.25 0 0 0 .534 9"/><path fill-rule="evenodd" d="M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 1 1-.771-.636A6.002 6.002 0 0 1 13.917 7H12.9A5 5 0 0 0 8 3M3.1 9a5.002 5.002 0 0 0 8.757 2.182.5.5 0 1 1 .771.636A6.002 6.002 0 0 1 2.083 9z"/></symbol>
+  <symbol id="i-list-ul" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M5 11.5a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5m0-4a.5.5 0 0 1 .5-.5h9a.5.5 0 0 1 0 1h-9a.5.5 0 0 1-.5-.5m-3 1a1 1 0 1 0 0-2 1 1 0 0 0 0 2m0 4a1 1 0 1 0 0-2 1 1 0 0 0 0 2m0 4a1 1 0 1 0 0-2 1 1 0 0 0 0 2"/></symbol>
+</svg>
+
+<!-- The shape every icon views.js draws is cloned from: an SVG element belongs to its own
+     namespace, and cloning one the page already holds keeps that detail out of the code. -->
+<template id="icon-shape"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-box-seam"></use></svg></template>
+
+<main>
+
+  <header class="top">
+    <h1><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-box-seam"></use></svg> Pantry</h1>
+    <p class="status" id="status" role="status"></p>
+  </header>
+
+  <div class="cols">
+
+    <section class="card map" aria-labelledby="h-shelves">
+      <h2 id="h-shelves">Shelves</h2>
+      <div id="shelves" class="shelves"></div>
+      <p class="empty" id="shelves-empty" hidden>No shelves yet. Add one below.</p>
+      <details class="add">
+        <summary>New shelf</summary>
+        <form id="shelf-form" novalidate>
+          <div class="field">
+            <label for="s-name">Shelf name</label>
+            <input id="s-name" type="text" autocomplete="off" aria-describedby="s-name-err">
+            <p class="err" id="s-name-err" hidden></p>
+          </div>
+          <p class="err" id="shelf-form-err" hidden></p>
+          <button type="submit" class="go">
+            <svg class="ic" aria-hidden="true" focusable="false"><use href="#i-plus-lg"></use></svg>
+            Add shelf
+          </button>
+        </form>
+      </details>
+    </section>
+
+    <section class="card batches" aria-labelledby="h-batches">
+      <h2 id="h-batches">On this shelf</h2>
+      <p class="empty" id="batches-empty" hidden>Nothing on this shelf. Everything that reached zero is still in the log.</p>
+      <div class="scroll">
+        <table id="batch-table">
+          <caption class="sr">Batches on the open shelf, with the balance the log adds up to</caption>
+          <thead>
+            <tr>
+              <th scope="col">Item</th>
+              <th scope="col">Balance</th>
+              <th scope="col">Stored on</th>
+              <th scope="col">Days in</th>
+              <th scope="col">Use by</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="batch-rows"></tbody>
+        </table>
+      </div>
+
+      <details class="add">
+        <summary>Add a batch</summary>
+        <form id="batch-form" novalidate>
+          <div class="field">
+            <label for="b-name">What is it?</label>
+            <input id="b-name" type="text" autocomplete="off" aria-describedby="b-name-err">
+            <p class="err" id="b-name-err" hidden></p>
+          </div>
+
+          <div class="field">
+            <label for="b-amount">How much?</label>
+            <input id="b-amount" type="text" inputmode="decimal" aria-describedby="b-amount-help b-amount-err">
+            <p class="help" id="b-amount-help">A number, up to three decimal places. It stays text all the way to storage, so nothing is rounded on the way.</p>
+            <p class="err" id="b-amount-err" hidden></p>
+          </div>
+
+          <div class="field">
+            <label for="b-unit">Measured in</label>
+            <select id="b-unit" aria-describedby="b-unit-err">
+              <option value="containers">containers</option>
+              <option value="pieces">pieces</option>
+              <option value="bags">bags</option>
+              <option value="packs">packs</option>
+              <option value="kg">kg</option>
+              <option value="litres">litres</option>
+            </select>
+            <p class="err" id="b-unit-err" hidden></p>
+          </div>
+
+          <div class="field">
+            <label for="b-shelf">Shelf</label>
+            <select id="b-shelf" aria-describedby="b-shelf-err"></select>
+            <p class="err" id="b-shelf-err" hidden></p>
+          </div>
+
+          <div class="field">
+            <label for="b-stored">Stored on</label>
+            <input id="b-stored" type="date" aria-describedby="b-stored-err">
+            <p class="err" id="b-stored-err" hidden></p>
+          </div>
+
+          <div class="field">
+            <label for="b-expires">Use by</label>
+            <input id="b-expires" type="date" aria-describedby="b-expires-help b-expires-err">
+            <p class="help" id="b-expires-help">Optional. Leave it blank when the package says nothing; a blank date is shown as "no date", never as fresh.</p>
+            <p class="err" id="b-expires-err" hidden></p>
+          </div>
+
+          <fieldset class="icons">
+            <legend>Icon</legend>
+            <p class="pick">
+              <input type="radio" name="icon" id="ic-snow" value="snow" checked>
+              <label for="ic-snow"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-snow"></use></svg> Frozen</label>
+            </p>
+            <p class="pick">
+              <input type="radio" name="icon" id="ic-cup-hot" value="cup-hot">
+              <label for="ic-cup-hot"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-cup-hot"></use></svg> Cooked</label>
+            </p>
+            <p class="pick">
+              <input type="radio" name="icon" id="ic-egg-fried" value="egg-fried">
+              <label for="ic-egg-fried"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-egg-fried"></use></svg> Breakfast</label>
+            </p>
+            <p class="pick">
+              <input type="radio" name="icon" id="ic-basket" value="basket">
+              <label for="ic-basket"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-basket"></use></svg> Dry goods</label>
+            </p>
+            <p class="pick">
+              <input type="radio" name="icon" id="ic-box-seam" value="box-seam">
+              <label for="ic-box-seam"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-box-seam"></use></svg> Packet</label>
+            </p>
+            <p class="pick">
+              <input type="radio" name="icon" id="ic-droplet" value="droplet">
+              <label for="ic-droplet"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-droplet"></use></svg> Liquid</label>
+            </p>
+            <p class="pick">
+              <input type="radio" name="icon" id="ic-cookie" value="cookie">
+              <label for="ic-cookie"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-cookie"></use></svg> Baking</label>
+            </p>
+            <p class="pick">
+              <input type="radio" name="icon" id="ic-bag" value="bag">
+              <label for="ic-bag"><svg class="ic" aria-hidden="true" focusable="false"><use href="#i-bag"></use></svg> Bag</label>
+            </p>
+          </fieldset>
+
+          <p class="err" id="batch-form-err" hidden></p>
+          <button type="submit" class="go">
+            <svg class="ic" aria-hidden="true" focusable="false"><use href="#i-plus-lg"></use></svg>
+            Add batch
+          </button>
+        </form>
+      </details>
+    </section>
+
+    <section class="card tray" aria-labelledby="h-tray">
+      <h2 id="h-tray">Taken out</h2>
+      <p class="empty" id="tray-empty" hidden>Nothing is out.</p>
+      <ul class="cards" id="out-cards"></ul>
+      <button type="button" id="earlier" aria-pressed="false">
+        <svg class="ic" aria-hidden="true" focusable="false"><use href="#i-clock-history"></use></svg>
+        Show earlier
+      </button>
+    </section>
+
+    <section class="card activity" aria-labelledby="h-activity">
+      <h2 id="h-activity">Activity</h2>
+      <p class="note">This list is read from the event log, not from a table. An undone change is gone from the tables and still here, because the log keeps what happened.</p>
+      <p class="empty" id="activity-empty" hidden>Nothing recorded yet.</p>
+      <div class="scroll">
+        <table id="activity-table">
+          <caption class="sr">Every recorded change, newest first</caption>
+          <thead>
+            <tr>
+              <th scope="col">When</th>
+              <th scope="col">What</th>
+              <th scope="col">Amount</th>
+              <th scope="col">Undo</th>
+            </tr>
+          </thead>
+          <tbody id="activity-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card checks" aria-labelledby="h-checks">
+      <h2 id="h-checks">Check stock</h2>
+      <p class="empty" id="checks-empty" hidden>Nothing to check.</p>
+      <ul class="cards" id="check-list"></ul>
+
+      <details class="more">
+        <summary>Expiring soon</summary>
+        <div class="scroll">
+          <table id="expiring-table">
+            <caption class="sr">Batches with a date inside the next thirty days, or already past it</caption>
+            <thead>
+              <tr>
+                <th scope="col">Item</th>
+                <th scope="col">Shelf</th>
+                <th scope="col">Use by</th>
+                <th scope="col">Balance</th>
+              </tr>
+            </thead>
+            <tbody id="expiring-rows"></tbody>
+          </table>
+        </div>
+      </details>
+
+      <details class="more">
+        <summary>Stock summary</summary>
+        <div class="scroll">
+          <table id="summary-table">
+            <caption class="sr">What is stored, added up by unit of measure</caption>
+            <thead>
+              <tr>
+                <th scope="col">Unit</th>
+                <th scope="col">Total</th>
+                <th scope="col">Batches</th>
+              </tr>
+            </thead>
+            <tbody id="summary-rows"></tbody>
+          </table>
+        </div>
+      </details>
+    </section>
+
+  </div>
+</main>
+
+<script type="module" src="app.js"></script>

@@ -206,7 +206,7 @@ async fn test_spec_9_2_unauthenticated_leaks_nothing() {
     assert_eq!(manifest["pair"], false);
     let apps = manifest["apps"].as_array().unwrap();
     let slugs: Vec<&str> = apps.iter().map(|a| a["slug"].as_str().unwrap()).collect();
-    assert_eq!(slugs, ["animals", "hello", "sketch"]);
+    assert_eq!(slugs, ["animals", "hello", "pantry", "sketch"]);
     for app in apps {
         let keys: BTreeSet<&str> = app
             .as_object()
@@ -219,8 +219,8 @@ async fn test_spec_9_2_unauthenticated_leaks_nothing() {
             "{keys:?}"
         );
     }
-    assert_eq!(apps[2]["title"], "Sketch");
-    assert_eq!(apps[2]["icon"], "pencil-square");
+    assert_eq!(apps[3]["title"], "Sketch");
+    assert_eq!(apps[3]["icon"], "pencil-square");
     let text = manifest.to_string();
     for forbidden in ["count", "_at", "seq", "lam", "display_name", "profile"] {
         assert!(!text.contains(forbidden), "{forbidden} in {text}");
@@ -731,11 +731,15 @@ async fn test_seed_offer_shown_and_only_a_post_loads_it() {
     assert!(page.contains(&format!("action=\"{action}\"")), "{page}");
     assert!(page.contains("name=\"_csrf\""), "{page}");
     assert!(page.contains("Load sample data"), "{page}");
-    // Of the reference apps only animals ships a seed, so exactly two offers appear —
-    // this app's and animals' — and nothing is offered for hello or sketch.
-    assert_eq!(page.matches("Load sample data").count(), 2, "{page}");
+    // Of the reference apps animals and pantry ship a seed, so exactly three offers
+    // appear — this app's and theirs — and nothing is offered for hello or sketch.
+    assert_eq!(page.matches("Load sample data").count(), 3, "{page}");
     assert!(
         page.contains("action=\"/settings/apps/animals/seed\""),
+        "{page}"
+    );
+    assert!(
+        page.contains("action=\"/settings/apps/pantry/seed\""),
         "{page}"
     );
     assert!(!page.contains("/settings/apps/hello/seed"), "{page}");
@@ -778,9 +782,9 @@ async fn test_seed_offer_shown_and_only_a_post_loads_it() {
     assert_eq!(lines[0]["d"]["display_name"], "Ada");
     let page = body_of(handler.handle(get("/settings/apps")).await).await;
     assert!(page.contains("<code>profile</code>: 2 rows"), "{page}");
-    // This app's offer is gone; animals', whose log is still empty, remains.
+    // This app's offer is gone; animals' and pantry's, whose logs are still empty, remain.
     assert!(!page.contains(&format!("action=\"{action}\"")), "{page}");
-    assert_eq!(page.matches("Load sample data").count(), 1, "{page}");
+    assert_eq!(page.matches("Load sample data").count(), 2, "{page}");
 
     // Never over existing events.
     let refused = handler.handle(post(format!("_csrf={token}"))).await;

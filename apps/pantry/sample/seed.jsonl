@@ -1,0 +1,22 @@
+{"op":"put","tbl":"shelf","id":"01J7SEED0000000000000DRAW1","d":{"name":"Freezer drawer 1","sort":10}}
+{"op":"put","tbl":"shelf","id":"01J7SEED0000000000000DRAW2","d":{"name":"Freezer drawer 2","sort":20}}
+{"op":"put","tbl":"shelf","id":"01J7SEED0000000000000RACK1","d":{"name":"Pantry shelf","sort":30}}
+{"op":"put","tbl":"shelf","id":"01J7SEED0000000000000RACK2","d":{"name":"Baking shelf","sort":40}}
+{"op":"put","tbl":"batch","id":"01J7SEED0000000000000BSCHK","d":{"name":"Chicken soup","icon":"cup-hot","unit":"containers","shelf_id":"01J7SEED0000000000000DRAW1","stored_on":"2026-08-02","expires_on":"2027-02-02"}}
+{"op":"put","tbl":"batch","id":"01J7SEED0000000000000BWAFF","d":{"name":"Waffles","icon":"egg-fried","unit":"pieces","shelf_id":"01J7SEED0000000000000DRAW1","stored_on":"2026-07-15","expires_on":"2026-09-10"}}
+{"op":"put","tbl":"batch","id":"01J7SEED0000000000000BSTEW","d":{"name":"Beef stew","icon":"cup-hot","unit":"containers","shelf_id":"01J7SEED0000000000000DRAW2","stored_on":"2026-05-20","expires_on":"2026-06-01"}}
+{"op":"put","tbl":"batch","id":"01J7SEED0000000000000BPEAS","d":{"name":"Green peas","icon":"snow","unit":"bags","shelf_id":"01J7SEED0000000000000DRAW2","stored_on":"2026-08-28","expires_on":null}}
+{"op":"put","tbl":"batch","id":"01J7SEED0000000000000BRYCE","d":{"name":"Basmati rice","icon":"basket","unit":"kg","shelf_id":"01J7SEED0000000000000RACK1","stored_on":"2026-03-11","expires_on":"2027-06-30"}}
+{"op":"put","tbl":"batch","id":"01J7SEED0000000000000BFRR1","d":{"name":"Bread flour","icon":"cookie","unit":"kg","shelf_id":"01J7SEED0000000000000RACK2","stored_on":"2026-02-01","expires_on":"2026-12-31"}}
+{"op":"put","tbl":"quantity_change","id":"01J7SEED0000000000000CHG01","d":{"batch_id":"01J7SEED0000000000000BSCHK","amount":"6","reason":"stocked","of_id":null,"at":"2026-08-02T17:40:00Z"}}
+{"op":"put","tbl":"quantity_change","id":"01J7SEED0000000000000CHG02","d":{"batch_id":"01J7SEED0000000000000BSCHK","amount":"-2","reason":"taken","of_id":null,"at":"2026-09-06T18:12:00Z"}}
+{"op":"put","tbl":"quantity_change","id":"01J7SEED0000000000000CHG03","d":{"batch_id":"01J7SEED0000000000000BSCHK","amount":"1","reason":"returned","of_id":"01J7SEED0000000000000CHG02","at":"2026-09-06T19:05:00Z"}}
+{"op":"put","tbl":"quantity_change","id":"01J7SEED0000000000000CHG04","d":{"batch_id":"01J7SEED0000000000000BWAFF","amount":"12","reason":"stocked","of_id":null,"at":"2026-07-15T09:20:00Z"}}
+{"op":"put","tbl":"quantity_change","id":"01J7SEED0000000000000CHG05","d":{"batch_id":"01J7SEED0000000000000BWAFF","amount":"-4","reason":"taken","of_id":null,"at":"2026-09-05T07:30:00Z"}}
+{"op":"put","tbl":"quantity_change","id":"01J7SEED0000000000000CHG06","d":{"batch_id":"01J7SEED0000000000000BSTEW","amount":"4","reason":"stocked","of_id":null,"at":"2026-05-20T20:00:00Z"}}
+{"op":"put","tbl":"quantity_change","id":"01J7SEED0000000000000CHG07","d":{"batch_id":"01J7SEED0000000000000BSTEW","amount":"-2","reason":"taken","of_id":null,"at":"2026-09-04T17:55:00Z"}}
+{"op":"put","tbl":"quantity_change","id":"01J7SEED0000000000000CHG08","d":{"batch_id":"01J7SEED0000000000000BSTEW","amount":"2","reason":"returned","of_id":"01J7SEED0000000000000CHG07","at":"2026-09-04T21:10:00Z"}}
+{"op":"put","tbl":"quantity_change","id":"01J7SEED0000000000000CHG09","d":{"batch_id":"01J7SEED0000000000000BPEAS","amount":"3","reason":"stocked","of_id":null,"at":"2026-08-28T16:00:00Z"}}
+{"op":"put","tbl":"quantity_change","id":"01J7SEED0000000000000CHG10","d":{"batch_id":"01J7SEED0000000000000BRYCE","amount":"2.5","reason":"stocked","of_id":null,"at":"2026-03-11T12:00:00Z"}}
+{"op":"put","tbl":"quantity_change","id":"01J7SEED0000000000000CHG11","d":{"batch_id":"01J7SEED0000000000000BFRR1","amount":"1","reason":"stocked","of_id":null,"at":"2026-02-01T11:00:00Z"}}
+{"op":"put","tbl":"quantity_change","id":"01J7SEED0000000000000CHG12","d":{"batch_id":"01J7SEED0000000000000BFRR1","amount":"-1","reason":"taken","of_id":null,"at":"2026-08-30T10:15:00Z"}}
