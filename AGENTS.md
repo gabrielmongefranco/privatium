@@ -177,6 +177,16 @@ either be wrong or fight every commit that touches the file.
   `sync_now` were held the same way until their milestones. A no-op that succeeds is what
   an embedder builds on; keep the error until the phase lands, and never make the example
   or the skill call a method that does not exist.
+  **The exception is a shape that cannot be added later without breaking something already
+  released.** A field in the event envelope, a level in a JSON structure two nodes
+  exchange, a component in a stored path, a parameter on a route peers depend on: leaving
+  room for one of those costs almost nothing now, and adding it afterwards costs a
+  compatibility break, a migration, or data nobody can recover because the lines are
+  already written. Reserve it, implement it honestly rather than faking it, and say in the
+  same change what it is for and which document decides it — a reservation nobody can
+  trace gets deleted by the next reader as scope creep, which is its own failure. The rule
+  above is against behaviour that pretends to work, not against leaving room for what is
+  coming. Weigh the two: an unused parameter is cheap, an unused subsystem is not.
 - **Do not treat the browser's offline limits as a rendering problem.** They are a secure
   context problem: a LAN IP cannot register a service worker at all. See
   `docs/architecture.md §2.5` and ADR 0003.
