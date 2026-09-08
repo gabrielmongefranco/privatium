@@ -1,6 +1,6 @@
 // Project:  Privatium™  |  File: crates/privatium/tests/channel.rs
 // Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-07
+// Created:  2026-09-05  |  Modified: 2026-09-08
 // Summary:  Actual WebSocket pairing, authenticated routing, streaming and refusal (§8);
 //           the owner-only acts a session is refused (§9.2), the session device an app
 //           sees, and the refusal a paired client makes of a re-keyed node (§8.1).
@@ -498,11 +498,19 @@ async fn test_spec_8_1_a_revoked_device_is_refused_at_the_handshake() {
 /// written, and the window is untouched for the next device; a peer that opens `/ws`
 /// and sends nothing is closed the same way. The bounds are shortened for the test;
 /// nothing here reads a clock.
+///
+/// The pairing bound is two seconds and not the handshake's fraction of one, because the
+/// same bound governs the real pairing this test performs further down: a whole PAKE over
+/// a live socket has to finish inside it. At three hundred milliseconds a loaded runner
+/// did not make it, the server closed the socket at the bound, and `finish` read the
+/// close frame as a malformed sealed message — a `Format` error a long way from its
+/// cause. The handler is behind an `Arc` by the time the fixture serves, so the bound
+/// cannot be relaxed part-way through; widening it is what this fixture allows.
 #[tokio::test]
 async fn test_spec_7_4_a_silent_pairing_peer_is_closed_without_an_attempt() {
     let f = Fixture::build(tempfile::tempdir().unwrap(), None, |handler| {
         let timeouts = handler.channel_timeouts_mut();
-        timeouts.pairing = Duration::from_millis(300);
+        timeouts.pairing = Duration::from_secs(2);
         timeouts.handshake = Duration::from_millis(300);
     })
     .await;
