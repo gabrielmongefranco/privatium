@@ -1,0 +1,20 @@
+# Project:  Privatium™  |  File: apps/animals/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-08-28  |  Modified: 2026-09-06
+# Summary:  Manifest for the ANIMALS guessing game. Tier 1 at its interesting end.
+#           See main README.md for full license information.
+
+[app]
+slug        = "animals"
+title       = "Animals"
+version     = "1.0.0"
+api         = 1
+tier        = "lua"
+description = "Think of an animal. Answer a few questions and teach me something new."
+icon        = "diagram-3"
+authors     = ["Gabriel Mongefranco"]
+license     = "GPL-3.0-or-later"
+
+[nav]
+order     = 20
+advertise = true

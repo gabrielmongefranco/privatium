@@ -1,0 +1,12 @@
+# Project:  Privatium™  |  File: apps/_lint/pass/PV203/pv203ok/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  Only what the sandbox keeps of os.
+#           See main README.md for full license information.
+
+[app]
+slug    = "pv203ok"
+title   = "Lint PV203"
+version = "1.0.0"
+api     = 1
+tier    = "lua"

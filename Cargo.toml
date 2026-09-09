@@ -1,0 +1,135 @@
+# Project:  Privatium™  |  File: Cargo.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-08-31  |  Modified: 2026-09-08
+# Summary:  Workspace root: the core library, the binary and the repository's own checks,
+#           one pinned dependency table, and the MSRV every member inherits.
+#           See main README.md for full license information.
+
+[workspace]
+resolver = "3"
+members = ["crates/privatium-core", "crates/privatium", "crates/xtask"]
+
+[workspace.package]
+version       = "0.2.0"
+edition       = "2024"
+rust-version  = "1.90.0"
+license       = "GPL-3.0-or-later"
+authors       = ["Gabriel Mongefranco (@gabrielmongefranco)"]
+repository    = "https://github.com/gabrielmongefranco/privatium"
+homepage      = "https://github.com/gabrielmongefranco/privatium"
+
+# Every version here was verified against the crates.io index on 2026-08-31 and is the
+# current maximum stable release. Caret requirements plus a committed Cargo.lock: the lock
+# is what pins, so a security patch is one `cargo update -p <crate>` rather than an edit
+# here. Members opt in individually, so nothing below is an unused dependency.
+[workspace.dependencies]
+# The workspace's own crates. The version is required as well as the path: a bare path
+# dependency is a wildcard requirement, which cargo-deny rejects and which would be
+# unpublishable.
+privatium-core = { path = "crates/privatium-core", version = "0.2.0" }
+
+# HTTP. `auth_layer` is a tower::Layer (spec/app-contract.md §6).
+axum       = { version = "0.8.9", default-features = false }
+tower      = "0.5.3"
+tower-http = "0.7.1"
+tokio      = "1.53.1"
+# Streams. The SSE body of spec/data-api.md §3 is a channel receiver polled as a
+# stream, and `Body::from_stream` wants a `futures_core::Stream`. The trait crate alone —
+# already in the graph beneath axum, so no new compile unit — rather than `tokio-stream`
+# (a new crate for one wrapper) or the `futures` facade.
+futures-core = "0.3.34"
+# Stream/sink helpers for the encrypted channel (spec/protocol.md §8.3).
+futures-util = { version = "0.3.32", default-features = false, features = ["std", "sink"] }
+# The socket conformance tests use the same WebSocket engine as axum.
+tokio-tungstenite = "0.29.0"
+socket2 = "0.6.5"
+if-addrs = "0.15.0"
+
+# Windows resource compilation for the binary's VS_VERSION_INFO (crates/privatium/build.rs).
+# MIT, 3.0.11 (2026-07-02), no RustSec advisory; a build dependency only, and a no-op on
+# every non-Windows target.
+embed-resource = "3.0.11"
+
+# Lua. lua54 (not LuaJIT, not Luau: AGENTS.md), vendored so no system Lua is needed.
+mlua = "0.12.1"
+
+# SQL. SQLite is the query engine (docs/decisions/0006). `bundled` compiles the
+# vendored amalgamation (one C file, about a minute) with JSON1 and FTS5 in; nothing is
+# downloaded and nothing can be loaded at runtime.
+rusqlite = { version = "0.40.2", default-features = false }
+
+# Node identity (spec/protocol.md §2.1) and CSRF token signing.
+ed25519-dalek = "3.0.0"
+# Static session identity, derived from the node key (spec/protocol.md §8).
+x25519-dalek = { version = "3.0.0", default-features = false, features = ["static_secrets", "zeroize"] }
+# Authenticated session frames (spec/protocol.md §8); random keys come from rand.
+chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["alloc", "zeroize"] }
+# The group arithmetic of the pairing PAKE (spec/protocol.md §7.4.1): RFC 9382 over
+# edwards25519 is written here from `EdwardsPoint` and `Scalar`, so the crate that already
+# sits beneath ed25519-dalek is taken directly and no PAKE crate is added.
+curve25519-dalek = { version = "5.0.0", default-features = false, features = ["alloc", "precomputed-tables", "zeroize"] }
+sha2          = "0.11.0"
+hmac          = "0.13.0"
+hkdf          = "0.13.0"
+rand          = "0.10.2"
+# Wipes the 32-byte buffer node.key is read into. Already in the graph via
+# ed25519-dalek's default `zeroize` feature; named here so the intent is not incidental.
+zeroize       = "1.9.0"
+# sys_node.pubkey and sys_device.*_pub are base64 (spec/data-dictionary.md §3.1, §3.2).
+# `simd-unsafe` is a default feature and stays off: this workspace denies unsafe_code and
+# a 32-byte key is not where SIMD earns its keep.
+base64 = { version = "0.23.1", default-features = false, features = ["std"] }
+
+# Time — the `ts` field, the §4.4 clock hygiene checks, and timestamp columns in the cache.
+# `ts` is normative (RFC 3339 UTC, millisecond precision, literal `Z`) and
+# hand-rolled civil-from-days arithmetic is not worth owning. default-features = false
+# drops the whole bundled tz database and `windows-link`; Privatium stores UTC only.
+jiff = { version = "0.2.35", default-features = false, features = ["std"] }
+
+# Data root resolution. XDG on Linux, Known Folder API on Windows, the Standard
+# Directory guidelines on macOS (spec/protocol.md §3, AGENTS.md 7).
+directories = "6.0.0"
+
+# Event identifiers. Crockford Base32, 26 characters.
+ulid = "3.0.0"
+
+# Serde. serde_json's `preserve_order` stays OFF: raw event lines are String/&[u8] end to
+# end and are never re-serialized on a write path (spec/protocol.md §4.2).
+serde      = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+toml       = "1.1.4"
+
+# Lua AST for the linter. MPL-2.0; see deny.toml.
+full_moon = { version = "2.2.0", default-features = false }
+
+# No argument-parsing crate. The surface is eight commands and twenty flags fixed by
+# spec/cli.md, whose synopsis lines are the help text, so the binary parses
+# `std::env::args_os` itself (crates/privatium/src/cli.rs), as xtask already does. Colour
+# is unspecified and unused.
+
+# Errors: thiserror in the library, anyhow at binary boundaries (AGENTS.md, Style).
+thiserror = "2.0.20"
+anyhow    = "1.0.104"
+
+# Embedding icons, shell assets, and pv.js into the binary.
+include_dir = "0.7.4"
+
+# Test-only: an isolated data root per test, removed on drop.
+tempfile = "3.27.0"
+
+# `panic` stays at its default, unwind, and that is load-bearing: mlua raises a Lua error
+# out of a Rust callback — the instruction hook, every `pv.*` function — by unwinding
+# through the callback frame. With `panic = "abort"` the release binary died on the first
+# Lua limit trip ("panic in a function that cannot unwind … aborting"), taking the whole
+# node with it; with unwind the same request is a 500 and the node lives. Verified against
+# the running binary, not assumed.
+[profile.release]
+lto           = "thin"
+codegen-units = 1
+strip         = "debuginfo"
+
+# The engine at -O0 is several times slower than at -O3, and the tests replay logs through
+# it thousands of times. This overrides only that package and only in dev; the C compile
+# is a minute either way. [profile.release] above is untouched.
+[profile.dev.package.libsqlite3-sys]
+opt-level = 3

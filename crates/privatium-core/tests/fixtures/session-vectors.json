@@ -1,0 +1,106 @@
+{
+  "c2s": {
+    "frames": [
+      {
+        "ciphertext": "qE+GXC4IkOIFmPal9Z6eWg==",
+        "plaintext": ""
+      },
+      {
+        "ciphertext": "JOeDxRTd37FcihWmvIhUGq+QxZZM3PsZcfiJb3SFl+90+gFjZg==",
+        "plaintext": "c3ludGhldGljIGMycyBmcmFtZSAx"
+      },
+      {
+        "ciphertext": "EAsHRwqHKZ3nlPDXeBMKd61sBRdTGj1Kym01yMkQPu/45ayJWg==",
+        "plaintext": "c3ludGhldGljIGMycyBmcmFtZSAy"
+      },
+      {
+        "ciphertext": "pAJUws/6kjB2axxn+FSUa/Qys26ij5TgVu6Sty5YVCkTol20LQ==",
+        "plaintext": "c3ludGhldGljIGMycyBmcmFtZSAz"
+      },
+      {
+        "ciphertext": "xhWinQIHGQbVMyNXk9DbTa4I1M0AxSIzEwC6SeiCgxQZlKI9yQ==",
+        "plaintext": "c3ludGhldGljIGMycyBmcmFtZSA0"
+      },
+      {
+        "ciphertext": "iYgAVJf7o4E/gMViC6zrGXYwdMG++UTNBvN6hrsbX65lsH2a4Q==",
+        "plaintext": "c3ludGhldGljIGMycyBmcmFtZSA1"
+      },
+      {
+        "ciphertext": "2rRE4mQw54R5bqOiqijATyhjE58loNQjjTn2HYjmlvHsISVHtQ==",
+        "plaintext": "c3ludGhldGljIGMycyBmcmFtZSA2"
+      },
+      {
+        "ciphertext": "0WrOrCFZHX6Iv3VYb4AGeJSU+FjrUd52Aw3BSDeVY4uUz39F5g==",
+        "plaintext": "c3ludGhldGljIGMycyBmcmFtZSA3"
+      },
+      {
+        "ciphertext": "ZILo1GCHrzZnGH9cHaqtnUK9qh1h1t7wHUjnMaR8lx9IAgXu9w==",
+        "plaintext": "c3ludGhldGljIGMycyBmcmFtZSA4"
+      },
+      {
+        "ciphertext": "j0KRM5diPCeH4P+WPDccIBNCUhRSRzU36jU1IzaWkmgpUA/gAA==",
+        "plaintext": "c3ludGhldGljIGMycyBmcmFtZSA5"
+      }
+    ],
+    "key": "tRThJ7IMWaMLKiPR0V1Q6FE4FnmvxyX/dKPgy/Ym4ds="
+  },
+  "client_ephemeral": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=",
+  "client_static": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=",
+  "device_id": "b3nn8t2q",
+  "handshake": {
+    "client_hello": "{\"dev\":\"b3nn8t2q\",\"e\":\"Xf7dO2vUf2+ijuFdlp1bsOpTd01Ii9r53xxuASSz7yI=\",\"v\":1}",
+    "cluster_public": "GX9rI+FshTLGq8g4+s1ep4m+DHaykgM0A5v6iz02jWE=",
+    "confirm": "eVrtadujGcJf2Ye1tMQWwkAz4WUBrfLaWejXKPfEZDnwPB463FEw2t7VLIifPq7i39UdW5lP77pU43+MTGY4PKyAQ379JDDT+b3DXnA7odKpwMbQ6fDKUwFAjyVV4Q==",
+    "node_hello": "{\"cert\":\"eyJub2RlX2lkIjoiYXMzbm45dG0iLCJub2RlX3B1YiI6IkE2RUh2L1BPRUw0ZGNOMFk1MHZBbVdmazFqQ2JwUTFmSGR5R1pCSlZNYmc9IiwiY2x1c3Rlcl9pZCI6InByMDMwdjd0IiwiaXNzdWVkX2F0IjoiMjAyNi0wOS0wNFQxMjowMDowMC4wMDBaIiwiZXhwaXJlc19hdCI6IjIwMjctMDMtMDNUMTI6MDA6MDAuMDAwWiIsInNpZyI6Ijc5Mit0Z3hTRVlycFk3bVkzYUpPcWpEc0lYM2F3bDcvWGc1ZVJvTlJ3N2dCT2h6ZEIyOFZSWVVoaTBMelVwbThEcCsyVUMvU1BTQjdoOEZERVpzRUJBPT0ifQ==\",\"e\":\"rAGyIJ6GNU+4UyN7XeD0+rE8f8v0M6YcAZNpYX/s8Qs=\",\"id\":\"as3nn9tm\",\"v\":1}",
+    "node_static_public": "fhZHqgA9C9H+u3jIRwiE++jSMFjG6W1KwyXZVwdhyh8=",
+    "now": "2026-09-05T00:00:00.000Z"
+  },
+  "node_ephemeral": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
+  "node_id": "k7m2q9xf",
+  "node_static": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=",
+  "s2c": {
+    "frames": [
+      {
+        "ciphertext": "d6rgMcxlzWGhCpR49Lz3+Q==",
+        "plaintext": ""
+      },
+      {
+        "ciphertext": "U8sJFKA6OVYgr9WnLUFkWOL0wppwDJ1qKS4SZHvJJkrJbycWaA==",
+        "plaintext": "c3ludGhldGljIHMyYyBmcmFtZSAx"
+      },
+      {
+        "ciphertext": "DXg1csBfzXgHDblPCNxDB1q8h4UsjqI5HdBUzB9NtR8TjnudeA==",
+        "plaintext": "c3ludGhldGljIHMyYyBmcmFtZSAy"
+      },
+      {
+        "ciphertext": "ZsVGKnscAchak5Ar58F6Koak9u3it+vmcCNMPSbh0GJHn1yaoQ==",
+        "plaintext": "c3ludGhldGljIHMyYyBmcmFtZSAz"
+      },
+      {
+        "ciphertext": "KYDrGBm9yCABRH1Vp/ucCjkrOhNz0TGlcg/8oK0LoqDuK+z/wQ==",
+        "plaintext": "c3ludGhldGljIHMyYyBmcmFtZSA0"
+      },
+      {
+        "ciphertext": "Gdztmz5A+IfWVmkvkKjeQpaQIKLrq4lgGNePAm7IR14TgD5juw==",
+        "plaintext": "c3ludGhldGljIHMyYyBmcmFtZSA1"
+      },
+      {
+        "ciphertext": "TWQwv0JY8xFrbZmtNie/GInOKR/sOoZjAMU3c8mZW/Ft7uVcpg==",
+        "plaintext": "c3ludGhldGljIHMyYyBmcmFtZSA2"
+      },
+      {
+        "ciphertext": "yXfSIkwyow4dSi/gyGwlokRFYDeY5jKz34PFtV0ZGUv3jwwAtw==",
+        "plaintext": "c3ludGhldGljIHMyYyBmcmFtZSA3"
+      },
+      {
+        "ciphertext": "NowIQGuMoU1Bedw74MZgsNYSv349meWPTsGEXQ6YntVfh6W/mQ==",
+        "plaintext": "c3ludGhldGljIHMyYyBmcmFtZSA4"
+      },
+      {
+        "ciphertext": "jIeJ7HJzfB9at7nRWVc0KHydjHwilEus1shHgwKyrwps7PFtPw==",
+        "plaintext": "c3ludGhldGljIHMyYyBmcmFtZSA5"
+      }
+    ],
+    "key": "b2ZMJY3j6Vbz+qJQ4jSUGowL6M5YU4yG98Awr2mFD94="
+  }
+}

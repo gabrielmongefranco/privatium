@@ -1,0 +1,72 @@
+# Project:  Privatium™  |  File: crates/privatium/Cargo.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-08-31  |  Modified: 2026-09-08
+# Summary:  The binary — spec/cli.md, parsed by hand (src/cli.rs) — and beside it the axum
+#           adapter as a library target so its tests can reach it (ADR 0003: socket and peer
+#           address in, `core::handle` out — no routes of its own).
+#           See main README.md for full license information.
+
+[package]
+name        = "privatium"
+description = "Privatium™ is a framework for building small, personal apps that sync across your devices seamlessly without cloud services"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+
+[lib]
+name = "privatium"
+path = "src/lib.rs"
+
+[[bin]]
+name = "privatium"
+path = "src/main.rs"
+
+[dependencies]
+socket2 = { workspace = true }
+if-addrs = { workspace = true }
+privatium-core = { workspace = true }
+anyhow         = { workspace = true }
+# The daily maintenance pass (src/run.rs) names the instant it runs at, which is what a
+# snapshot is named by (spec/protocol.md §5.1). Already in the graph beneath the core.
+jiff           = { workspace = true }
+# `privatium pair` (src/pair.rs) reads the window `/api/v1/pair` answers with
+# (spec/cli.md §8). Already in the graph beneath the core; promoted from the test-only
+# table for that one reader.
+serde_json     = { workspace = true }
+
+# The axum adapter. `http1` and `tokio` are what `axum::serve` needs; the adapter has no
+# router, so none of axum's routing or extractor features are on. `tokio`'s `net` is the
+# listener and `rt-multi-thread` the runtime `main` starts; `signal` lets Ctrl-C flush
+# local/state.jsonl before the process ends, and `time` drives the daily pass that writes
+# the weekly snapshots of spec/protocol.md §5.
+axum  = { workspace = true, features = ["http1", "tokio"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "net", "macros", "io-util", "signal", "time"] }
+tower = { workspace = true, features = ["util"] }
+
+# The Windows VS_VERSION_INFO resource (build.rs), so the Details tab of the file
+# properties dialog carries the product name, the author, the copyright and the licence.
+# It is a no-op for every other target. Chosen over winres, whose last release was 2021,
+# and over winresource, its maintained fork: this crate finds the resource compiler for
+# both the MSVC and the GNU toolchain, is an order of magnitude more used, and reads no
+# manifest of its own — build.rs writes the script from [workspace.package], which is
+# where these values are supposed to live.
+[build-dependencies]
+embed-resource = { workspace = true }
+
+[dev-dependencies]
+tokio-tungstenite = { workspace = true }
+futures-util = { workspace = true }
+base64 = { workspace = true }
+x25519-dalek = { workspace = true }
+ed25519-dalek = { workspace = true }
+tempfile   = { workspace = true }
+
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"

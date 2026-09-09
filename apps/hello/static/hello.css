@@ -1,0 +1,19 @@
+/* Project: Privatium™ | File: apps/hello/static/hello.css
+ * Authors: Gabriel Mongefranco (@gabrielmongefranco)
+ * Created: 2026-09-06 | Modified: 2026-09-06
+ * Summary: A greeting and a short form, using the shell's accessible color tokens.
+ *          See main README.md for full license information.
+ */
+.hello {
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: clamp(1.25rem, 5vw, 3rem);
+  border: 1px solid var(--pv-line);
+  border-top: .35rem solid var(--pv-accent);
+  border-radius: .75rem;
+  background: var(--pv-panel);
+}
+.hello-mark { color: var(--pv-accent); font-size: 3rem; margin: 0 0 1.5rem; }
+.hello h1 { max-width: 20ch; }
+.hello form input { display: block; }
+.hello .pv-help { margin: .5rem 0 1.25rem; }

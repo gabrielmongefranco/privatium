@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+# Project:  Privatium™  |  File: .github/scripts/conformance.sh
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-07
+# Summary:  The conformance checklist of spec/protocol.md §13, asserted by test name: every
+#           item this build can satisfy, plus the two docs/roadmap.md bullets that are easy
+#           to lose (every route through core::handle; bodies stream both ways). The test
+#           binaries were built by the test step; each name below must run and pass, and a
+#           name that matches nothing fails here rather than passing by absence.
+#           See main README.md for full license information.
+
+set -euo pipefail
+
+# run <package> <test binary> <test name>...: every name, exactly, and as many passes.
+run() {
+  local package="$1" binary="$2"
+  shift 2
+  local expected=$#
+  local out
+  local target=(--test "$binary")
+  [ "$binary" = lib ] && target=(--lib)
+  out="$(cargo test -p "$package" --locked "${target[@]}" -- --exact "$@" 2>&1)" || {
+    echo "$out"
+    exit 1
+  }
+  local passed
+  passed="$(grep -o '[0-9]* passed' <<<"$out" | tail -n 1 | cut -d' ' -f1)"
+  if [[ "$passed" != "$expected" ]]; then
+    echo "$out"
+    echo "conformance: $binary: expected $expected named tests to run, $passed passed"
+    exit 1
+  fi
+  printf 'conformance: %s: %s\n' "$binary" "$*"
+}
+
+# Deleting cache/ and every snap/ loses no data (§3.1, §5); LWW by (lam, ts, dev) (§4.5);
+# an event past the horizon never wins a row (§4.4, the materialization half).
+run privatium-core store \
+  test_spec_3_1_delete_cache_loses_nothing \
+  test_spec_4_5_lww_by_lam_ts_dev \
+  test_spec_4_4_future_event_does_not_win_the_row
+# Unknown fields byte for byte (§4.2); Lamport monotonic across restart (§4.3, the restart
+# half); events more than 24 h in the future rejected (§4.4, the log-scan half).
+run privatium-core log \
+  test_spec_4_2_unknown_fields_preserved \
+  test_spec_4_3_lamport_survives_restart \
+  test_spec_4_4_future_ts_rejected
+# Three-tier read fallback with the tier recorded (§5.3); the oldest snapshot never
+# pruned (§5.4).
+run privatium-core snapshot \
+  test_spec_5_3_tier1_sqlite \
+  test_spec_5_3_tier2_on_sqlite_corruption \
+  test_spec_5_3_tier3_on_csv_corruption \
+  test_restore_reports_tier_used \
+  test_spec_5_4_never_prunes_oldest
+# Unauthenticated endpoints leak no app data (§9.2); every route through core::handle with
+# no socket, and a response body that streams (docs/roadmap.md, ADR 0003).
+run privatium-core wire \
+  test_spec_9_2_unauthenticated_leaks_nothing \
+  test_spec_9_1_every_prefix_reachable_through_handle \
+  test_response_body_streams_without_buffering
+# Apps declaring a higher api refused (§12).
+run privatium-core apps test_spec_12_higher_api_refused
+# The adapter never buffers a request body whole (docs/roadmap.md).
+run privatium adapter \
+  test_large_request_body_never_fully_buffered \
+  test_response_body_streams_without_buffering
+# Cluster secret exclusion and the certificate lifetime; renewal after a completed sync
+# pass is the sync milestone's, renewal at runtime is held below.
+run privatium-core identity \
+  test_spec_2_3_3_cluster_private_key_is_absent_from_every_event_snapshot_and_backup \
+  test_spec_2_3_1_certificate_verifies_against_the_cluster_key_and_expires_at_180_days \
+  test_spec_2_3_1_certificate_renews_under_ninety_days \
+  test_spec_3_1b_data_only_restore_preserves_records_and_selects_local_identity \
+  test_spec_3_1b_restored_keys_select_the_original_cluster \
+  test_spec_3_1b_replayed_rows_cannot_change_local_cluster_identity
+
+# Session primitives and handshake refusals; the live channel has its own acceptance.
+run privatium-core session \
+  test_spec_8_key_schedule_matches_the_checked_in_vectors \
+  test_spec_8_frames_round_trip_and_the_counter_never_repeats \
+  test_spec_8_a_tampered_frame_is_refused \
+  test_spec_8_handshake_derives_the_same_keys_on_both_sides \
+  test_spec_8_1_a_static_key_that_is_not_the_pinned_one_fails_the_confirm \
+  test_spec_8_3_unknown_revoked_and_missing_device_keys_are_refused
+
+# Pairing (§7): owner action, the node-generated 16-bit code with its two renderings and
+# the glyphs' variation selectors, the 120 s TTL and five attempts, no bearer code on the
+# wire, and the device row a success writes — replica declared, public key only.
+run privatium-core pair \
+  test_spec_7_1_pairing_is_closed_until_opened_and_closes_on_first_success \
+  test_spec_7_2_code_is_16_bits_rendered_as_four_glyphs_and_two_words \
+  test_spec_7_2_word_input_is_case_and_punctuation_insensitive \
+  test_spec_7_2_glyph_labels_are_accepted_as_input \
+  test_spec_7_3_glyph_table_is_normative_and_keeps_variation_selectors \
+  test_spec_7_5_code_expires_at_120s_and_five_attempts_issue_a_new_one \
+  test_spec_7_0_the_code_never_crosses_the_wire \
+  test_spec_7_4_pairing_completes_and_writes_the_device_row
+
+# The bootstrap exposes no application content, and live sessions stream through handle.
+run privatium-core channel \
+  test_spec_8_4_plain_http_on_the_lan_serves_only_the_bootstrap_set \
+  test_spec_9_2_bootstrap_page_carries_no_app_data \
+  test_spec_8_3_page_frame_scripts_carry_integrity \
+  test_spec_8_3_1_bootstrap_uses_destination_app_permissions
+run privatium channel \
+  test_spec_8_2_lan_socket_carries_no_plaintext_app_data \
+  test_channel_streams_a_response_body_frame_by_frame \
+  test_spec_8_3_browser_client_against_live_core \
+  test_spec_8_3_1_handoff_survives_disconnect_without_repeating_a_write \
+  test_spec_8_3_1_wrong_device_cannot_consume_or_release_a_response \
+  test_spec_8_3_1_capacity_refuses_before_dispatch_and_release_frees_it \
+  test_spec_8_1_a_reinitialized_node_is_refused_by_a_paired_client \
+  test_spec_9_2_pair_route_refuses_a_session
+
+# The plain-HTTP pairing screens disclose the property-1 gap (§7.7); pairing opens only
+# with the owner's standing and the manifest says so (§7.1, §9.2); a revocation is a put
+# that survives, never a del (spec/data-dictionary.md §3.2).
+run privatium-core devices \
+  test_spec_7_7_plain_http_pairing_page_discloses_the_gap \
+  test_spec_9_2_manifest_pair_flag_is_true_while_open \
+  test_spec_3_2_revocation_is_a_put_never_a_del
+
+# Discovery (§6): the full TXT key set advertised and browsable (§6.1), every configured
+# mechanism started concurrently rather than chained (§6.5), and the UDP responder
+# refusing a non-private source (§6.4).
+run privatium-core discover \
+  test_spec_6_1_txt_record_carries_the_full_key_set_and_stays_under_1300_bytes \
+  test_spec_6_1_mdns_registration_is_browsable_and_keyed_by_id \
+  test_spec_6_5_mdns_and_udp_start_together_and_stop_together \
+  test_spec_6_4_udp_refuses_a_public_source_and_answers_once_a_second
+
+# Node admission (§2.3.1): the cluster key crosses once, after proof, and never to a
+# browser (§2.3.3); a node's certificate renews at runtime under ninety days and never at
+# expiry (§2.3.1, the runtime half); discovery filters to the cluster by `cl` (§6.1);
+# `sys_device.replica` is declared accurately for a node (§10.7).
+run privatium-core admission   test_spec_2_3_3_the_cluster_key_goes_to_a_node_and_never_to_a_browser   test_spec_2_3_3_cluster_private_key_is_absent_from_every_event_snapshot_and_backup   test_spec_2_3_1_certificate_renews_at_runtime_under_ninety_days_and_never_at_expiry   test_spec_6_1_peers_are_the_clusters_nodes_and_strangers_are_kept_apart_by_id   test_spec_2_3_1_the_joiner_and_the_admitter_write_the_same_device_facts
+
+# The owner's standing is a request from this machine, held to its Host (§8.4).
+run privatium-core wire   test_spec_8_4_a_request_from_this_machines_own_address_is_the_owner
+
+# Raw synchronization, causal folding and app delivery (§4, §10.2).
+run privatium-core sync \
+  test_spec_10_2_push_validates_dev_seq_app_and_envelope \
+  test_spec_10_2_a_seq_gap_is_refused_and_the_range_is_pulled \
+  test_spec_10_2_received_lines_land_in_the_origin_devices_file_byte_for_byte \
+  test_spec_10_2_a_short_batch_and_a_non_envelope_line_are_copied_and_skipped_everywhere \
+  test_spec_10_2_the_receiver_is_the_only_writer_of_another_devices_file \
+  test_spec_4_3_lamport_folds_received_events_and_stays_monotonic_across_restart \
+  test_spec_4_4_a_future_dated_synced_line_is_stored_skipped_and_audited_once \
+  test_spec_10_2_a_torn_foreign_segment_is_completed_by_its_suffix_never_truncated \
+  test_spec_10_2_an_append_past_the_page_bound_is_refused_before_it_is_written \
+  test_spec_10_2_foreign_torn_tail_survives_restart_and_is_not_materialized \
+  test_spec_10_2_unmounted_logs_are_audited_without_a_local_writer \
+  test_spec_data_3_stream_carries_synced_events \
+  test_spec_data_3_live_sse_delivers_below_the_resume_mark \
+  test_spec_lua_3_4_on_append_fires_for_synced_events_with_the_origin_device
+run privatium-core lib \
+  sync::tests::test_spec_10_2_sync_state_is_never_an_event \
+  sync::tests::test_sync_inbox_is_drained_by_refresh_and_by_sync_now \
+  sync::tests::test_spec_2_3_1_certificate_renews_after_a_completed_pass \
+  sync::tests::test_spec_2_3_1_expired_membership_refuses_sync_without_starting_a_thread \
+  sync::endpoints::tests::test_spec_10_4_candidates_are_ordered_by_last_ok_then_kind_and_bounded
+run privatium-core embedded test_spec_app_contract_6_start_sync_and_sync_now_are_real
+# Peers over encrypted TCP sockets, including the browser and power-cut cases (§10.3).
+run privatium cluster \
+  test_spec_10_1_heads_pull_and_push_are_a_set_union \
+  test_spec_9_2_sync_routes_answer_a_node_session_alone \
+  test_spec_8_3_either_side_can_start_the_first_pass_after_admission \
+  test_spec_2_3_2_a_device_pinned_to_the_cluster_reaches_an_unmet_node \
+  test_spec_10_3_power_cut_desktop_catches_up_through_the_laptop \
+  test_spec_10_3_offline_edits_on_both_nodes_converge \
+  test_spec_10_3_no_node_is_primary \
+  test_spec_10_4_killing_the_active_endpoint_fails_over_in_under_five_seconds \
+  test_spec_10_2_pull_keeps_batches_whole_and_defers_only_trailing_filler \
+  test_spec_10_2_short_tail_heads_and_filler_converge_by_sequence \
+  test_spec_10_2_push_refuses_invalid_ranges_atomically_over_the_channel \
+  test_spec_10_2_a_log_that_cannot_be_offered_does_not_stop_the_apps_after_it \
+  test_sync_wakes_an_idle_drain_and_debounces_local_appends
+
+echo "conformance: storage, identity, pairing, channel, discovery, admission and LAN sync items hold by name"

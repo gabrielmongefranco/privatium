@@ -1,0 +1,40 @@
+/* Project:  Privatium™  |  File: apps/animals/static/animals.css
+ * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+ * Created:  2026-08-31  |  Modified: 2026-09-06
+ * Summary:  A focused game board and readable question paths, using shell tokens.
+ *           See main README.md for full license information.
+ */
+
+/* Alpine hides x-show elements only once it has initialised. Without this the
+ * collapsed content is visible for one frame on a slow phone. Pair every
+ * x-show that starts closed with x-cloak. */
+[x-cloak] { display: none !important; }
+
+/* Question paths can be long. Wrap rather than scroll the table sideways. */
+.pv-path { white-space: normal; }
+
+.animals { max-width: 48rem; margin: 0 auto; }
+.animals-intro { font-size:clamp(1.125rem, 1rem + .5vw, 1.375rem); font-weight:600; display: flex; align-items: center; gap: .75rem; margin: 0 0 1.5rem; color: var(--pv-muted); }
+.animals-intro .pv-icon { font-size: 2rem; color: var(--pv-accent); }
+#board {
+  padding: clamp(1.25rem, 5vw, 3rem);
+  border: 1px solid var(--pv-line);
+  border-top: .35rem solid var(--pv-accent);
+  border-radius: .75rem;
+  background: var(--pv-panel);
+}
+#board h1 { max-width: 24ch; }
+#board .pv-actions { margin-top: 2rem; }
+#board .pv-actions .pv-btn { min-width: min(100%, 7rem); min-height: 48px; }
+#board .pv-meta { margin: 2rem 0 0; }
+.animals table { table-layout: fixed; }
+.animals th:first-child { width: 28%; }
+.animals td, .animals th { padding: .85rem .5rem; overflow-wrap: anywhere; }
+.animals td:first-child { font-weight: 600; }
+.pv-path > span { display: block; margin: .5rem 0; line-height: 1.7; }
+.animals-reset { border-top: 1px solid var(--pv-line); padding-top: 1.25rem; margin-top: 2rem; }
+.animals form > input { display: block; }
+
+.animals-win-mark { color:var(--pv-accent); font-size:2.5rem; margin:0 0 1rem; }
+.animals-links { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 1.5rem; }
+.animals-links form, .animals-links form .pv-btn { margin:0; }

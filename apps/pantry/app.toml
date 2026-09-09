@@ -1,0 +1,33 @@
+# ---------------------------------------------------------------------------
+# Project:  Privatium™
+# File:     apps/pantry/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-07
+# Modified: 2026-09-07
+# Summary:  Tier 2 reference app with tables. Note what is present that sketch omits:
+#           a schema.sql of typed columns and named views, read through /api/q.
+#           See main README.md for full license information.
+# ---------------------------------------------------------------------------
+
+[app]
+slug        = "pantry"
+title       = "Pantry"
+version     = "1.0.0"
+api         = 1
+tier        = "web"
+description = "What is in the freezer and on the shelf, and what you took out of it."
+icon        = "box-seam"
+authors     = ["Gabriel Mongefranco"]
+license     = "GPL-3.0-or-later"
+
+[nav]
+order     = 40
+advertise = true
+
+# Everything below is optional and shown here only to document the defaults.
+[permissions]
+inline_script = false    # every script is an external module file
+wasm          = false
+eval          = false
+remote        = []       # never phones out
+sql           = false    # every read is a named view in schema.sql

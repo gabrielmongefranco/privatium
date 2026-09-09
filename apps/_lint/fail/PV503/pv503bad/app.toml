@@ -1,0 +1,13 @@
+# Project:  Privatium™  |  File: apps/_lint/fail/PV503/pv503bad/app.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-09-05  |  Modified: 2026-09-05
+# Summary:  PV503 fail: an icon the vendored set lacks.
+#           See main README.md for full license information.
+
+[app]
+slug    = "pv503bad"
+title   = "Lint PV503"
+version = "1.0.0"
+api     = 1
+tier    = "lua"
+icon    = "no-such-icon"

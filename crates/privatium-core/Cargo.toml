@@ -1,0 +1,134 @@
+# Project:  Privatium™  |  File: crates/privatium-core/Cargo.toml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-08-31  |  Modified: 2026-09-06
+# Summary:  The library. One core crate per ADR 0002 — the server, the shells, and (later)
+#           uniffi all consume this and nothing else.
+#           See main README.md for full license information.
+
+[package]
+name        = "privatium-core"
+description = "Privatium core: event log, store, app host, and the Request/Response interface."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+
+[dependencies]
+# The two foreign engines. They are here rather than under dev-dependencies so that the
+# binary size CI reports is the size of the shipped binary; test-only engines would hide
+# the cost that matters.
+#
+# SQLite, via rusqlite (docs/decisions/0006). `bundled` compiles the amalgamation vendored
+# inside libsqlite3-sys — one C file, about a minute — with JSON1 and FTS5 compiled in and
+# nothing downloaded. Extension loading is disabled at the API (rusqlite's `load_extension`
+# feature is off) and refused by name in the sandbox authorizer besides. `functions`,
+# `window` and `collation` are the framework's exact-decimal SQL surface
+# (spec/data-dictionary.md §2.1, `store::decimal`); `hooks` is the authorizer that makes
+# an app's connection read-only (spec/app-contract.md §7, `store::sandbox`).
+#
+# `column_metadata` compiles the amalgamation with SQLITE_ENABLE_COLUMN_METADATA, so
+# a result column reports the table and column it originates in — through views too —
+# which is how pv.query finds a column's declared type (spec/lua-api.md §3.2): the cache
+# declares storage types, and DECIMAL or BIGINT lives only in the schema.
+rusqlite  = { workspace = true, features = ["bundled", "functions", "window", "collation", "hooks", "column_metadata"] }
+mlua      = { workspace = true, features = ["lua54", "vendored", "send"] }
+# The linter reads app.lua, lib/*.lua and every template's Lua as an AST rather than as
+# text, so a rule never has to guess at syntax with a regex. `lua54` is the dialect the
+# host runs; the default `serde` feature is off, since nothing here serializes a tree.
+# MPL-2.0, allowed in deny.toml for exactly this crate.
+full_moon = { workspace = true, features = ["lua54"] }
+thiserror = { workspace = true }
+
+# Node identity (spec/protocol.md §2.1). `zeroize` is on by default and clears
+# SigningKey's own bytes on drop; it is named anyway, and taken as a direct dependency,
+# because identity.rs also has to wipe the buffer it reads node.key into — that buffer
+# belongs to this crate, not to ed25519-dalek.
+ed25519-dalek = { workspace = true, features = ["rand_core", "zeroize"] }
+x25519-dalek = { workspace = true }
+chacha20poly1305 = { workspace = true }
+# RFC 9382 SPAKE2 over edwards25519 for pairing (spec/protocol.md §7.4.1), written over
+# the curve crate ed25519-dalek already brings in; no PAKE crate carries the RFC's
+# constants on both sides of the wire.
+curve25519-dalek = { workspace = true }
+rand          = { workspace = true }
+sha2          = { workspace = true }
+base64        = { workspace = true }
+zeroize       = { workspace = true }
+
+# sys_audit rows are keyed by a ULID (spec/data-dictionary.md §3.10). §4.1 makes a ULID
+# the default row key, but sys_device and sys_node are keyed by Node ID instead, so this
+# crate mints one only where a caller has not supplied a key of its own.
+ulid = { workspace = true }
+
+# The §3 data root, the `ts` field, config.toml, and the bootstrap events.
+# `raw_value` is for the materializer (`store::events`): it reads each event's `d` as raw
+# JSON text so a number keeps its own digits and never passes through a double
+# (spec/data-dictionary.md §2.1). Reading only; nothing re-serializes a line (§4.2).
+directories = { workspace = true }
+jiff        = { workspace = true }
+serde       = { workspace = true }
+serde_json  = { workspace = true, features = ["raw_value"] }
+toml        = { workspace = true }
+
+# The wire (ADR 0003) and the shell. `axum` with default features off is taken for the
+# `http` types and the boxed streaming `Body` that `Request` and `Response` carry — no
+# router, no `serve`; nothing in this crate listens on a socket. `tower` is the
+# `Layer`/`Service` shape `auth_layer` has (spec/app-contract.md §6). `tower-http`'s
+# `ServeDir` streams a Tier 2 app's `web/` in 64 KiB frames and refuses `..`; `tokio` is
+# what it reads files through, and (`rt`) what hands a Lua handler to a blocking thread —
+# the runtime itself belongs to the adapter. `hmac` and `hkdf` derive the CSRF key from
+# the node key, so no secret is written anywhere. `include_dir` embeds the icons, the
+# shell's assets and `skills/` (docs/icons.md, spec/cli.md §6).
+# `tokio` is the one axum feature the core takes: `ConnectInfo<SocketAddr>`, the
+# extension an embedder's `into_make_service_with_connect_info` router attaches and
+# `auth_layer` reads the peer from (spec/app-contract.md §2.3, §6), is gated behind it.
+# Still no router and no `serve` here; the feature's own additions — hyper-util and
+# tokio's `net` — are already in the release graph through the binary crate, and any
+# program that calls `axum::serve` has them regardless.
+axum        = { workspace = true, features = ["tokio", "ws"] }
+tower       = { workspace = true, features = ["util"] }
+tower-http  = { workspace = true, features = ["fs"] }
+# `sync` is the per-app broadcast every append goes out on and the channel an SSE
+# body is read from; `time` is the stream's 30-second ping (spec/data-api.md §3);
+# `macros` is `select!` in the stream's pump, already in the release graph through the
+# binary crate. `futures-core` is the `Stream` trait `Body::from_stream` takes.
+tokio        = { workspace = true, features = ["fs", "rt", "sync", "time", "macros"] }
+futures-core = { workspace = true }
+futures-util = { workspace = true }
+hmac        = { workspace = true }
+hkdf        = { workspace = true }
+include_dir = { workspace = true }
+mdns-sd = { version = "0.21.1", default-features = false }
+qrcode = { version = "0.14.1", default-features = false }
+# The client side of `/ws/pair` when a node joins a cluster (spec/protocol.md §2.3.1):
+# `Node::join` dials the other node's socket. The same crate axum's `ws` feature already
+# compiles, with the same default features, so the graph gains no package.
+tokio-tungstenite = { workspace = true }
+# The owner's standing (spec/protocol.md §8.4) is a request from this machine: loopback,
+# or one of this machine's own interface addresses — a browser opened on the node's LAN
+# address from the node's own keyboard. The interface list is read here; the binary
+# already lists it for `--verbose`, so the graph gains no package.
+if-addrs = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+# The route tests drive `Handler::handle` on a runtime; there is no listener in them.
+# examples/embedded.rs is an embedder: its own listener (`net`), its own Ctrl-C
+# (`signal`), and `axum::serve` over its own router (`http1`, `tokio`). Features on crates
+# already here, for the example and the tests alone; the library takes none of them, and
+# the workspace's release graph already carries all four through the binary crate.
+tokio    = { workspace = true, features = ["macros", "rt-multi-thread", "net", "signal", "test-util"] }
+axum     = { workspace = true, features = ["http1", "tokio"] }
+
+[lints.rust]
+# AGENTS.md, Style: no `unsafe` without a comment naming the invariant it upholds. Deny
+# rather than forbid, so such a site can opt out explicitly and be reviewed.
+unsafe_code = "deny"
+
+[lints.clippy]
+# AGENTS.md, Style: never unwrap() outside tests or main() startup. Integration tests
+# under tests/ opt out at the top of the file.
+unwrap_used = "deny"
+expect_used = "deny"

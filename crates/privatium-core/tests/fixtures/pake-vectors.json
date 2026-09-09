@@ -1,0 +1,108 @@
+{
+  "Ka": "ho5y6zmtxfjvBT4C7hTZKw==",
+  "KcA": "hXP1UvDixHufj6sGUt4R2w==",
+  "KcB": "OJoNjiR6oqchN5ctS93aHw==",
+  "Ke": "wmpudZ8cyQbuGCmrbWMpoA==",
+  "M": "d048032c6ea0b6d697ddc2e86bda85a33adac920f1bf18e1b0c6d166a5cecdaf",
+  "N": "d3bfb518f44f3430f29d0c92af503865a1ed3281dc69b35dd868ba85f886c4ab",
+  "TT": "OAAAAAAAAABwdi8xIGRldmljZSBibm9jM1Ntd3Q0L1JPdlRGV1kvdjlPOHFseFp1UEtieTVQdjh6WUJRVy9FPTYAAAAAAAAAcHYvMSBub2RlIEE2RUh2L1BPRUw0ZGNOMFk1MHZBbVdmazFqQ2JwUTFmSGR5R1pCSlZNYmc9IAAAAAAAAAADrUYYm9ygGOeWzcsgWMUZ4E2CxrL2Wxr2ZqFm9rn2fSAAAAAAAAAA/sAXcAWWa6Y2zhYw/ThsxkRZ87PjB0U18rsYim4/xj8gAAAAAAAAAHQax1ExGUelCNg56TDCcfVdYXgJC+Ig/K3NCRuuRLOWIAAAAAAAAAB7Oiw6aTH6eMv/y+9V3ljmaHWnCLiPaNjasMERLhspAQ==",
+  "cA": "L5OVt2LHzRWBmfU9YXzvTq3ymOmG8l+zlkbnISYp8FM=",
+  "cB": "MITvHpRQ0N6X6REqndHozMXOtsKh1dLTHKNV0m7v3hM=",
+  "cluster_id": "pr030v7t",
+  "cluster_public": "GX9rI+FshTLGq8g4+s1ep4m+DHaykgM0A5v6iz02jWE=",
+  "code": 29326,
+  "code_emoji": [
+    "🦊",
+    "🍕",
+    "⚡️",
+    "🎲"
+  ],
+  "code_words": [
+    "enzyme",
+    "gecko"
+  ],
+  "device_ed25519_public": "bnoc3Smwt4/ROvTFWY/v9O8qlxZuPKby5Pv8zYBQW/E=",
+  "device_ed25519_secret": "BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU=",
+  "device_id": "epcqev1g",
+  "device_x25519_secret": "CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg=",
+  "label": "Synthetic Phone",
+  "node_ed25519_public": "A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=",
+  "node_id": "as3nn9tm",
+  "node_x25519_public": "fhZHqgA9C9H+u3jIRwiE++jSMFjG6W1KwyXZVwdhyh8=",
+  "now": "2026-09-05T00:00:00.000Z",
+  "pA": "A61GGJvcoBjnls3LIFjFGeBNgsay9lsa9mahZva59n0=",
+  "pB": "/sAXcAWWa6Y2zhYw/ThsxkRZ87PjB0U18rsYim4/xj8=",
+  "parse_cases": [
+    {
+      "code": 29326,
+      "input": "fox pizza lightning die"
+    },
+    {
+      "code": 29326,
+      "input": "🦊🍕⚡️🎲"
+    },
+    {
+      "code": 29326,
+      "input": "🦊 🍕 ⚡ 🎲"
+    },
+    {
+      "code": 29326,
+      "input": "enzyme gecko"
+    },
+    {
+      "code": 29326,
+      "input": "ENZYME-gecko"
+    },
+    {
+      "code": 29326,
+      "input": "enzymegecko"
+    },
+    {
+      "code": 29326,
+      "input": "enz gec"
+    },
+    {
+      "code": 39902,
+      "input": "Hot Pepper, Artist Palette, Maple Leaf, Game Die"
+    },
+    {
+      "code": 39902,
+      "input": "pepper palette leaf die"
+    },
+    {
+      "code": 0,
+      "input": "abyss abyss"
+    },
+    {
+      "code": 39169,
+      "input": "guitar acid"
+    },
+    {
+      "input": ""
+    },
+    {
+      "input": "fox pizza lightning"
+    },
+    {
+      "input": "🦊 fox ⚡ 🎲"
+    },
+    {
+      "input": "zzzzz zzzzz"
+    },
+    {
+      "input": "enzyme 12345"
+    }
+  ],
+  "transcript": {
+    "client_confirm": "{\"cA\":\"L5OVt2LHzRWBmfU9YXzvTq3ymOmG8l+zlkbnISYp8FM=\"}",
+    "client_sealed": "kZl1ETPq/86OxyQwv0TNQNdyRdwqnuJnsBemWYccP4DS/BcGusBHblWjmmP3lYffTGEcvtBxdio2RHCf1XGVQHZEbPq6m90809Q0bKeHeVhmaNdAYhnDg3tneNZLGEF3LfytSFUnJ+mztQ+MDcfeLTMfA4GcTsqa6nCmVhQNAg==",
+    "client_start": "{\"v\":1,\"dev\":\"epcqev1g\",\"pub\":\"bnoc3Smwt4/ROvTFWY/v9O8qlxZuPKby5Pv8zYBQW/E=\",\"kind\":\"browser\",\"pA\":\"A61GGJvcoBjnls3LIFjFGeBNgsay9lsa9mahZva59n0=\"}",
+    "node_hello": "{\"v\":1,\"id\":\"as3nn9tm\",\"pub\":\"A6EHv/POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg=\",\"open\":true}",
+    "node_reply": "{\"pB\":\"/sAXcAWWa6Y2zhYw/ThsxkRZ87PjB0U18rsYim4/xj8=\",\"cB\":\"MITvHpRQ0N6X6REqndHozMXOtsKh1dLTHKNV0m7v3hM=\"}",
+    "node_sealed": "RsnQayePgFctqp5AY2rXBqNVAbkk8YPPx2/r4MIetCPG8cJXLr3NcW6peyFO4tpk5rp+/sZnC10wXOXxEukZMbOdNssT74N03cTKtcfpk6/WE0u27Cput61xCpeoyabgWhppPZ0B1u3MLxVRdHymaCFbjpXfNSUYO9V9tPm5XAMghds/b5FLzGJA4lP+nLM7L52yQe9e/VER6/oB1gUceMK+d9yY2xSHbhfTYoC00m06wSxPK/Q4arsyJXcbDBe40C/1H9VbPyvkvbxT42oWNcdBk9HHmKXp0FoxAETKLDFci+AmBGliKkcHVetTOCnauAsVV28BFqwxZgTLd9adpxa5RWBGV0NSN5oWxTFQG9wYmw0TBfAigrvS4qBN5F6JEaKjx4dE56imypA0HEJ8onP4IbCncjJlcXNLkOdyXVFj184Fo9BPI+OZD6WqevJqY9bJeCcdcrCK+dj35/QZFBYtKMkCllqYqxTkmVLe2YkIOniSQCdItBrT1AA8rAVp+FQ+co+tvpWGqGmLghVItopNit0tgjCgFG0d5cBckUi7LWllQbmc5/ijQbzwB90gL3zQC+VohMe6afgFdx7dztMt6K1uWU5YIUsubdwi0/hvtA92pw8li+/vwnF68+lQTEu4/DcxvTPeV9F97dIYh4eTExQLGMk4awzXFzWCM4I8XPtULIG4iU6m1W86d0k+Na9n+Ul+YtoQMkgSQJHVeA=="
+  },
+  "ua": "SyntheticBrowser/1.0",
+  "w": "ezosOmkx+njL/8vvVd5Y5mh1pwi4j2jY2rDBES4bKQE=",
+  "x": "BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBg==",
+  "y": "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBw=="
+}

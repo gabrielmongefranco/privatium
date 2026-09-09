@@ -1,0 +1,179 @@
+# Project:  Privatium™  |  File: .github/workflows/ci.yml
+# Authors:  Gabriel Mongefranco (@gabrielmongefranco)
+# Created:  2026-08-31  |  Modified: 2026-09-08
+# Summary:  The gate: formatting, Clippy, the test suite, the conformance items by name, the
+#           embedded example, the fresh-clone check, the header check, the browser tests,
+#           the generated skill references, the lint corpus, a release build and its
+#           packaging — on Linux, macOS and Windows, because one binary has to run on all
+#           three and an engine compiled from source that fails on one of them is found
+#           here, not by an owner. A pull request runs Linux alone and a merge to main runs
+#           all three, so nothing reaches a release untested on a platform while the two
+#           expensive runners stay off the review loop; `ci-full-matrix` on a pull request
+#           asks for all three early. See main README.md for full license information.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The toolchain comes from rust-toolchain.toml — 1.90.0 exactly, with rustfmt and
+  # clippy — so every leg of this matrix builds with the same compiler a developer has.
+  check:
+    name: check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux on a pull request, all three on main. A minute on macOS is billed at ten
+        # times a minute on Linux and a minute on Windows at twice, so the two of them are
+        # nine tenths of what this workflow costs while catching a small fraction of what
+        # it catches. Every branch still meets the full matrix before it can be released,
+        # because a merge to main runs it; a pull request that is expected to break a
+        # platform — anything touching a path, a process, a file lock or a C dependency —
+        # asks for the matrix early by carrying the `ci-full-matrix` label.
+        # One line, because a folded scalar would keep the newlines: continuation lines
+        # indented past the first are literal in YAML, and the expression would not parse.
+        os: ${{ (github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'ci-full-matrix')) && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Formatting is platform-independent; checking it three times says nothing extra.
+      - name: Format
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+      # The lines of spec/protocol.md §13 this build can satisfy, asserted by name, so a
+      # conformance claim cannot quietly stop being true. The binaries were built by the
+      # step above; each name must run and pass.
+      - name: Conformance items by name (spec/protocol.md §13, Phase 1 subset)
+        shell: bash
+        run: bash .github/scripts/conformance.sh
+
+      # spec/app-contract.md §2.3: the thirty-line embedder, run — a node with no app
+      # folders, an append, a query, its own router behind auth_layer.
+      - name: Embedded example (spec/app-contract.md §2.3)
+        shell: bash
+        run: bash .github/scripts/embedded-example.sh "$RUNNER_TEMP/embedded-node"
+
+      # The quick start has to keep working from nothing: `cargo build`, then the debug
+      # binary with an empty data directory alone serves hello at 127.0.0.1:8420.
+      - name: Fresh clone serves hello on 8420
+        shell: bash
+        run: bash .github/scripts/fresh-clone.sh "$RUNNER_TEMP/fresh-node"
+
+      - name: Header block on every source file
+        run: cargo xtask header-check
+
+      # spec/data-api.md §5 and §6: the browser half of the data API, run for real. Node
+      # is preinstalled on every hosted runner; the tests fake the browser and the node.
+      - name: Browser scripts under node --test
+        shell: bash
+        run: node --test crates/privatium-core/tests/js/*.test.mjs
+
+      # docs/skills.md §7: a change to spec/ that is not reflected in skills/ is an
+      # incomplete change. The reference sections are generated from the crate and the
+      # spec and committed; this fails naming the file that drifted.
+      - name: Skill references against the crate and the spec
+        run: cargo xtask gen-skill-reference --check
+
+      # spec/cli.md §5.2: every lint finding cites a section that exists.
+      - name: Lint rules cite real sections
+        run: cargo xtask lint-spec-refs
+
+      # spec/cli.md §5.4: the reference apps are the linter's corpus and lint clean; the
+      # corpus itself is exercised by the test step above.
+      - name: Reference apps lint clean
+        shell: bash
+        run: cargo run -p privatium --locked -- --data-dir "$RUNNER_TEMP/lint-node" lint apps/hello apps/animals apps/sketch
+
+      - name: Release build
+        run: cargo build --workspace --release --locked
+
+      # Both engines are C compiled from source. Running the artefact proves it links and
+      # starts, and printing its size is what later changes are diffed against.
+      # `--version` and not bare `privatium`, which runs a node and would wait here forever.
+      - name: Linked engines and binary size
+        shell: bash
+        run: |
+          binary="target/release/privatium"
+          [ "${{ matrix.os }}" = "windows-latest" ] && binary="target/release/privatium.exe"
+          "$binary" --version
+          "$binary" skill list
+          # Bytes and never MB/MiB, which differ by 5% and by tool, so two runs of this
+          # step are comparable.
+          echo "binary size: $(wc -c < "$binary") bytes ($binary)"
+
+      - name: Release tooling tests
+        run: python -m unittest discover -s .github/scripts -p test_release_tools.py
+
+      - name: Package the binary
+        id: artifact
+        run: python .github/scripts/release_tools.py package "${{ runner.os }}"
+
+      # Seven days, not the default ninety. These are a convenience for whoever is looking
+      # at the run that produced them; a build worth keeping is a tagged release, and
+      # release.yml builds its own. Storage is billed by the gigabyte-month either way.
+      - uses: actions/upload-artifact@v7
+        with:
+          path: ${{ steps.artifact.outputs.path }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 7
+
+      # The Windows portable zip (spec/cli.md §1): one file per step with `archive: false`.
+      - uses: actions/upload-artifact@v7
+        if: steps.artifact.outputs.portable != ''
+        with:
+          path: ${{ steps.artifact.outputs.portable }}
+          archive: false
+          if-no-files-found: error
+          retention-days: 7
+
+  # A second opinion from current stable, so a compiler change that will break the build
+  # lands as one failing job rather than as a surprise the next time the MSRV moves.
+  stable:
+    name: stable
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo +stable check --workspace --all-targets --locked
+
+  # ADR 0001 declined a GPL-2.0-only dependency on licence grounds. deny.toml is that
+  # judgement made mechanical, so it cannot be lost to a transitive dependency later.
+  deny:
+    name: licences and advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@cargo-deny
+      - run: cargo deny check

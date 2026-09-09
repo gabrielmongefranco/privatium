@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Project: Privatium™ | File: assets/branding/privatium-app-icon.svg
+Authors: Gabriel Mongefranco (@gabrielmongefranco)
+Created: 2026-09-05 | Modified: 2026-09-05
+Summary: Privatium app icon
+Copyright © 2026 Gabriel Mongefranco. Privatium™ is a trademark of Gabriel Mongefranco.
+See docs/branding.md and README.md for attribution and license notices. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc"><title id="title">Privatium app icon</title><desc id="desc">Privatium app icon</desc><rect width="1024" height="1024" fill="#251329"/><g transform="translate(65,65) scale(8.94)" fill="#EBCBF3"><path d="M89 5H5V95H95V5H92" fill="none" stroke="#EBCBF3" stroke-width="3"/><path fill-rule="evenodd" d="M17 27H36C61 27 61 62 36 62H28V78H17ZM28 37V52H36C46 52 46 37 36 37Z"/><path d="M57 45H67L75 66L83 45H93L80 78H70Z" transform="translate(0,0)"/></g></svg>

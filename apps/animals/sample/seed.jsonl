@@ -1,0 +1,7 @@
+{"op":"put","tbl":"node","id":"01J6ZK2Q0000000000000WATER","d":{"kind":"q","text":"Does it live in the water?","yes_id":"01J6ZK2Q000000000000000FNS","no_id":"01J6ZK2Q0000000000000000FY"}}
+{"op":"put","tbl":"node","id":"01J6ZK2Q000000000000000FNS","d":{"kind":"q","text":"Does it have fins?","yes_id":"01J6ZK2Q00000000000000SHRK","no_id":"01J6ZK2Q00000000000000TTER"}}
+{"op":"put","tbl":"node","id":"01J6ZK2Q0000000000000000FY","d":{"kind":"q","text":"Does it fly?","yes_id":"01J6ZK2Q00000000000000PRRT","no_id":"01J6ZK2Q00000000000000WMBT"}}
+{"op":"put","tbl":"node","id":"01J6ZK2Q00000000000000SHRK","d":{"kind":"a","text":"shark"}}
+{"op":"put","tbl":"node","id":"01J6ZK2Q00000000000000TTER","d":{"kind":"a","text":"otter"}}
+{"op":"put","tbl":"node","id":"01J6ZK2Q00000000000000PRRT","d":{"kind":"a","text":"parrot"}}
+{"op":"put","tbl":"node","id":"01J6ZK2Q00000000000000WMBT","d":{"kind":"a","text":"wombat"}}
