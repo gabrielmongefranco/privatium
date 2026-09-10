@@ -1,10 +1,26 @@
-// Project:  Privatium™  |  File: crates/privatium/tests/channel.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-08
-// Summary:  Actual WebSocket pairing, authenticated routing, streaming and refusal (§8);
-//           the owner-only acts a session is refused (§9.2), the session device an app
-//           sees, and the refusal a paired client makes of a re-keyed node (§8.1).
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium/tests/channel.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-05
+// Last Modified: 2026-09-08
+// Summary: Actual WebSocket pairing, authenticated routing, streaming and refusal (§8); the owner-only
+//          acts a session is refused (§9.2), the session device an app sees, and the refusal a
+//          paired client makes of a re-keyed node (§8.1).
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

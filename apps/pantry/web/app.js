@@ -1,18 +1,32 @@
-/*
- * Project:  Privatium™  |  File: apps/pantry/web/app.js
- * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
- * Created:  2026-09-07  |  Modified: 2026-09-08
- * Summary:  Boot, the queries, and what each control does. The screen is read two ways at
- *           once, and that is the point of this app: the shelves, the batches and the tray
- *           come from named views in schema.sql through pv.query, which say what is true
- *           now; the activity list comes from the event log through pv.events and
- *           pv.subscribe, which says what happened — including an undo, which a view can
- *           never show, because materialization drops a tombstoned row entirely
- *           (spec/protocol.md §4.5). Every quantity stays a string from the field to the
- *           column. Which shelf is open is this device's business and lives in
- *           localStorage; it never reaches the log.
- *           See main README.md for full license information.
- */
+// This file is part of Privatium
+// apps/pantry/web/app.js
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-07
+// Last Modified: 2026-09-08
+// Summary: Boot, the queries, and what each control does. The screen is read two ways at once, and that
+//          is the point of this app: the shelves, the batches and the tray come from named
+//          views in schema.sql through pv.query, which say what is true now; the activity list
+//          comes from the event log through pv.events and pv.subscribe, which says what
+//          happened — including an undo, which a view can never show, because materialization
+//          drops a tombstoned row entirely (spec/protocol.md §4.5). Every quantity stays a
+//          string from the field to the column. Which shelf is open is this device's business
+//          and lives in localStorage; it never reaches the log.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
+
 import { pv } from '/static/pv.js';
 import {
   el, renderActivity, renderBatches, renderChecks, renderExpiring, renderShelves,

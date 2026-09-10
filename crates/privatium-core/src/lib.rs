@@ -1,15 +1,31 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/lib.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-08-31  |  Modified: 2026-09-07
-// Summary:  Crate root. The error type, the engine linkage probe, `Node::open` and the
-//           bootstrap order it follows, the sink that turns what a log scan found into
-//           sys_audit rows (spec/protocol.md §4.4), and the node-level API of
-//           spec/app-contract.md §6 — snapshot, restore, verify, prune and maintenance
-//           routed to every loaded app's store, auth_layer, query, close, the discovery and
-//           pairing methods, and LAN synchronization through a bounded receive inbox.
-//           core::handle itself is wire::Handler; the Lua host behind a Tier
-//           1 mount is `lua`; append, append_batch, open_app and subscribe are `app`'s.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/lib.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-08-31
+// Last Modified: 2026-09-07
+// Summary: Crate root. The error type, the engine linkage probe, `Node::open` and the bootstrap order
+//          it follows, the sink that turns what a log scan found into sys_audit rows
+//          (spec/protocol.md §4.4), and the node-level API of spec/app-contract.md §6 —
+//          snapshot, restore, verify, prune and maintenance routed to every loaded app's
+//          store, auth_layer, query, close, the discovery and pairing methods, and LAN
+//          synchronization through a bounded receive inbox. core::handle itself is
+//          wire::Handler; the Lua host behind a Tier 1 mount is `lua`; append, append_batch,
+//          open_app and subscribe are `app`'s.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 //! Privatium core.
 //!

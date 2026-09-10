@@ -1,6 +1,10 @@
-<?-- Project: Privatium™ | apps/hello/views/edit.lsp
-     Summary: The name form. One field, one POST, and the csrf() token PV204 requires of
-              every non-GET form. See main README.md for full license information. --?>
+<?--
+This file is part of Privatium
+apps/hello/views/edit.lsp
+Summary: The name form. One field, one POST, and the csrf() token PV204 requires of every non-GET
+         form.
+Notes: See README file for documentation and full license information.
+--?>
 
 <link rel="stylesheet" href="<?= url('/static/hello.css') ?>">
 <div class="hello">

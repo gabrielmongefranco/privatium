@@ -1,12 +1,28 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/app/examples.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-06  |  Modified: 2026-09-06
-// Summary:  The example apps of apps/README.md — hello, animals, sketch and pantry — embedded in
-//           the binary as the files they are in the repository, so a release download has
-//           them to write into <data-dir>/apps/ on a first run and for `privatium new
-//           --examples` and `--from` (spec/cli.md §2, §4). A checkout mounts the same
-//           folders from disk; nothing here is read at runtime by the loader.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/app/examples.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-06
+// Last Modified: 2026-09-06
+// Summary: The example apps of apps/README.md — hello, animals, sketch and pantry — embedded in the
+//          binary as the files they are in the repository, so a release download has them to
+//          write into <data-dir>/apps/ on a first run and for `privatium new --examples` and
+//          `--from` (spec/cli.md §2, §4). A checkout mounts the same folders from disk;
+//          nothing here is read at runtime by the loader.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use include_dir::{Dir, DirEntry, include_dir};
 

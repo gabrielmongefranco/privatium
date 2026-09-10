@@ -1,11 +1,27 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/http/mod.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-06
-// Summary:  What sits behind core::handle: the headers of spec/protocol.md §9.3, the auth
-//           layer and csrf(), the shell's pages, the two API routes of §9.2, the skills
-//           routes of spec/cli.md §6, the shell's embedded assets, and the Tier 2 file
-//           server. Every one of them is reached through wire::Handler and nothing else.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/http/mod.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-03
+// Last Modified: 2026-09-06
+// Summary: What sits behind core::handle: the headers of spec/protocol.md §9.3, the auth layer and
+//          csrf(), the shell's pages, the two API routes of §9.2, the skills routes of
+//          spec/cli.md §6, the shell's embedded assets, and the Tier 2 file server. Every one
+//          of them is reached through wire::Handler and nothing else.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
 

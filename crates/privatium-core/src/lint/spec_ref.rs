@@ -1,12 +1,28 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/lint/spec_ref.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
-// Summary:  What makes a finding's `spec` field resolvable (spec/cli.md §5.2): a reference
-//           is `<path> §<section>` or a bare `<path>`, the path is a document under spec/
-//           or docs/, and the section is a numbered heading of it. The core's own test and
-//           `cargo xtask lint-spec-refs` both resolve every rule through this against a
-//           checkout, so a rule cannot cite a section that is not there.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/lint/spec_ref.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-05
+// Last Modified: 2026-09-05
+// Summary: What makes a finding's `spec` field resolvable (spec/cli.md §5.2): a reference is `<path>
+//          §<section>` or a bare `<path>`, the path is a document under spec/ or docs/, and
+//          the section is a numbered heading of it. The core's own test and `cargo xtask
+//          lint-spec-refs` both resolve every rule through this against a checkout, so a rule
+//          cannot cite a section that is not there.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::path::Path;
 

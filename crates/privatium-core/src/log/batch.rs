@@ -1,14 +1,30 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/log/batch.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
-// Summary:  The batch rule of spec/protocol.md §4.1: the first line of a batch of n ≥ 2
-//           events carries `"batch": n`, and a reader that finds fewer than n consecutive
-//           lines with that `ts` and contiguous `seq` after it — the segment ended, a line
-//           with another `ts` came first, a new batch began — has an incomplete batch on
-//           its hands, which a crash between the write and the disk left. Its lines are not
-//           materialized, not served and not sent; nothing is truncated, and the writer
-//           continues after them. Every reader of a log applies this one function.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/log/batch.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-05
+// Last Modified: 2026-09-05
+// Summary: The batch rule of spec/protocol.md §4.1: the first line of a batch of n ≥ 2 events carries
+//          `"batch": n`, and a reader that finds fewer than n consecutive lines with that `ts`
+//          and contiguous `seq` after it — the segment ended, a line with another `ts` came
+//          first, a new batch began — has an incomplete batch on its hands, which a crash
+//          between the write and the disk left. Its lines are not materialized, not served and
+//          not sent; nothing is truncated, and the writer continues after them. Every reader
+//          of a log applies this one function.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::ops::Range;
 

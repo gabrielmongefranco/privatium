@@ -1,13 +1,22 @@
 <!--
-Project:  Privatium™
-File:     docs/plans/phase-2.md
-Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-Created:  2026-09-05
-Modified: 2026-09-06
-Summary:  Implementation plan for Phase 2 — other devices on the LAN: cluster identity,
-          session cryptography, pairing, the encrypted browser channel, discovery, and the
-          device registry. Non-normative. Where this plan and spec/ disagree, spec/ wins and
-          this file is wrong. See main README.md for full license information.
+This file is part of Privatium
+docs/plans/phase-2.md
+Author(s): Gabriel Mongefranco
+Created: 2026-09-05
+Last Modified: 2026-09-06
+Summary: Implementation plan for Phase 2 — other devices on the LAN: cluster identity, session
+         cryptography, pairing, the encrypted browser channel, discovery, and the device
+         registry. Non-normative. Where this plan and spec/ disagree, spec/ wins and this
+         file is wrong.
+Notes: See README file for documentation and full license information.
+
+Copyright © 2026 Gabriel Mongefranco
+
+Permission is granted to copy, distribute and/or modify this document
+under the terms of the GNU Free Documentation License, Version 1.3 or
+any later version published by the Free Software Foundation; with no
+Invariant Sections, no Front-Cover Texts, and no Back-Cover Texts.
+See <https://www.gnu.org/licenses/fdl-1.3.html>.
 -->
 
 # Phase 2 Implementation Plan

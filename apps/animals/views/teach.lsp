@@ -1,12 +1,9 @@
-<?-- Project: Privatium™ | apps/animals/views/teach.lsp
-     Summary: The learning form. One HTMX-free page, on purpose.
-
-              This form is a navigation: you arrive here from the board and leave to the
-              board. Swapping it in place would mean owning the back button, so it stays a
-              plain post. The only Alpine on the page is a help disclosure, which is the
-              clearest possible case of "losing it on refresh costs nothing" — and with
-              JavaScript off the examples are simply shown (static/nojs.css).
-              See main README.md for full license information. --?>
+<?--
+This file is part of Privatium
+apps/animals/views/teach.lsp
+Summary: The learning form. One HTMX-free page, on purpose.
+Notes: See README file for documentation and full license information.
+--?>
 
 <?= render('_assets') ?>
 

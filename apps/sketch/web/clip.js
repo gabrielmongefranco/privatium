@@ -1,12 +1,28 @@
-/* Project: Privatium™ | File: apps/sketch/web/clip.js
- * Authors: Gabriel Mongefranco (@gabrielmongefranco)
- * Created: 2026-09-07 | Modified: 2026-09-07
- * Summary: Copy, cut and paste over marks, and the SVG the clipboard carries. Our own clipboard
-          SVG is stamped, so a paste can tell it from a foreign one and use the real marks
-          rather than a re-read of their outlines. The SVG reader is deliberately small:
-          straight geometry only, and it says what it left behind.
- *          See main README.md for full license information.
- */
+// This file is part of Privatium
+// apps/sketch/web/clip.js
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-07
+// Last Modified: 2026-09-07
+// Summary: Copy, cut and paste over marks, and the SVG the clipboard carries. Our own clipboard SVG is
+//          stamped, so a paste can tell it from a foreign one and use the real marks rather
+//          than a re-read of their outlines. The SVG reader is deliberately small: straight
+//          geometry only, and it says what it left behind.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
+
 import { SHEET_W, SHEET_H } from './sheet.js';
 import { areaFilled, bounds, moved, textSize } from './strokes.js';
 import { dashFor } from './paint.js';

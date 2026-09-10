@@ -1,14 +1,30 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/lua/mod.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-06
-// Summary:  The Lua host (spec/lua-api.md): one pool of sandboxed VMs per Tier 1 app, every
-//           VM loading app.lua identically so the router can hold (method, pattern, index)
-//           from VM 0 (§2.4); one request holds one VM on a blocking thread with a
-//           read-only connection of its own; the four limits armed per run; a VM that trips
-//           one is discarded and rebuilt on the next checkout. The app's compiled templates
-//           live here too (lsp), and pv.render is fulfilled inside the same run so a
-//           template shares the request's limits and connection.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/lua/mod.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-03
+// Last Modified: 2026-09-06
+// Summary: The Lua host (spec/lua-api.md): one pool of sandboxed VMs per Tier 1 app, every VM loading
+//          app.lua identically so the router can hold (method, pattern, index) from VM 0
+//          (§2.4); one request holds one VM on a blocking thread with a read-only connection
+//          of its own; the four limits armed per run; a VM that trips one is discarded and
+//          rebuilt on the next checkout. The app's compiled templates live here too (lsp), and
+//          pv.render is fulfilled inside the same run so a template shares the request's
+//          limits and connection.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt;

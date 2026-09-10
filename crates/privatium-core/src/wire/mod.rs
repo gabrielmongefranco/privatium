@@ -1,13 +1,29 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/wire/mod.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-07
-// Summary:  core::handle(Request) -> Response (ADR 0003): the one entry point for
-//           application traffic. Bodies are streams in both directions. The router is built
-//           from Node::mounts(); the auth layer runs here so every adapter gets it; the
-//           §9.3 headers go on every response on the way out. How the Node is shared is
-//           decided here too — one mutex, taken for the synchronous part of a request and
-//           released before anything awaits; a Lua handler runs on a blocking thread
-//           outside it. See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/wire/mod.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-03
+// Last Modified: 2026-09-07
+// Summary: core::handle(Request) -> Response (ADR 0003): the one entry point for application traffic.
+//          Bodies are streams in both directions. The router is built from Node::mounts(); the
+//          auth layer runs here so every adapter gets it; the §9.3 headers go on every
+//          response on the way out. How the Node is shared is decided here too — one mutex,
+//          taken for the synchronous part of a request and released before anything awaits; a
+//          Lua handler runs on a blocking thread outside it.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
 use std::net::Ipv4Addr;

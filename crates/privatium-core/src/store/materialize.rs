@@ -1,11 +1,27 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/store/materialize.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-06
-// Summary:  spec/protocol.md §4.5 in Rust over the staged log — the full replay that is the
-//           definition, the incremental apply that has to agree with it byte for byte, the
-//           log tail a restore applies over a snapshot (§5.3), and the one projection from
-//           a JSON `d` to typed columns (spec/data-dictionary.md §2.1) that all three
-//           share. See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/store/materialize.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-01
+// Last Modified: 2026-09-06
+// Summary: spec/protocol.md §4.5 in Rust over the staged log — the full replay that is the definition,
+//          the incremental apply that has to agree with it byte for byte, the log tail a
+//          restore applies over a snapshot (§5.3), and the one projection from a JSON `d` to
+//          typed columns (spec/data-dictionary.md §2.1) that all three share.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;

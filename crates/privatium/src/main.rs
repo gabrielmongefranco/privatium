@@ -1,12 +1,28 @@
-// Project:  Privatium™  |  File: crates/privatium/src/main.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-08-31  |  Modified: 2026-09-08
-// Summary:  Entry point: spec/cli.md. Bare `privatium` runs a node; `dev`, `new`, `lint`,
-//           `skill`, `snapshot`, `restore` and `pair` are the subcommands this build has;
-//           `firewall` is not built yet, and it parses and says so rather than being
-//           absent, so the help text matches the spec. Exit codes are §1's. Errors are
-//           anyhow at this boundary (AGENTS.md, Style) and print as one line.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium/src/main.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-08-31
+// Last Modified: 2026-09-08
+// Summary: Entry point: spec/cli.md. Bare `privatium` runs a node; `dev`, `new`, `lint`, `skill`,
+//          `snapshot`, `restore` and `pair` are the subcommands this build has; `firewall` is
+//          not built yet, and it parses and says so rather than being absent, so the help text
+//          matches the spec. Exit codes are §1's. Errors are anyhow at this boundary
+//          (AGENTS.md, Style) and print as one line.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::process::ExitCode;
 

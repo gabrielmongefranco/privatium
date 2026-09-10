@@ -1,21 +1,9 @@
-<?-- Project: Privatium™ | apps/animals/views/knowledge.lsp
-     Summary: Everything the app has learned, and the button that forgets it.
-
-              THIS IS WHERE BOTH TOOLS SIT SIDE BY SIDE, which is most of why this page is
-              worth reading:
-
-              - Forgetting is a form post. It writes tombstones. HTMX territory. - Expanding
-              a question path, and confirming before forgetting, change nothing and are
-              worth nothing after a refresh. Alpine territory.
-
-              The test is not "is it interactive". It is: if the user hit reload right now,
-              would they lose anything they meant to keep?
-
-              And the corollary: everything Alpine hides must still be reachable with
-              JavaScript off. The toggles carry `pv-js-only` and the hidden parts carry
-              `x-cloak`; static/nojs.css (loaded from <noscript>) drops the former and
-              reveals the latter, so the paths are simply printed and the reset form is
-              simply there. See main README.md for full license information. --?>
+<?--
+This file is part of Privatium
+apps/animals/views/knowledge.lsp
+Summary: Everything the app has learned, and the button that forgets it.
+Notes: See README file for documentation and full license information.
+--?>
 
 <?= render('_assets') ?>
 

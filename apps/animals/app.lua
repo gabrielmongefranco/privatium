@@ -1,9 +1,25 @@
--- Project:  Privatium™  |  File: apps/animals/app.lua
--- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
--- Created:  2026-08-28  |  Modified: 2026-09-06
--- Summary:  The guess-the-animal game. Demonstrates multi-event atomic writes, recursive
---           SQL, stored session state, and the HTMX/Alpine boundary.
---           See main README.md for full license information.
+-- This file is part of Privatium
+-- apps/animals/app.lua
+-- Author(s): Gabriel Mongefranco
+-- Created: 2026-08-28
+-- Last Modified: 2026-09-06
+-- Summary: The guess-the-animal game. Demonstrates multi-event atomic writes, recursive SQL, stored
+--          session state, and the HTMX/Alpine boundary.
+-- Notes: See README file for documentation and full license information.
+--
+-- Copyright © 2026 Gabriel Mongefranco
+--
+-- This program is free software: you can redistribute it and/or modify
+-- it under the terms of the GNU General Public License as published by
+-- the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+--
+-- This program is distributed in the hope that it will be useful,
+-- but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+-- GNU General Public License for more details.
+--
+-- You should have received a copy of the GNU General Public License along
+-- with this program. If not, see <https://www.gnu.org/licenses/>.
 
 -- Lineage: the "Animal" guessing game from David H. Ahl's BASIC Computer Games (1973),
 -- preserved at https://github.com/coding-horror/basic-computer-games (Unlicense).

@@ -1,13 +1,29 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/store/decimal.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-06
-// Summary:  Exact decimal arithmetic (spec/data-dictionary.md §2.1: money is never a
-//           float), as a Rust type and as the SQL functions and collation registered on
-//           every connection — decimal(), decimal_add/sub/mul/cmp, decimal_sum(), and the
-//           `decimal` collating sequence that sorts a DECIMAL column numerically. The same
-//           type backs pv.dec, through the checked operations, which error where the SQL
-//           functions saturate, and the one explicit-scale division.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/store/decimal.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-03
+// Last Modified: 2026-09-06
+// Summary: Exact decimal arithmetic (spec/data-dictionary.md §2.1: money is never a float), as a Rust
+//          type and as the SQL functions and collation registered on every connection —
+//          decimal(), decimal_add/sub/mul/cmp, decimal_sum(), and the `decimal` collating
+//          sequence that sorts a DECIMAL column numerically. The same type backs pv.dec,
+//          through the checked operations, which error where the SQL functions saturate, and
+//          the one explicit-scale division.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::cmp::Ordering;
 use std::fmt;

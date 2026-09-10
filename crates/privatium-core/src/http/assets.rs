@@ -1,9 +1,25 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/http/assets.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-06
-// Summary:  /static/* (spec/protocol.md §9.1): the shell's own assets, embedded from
-//           assets/shell/ — stylesheet, htmx, pv.js, and browser session modules.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/http/assets.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-03
+// Last Modified: 2026-09-06
+// Summary: /static/* (spec/protocol.md §9.1): the shell's own assets, embedded from assets/shell/ —
+//          stylesheet, htmx, pv.js, and browser session modules.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use include_dir::{Dir, include_dir};

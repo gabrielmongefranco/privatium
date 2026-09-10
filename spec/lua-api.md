@@ -1,11 +1,19 @@
 <!--
-Project:  Privatium™
-File:     spec/lua-api.md
-Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-Created:  2026-08-28
-Modified: 2026-09-07
-Summary:  NORMATIVE. Tier 1 — the Lua application API and LSP template engine.
-          See main README.md for full license information.
+This file is part of Privatium
+spec/lua-api.md
+Author(s): Gabriel Mongefranco
+Created: 2026-08-28
+Last Modified: 2026-09-07
+Summary: NORMATIVE. Tier 1 — the Lua application API and LSP template engine.
+Notes: See README file for documentation and full license information.
+
+Copyright © 2026 Gabriel Mongefranco
+
+Permission is granted to copy, distribute and/or modify this document
+under the terms of the GNU Free Documentation License, Version 1.3 or
+any later version published by the Free Software Foundation; with no
+Invariant Sections, no Front-Cover Texts, and no Back-Cover Texts.
+See <https://www.gnu.org/licenses/fdl-1.3.html>.
 -->
 
 # Lua API — Tier 1

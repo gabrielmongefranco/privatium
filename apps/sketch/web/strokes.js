@@ -1,13 +1,29 @@
-/* Project: Privatium™ | File: apps/sketch/web/strokes.js
- * Authors: Gabriel Mongefranco (@gabrielmongefranco)
- * Created: 2026-09-06 | Modified: 2026-09-07
- * Summary: Geometry for the marks on the sheet: hit testing for selection and the stroke eraser,
-          bounds for the selection outline and the marquee, and the area a fill covers — a
-          fill is the inside of one mark, so it is geometry like everything else here rather
-          than a region found by searching pixels. Independent of display scaling —
-          everything here is in sheet coordinates. Changes no data.
- *          See main README.md for full license information.
- */
+// This file is part of Privatium
+// apps/sketch/web/strokes.js
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-06
+// Last Modified: 2026-09-07
+// Summary: Geometry for the marks on the sheet: hit testing for selection and the stroke eraser, bounds
+//          for the selection outline and the marquee, and the area a fill covers — a fill is
+//          the inside of one mark, so it is geometry like everything else here rather than a
+//          region found by searching pixels. Independent of display scaling — everything here
+//          is in sheet coordinates. Changes no data.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
+
 const SHAPES = ['line', 'rect', 'ellipse'];
 
 function finite(...values) { return values.every(Number.isFinite); }

@@ -1,14 +1,29 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/lint/web.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
-// Summary:  A Tier 2 app's web/ and a Tier 1 app's static/: HTML through the same tree the
-//           templates use (PV401–405, 407, and PV404 over the whole document), attributes
-//           for PV301, PV207 and PV504, JavaScript through a small lexer — strings,
-//           template literals, comments, identifiers — for PV201, PV206, PV302, PV304,
-//           PV305, PV306, PV301, PV505 and the two origin rules, and stylesheets for
-//           PV406's contrast floors and any origin in a url(). PV506 names a top-level web/
-//           entry a framework prefix shadows.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/lint/web.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-05
+// Last Modified: 2026-09-05
+// Summary: A Tier 2 app's web/ and a Tier 1 app's static/: HTML through the same tree the templates use
+//          (PV401–405, 407, and PV404 over the whole document), attributes for PV301, PV207
+//          and PV504, JavaScript through a small lexer — strings, template literals, comments,
+//          identifiers — for PV201, PV206, PV302, PV304, PV305, PV306, PV301, PV505 and the
+//          two origin rules, and stylesheets for PV406's contrast floors and any origin in a
+//          url(). PV506 names a top-level web/ entry a framework prefix shadows.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeSet;
 use std::fs;

@@ -1,14 +1,30 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/lua/lsp.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-06
-// Summary:  LSP templates (spec/lua-api.md §4). The compiler turns views/<name>.lsp — HTML
-//           with <? ?>, <?= ?>, <?raw ?> and <?-- --?> — into a Lua chunk plus a line map,
-//           so a traceback names the .lsp line the author wrote. The compiled source is
-//           shared by every VM of an app and swapped as one snapshot when a file changes;
-//           the loaded chunk is cached per VM by generation; each render runs the chunk
-//           with a fresh environment holding the ctx keys and the template-only helpers
-//           render, layout and csrf, falling through to the request-scoped environment
-//           handlers use. See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/lua/lsp.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-03
+// Last Modified: 2026-09-06
+// Summary: LSP templates (spec/lua-api.md §4). The compiler turns views/<name>.lsp — HTML with <? ?>,
+//          <?= ?>, <?raw ?> and <?-- --?> — into a Lua chunk plus a line map, so a traceback
+//          names the .lsp line the author wrote. The compiled source is shared by every VM of
+//          an app and swapped as one snapshot when a file changes; the loaded chunk is cached
+//          per VM by generation; each render runs the chunk with a fresh environment holding
+//          the ctx keys and the template-only helpers render, layout and csrf, falling through
+//          to the request-scoped environment handlers use.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs;

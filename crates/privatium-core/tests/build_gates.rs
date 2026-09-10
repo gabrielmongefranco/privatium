@@ -1,11 +1,27 @@
-// Project:  Privatium™  |  File: crates/privatium-core/tests/build_gates.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-08-31  |  Modified: 2026-09-06
-// Summary:  The build gates: each test proves an engine compiled from source — the bundled
-//           SQLite, the vendored Lua 5.4 — links and runs on all three CI platforms, before
-//           anything is built on it. They are named for the risk they close, not for a spec
-//           section, because none of them enforces a normative MUST.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/tests/build_gates.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-08-31
+// Last Modified: 2026-09-06
+// Summary: The build gates: each test proves an engine compiled from source — the bundled SQLite, the
+//          vendored Lua 5.4 — links and runs on all three CI platforms, before anything is
+//          built on it. They are named for the risk they close, not for a spec section,
+//          because none of them enforces a normative MUST.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

@@ -1,13 +1,29 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/lua/sandbox.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-06
-// Summary:  The state an app runs in (spec/lua-api.md §5): the retained standard libraries
-//           and nothing else, the closed list of removed names, `require` replaced by a
-//           loader confined to the app's lib/ plus 'privatium', `print` routed to the
-//           diagnostic log, the request-scoped environment that keeps one request's global
-//           assignments from the next, and the sandbox globals of §4.0 — url, icon, fmt.*,
-//           t — that handler code and templates (lsp) share.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/lua/sandbox.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-03
+// Last Modified: 2026-09-06
+// Summary: The state an app runs in (spec/lua-api.md §5): the retained standard libraries and nothing
+//          else, the closed list of removed names, `require` replaced by a loader confined to
+//          the app's lib/ plus 'privatium', `print` routed to the diagnostic log, the
+//          request-scoped environment that keeps one request's global assignments from the
+//          next, and the sandbox globals of §4.0 — url, icon, fmt.*, t — that handler code and
+//          templates (lsp) share.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::fs;
 use std::path::PathBuf;

@@ -1,18 +1,32 @@
-/*
- * Project:  Privatium™  |  File: apps/pantry/web/forms.js
- * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
- * Created:  2026-09-07  |  Modified: 2026-09-07
- * Summary:  Reading the forms and saying what is wrong with them, in place. Two fences
- *           stand between a typed value and the log, and this file is the first: it checks
- *           what it can and puts each message beneath the field it belongs to, with
- *           aria-invalid on the field and the focus moved to the first bad one. The second
- *           fence is the node's, which validates every declared column, NOT NULL and each
- *           CHECK from schema.sql before it appends (spec/data-api.md §2) and names the
- *           column it refused; showRefusal puts that message under the same field. A
- *           quantity is read as text and stays text: the value the person typed is what
- *           reaches the DECIMAL column, at the scale the column declares.
- *           See main README.md for full license information.
- */
+// This file is part of Privatium
+// apps/pantry/web/forms.js
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-07
+// Last Modified: 2026-09-07
+// Summary: Reading the forms and saying what is wrong with them, in place. Two fences stand between a
+//          typed value and the log, and this file is the first: it checks what it can and puts
+//          each message beneath the field it belongs to, with aria-invalid on the field and
+//          the focus moved to the first bad one. The second fence is the node's, which
+//          validates every declared column, NOT NULL and each CHECK from schema.sql before it
+//          appends (spec/data-api.md §2) and names the column it refused; showRefusal puts
+//          that message under the same field. A quantity is read as text and stays text: the
+//          value the person typed is what reaches the DECIMAL column, at the scale the column
+//          declares.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 /** A quantity: digits, optionally a point and up to the three decimal places the column
  * declares. Deliberately not a number — `Number('0.1')` is already not 0.1. */

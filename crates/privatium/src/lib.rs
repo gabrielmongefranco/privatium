@@ -1,11 +1,27 @@
-// Project:  Privatium™  |  File: crates/privatium/src/lib.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-05
-// Summary:  The axum adapter (ADR 0003): a socket in, core::handle out. It holds no routing
-//           table, adds no route and rewrites no path — every request goes to
-//           `Handler::handle` unchanged, with the peer address attached so the core's auth
-//           layer can see it. A library target beside the binary so tests can reach it.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium/src/lib.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-03
+// Last Modified: 2026-09-05
+// Summary: The axum adapter (ADR 0003): a socket in, core::handle out. It holds no routing table, adds
+//          no route and rewrites no path — every request goes to `Handler::handle` unchanged,
+//          with the peer address attached so the core's auth layer can see it. A library
+//          target beside the binary so tests can reach it.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 pub mod adapter {
     //! The daemon's transport. `bind` opens all interfaces (spec/cli.md §2),

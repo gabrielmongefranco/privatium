@@ -1,11 +1,27 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/icons.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-06
-// Summary:  Bootstrap Icons, vendored in full under assets/icons/ and embedded in the
-//           binary (docs/icons.md). The one helper that turns a name into an inline <svg>,
-//           with the accessibility attributes the icon system makes mandatory and the
-//           fallback an unknown name renders instead of nothing.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/icons.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-03
+// Last Modified: 2026-09-06
+// Summary: Bootstrap Icons, vendored in full under assets/icons/ and embedded in the binary
+//          (docs/icons.md). The one helper that turns a name into an inline <svg>, with the
+//          accessibility attributes the icon system makes mandatory and the fallback an
+//          unknown name renders instead of nothing.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use include_dir::{Dir, include_dir};
 

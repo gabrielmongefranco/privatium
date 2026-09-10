@@ -1,15 +1,30 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/wire/owner.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-06  |  Modified: 2026-09-07
-// Summary:  What only the owner may do (spec/protocol.md §9.2, §7.1, §2.3.1): open and
-//           close a pairing window — for devices or for a node — over /api/v1/pair and
-//           from the devices page, join another node's cluster over /api/v1/join and from
-//           the node page, name the node, label and revoke a device or a node. The owner
-//           is the node's own standing — a request from this machine or an in-process
-//           call — and a channel session is refused whatever its device: physical
-//           presence is the authorization. Every form carries csrf(); every answer to a
-//           refusal names the problem and nothing else.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/wire/owner.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-06
+// Last Modified: 2026-09-07
+// Summary: What only the owner may do (spec/protocol.md §9.2, §7.1, §2.3.1): open and close a pairing
+//          window — for devices or for a node — over /api/v1/pair and from the devices page,
+//          join another node's cluster over /api/v1/join and from the node page, name the
+//          node, label and revoke a device or a node. The owner is the node's own standing — a
+//          request from this machine or an in-process call — and a channel session is refused
+//          whatever its device: physical presence is the authorization. Every form carries
+//          csrf(); every answer to a refusal names the problem and nothing else.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
 use std::time::Duration;

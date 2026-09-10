@@ -1,17 +1,32 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/http/devices.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-06  |  Modified: 2026-09-08
-// Summary:  The devices page and the code page (spec/protocol.md §7.1, §7.2, §9.2;
-//           spec/data-dictionary.md §3.2) — a window for devices or for a node — and the
-//           owner's part of the node page: the display-name cell with the pencil that
-//           edits it in place, the join form (§2.3.1), this node's standing, and the nodes
-//           discovered on the network as peers and strangers (§6.1), by ID — each named
-//           once, since a space with no display name advertises its own ID as its name.
-//           The code is shown in both renderings, words first (§7.2). Every label, user
-//           agent and display name
-//           is a device's or the owner's text and is escaped on the way into the page;
-//           the forms appear for the owner alone.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/http/devices.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-06
+// Last Modified: 2026-09-08
+// Summary: The devices page and the code page (spec/protocol.md §7.1, §7.2, §9.2;
+//          spec/data-dictionary.md §3.2) — a window for devices or for a node — and the
+//          owner's part of the node page: the display-name cell with the pencil that edits it
+//          in place, the join form (§2.3.1), this node's standing, and the nodes discovered on
+//          the network as peers and strangers (§6.1), by ID — each named once, since a space
+//          with no display name advertises its own ID as its name. The code is shown in both
+//          renderings, words first (§7.2). Every label, user agent and display name is a
+//          device's or the owner's text and is escaped on the way into the page; the forms
+//          appear for the owner alone.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::fmt::Write as _;
 

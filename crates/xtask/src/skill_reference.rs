@@ -1,15 +1,31 @@
-// Project:  Privatium™  |  File: crates/xtask/src/skill_reference.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-07
-// Summary:  `cargo xtask gen-skill-reference [--check]` (docs/skills.md §7): the reference/
-//           files of every skill, written from the crate — the lint rule table, the pv
-//           surface, the sandbox's removed names, the limits, the permissions and their
-//           plain-language widenings, the framework prefixes, the reserved slugs, the icon
-//           set — and from the spec, whose numbered sections are copied in whole so a
-//           skill's "pinned reference" is the contract's own words at this version. --check
-//           regenerates in memory and fails naming every file that differs, is missing, or
-//           was not written by the generator.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/xtask/src/skill_reference.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-05
+// Last Modified: 2026-09-07
+// Summary: `cargo xtask gen-skill-reference [--check]` (docs/skills.md §7): the reference/ files of
+//          every skill, written from the crate — the lint rule table, the pv surface, the
+//          sandbox's removed names, the limits, the permissions and their plain-language
+//          widenings, the framework prefixes, the reserved slugs, the icon set — and from the
+//          spec, whose numbered sections are copied in whole so a skill's "pinned reference"
+//          is the contract's own words at this version. --check regenerates in memory and
+//          fails naming every file that differs, is missing, or was not written by the
+//          generator.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
 use std::fs;

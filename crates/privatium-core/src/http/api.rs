@@ -1,11 +1,27 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/http/api.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-06
-// Summary:  The two unauthenticated API routes of spec/protocol.md §9.2. Health is the
-//           protocol major and the Node ID and nothing else; the manifest is what discovery
-//           needs — ID, display name, the mounted apps by slug and title, the pair flag —
-//           and never a row count, a timestamp, or any app content.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/http/api.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-03
+// Last Modified: 2026-09-06
+// Summary: The two unauthenticated API routes of spec/protocol.md §9.2. Health is the protocol major
+//          and the Node ID and nothing else; the manifest is what discovery needs — ID,
+//          display name, the mounted apps by slug and title, the pair flag — and never a row
+//          count, a timestamp, or any app content.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use serde_json::{Value, json};
 

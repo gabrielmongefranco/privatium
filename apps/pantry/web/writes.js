@@ -1,16 +1,31 @@
-/*
- * Project:  Privatium™  |  File: apps/pantry/web/writes.js
- * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
- * Created:  2026-09-07  |  Modified: 2026-09-07
- * Summary:  Every change this app can make to the log, one function each, and every one of
- *           them exactly one pv.append of one batch. Adding a batch writes the batch row
- *           and its first quantity_change together, because a batch that exists with no
- *           stock would have no balance at all: decimal_sum() over no rows is NULL. A move
- *           is a put on the batch's own id, never a tombstone and a new one — a new id
- *           would orphan every change that points at the old one (spec/protocol.md §4.5,
- *           §4.6). Amounts are strings from the field to the log and are never numbers.
- *           See main README.md for full license information.
- */
+// This file is part of Privatium
+// apps/pantry/web/writes.js
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-07
+// Last Modified: 2026-09-07
+// Summary: Every change this app can make to the log, one function each, and every one of them exactly
+//          one pv.append of one batch. Adding a batch writes the batch row and its first
+//          quantity_change together, because a batch that exists with no stock would have no
+//          balance at all: decimal_sum() over no rows is NULL. A move is a put on the batch's
+//          own id, never a tombstone and a new one — a new id would orphan every change that
+//          points at the old one (spec/protocol.md §4.5, §4.6). Amounts are strings from the
+//          field to the log and are never numbers.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
+
 import { pv } from '/static/pv.js';
 
 /** This device's clock, in UTC, as the `at` column of a change. The envelope's own `ts`

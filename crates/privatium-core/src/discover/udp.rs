@@ -1,12 +1,28 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/discover/udp.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-06  |  Modified: 2026-09-06
-// Summary:  The UDP broadcast fallback of spec/protocol.md §6.4 for networks that filter
-//           multicast: a responder on port 52525 that answers `PVDISCO1` + nonce from a
-//           private, link-local or loopback source with the same prefix, the nonce and the
-//           TXT key set as JSON, once per source per second and within a budget for every
-//           source together; and the probe a node sends to find its peers.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/discover/udp.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-06
+// Last Modified: 2026-09-06
+// Summary: The UDP broadcast fallback of spec/protocol.md §6.4 for networks that filter multicast: a
+//          responder on port 52525 that answers `PVDISCO1` + nonce from a private, link-local
+//          or loopback source with the same prefix, the nonce and the TXT key set as JSON,
+//          once per source per second and within a budget for every source together; and the
+//          probe a node sends to find its peers.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, HashMap};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};

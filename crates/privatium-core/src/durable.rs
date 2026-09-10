@@ -1,11 +1,27 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/durable.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
-// Summary:  The last step of making a file exist: after a new file's bytes are on disk, its
-//           directory entry has to be too, or a power cut can lose a file whose contents
-//           were flushed. Unix filesystems ask for an fsync of the directory; Windows has
-//           no such call, and NTFS journals its metadata itself.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/durable.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-05
+// Last Modified: 2026-09-05
+// Summary: The last step of making a file exist: after a new file's bytes are on disk, its directory
+//          entry has to be too, or a power cut can lose a file whose contents were flushed.
+//          Unix filesystems ask for an fsync of the directory; Windows has no such call, and
+//          NTFS journals its metadata itself.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::fs;
 use std::io::{self, Write as _};

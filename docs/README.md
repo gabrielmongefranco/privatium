@@ -1,12 +1,20 @@
 <!--
-Project:  Privatium™
-File:     docs/README.md
-Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-Created:  2026-09-06
-Modified: 2026-09-07
-Summary:  Index of every Privatium document — guides for people running a node, guides for
-          people building apps, the normative specification, and decision records.
-          See main README.md for full license information.
+This file is part of Privatium
+docs/README.md
+Author(s): Gabriel Mongefranco
+Created: 2026-09-06
+Last Modified: 2026-09-07
+Summary: Index of every Privatium document — guides for people running a node, guides for people
+         building apps, the normative specification, and decision records.
+Notes: See README file for documentation and full license information.
+
+Copyright © 2026 Gabriel Mongefranco
+
+Permission is granted to copy, distribute and/or modify this document
+under the terms of the GNU Free Documentation License, Version 1.3 or
+any later version published by the Free Software Foundation; with no
+Invariant Sections, no Front-Cover Texts, and no Back-Cover Texts.
+See <https://www.gnu.org/licenses/fdl-1.3.html>.
 -->
 
 # Privatium documentation

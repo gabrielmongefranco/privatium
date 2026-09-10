@@ -1,15 +1,31 @@
-// Project:  Privatium™  |  File: crates/privatium-core/tests/data.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-06
-// Summary:  The data API against spec/data-api.md, every test through core::handle with no
-//           listener: the client's four fields and nothing stamped (§2, PV304), batches all
-//           or nothing with the offending index, the limits, ad-hoc SQL behind its
-//           permission with bound parameters only, `$name` views, the NDJSON of raw lines,
-//           the row endpoint, SSE with no gap across a reconnect and frames that arrive
-//           while the stream is open, resync on a rebuilt cache, pv.on('append') for an API
-//           append, a tombstoned id refused, DECIMAL as a string end to end, `sys.v_*`
-//           readable, and sketch with no schema.sql at all.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/tests/data.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-03
+// Last Modified: 2026-09-06
+// Summary: The data API against spec/data-api.md, every test through core::handle with no listener: the
+//          client's four fields and nothing stamped (§2, PV304), batches all or nothing with
+//          the offending index, the limits, ad-hoc SQL behind its permission with bound
+//          parameters only, `$name` views, the NDJSON of raw lines, the row endpoint, SSE with
+//          no gap across a reconnect and frames that arrive while the stream is open, resync
+//          on a rebuilt cache, pv.on('append') for an API append, a tombstoned id refused,
+//          DECIMAL as a string end to end, `sys.v_*` readable, and sketch with no schema.sql
+//          at all.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

@@ -1,13 +1,29 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/lua/limits.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
-// Summary:  The per-request resource limits of spec/lua-api.md §5, all four from [lua] in
-//           config.toml: the instruction count and the wall clock in one debug hook
-//           installed before any app code runs, the memory limit in the allocator, and the
-//           same deadline handed to SQLite's progress handler for the time a statement
-//           spends in Rust where the hook cannot fire. A tripped limit is remembered here,
-//           so a handler that catches the error with pcall still fails the request.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/lua/limits.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-03
+// Last Modified: 2026-09-03
+// Summary: The per-request resource limits of spec/lua-api.md §5, all four from [lua] in config.toml:
+//          the instruction count and the wall clock in one debug hook installed before any app
+//          code runs, the memory limit in the allocator, and the same deadline handed to
+//          SQLite's progress handler for the time a statement spends in Rust where the hook
+//          cannot fire. A tripped limit is remembered here, so a handler that catches the
+//          error with pcall still fails the request.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};

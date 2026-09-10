@@ -1,13 +1,21 @@
 <!--
-Project:  Privatium™
-File:     docs/decisions/0004-declined-alternatives.md
-Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-Created:  2026-08-31
-Modified: 2026-09-05
-Summary:  Decision record. Sync and p2p stacks evaluated and declined — Gun, RxDB, libp2p,
-          SharkTrustX, and BAS embedded in Rust — with the reasoning kept so the questions
-          are not re-litigated. Status: DECIDED.
-          See main README.md for full license information.
+This file is part of Privatium
+docs/decisions/0004-declined-alternatives.md
+Author(s): Gabriel Mongefranco
+Created: 2026-08-31
+Last Modified: 2026-09-05
+Summary: Decision record. Sync and p2p stacks evaluated and declined — Gun, RxDB, libp2p,
+         SharkTrustX, and BAS embedded in Rust — with the reasoning kept so the questions
+         are not re-litigated. Status: DECIDED.
+Notes: See README file for documentation and full license information.
+
+Copyright © 2026 Gabriel Mongefranco
+
+Permission is granted to copy, distribute and/or modify this document
+under the terms of the GNU Free Documentation License, Version 1.3 or
+any later version published by the Free Software Foundation; with no
+Invariant Sections, no Front-Cover Texts, and no Back-Cover Texts.
+See <https://www.gnu.org/licenses/fdl-1.3.html>.
 -->
 
 # ADR 0004 — Declined: Gun, RxDB, libp2p, SharkTrustX, BAS-in-Rust

@@ -1,14 +1,30 @@
-/* Project: Privatium™ | File: apps/sketch/web/paint.js
- * Authors: Gabriel Mongefranco (@gabrielmongefranco)
- * Created: 2026-09-07 | Modified: 2026-09-07
- * Summary: Painting one mark, and the area of a fill. Everything here draws in sheet
-          coordinates; the device scale arrives as k for the one operation that is
-          unavoidably in pixels, compositing a translucent stroke, which is painted whole
-          off-screen and composited once so it does not darken against its own overlapping
-          segments. A fill is a path, not a search: it is the inside of one mark, so it
-          costs a fill() rather than a read and write of the whole surface.
- *          See main README.md for full license information.
- */
+// This file is part of Privatium
+// apps/sketch/web/paint.js
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-07
+// Last Modified: 2026-09-07
+// Summary: Painting one mark, and the area of a fill. Everything here draws in sheet coordinates; the
+//          device scale arrives as k for the one operation that is unavoidably in pixels,
+//          compositing a translucent stroke, which is painted whole off-screen and composited
+//          once so it does not darken against its own overlapping segments. A fill is a path,
+//          not a search: it is the inside of one mark, so it costs a fill() rather than a read
+//          and write of the whole surface.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
+
 let scratch = null;
 
 /** The dash pattern for a line style, scaled by the stroke width so it reads the same

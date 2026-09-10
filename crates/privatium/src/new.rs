@@ -1,12 +1,28 @@
-// Project:  Privatium™  |  File: crates/privatium/src/new.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-06
-// Summary:  `privatium new` (spec/cli.md §4): decide what to write — an empty app for the
-//           tier, a rewritten copy of an existing one, the CRUD screens for a table, or
-//           with --examples every example app the binary carries — from the generator in
-//           the core, then write it under <data-dir>/apps/ without overwriting a single
-//           file. The first-run copy of §2 uses the same writer. No node is opened; nothing
-//           here has a runtime presence. See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium/src/new.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-04
+// Last Modified: 2026-09-06
+// Summary: `privatium new` (spec/cli.md §4): decide what to write — an empty app for the tier, a
+//          rewritten copy of an existing one, the CRUD screens for a table, or with --examples
+//          every example app the binary carries — from the generator in the core, then write
+//          it under <data-dir>/apps/ without overwriting a single file. The first-run copy of
+//          §2 uses the same writer. No node is opened; nothing here has a runtime presence.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
 use std::fs;

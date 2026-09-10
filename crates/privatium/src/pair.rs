@@ -1,13 +1,29 @@
-// Project:  Privatium™  |  File: crates/privatium/src/pair.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-06  |  Modified: 2026-09-07
-// Summary:  `privatium pair` (spec/cli.md §8): open a pairing window on the running node —
-//           for devices or, with --node, for another node — print the code both ways and
-//           the QR code, follow the window until it is consumed or closes; and `--join`,
-//           the other machine's half, which reads the code from the terminal and asks the
-//           running node to join. Both talk to the node over loopback (spec/protocol.md
-//           §9.2) and open no node of their own.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium/src/pair.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-06
+// Last Modified: 2026-09-07
+// Summary: `privatium pair` (spec/cli.md §8): open a pairing window on the running node — for devices
+//          or, with --node, for another node — print the code both ways and the QR code,
+//          follow the window until it is consumed or closes; and `--join`, the other machine's
+//          half, which reads the code from the terminal and asks the running node to join.
+//          Both talk to the node over loopback (spec/protocol.md §9.2) and open no node of
+//          their own.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::io::{BufRead as _, Read as _, Write as _};
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};

@@ -1,10 +1,26 @@
--- Project:  Privatium™  |  File: crates/privatium-core/src/store/sys.sql
--- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
--- Created:  2026-09-01  |  Modified: 2026-09-05
--- Summary:  The framework's own schema.sql (spec/data-dictionary.md §3). `_sys` is an app
---           and is materialized by exactly the machinery any app gets; this is the file it
---           would have shipped if it had a folder.
---           See main README.md for full license information.
+-- This file is part of Privatium
+-- crates/privatium-core/src/store/sys.sql
+-- Author(s): Gabriel Mongefranco
+-- Created: 2026-09-01
+-- Last Modified: 2026-09-05
+-- Summary: The framework's own schema.sql (spec/data-dictionary.md §3). `_sys` is an app and is
+--          materialized by exactly the machinery any app gets; this is the file it would have
+--          shipped if it had a folder.
+-- Notes: See README file for documentation and full license information.
+--
+-- Copyright © 2026 Gabriel Mongefranco
+--
+-- This program is free software: you can redistribute it and/or modify
+-- it under the terms of the GNU General Public License as published by
+-- the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+--
+-- This program is distributed in the hope that it will be useful,
+-- but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+-- GNU General Public License for more details.
+--
+-- You should have received a copy of the GNU General Public License along
+-- with this program. If not, see <https://www.gnu.org/licenses/>.
 
 -- Materialized into cache/_sys.sqlite. An app's connection will see these tables and views
 -- attached read-only as the schema `sys` (spec/data-dictionary.md §1, §4), which is why the

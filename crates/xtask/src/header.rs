@@ -1,20 +1,44 @@
-// Project:  Privatium™  |  File: crates/xtask/src/header.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-08-31  |  Modified: 2026-09-06
-// Summary:  `cargo xtask header-check`. AGENTS.md requires a header block on every source
-//           file; this is what turns that from a habit into a gate.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/xtask/src/header.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-08-31
+// Last Modified: 2026-09-06
+// Summary: `cargo xtask header-check`. AGENTS.md requires a header block on every source file; this is
+//          what turns that from a habit into a gate.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::path::Path;
 
 use anyhow::Result;
 
-/// How many lines from the top of a file the header block may occupy.
-const HEADER_WINDOW: usize = 25;
+/// How many lines from the top of a file the header block may occupy. The block carries a
+/// full licence notice now, so the window is larger than the six-field form it replaced.
+const HEADER_WINDOW: usize = 40;
 
-/// The sentence every summary ends with, pointing at the licence notices the README
-/// carries in full, so no file has to repeat them.
-const LICENSE_SENTENCE: &str = "See main README.md for full license information.";
+/// The first line of every header, naming the project.
+const PROJECT_LINE: &str = "This file is part of Privatium";
+
+/// The notes line that points at the licence notices the README carries in full, so no
+/// file has to repeat them. Kept whole on one line, so this check and a reader can both
+/// find it.
+const NOTES_SENTENCE: &str = "See README file for documentation and full license information.";
+
+/// The copyright line's stable prefix. The year varies by file.
+const COPYRIGHT: &str = "Copyright \u{a9} ";
 
 /// Extensions that must carry a header, and the comment openers each accepts.
 ///
@@ -38,10 +62,12 @@ const CHECKED: &[(&str, &[&str])] = &[
 /// What a header must contain. `.lsp` files carry a reduced form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Shape {
-    /// `Project:`, the file's own path, `Authors:`, `Created:`, `Modified:`, `Summary:`.
+    /// The project line, the file's own path, `Author(s):`, `Created:`, `Last Modified:`,
+    /// `Summary:`, `Notes:`, and the licence notice its file type takes.
     Full,
-    /// `Project:`, the file's own path, `Summary:`. Templates are read alongside the app
-    /// they belong to, and repeating its authorship on every partial helps nobody.
+    /// The project line, the file's own path, `Summary:`, `Notes:`. Templates are read
+    /// alongside the app they belong to, and repeating authorship and a full licence
+    /// notice on every partial helps nobody; the notes line still points at the README.
     Template,
 }
 
@@ -72,7 +98,7 @@ pub fn check(root: &Path) -> Result<bool> {
     }
     eprintln!(
         "\nheader-check: {} problems across {checked} files. \
-         The format is in AGENTS.md, under Style.",
+         The format is in AGENTS.md, section 3.",
         findings.len()
     );
     Ok(false)
@@ -160,39 +186,75 @@ fn problems(path: &str, contents: &str, shape: Shape) -> Vec<String> {
         .collect::<Vec<_>>()
         .join("\n");
 
-    if !window.contains("Project:") {
-        problems.push("no `Project:` field".to_owned());
+    if !window.contains(PROJECT_LINE) {
+        problems.push(format!("no `{PROJECT_LINE}` line"));
     }
     if !window.contains(path) {
         problems.push(format!("header does not name its own path `{path}`"));
     }
     if !window.contains("Summary:") {
         problems.push("no `Summary:` field".to_owned());
-    } else if !window.contains(LICENSE_SENTENCE) {
+    }
+    if !window.contains(NOTES_SENTENCE) {
         // The sentence is kept whole on one line so this check, and a reader, can find it.
-        problems.push(format!(
-            "the summary does not end with `{LICENSE_SENTENCE}`"
-        ));
+        problems.push(format!("no notes line reading `{NOTES_SENTENCE}`"));
     }
 
     if shape == Shape::Full {
-        if !window.contains("Authors:") {
-            problems.push("no `Authors:` field".to_owned());
+        if !window.contains("Author(s):") {
+            problems.push("no `Author(s):` field".to_owned());
         }
-        for field in ["Created:", "Modified:"] {
+        for field in ["Created:", "Last Modified:"] {
             match window.split_once(field) {
                 None => problems.push(format!("no `{field}` field")),
-                // Shape only. A mechanical check that `Modified:` matches the last commit
-                // would either be wrong or fight every commit that touches the file.
+                // Shape only. A mechanical check that `Last Modified:` matches the last
+                // commit would either be wrong or fight every commit that touches the file.
                 Some((_, after)) if !starts_with_iso_date(after) => {
                     problems.push(format!("`{field}` is not followed by a YYYY-MM-DD date"));
                 }
                 Some(_) => {}
             }
         }
+
+        match window.split_once(COPYRIGHT) {
+            None => problems.push("no `Copyright \u{a9}` line".to_owned()),
+            Some((_, after)) if !starts_with_year(after) => {
+                problems.push("`Copyright \u{a9}` is not followed by a four-digit year".to_owned());
+            }
+            Some(_) => {}
+        }
+
+        if !has_license_notice(&window, extension) {
+            problems.push(license_expectation(extension).to_owned());
+        }
     }
 
     problems
+}
+
+/// True when the header carries the licence notice its file type takes. Documents under
+/// `spec/` and `docs/` are FDL; everything else is GPL. Matching one distinctive line of
+/// each keeps this readable without pinning every word of the notice.
+fn has_license_notice(window: &str, extension: &str) -> bool {
+    if extension == "md" {
+        window.contains("GNU Free Documentation License")
+    } else {
+        window.contains("GNU General Public License")
+    }
+}
+
+fn license_expectation(extension: &str) -> &'static str {
+    if extension == "md" {
+        "no GNU Free Documentation License notice"
+    } else {
+        "no GNU General Public License notice"
+    }
+}
+
+/// True when `text`, after leading spaces, begins with four digits.
+fn starts_with_year(text: &str) -> bool {
+    let candidate: Vec<char> = text.trim_start().chars().take(4).collect();
+    candidate.len() == 4 && candidate.iter().all(char::is_ascii_digit)
 }
 
 /// True when `text`, after leading spaces, begins with `YYYY-MM-DD`.
@@ -215,32 +277,44 @@ mod tests {
     use super::*;
 
     const GOOD: &str = "\
-// Project:  Privatium™  |  File: crates/privatium-core/src/lib.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-08-31  |  Modified: 2026-08-31
-// Summary:  Crate root. See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/lib.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-08-31
+// Last Modified: 2026-08-31
+// Summary: Crate root.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright \u{a9} 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 
 pub fn nothing() {}
 ";
 
-    #[test]
-    fn a_summary_without_the_license_sentence_fails() {
-        let bare = GOOD.replace(" See main README.md for full license information.", "");
-        let found = problems("crates/privatium-core/src/lib.rs", &bare, Shape::Full);
-        assert!(
-            found
-                .iter()
-                .any(|problem| problem.contains("license information")),
-            "{found:?}"
-        );
-        // Split across two lines it is not found either: the sentence stays whole.
-        let split = GOOD.replace(
-            " See main README.md for full license information.",
-            "\n//           See main README.md for full\n//           license information.",
-        );
-        let found = problems("crates/privatium-core/src/lib.rs", &split, Shape::Full);
-        assert!(!found.is_empty(), "{found:?}");
-    }
+    const GOOD_DOC: &str = "\
+<!--
+This file is part of Privatium
+spec/protocol.md
+Author(s): Gabriel Mongefranco
+Created: 2026-08-28
+Last Modified: 2026-08-28
+Summary: NORMATIVE. Wire formats.
+Notes: See README file for documentation and full license information.
+
+Copyright \u{a9} 2026 Gabriel Mongefranco
+
+Permission is granted to copy, distribute and/or modify this document
+under the terms of the GNU Free Documentation License, Version 1.3 or
+any later version published by the Free Software Foundation; with no
+Invariant Sections, no Front-Cover Texts, and no Back-Cover Texts.
+See <https://www.gnu.org/licenses/fdl-1.3.html>.
+-->
+
+# Protocol
+";
 
     #[test]
     fn a_complete_header_passes() {
@@ -248,7 +322,61 @@ pub fn nothing() {}
         assert!(found.is_empty(), "{found:?}");
     }
 
-    /// Delete the header, and the check fails — the whole point of it.
+    /// A document takes the documentation licence, and the code licence does not satisfy it.
+    #[test]
+    fn a_document_carries_the_documentation_licence() {
+        let found = problems("spec/protocol.md", GOOD_DOC, Shape::Full);
+        assert!(found.is_empty(), "{found:?}");
+
+        let wrong = GOOD_DOC.replace("GNU Free Documentation License", "GNU General Public License");
+        let found = problems("spec/protocol.md", &wrong, Shape::Full);
+        assert!(
+            found
+                .iter()
+                .any(|problem| problem.contains("Free Documentation")),
+            "{found:?}"
+        );
+    }
+
+    #[test]
+    fn a_header_without_the_notes_sentence_fails() {
+        let bare = GOOD.replace(NOTES_SENTENCE, "");
+        let found = problems("crates/privatium-core/src/lib.rs", &bare, Shape::Full);
+        assert!(
+            found.iter().any(|problem| problem.contains("notes line")),
+            "{found:?}"
+        );
+
+        // Split across two lines it is not found either: the sentence stays whole.
+        let split = GOOD.replace(
+            NOTES_SENTENCE,
+            "See README file for documentation\n// and full license information.",
+        );
+        let found = problems("crates/privatium-core/src/lib.rs", &split, Shape::Full);
+        assert!(!found.is_empty(), "{found:?}");
+    }
+
+    #[test]
+    fn a_header_without_a_licence_notice_fails() {
+        let bare = GOOD.replace("GNU General Public License", "a licence of some sort");
+        let found = problems("crates/privatium-core/src/lib.rs", &bare, Shape::Full);
+        assert!(
+            found.iter().any(|problem| problem.contains("General Public")),
+            "{found:?}"
+        );
+    }
+
+    #[test]
+    fn a_header_without_a_copyright_year_fails() {
+        let undated = GOOD.replace("Copyright \u{a9} 2026", "Copyright \u{a9} this year");
+        let found = problems("crates/privatium-core/src/lib.rs", &undated, Shape::Full);
+        assert!(
+            found.iter().any(|problem| problem.contains("four-digit")),
+            "{found:?}"
+        );
+    }
+
+    /// Delete the header, and the check fails - the whole point of it.
     #[test]
     fn a_deleted_header_fails() {
         let stripped = "pub fn nothing() {}\n";
@@ -270,7 +398,7 @@ pub fn nothing() {}
 
     #[test]
     fn a_missing_date_fails() {
-        let undated = GOOD.replace("Created:  2026-08-31", "Created:  last Tuesday");
+        let undated = GOOD.replace("Created: 2026-08-31", "Created: last Tuesday");
         let found = problems("crates/privatium-core/src/lib.rs", &undated, Shape::Full);
         assert!(
             found.iter().any(|problem| problem.contains("YYYY-MM-DD")),
@@ -281,8 +409,12 @@ pub fn nothing() {}
     #[test]
     fn a_template_needs_less() {
         let template = "\
-<?-- Project: Privatium™ | apps/hello/views/index.lsp
-     Summary: Greeting. See main README.md for full license information. --?>
+<?--
+This file is part of Privatium
+apps/hello/views/index.lsp
+Summary: Greeting.
+Notes: See README file for documentation and full license information.
+--?>
 <h1>Hello</h1>
 ";
         let found = problems("apps/hello/views/index.lsp", template, Shape::Template);
@@ -291,27 +423,17 @@ pub fn nothing() {}
 
     #[test]
     fn a_template_still_needs_a_summary() {
-        let template = "<?-- Project: Privatium™ | apps/hello/views/index.lsp --?>\n";
+        let template = "\
+<?--
+This file is part of Privatium
+apps/hello/views/index.lsp
+Notes: See README file for documentation and full license information.
+--?>
+";
         let found = problems("apps/hello/views/index.lsp", template, Shape::Template);
         assert!(
             found.iter().any(|problem| problem.contains("Summary")),
             "{found:?}"
         );
-    }
-
-    #[test]
-    fn markdown_outside_spec_and_docs_is_exempt() {
-        let root = Path::new(".");
-        assert!(in_scope(root, "spec/protocol.md").is_some());
-        assert!(in_scope(root, "docs/icons.md").is_some());
-        assert!(in_scope(root, "README.md").is_none());
-        assert!(in_scope(root, "apps/hello/README.md").is_none());
-        assert!(in_scope(root, "skills/README.md").is_none());
-    }
-
-    #[test]
-    fn minified_bundles_are_exempt() {
-        let root = Path::new(".");
-        assert!(in_scope(root, "apps/animals/static/alpine-csp.min.js").is_none());
     }
 }

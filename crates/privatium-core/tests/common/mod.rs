@@ -1,11 +1,27 @@
-// Project:  Privatium™  |  File: crates/privatium-core/tests/common/mod.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-02  |  Modified: 2026-09-06
-// Summary:  What tests/store.rs, tests/snapshot.rs and tests/apps.rs share: a node plus one
-//           app store, the event line of spec/protocol.md §4.1 spelled by hand, `echo >>`,
-//           the digests the §2.5 comparisons are made with, app folders written into a data
-//           root, and the sys tables read back as JSON.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/tests/common/mod.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-02
+// Last Modified: 2026-09-06
+// Summary: What tests/store.rs, tests/snapshot.rs and tests/apps.rs share: a node plus one app store,
+//          the event line of spec/protocol.md §4.1 spelled by hand, `echo >>`, the digests the
+//          §2.5 comparisons are made with, app folders written into a data root, and the sys
+//          tables read back as JSON.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 // AGENTS.md, Style: unwrap() is permitted in tests. Each test binary uses a different
 // subset of these helpers, so the unused ones are not a finding.

@@ -1,12 +1,28 @@
-// Project:  Privatium™  |  File: crates/privatium/tests/cluster.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-07  |  Modified: 2026-09-07
-// Summary:  Nodes of one cluster over real sockets: admission as two child binaries
-//           (spec/cli.md §8, spec/protocol.md §2.3.1) — `pair --node` on one and
-//           `pair --join` on the other, in both directions, a wrong code and the usage
-//           error — and synchronization between in-process nodes (spec/protocol.md §10),
-//           where a test needs to reach inside each node as well as across the wire.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium/tests/cluster.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-07
+// Last Modified: 2026-09-07
+// Summary: Nodes of one cluster over real sockets: admission as two child binaries (spec/cli.md §8,
+//          spec/protocol.md §2.3.1) — `pair --node` on one and `pair --join` on the other, in
+//          both directions, a wrong code and the usage error — and synchronization between
+//          in-process nodes (spec/protocol.md §10), where a test needs to reach inside each
+//          node as well as across the wire.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 

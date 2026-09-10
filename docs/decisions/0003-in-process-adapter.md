@@ -1,12 +1,20 @@
 <!--
-Project:  Privatium™
-File:     docs/decisions/0003-in-process-adapter.md
-Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-Created:  2026-08-31
-Modified: 2026-08-31
-Summary:  Decision record. One request/response interface in the core, three transports
-          behind it, and why this is what makes offline work without a certificate. Status:
-          DECIDED. See main README.md for full license information.
+This file is part of Privatium
+docs/decisions/0003-in-process-adapter.md
+Author(s): Gabriel Mongefranco
+Created: 2026-08-31
+Last Modified: 2026-08-31
+Summary: Decision record. One request/response interface in the core, three transports behind it, and
+         why this is what makes offline work without a certificate. Status: DECIDED.
+Notes: See README file for documentation and full license information.
+
+Copyright © 2026 Gabriel Mongefranco
+
+Permission is granted to copy, distribute and/or modify this document
+under the terms of the GNU Free Documentation License, Version 1.3 or
+any later version published by the Free Software Foundation; with no
+Invariant Sections, no Front-Cover Texts, and no Back-Cover Texts.
+See <https://www.gnu.org/licenses/fdl-1.3.html>.
 -->
 
 # ADR 0003 — One core interface, three transports

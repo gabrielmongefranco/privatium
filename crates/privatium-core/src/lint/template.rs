@@ -1,15 +1,31 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/lint/template.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-06
-// Summary:  The template rules over the compiler's own front end: each views/*.lsp is
-//           scanned into segments (PV202 is every raw tag), compiled to the chunk the host
-//           runs, and that chunk is parsed with full_moon — so an `if` in the template is
-//           an `If` in the tree, a loop a loop, and the author's Lua gets the Lua rules
-//           through the line map. The HTML between tags is parsed line-aligned with the
-//           .lsp for the element rules (PV401–403, 405, 407) and PV204; PV404 is judged
-//           over the page as rendered — a view with its partials in the frame, or the
-//           document a layout() owns — with each branch a state of the page, never a file
-//           on its own (spec/cli.md §5.1). See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/lint/template.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-05
+// Last Modified: 2026-09-06
+// Summary: The template rules over the compiler's own front end: each views/*.lsp is scanned into
+//          segments (PV202 is every raw tag), compiled to the chunk the host runs, and that
+//          chunk is parsed with full_moon — so an `if` in the template is an `If` in the tree,
+//          a loop a loop, and the author's Lua gets the Lua rules through the line map. The
+//          HTML between tags is parsed line-aligned with the .lsp for the element rules
+//          (PV401–403, 405, 407) and PV204; PV404 is judged over the page as rendered — a view
+//          with its partials in the frame, or the document a layout() owns — with each branch
+//          a state of the page, never a file on its own (spec/cli.md §5.1).
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;

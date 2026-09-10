@@ -1,12 +1,28 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/lint/manifest.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
-// Summary:  The rules that read app.toml and the sample data: PV101–PV105 through the
-//           loader's own Manifest type and validation, PV205 (a widened permission needs a
-//           comment beside it), PV208 (nothing that looks like a secret in the manifest,
-//           the schema or sample/seed.jsonl), PV501 (the DNS-SD label limit) and PV502
-//           (cross_origin_isolated is the solo app's alone).
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/lint/manifest.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-05
+// Last Modified: 2026-09-05
+// Summary: The rules that read app.toml and the sample data: PV101–PV105 through the loader's own
+//          Manifest type and validation, PV205 (a widened permission needs a comment beside
+//          it), PV208 (nothing that looks like a secret in the manifest, the schema or
+//          sample/seed.jsonl), PV501 (the DNS-SD label limit) and PV502 (cross_origin_isolated
+//          is the solo app's alone).
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::app::manifest::{
     MANIFEST_FILE, MAX_ADVERTISED_SLUG, Manifest, ManifestError, SUPPORTED_API, is_reserved,

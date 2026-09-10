@@ -1,13 +1,29 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/lua/convert.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-05
-// Summary:  Values crossing the Lua boundary. Lua tables to the JSON `d` of an event and
-//           back (spec/data-dictionary.md §2.1), bound parameters for pv.query, and the
-//           typing of a result column (spec/lua-api.md §3.2): what SQLite holds, as Lua
-//           holds it — INTEGER an integer, REAL a float, TEXT a string — with two
-//           conveniences for a column that originates in a declared one: BOOLEAN as a
-//           boolean and JSON decoded. A DECIMAL is TEXT in the cache and stays a string.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/lua/convert.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-03
+// Last Modified: 2026-09-05
+// Summary: Values crossing the Lua boundary. Lua tables to the JSON `d` of an event and back
+//          (spec/data-dictionary.md §2.1), bound parameters for pv.query, and the typing of a
+//          result column (spec/lua-api.md §3.2): what SQLite holds, as Lua holds it — INTEGER
+//          an integer, REAL a float, TEXT a string — with two conveniences for a column that
+//          originates in a declared one: BOOLEAN as a boolean and JSON decoded. A DECIMAL is
+//          TEXT in the cache and stays a string.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use mlua::{Lua, Table, Value};
 use rusqlite::types::ValueRef;

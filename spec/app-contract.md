@@ -1,12 +1,20 @@
 <!--
-Project:  Privatium™
-File:     spec/app-contract.md
-Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-Created:  2026-08-28
-Modified: 2026-09-07
-Summary:  NORMATIVE. What an app is, the three tiers of app, and the three deployment modes.
-          The declarative tier is one option, not the model.
-          See main README.md for full license information.
+This file is part of Privatium
+spec/app-contract.md
+Author(s): Gabriel Mongefranco
+Created: 2026-08-28
+Last Modified: 2026-09-07
+Summary: NORMATIVE. What an app is, the three tiers of app, and the three deployment modes. The
+         declarative tier is one option, not the model.
+Notes: See README file for documentation and full license information.
+
+Copyright © 2026 Gabriel Mongefranco
+
+Permission is granted to copy, distribute and/or modify this document
+under the terms of the GNU Free Documentation License, Version 1.3 or
+any later version published by the Free Software Foundation; with no
+Invariant Sections, no Front-Cover Texts, and no Back-Cover Texts.
+See <https://www.gnu.org/licenses/fdl-1.3.html>.
 -->
 
 # App Contract — `api = 1`

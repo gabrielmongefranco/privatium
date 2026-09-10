@@ -1,12 +1,28 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/pair/join.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-07  |  Modified: 2026-09-07
-// Summary:  A node joining a cluster as the client of /ws/pair (spec/protocol.md §2.3.1,
-//           §7.4.2, spec/app-contract.md §6): the facts gathered under the node's lock
-//           before the socket opens, the exchange driven on the socket with the lock
-//           released, and what is applied under the lock once the direction is known —
-//           adoption when this node joins, the row when it admits.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/pair/join.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-07
+// Last Modified: 2026-09-07
+// Summary: A node joining a cluster as the client of /ws/pair (spec/protocol.md §2.3.1, §7.4.2,
+//          spec/app-contract.md §6): the facts gathered under the node's lock before the
+//          socket opens, the exchange driven on the socket with the lock released, and what is
+//          applied under the lock once the direction is known — adoption when this node joins,
+//          the row when it admits.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::time::Duration;
 

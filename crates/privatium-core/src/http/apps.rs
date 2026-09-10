@@ -1,14 +1,29 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/http/apps.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-06
-// Summary:  What answers beneath an app's mount (spec/protocol.md §9.1). Tier 2: web/
-//           served as-is with index.html at the mount point, streamed in 64 KiB frames,
-//           under that app's own CSP (spec/app-contract.md §5, §5.4). Tier 1: what a Lua
-//           handler answered, as a response with the same headers — a rendered view inside
-//           the framework's page frame unless the app supplied the document — the app's
-//           static/ served the same way as web/, and the error page with the traceback and
-//           the offending line (spec/cli.md §3).
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/http/apps.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-03
+// Last Modified: 2026-09-06
+// Summary: What answers beneath an app's mount (spec/protocol.md §9.1). Tier 2: web/ served as-is with
+//          index.html at the mount point, streamed in 64 KiB frames, under that app's own CSP
+//          (spec/app-contract.md §5, §5.4). Tier 1: what a Lua handler answered, as a response
+//          with the same headers — a rendered view inside the framework's page frame unless
+//          the app supplied the document — the app's static/ served the same way as web/, and
+//          the error page with the traceback and the offending line (spec/cli.md §3).
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::path::PathBuf;
 

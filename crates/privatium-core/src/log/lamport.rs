@@ -1,10 +1,26 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/log/lamport.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-06
-// Summary:  The Lamport counter of spec/protocol.md §4.3. Small enough to inline
-//           everywhere, and a type rather than a bare u64 because getting its arithmetic
-//           subtly wrong would corrupt §4.5 merge order silently.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/log/lamport.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-01
+// Last Modified: 2026-09-06
+// Summary: The Lamport counter of spec/protocol.md §4.3. Small enough to inline everywhere, and a type
+//          rather than a bare u64 because getting its arithmetic subtly wrong would corrupt
+//          §4.5 merge order silently.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 /// One node's Lamport counter for one app (`spec/protocol.md §4.3`).
 ///

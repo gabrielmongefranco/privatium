@@ -1,12 +1,28 @@
-// Project:  Privatium™  |  File: crates/privatium/src/cli.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-06
-// Summary:  The argument grammar of spec/cli.md, by hand. The surface is eight commands and
-//           twenty flags fixed by a normative document, and the help text is that
-//           document's synopsis lines — so there is no derive layer to drift from it, no
-//           dependency to carry for it, and `test_no_undocumented_flags` compares the two
-//           directly. A mistake here is a usage error, exit 2 (§1); nothing here touches a
-//           node. See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium/src/cli.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-04
+// Last Modified: 2026-09-06
+// Summary: The argument grammar of spec/cli.md, by hand. The surface is eight commands and twenty flags
+//          fixed by a normative document, and the help text is that document's synopsis lines
+//          — so there is no derive layer to drift from it, no dependency to carry for it, and
+//          `test_no_undocumented_flags` compares the two directly. A mistake here is a usage
+//          error, exit 2 (§1); nothing here touches a node.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::ffi::OsString;
 use std::path::PathBuf;

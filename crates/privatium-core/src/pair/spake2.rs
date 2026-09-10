@@ -1,10 +1,26 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/pair/spake2.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-05
-// Summary:  SPAKE2 as RFC 9382 specifies it, over edwards25519 with the RFC's M and N, in
-//           the ciphersuite spec/protocol.md §7.4.1 fixes: the password scalar, the two
-//           messages, the transcript, the key schedule and the confirmation MACs.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/pair/spake2.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-05
+// Last Modified: 2026-09-05
+// Summary: SPAKE2 as RFC 9382 specifies it, over edwards25519 with the RFC's M and N, in the
+//          ciphersuite spec/protocol.md §7.4.1 fixes: the password scalar, the two messages,
+//          the transcript, the key schedule and the confirmation MACs.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use curve25519_dalek::edwards::{CompressedEdwardsY, EdwardsPoint};
 use curve25519_dalek::scalar::Scalar;

@@ -1,12 +1,28 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/pair/node.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-07
-// Summary:  Pairing on the node (spec/app-contract.md §6, spec/protocol.md §7): opening and
-//           closing the window for devices or for a node, driving the handshake against it
-//           under the node's lock, writing the device row, the admission of a node in
-//           either direction (§2.3.1), what a joiner adopts, the registry checks, node
-//           revocation, runtime renewal, and every sys_audit row §7.5 requires.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/pair/node.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-05
+// Last Modified: 2026-09-07
+// Summary: Pairing on the node (spec/app-contract.md §6, spec/protocol.md §7): opening and closing the
+//          window for devices or for a node, driving the handshake against it under the node's
+//          lock, writing the device row, the admission of a node in either direction (§2.3.1),
+//          what a joiner adopts, the registry checks, node revocation, runtime renewal, and
+//          every sys_audit row §7.5 requires.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::net::IpAddr;
 use std::time::Duration;

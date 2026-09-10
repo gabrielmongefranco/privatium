@@ -1,12 +1,28 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/http/shell.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-08
-// Summary:  The framework's own pages — launcher, settings, errors — as server-rendered
-//           HTML with HTMX and inlined Bootstrap Icons (docs/architecture.md §2.5,
-//           docs/icons.md). No client framework, no bundler, no inline script or style:
-//           every page renders under the default CSP of spec/protocol.md §9.3 exactly as
-//           written, and every page is held to the PV4xx rules of spec/cli.md §5 by
-//           tests/reference.rs. See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/http/shell.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-03
+// Last Modified: 2026-09-08
+// Summary: The framework's own pages — launcher, settings, errors — as server-rendered HTML with HTMX
+//          and inlined Bootstrap Icons (docs/architecture.md §2.5, docs/icons.md). No client
+//          framework, no bundler, no inline script or style: every page renders under the
+//          default CSP of spec/protocol.md §9.3 exactly as written, and every page is held to
+//          the PV4xx rules of spec/cli.md §5 by tests/reference.rs.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::fmt::Write as _;
 

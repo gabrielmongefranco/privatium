@@ -1,12 +1,20 @@
 <!--
-Project:  Privatium™
-File:     docs/plans/phase-4.md
-Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-Created:  2026-09-05
-Modified: 2026-09-05
-Summary:  Stub. The Phase 4 plan — native shells — is written from docs/roadmap.md when
-          Phase 3 closes, in the shape of docs/plans/phase-1.md. Non-normative.
-          See main README.md for full license information.
+This file is part of Privatium
+docs/plans/phase-4.md
+Author(s): Gabriel Mongefranco
+Created: 2026-09-05
+Last Modified: 2026-09-05
+Summary: Stub. The Phase 4 plan — native shells — is written from docs/roadmap.md when Phase 3
+         closes, in the shape of docs/plans/phase-1.md. Non-normative.
+Notes: See README file for documentation and full license information.
+
+Copyright © 2026 Gabriel Mongefranco
+
+Permission is granted to copy, distribute and/or modify this document
+under the terms of the GNU Free Documentation License, Version 1.3 or
+any later version published by the Free Software Foundation; with no
+Invariant Sections, no Front-Cover Texts, and no Back-Cover Texts.
+See <https://www.gnu.org/licenses/fdl-1.3.html>.
 -->
 
 # Phase 4 Implementation Plan — stub

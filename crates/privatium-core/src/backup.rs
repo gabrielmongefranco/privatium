@@ -1,15 +1,31 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/backup.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-05
-// Summary:  `privatium restore --from <path>` (spec/cli.md §7): bringing a backed-up data/
-//           folder into this node's data root before the three-tier rebuild runs. A plan
-//           first, then an apply, so `--dry-run` and the real thing read the same
-//           decisions. Log files are the only delicate part — a device's log is one
-//           writer's, forever — so a file is copied only when this root lacks it or holds a
-//           strict prefix of it, and a divergence refuses the whole restore before a byte
-//           moves. Snapshots are caches and are copied when absent. local/ and cache/ are
-//           never read from a backup (spec/protocol.md §3.1).
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/backup.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-04
+// Last Modified: 2026-09-05
+// Summary: `privatium restore --from <path>` (spec/cli.md §7): bringing a backed-up data/ folder into
+//          this node's data root before the three-tier rebuild runs. A plan first, then an
+//          apply, so `--dry-run` and the real thing read the same decisions. Log files are the
+//          only delicate part — a device's log is one writer's, forever — so a file is copied
+//          only when this root lacks it or holds a strict prefix of it, and a divergence
+//          refuses the whole restore before a byte moves. Snapshots are caches and are copied
+//          when absent. local/ and cache/ are never read from a backup (spec/protocol.md
+//          §3.1).
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeSet;
 use std::fs;

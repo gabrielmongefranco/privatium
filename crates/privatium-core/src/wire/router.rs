@@ -1,12 +1,28 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/wire/router.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-07
-// Summary:  The route namespaces of spec/protocol.md §9.1 as one function from a path to a
-//           Route. Framework prefixes win in both modes; everything else belongs to
-//           whichever app is mounted there, and the mount table is Node::mounts(). This is
-//           the only place host mode and solo mode differ about where an app lives — that,
-//           and url(), which is the only place a URL is built.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/wire/router.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-03
+// Last Modified: 2026-09-07
+// Summary: The route namespaces of spec/protocol.md §9.1 as one function from a path to a Route.
+//          Framework prefixes win in both modes; everything else belongs to whichever app is
+//          mounted there, and the mount table is Node::mounts(). This is the only place host
+//          mode and solo mode differ about where an app lives — that, and url(), which is the
+//          only place a URL is built.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
 

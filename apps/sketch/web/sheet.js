@@ -1,12 +1,28 @@
-/* Project: Privatium™ | File: apps/sketch/web/sheet.js
- * Authors: Gabriel Mongefranco (@gabrielmongefranco)
- * Created: 2026-09-07 | Modified: 2026-09-07
- * Summary: The sheet is a fixed 1600 x 1200 coordinate space, so a stroke drawn on one device
-          lands on the same pixels on every other. That is separate from the canvas's pixel
-          size: the CSS box follows fit or zoom, the backing store follows the CSS box at
-          devicePixelRatio, and the ratio between them rides in the context transform.
- *          See main README.md for full license information.
- */
+// This file is part of Privatium
+// apps/sketch/web/sheet.js
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-07
+// Last Modified: 2026-09-07
+// Summary: The sheet is a fixed 1600 x 1200 coordinate space, so a stroke drawn on one device lands on
+//          the same pixels on every other. That is separate from the canvas's pixel size: the
+//          CSS box follows fit or zoom, the backing store follows the CSS box at
+//          devicePixelRatio, and the ratio between them rides in the context transform.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
+
 export const SHEET_W = 1600;
 export const SHEET_H = 1200;
 

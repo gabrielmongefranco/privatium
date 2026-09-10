@@ -1,14 +1,30 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/lint/sql.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-06
-// Summary:  The SQL half of the linter. schema.sql goes through the engine: PV106 asks the
-//           catalog for `id VARCHAR PRIMARY KEY`, and PV107 prepares each statement under
-//           an authorizer that records the actions SQLite reports, so a statement is
-//           classified by what the engine would do, never by its first word. App SQL — the
-//           literals Lua, templates and JavaScript hand to pv.query and pv.sql, and CREATE
-//           VIEW bodies — goes through a small tokenizer for PV303 (no writes) and PV308
-//           (no SUM over a DECIMAL, no + or - on a DATE).
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/lint/sql.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-05
+// Last Modified: 2026-09-06
+// Summary: The SQL half of the linter. schema.sql goes through the engine: PV106 asks the catalog for
+//          `id VARCHAR PRIMARY KEY`, and PV107 prepares each statement under an authorizer
+//          that records the actions SQLite reports, so a statement is classified by what the
+//          engine would do, never by its first word. App SQL — the literals Lua, templates and
+//          JavaScript hand to pv.query and pv.sql, and CREATE VIEW bodies — goes through a
+//          small tokenizer for PV303 (no writes) and PV308 (no SUM over a DECIMAL, no + or -
+//          on a DATE).
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::sync::{Arc, Mutex, PoisonError};
 

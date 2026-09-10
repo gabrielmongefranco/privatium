@@ -1,14 +1,26 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/log/reader.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-07
-// Summary:  Reading an app's log: the segment list of spec/protocol.md §3.2, a line
-//           iterator per segment, and the one startup scan that recovers `seq` and the
-//           Lamport counter and applies §4.4's clock hygiene.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/log/reader.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-01
+// Last Modified: 2026-09-07
+// Summary: Reading an app's log: the segment list of spec/protocol.md §3.2, a line iterator per
+//          segment, and the one startup scan that recovers `seq` and the Lamport counter and
+//          applies §4.4's clock hygiene.
+// Notes: See README file for documentation and full license information.
 //
-//           This is NOT the materialization path: the store reads data/<slug>/log/*.jsonl
-//           itself. What lives here serves recovery and §10 sync, and is deliberately
-//           incurious about anything those two do not need.
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
 use std::fs;

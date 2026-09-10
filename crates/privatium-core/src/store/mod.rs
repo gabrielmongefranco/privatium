@@ -1,11 +1,27 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/store/mod.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-07
-// Summary:  One app's cache/<slug>.sqlite: the framework's connection that materializes it
-//           from the log or from a snapshot (spec/protocol.md §5.3), the read-only
-//           sandboxed connection app SQL gets (spec/app-contract.md §7), the watermark that
-//           notices a log someone appended to by hand, and the record of which restore tier
-//           built the tables. See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/store/mod.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-01
+// Last Modified: 2026-09-07
+// Summary: One app's cache/<slug>.sqlite: the framework's connection that materializes it from the log
+//          or from a snapshot (spec/protocol.md §5.3), the read-only sandboxed connection app
+//          SQL gets (spec/app-contract.md §7), the watermark that notices a log someone
+//          appended to by hand, and the record of which restore tier built the tables.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
 use std::fs;

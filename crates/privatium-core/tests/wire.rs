@@ -1,12 +1,28 @@
-// Project:  Privatium™  |  File: crates/privatium-core/tests/wire.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-08
-// Summary:  core::handle against spec/protocol.md §9 and ADR 0003 — every route reachable
-//           with no listener, the headers of §9.3 on every response, nothing leaked
-//           unauthenticated (§9.2), solo mode at `/` with the framework prefixes winning
-//           (§9.1), Tier 2 served under its own CSP (spec/app-contract.md §5.4), the seed
-//           behind a POST (§9), and bodies that stream. Tier 1 routes are tests/lua.rs.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/tests/wire.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-03
+// Last Modified: 2026-09-08
+// Summary: core::handle against spec/protocol.md §9 and ADR 0003 — every route reachable with no
+//          listener, the headers of §9.3 on every response, nothing leaked unauthenticated
+//          (§9.2), solo mode at `/` with the framework prefixes winning (§9.1), Tier 2 served
+//          under its own CSP (spec/app-contract.md §5.4), the seed behind a POST (§9), and
+//          bodies that stream. Tier 1 routes are tests/lua.rs.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

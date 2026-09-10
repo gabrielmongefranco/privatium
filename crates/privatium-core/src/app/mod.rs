@@ -1,13 +1,29 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/app/mod.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-02  |  Modified: 2026-09-07
-// Summary:  The app loader — the lifecycle of spec/app-contract.md §8 up to and including
-//           mount. Discovers app folders, refuses per app and loudly (§3.1), keeps sys_app
-//           as events (§3.4), and owns each app's log, store and — for Tier 1 — its Lua
-//           host. The node's one public write path, `Node::append_batch`, is here too,
-//           beside `append`, load_seed, `open_app` (an embedder's app with no folder, §2.3)
-//           and `subscribe`, so nothing above this module ever holds an app's log.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/app/mod.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-02
+// Last Modified: 2026-09-07
+// Summary: The app loader — the lifecycle of spec/app-contract.md §8 up to and including mount.
+//          Discovers app folders, refuses per app and loudly (§3.1), keeps sys_app as events
+//          (§3.4), and owns each app's log, store and — for Tier 1 — its Lua host. The node's
+//          one public write path, `Node::append_batch`, is here too, beside `append`,
+//          load_seed, `open_app` (an embedder's app with no folder, §2.3) and `subscribe`, so
+//          nothing above this module ever holds an app's log.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
 use std::fmt;

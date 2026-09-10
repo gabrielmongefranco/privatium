@@ -1,6 +1,10 @@
-<?-- Project: Privatium™ | apps/_lint/fail/PV403/pv403bad/views/index.lsp
-     Summary: PV403 fail: two checkboxes outside any fieldset.
-              See main README.md for full license information. --?>
+<?--
+This file is part of Privatium
+apps/_lint/fail/PV403/pv403bad/views/index.lsp
+Summary: PV403 fail: two checkboxes outside any fieldset.
+Notes: See README file for documentation and full license information.
+--?>
+
 <h1>Preferences</h1>
 <form method="get" action="<?= url('/') ?>">
   <input id="r-mail" name="remind" type="checkbox" value="mail">

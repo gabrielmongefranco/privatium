@@ -1,13 +1,29 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/http/auth.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-07
-// Summary:  auth_layer (spec/app-contract.md §6) with its real signature — a tower::Layer —
-//           and the bootstrap policy of spec/protocol.md §8.4: a request from this
-//           machine is this node, a channel is its paired device, and public routes
-//           carry no device. core::handle applies it, so every adapter gets it; an
-//           embedder wraps their own router with it (§2.3), where the peer is axum's
-//           ConnectInfo and a request with no peer at all is refused — the layer fails
-//           closed, never open. See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/http/auth.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-03
+// Last Modified: 2026-09-07
+// Summary: auth_layer (spec/app-contract.md §6) with its real signature — a tower::Layer — and the
+//          bootstrap policy of spec/protocol.md §8.4: a request from this machine is this
+//          node, a channel is its paired device, and public routes carry no device.
+//          core::handle applies it, so every adapter gets it; an embedder wraps their own
+//          router with it (§2.3), where the peer is axum's ConnectInfo and a request with no
+//          peer at all is refused — the layer fails closed, never open.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeSet;
 use std::future::Future;

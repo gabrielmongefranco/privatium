@@ -1,13 +1,29 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/store/normalize.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
-// Summary:  Typed writes (spec/data-dictionary.md §2.1, spec/lua-api.md §3.3): the values
-//           of a `d` about to be appended, checked and normalized against the column each
-//           names — BIGINT and DECIMAL as digit strings at the declared scale, BOOLEAN as
-//           true/false, and DATE, TIME and TIMESTAMPTZ parsed from the forms people type
-//           into the ISO spelling the cache stores. A value that is not its type refuses
-//           the append before anything is written, so the log stays clean and nothing has
-//           to materialize as NULL later. See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/store/normalize.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-03
+// Last Modified: 2026-09-03
+// Summary: Typed writes (spec/data-dictionary.md §2.1, spec/lua-api.md §3.3): the values of a `d` about
+//          to be appended, checked and normalized against the column each names — BIGINT and
+//          DECIMAL as digit strings at the declared scale, BOOLEAN as true/false, and DATE,
+//          TIME and TIMESTAMPTZ parsed from the forms people type into the ISO spelling the
+//          cache stores. A value that is not its type refuses the append before anything is
+//          written, so the log stays clean and nothing has to materialize as NULL later.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use serde_json::{Map, Value};
 

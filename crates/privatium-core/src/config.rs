@@ -1,10 +1,26 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/config.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-01  |  Modified: 2026-09-06
-// Summary:  Where the node's data lives (spec/protocol.md §3) and what config.toml may say
-//           about it. Both halves are here because --data-dir picks the root and --config
-//           defaults to a file inside it, so neither resolves without the other.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/config.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-01
+// Last Modified: 2026-09-06
+// Summary: Where the node's data lives (spec/protocol.md §3) and what config.toml may say about it.
+//          Both halves are here because --data-dir picks the root and --config defaults to a
+//          file inside it, so neither resolves without the other.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::fs;
 use std::path::{Path, PathBuf};

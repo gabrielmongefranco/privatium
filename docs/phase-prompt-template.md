@@ -1,12 +1,20 @@
 <!--
-Project:  Privatium™
-File:     docs/phase-prompt-template.md
-Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-Created:  2026-09-05
-Modified: 2026-09-05
-Summary:  A copy-and-paste prompt for starting a Privatium phase, milestone, change or
-          repair in a new AI chat. Non-normative.
-          See main README.md for full license information.
+This file is part of Privatium
+docs/phase-prompt-template.md
+Author(s): Gabriel Mongefranco
+Created: 2026-09-05
+Last Modified: 2026-09-05
+Summary: A copy-and-paste prompt for starting a Privatium phase, milestone, change or repair in a new
+         AI chat. Non-normative.
+Notes: See README file for documentation and full license information.
+
+Copyright © 2026 Gabriel Mongefranco
+
+Permission is granted to copy, distribute and/or modify this document
+under the terms of the GNU Free Documentation License, Version 1.3 or
+any later version published by the Free Software Foundation; with no
+Invariant Sections, no Front-Cover Texts, and no Back-Cover Texts.
+See <https://www.gnu.org/licenses/fdl-1.3.html>.
 -->
 
 # Phase Prompt Template

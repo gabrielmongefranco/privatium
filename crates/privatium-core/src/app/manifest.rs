@@ -1,10 +1,26 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/app/manifest.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-02  |  Modified: 2026-09-06
-// Summary:  app.toml (spec/app-contract.md §3) — the manifest as a type, its validation
-//           against §3.1, protocol §1.1's reserved slugs and §12's api ceiling, and the
-//           [permissions] table of §5.4 with the plain-language widenings it implies.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/app/manifest.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-02
+// Last Modified: 2026-09-06
+// Summary: app.toml (spec/app-contract.md §3) — the manifest as a type, its validation against §3.1,
+//          protocol §1.1's reserved slugs and §12's api ceiling, and the [permissions] table
+//          of §5.4 with the plain-language widenings it implies.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
 use std::fmt;

@@ -1,13 +1,21 @@
 <!--
-Project:  Privatium™
-File:     docs/decisions/0006-sqlite-engine.md
-Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-Created:  2026-09-03
-Modified: 2026-09-03
-Summary:  Decision record. The query engine is SQLite, not DuckDB; what that costs, what it
-          buys, and where the guarantees DuckDB used to give now live. Status: DECIDED.
-          Supersedes ADR 0001 §3 and ADR 0002's engine bullet.
-          See main README.md for full license information.
+This file is part of Privatium
+docs/decisions/0006-sqlite-engine.md
+Author(s): Gabriel Mongefranco
+Created: 2026-09-03
+Last Modified: 2026-09-03
+Summary: Decision record. The query engine is SQLite, not DuckDB; what that costs, what it buys, and
+         where the guarantees DuckDB used to give now live. Status: DECIDED. Supersedes ADR
+         0001 §3 and ADR 0002's engine bullet.
+Notes: See README file for documentation and full license information.
+
+Copyright © 2026 Gabriel Mongefranco
+
+Permission is granted to copy, distribute and/or modify this document
+under the terms of the GNU Free Documentation License, Version 1.3 or
+any later version published by the Free Software Foundation; with no
+Invariant Sections, no Front-Cover Texts, and no Back-Cover Texts.
+See <https://www.gnu.org/licenses/fdl-1.3.html>.
 -->
 
 # ADR 0006 — SQLite is the query engine

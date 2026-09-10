@@ -1,6 +1,10 @@
-<?-- Project: Privatium™ | apps/hello/views/index.lsp
-     Summary: Greeting. Note <?= ?> escapes by default, so a name containing markup is
-              displayed, never executed. See main README.md for full license information. --?>
+<?--
+This file is part of Privatium
+apps/hello/views/index.lsp
+Summary: Greeting. Note <?= ?> escapes by default, so a name containing markup is displayed, never
+         executed.
+Notes: See README file for documentation and full license information.
+--?>
 
 <link rel="stylesheet" href="<?= url('/static/hello.css') ?>">
 <div class="hello">

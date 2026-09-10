@@ -1,15 +1,31 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/lint/lua.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-06
-// Summary:  The Lua rules over a full_moon AST, never a regex: PV201 concatenated SQL,
-//           PV203 the sandbox's removed names, PV301 a literal mount path, PV302 a DECIMAL
-//           or BIGINT column treated as a number, PV303 and PV308 over the SQL literals
-//           handed to pv.query, PV305 outbox bookkeeping by name, PV306 appends that should
-//           be one batch, PV307 a handler's global or a mutated load-time table, PV503 icon
-//           names, PV505 filesystem paths, PV506 routes a framework prefix shadows. The
-//           same walk serves a template's compiled chunk, which is why what it learns — the
-//           views pv.render names — comes back as facts.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/lint/lua.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-05
+// Last Modified: 2026-09-06
+// Summary: The Lua rules over a full_moon AST, never a regex: PV201 concatenated SQL, PV203 the
+//          sandbox's removed names, PV301 a literal mount path, PV302 a DECIMAL or BIGINT
+//          column treated as a number, PV303 and PV308 over the SQL literals handed to
+//          pv.query, PV305 outbox bookkeeping by name, PV306 appends that should be one batch,
+//          PV307 a handler's global or a mutated load-time table, PV503 icon names, PV505
+//          filesystem paths, PV506 routes a framework prefix shadows. The same walk serves a
+//          template's compiled chunk, which is why what it learns — the views pv.render names
+//          — comes back as facts.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeSet;
 use std::fs;

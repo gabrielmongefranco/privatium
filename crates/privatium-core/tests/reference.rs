@@ -1,18 +1,34 @@
-// Project:  Privatium™  |  File: crates/privatium-core/tests/reference.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-07
-// Summary:  The three reference apps end to end through core::handle with no listener,
-//           exactly as their READMEs describe them: hello (write, amend, break the cache,
-//           and the README's own `echo >>` line run for real), animals (the seed, a round
-//           over htmx and over plain form posts, the three-event teach, the recursive
-//           knowledge page, reset as tombstones, and the CSP the Alpine build runs under),
-//           sketch (every call app.js makes, against the log), pantry (the seed through
-//           its seven views, a batch added as one batch of the log, and the merge rule's
-//           own cases: a move, a double undo, a balance below zero). Then the accessibility
-//           baseline: the PV4xx rules of spec/cli.md §5 held over the shell's own pages,
-//           the Tier 1 page frame and the reference views (§5.4), and the declared colour
-//           tokens at their contrast floors (PV406).
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/tests/reference.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-04
+// Last Modified: 2026-09-07
+// Summary: The three reference apps end to end through core::handle with no listener, exactly as their
+//          READMEs describe them: hello (write, amend, break the cache, and the README's own
+//          `echo >>` line run for real), animals (the seed, a round over htmx and over plain
+//          form posts, the three-event teach, the recursive knowledge page, reset as
+//          tombstones, and the CSP the Alpine build runs under), sketch (every call app.js
+//          makes, against the log), pantry (the seed through its seven views, a batch added as
+//          one batch of the log, and the merge rule's own cases: a move, a double undo, a
+//          balance below zero). Then the accessibility baseline: the PV4xx rules of
+//          spec/cli.md §5 held over the shell's own pages, the Tier 1 page frame and the
+//          reference views (§5.4), and the declared colour tokens at their contrast floors
+//          (PV406).
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

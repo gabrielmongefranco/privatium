@@ -1,14 +1,9 @@
-<?-- Project: Privatium™ | apps/animals/views/_board.lsp
-     Summary: The game board, on its own so HTMX can swap it.
-
-              THIS IS THE HTMX HALF OF THE APP. Forms that change data include a guess
-              answered, an animal planted, a round restarted. Each one is a form that posts
-              and is replaced by the server's rendering of the new state.
-
-              Every form works with JavaScript switched off. `hx-post` is an enhancement
-              layered on `method`/`action`, not a replacement for them — HTMX intercepts the
-              submit when it can and the browser handles it when it cannot. Keep both.
-              See main README.md for full license information. --?>
+<?--
+This file is part of Privatium
+apps/animals/views/_board.lsp
+Summary: The game board, on its own so HTMX can swap it.
+Notes: See README file for documentation and full license information.
+--?>
 
 <? if err then ?>
   <p class="pv-error" role="alert"><?= icon('exclamation-triangle') ?> <?= err ?></p>

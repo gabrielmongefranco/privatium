@@ -1,10 +1,26 @@
--- Project:  Privatium™  |  File: apps/pantry/schema.sql
--- Authors:  Gabriel Mongefranco (@gabrielmongefranco)
--- Created:  2026-09-07  |  Modified: 2026-09-07
--- Summary:  Shelves, batches, and one row per recorded change to a batch. A balance is
---           never stored: it is decimal_sum() over the changes, so two devices that both
---           take the last portion converge on a negative number the app can report rather
---           than on a lost write. See main README.md for full license information.
+-- This file is part of Privatium
+-- apps/pantry/schema.sql
+-- Author(s): Gabriel Mongefranco
+-- Created: 2026-09-07
+-- Last Modified: 2026-09-07
+-- Summary: Shelves, batches, and one row per recorded change to a batch. A balance is never stored: it
+--          is decimal_sum() over the changes, so two devices that both take the last portion
+--          converge on a negative number the app can report rather than on a lost write.
+-- Notes: See README file for documentation and full license information.
+--
+-- Copyright © 2026 Gabriel Mongefranco
+--
+-- This program is free software: you can redistribute it and/or modify
+-- it under the terms of the GNU General Public License as published by
+-- the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+--
+-- This program is distributed in the hope that it will be useful,
+-- but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+-- GNU General Public License for more details.
+--
+-- You should have received a copy of the GNU General Public License along
+-- with this program. If not, see <https://www.gnu.org/licenses/>.
 
 CREATE TABLE shelf (                 -- one labelled space: a freezer drawer, a pantry shelf
     id   VARCHAR PRIMARY KEY,        -- ULID

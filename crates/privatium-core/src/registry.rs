@@ -1,12 +1,27 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/registry.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-06  |  Modified: 2026-09-06
-// Summary:  What the owner edits in the public registry (spec/data-dictionary.md §3.1,
-//           §3.2): the node's display name, a device's label, its revocation, and the
-//           hourly last_seen_at mark. Every change is a put of the whole current row read
-//           from the log, so owner-set and unknown fields survive (spec/protocol.md §4.2),
-//           and a revocation is never a del.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/registry.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-06
+// Last Modified: 2026-09-06
+// Summary: What the owner edits in the public registry (spec/data-dictionary.md §3.1, §3.2): the node's
+//          display name, a device's label, its revocation, and the hourly last_seen_at mark.
+//          Every change is a put of the whole current row read from the log, so owner-set and
+//          unknown fields survive (spec/protocol.md §4.2), and a revocation is never a del.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::BTreeMap;
 

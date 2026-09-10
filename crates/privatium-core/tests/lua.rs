@@ -1,14 +1,30 @@
-// Project:  Privatium™  |  File: crates/privatium-core/tests/lua.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-06
-// Summary:  The Lua host against spec/lua-api.md, every test through core::handle with no
-//           listener: the sandbox of §5 and its four limits, adversarially; the stable
-//           route index of §2.4; the pv module of §3 — routing, typed reads, appends and
-//           batches, pv.dec; the sandbox globals of §4.0; solo-mode shadowing; the LSP
-//           templates of §4 — escaping, raw, comments, layouts and partials, the line map,
-//           csrf verified — and hot reload of templates, app.lua, lib/ and schema.sql with
-//           a VM mid-request; the two reference apps rendering end to end, and static/
-//           beneath a Tier 1 mount. See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/tests/lua.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-03
+// Last Modified: 2026-09-06
+// Summary: The Lua host against spec/lua-api.md, every test through core::handle with no listener: the
+//          sandbox of §5 and its four limits, adversarially; the stable route index of §2.4;
+//          the pv module of §3 — routing, typed reads, appends and batches, pv.dec; the
+//          sandbox globals of §4.0; solo-mode shadowing; the LSP templates of §4 — escaping,
+//          raw, comments, layouts and partials, the line map, csrf verified — and hot reload
+//          of templates, app.lua, lib/ and schema.sql with a VM mid-request; the two reference
+//          apps rendering end to end, and static/ beneath a Tier 1 mount.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

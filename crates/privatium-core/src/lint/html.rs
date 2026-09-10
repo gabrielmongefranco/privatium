@@ -1,14 +1,30 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/lint/html.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-06
-// Summary:  A small tolerant HTML tree — shared with tests/common/a11y.rs, which holds the
-//           shell's rendered pages to it — and the element-level checks of the PV4xx rules
-//           (spec/cli.md §5.1) that a template, a Tier 2 document and a rendered page all
-//           answer to: PV401 names, PV402 labels, PV403 fieldsets, PV405 status text, PV407
-//           real tables. Each element carries the line it opened on, so a finding names it;
-//           the template layer keeps its synthesized HTML line-aligned with the .lsp
-//           source, which is what makes that line the author's.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/lint/html.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-05
+// Last Modified: 2026-09-06
+// Summary: A small tolerant HTML tree — shared with tests/common/a11y.rs, which holds the shell's
+//          rendered pages to it — and the element-level checks of the PV4xx rules (spec/cli.md
+//          §5.1) that a template, a Tier 2 document and a rendered page all answer to: PV401
+//          names, PV402 labels, PV403 fieldsets, PV405 status text, PV407 real tables. Each
+//          element carries the line it opened on, so a finding names it; the template layer
+//          keeps its synthesized HTML line-aligned with the .lsp source, which is what makes
+//          that line the author's.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, BTreeSet};
 

@@ -1,17 +1,23 @@
 <!--
-Project:  Privatium™
-File:     docs/branding.md
-Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-Created:  2026-09-05
-Modified: 2026-09-05
-Summary:  Approved visual direction, brand assets, and usage guidance.
-          See main README.md for full license information.
+This file is part of Privatium
+docs/branding.md
+Author(s): Gabriel Mongefranco
+Created: 2026-09-05
+Last Modified: 2026-09-05
+Summary: Approved visual direction, brand assets, and usage guidance. Copyright © 2026 Gabriel
+         Mongefranco Privatium™ is a trademark of Gabriel Mongefranco. Documentation
+         license: GFDL-1.3-or-later, with no Invariant Sections, no Front-Cover Texts, and
+         no Back-Cover Texts. Software license: GPL-3.0-or-later. See ../README.md for full
+         license notices and project credits.
+Notes: See README file for documentation and full license information.
+
 Copyright © 2026 Gabriel Mongefranco
-Privatium™ is a trademark of Gabriel Mongefranco.
-Documentation license: GFDL-1.3-or-later, with no Invariant Sections,
-                      no Front-Cover Texts, and no Back-Cover Texts.
-Software license: GPL-3.0-or-later.
-See ../README.md for full license notices and project credits.
+
+Permission is granted to copy, distribute and/or modify this document
+under the terms of the GNU Free Documentation License, Version 1.3 or
+any later version published by the Free Software Foundation; with no
+Invariant Sections, no Front-Cover Texts, and no Back-Cover Texts.
+See <https://www.gnu.org/licenses/fdl-1.3.html>.
 -->
 
 # Privatium branding

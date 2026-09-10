@@ -1,19 +1,20 @@
 <!--
-Project:  Privatium™
-File:     README.md
-Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-Created:  2026-08-31
-Modified: 2026-09-06
-Summary:  Overview, quick start and examples for Privatium. The documentation index lives in
-          docs/README.md. See main README.md for full license information.
+This file is part of Privatium
+README.md
+Author(s): Gabriel Mongefranco
+Created: 2026-08-31
+Last Modified: 2026-09-09
+Summary: Overview, quick start and examples for Privatium. The documentation index lives in
+         docs/README.md.
+Notes: See README file for documentation and full license information.
+
 Copyright © 2026 Gabriel Mongefranco
 Privatium™ is a trademark of Gabriel Mongefranco.
 Documentation license: GFDL-1.3-or-later, with no Invariant Sections,
-                      no Front-Cover Texts, and no Back-Cover Texts.
+                       no Front-Cover Texts, and no Back-Cover Texts.
 Software license: GPL-3.0-or-later.
 See the License and Credits sections below for the full notices and attribution.
 -->
-
 <img src="assets/branding/privatium-banner.svg" alt="" width="1800">
 
 # Privatium™

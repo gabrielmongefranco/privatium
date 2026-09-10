@@ -1,13 +1,29 @@
-// Project:  Privatium™  |  File: crates/privatium/build.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-08  |  Modified: 2026-09-08
-// Summary:  The two project facts Cargo has no field for — the copyright holder and year,
-//           and the author's site — and, on Windows, the VS_VERSION_INFO resource that
-//           fills the Details tab of the file properties dialog. Everything else both the
-//           resource and `privatium --version` (spec/cli.md §1) print comes from
-//           [workspace.package] through the CARGO_PKG_* variables, so the manifest stays
-//           the one place a name, a licence or a URL is written down.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium/build.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-08
+// Last Modified: 2026-09-08
+// Summary: The two project facts Cargo has no field for — the copyright holder and year, and the
+//          author's site — and, on Windows, the VS_VERSION_INFO resource that fills the
+//          Details tab of the file properties dialog. Everything else both the resource and
+//          `privatium --version` (spec/cli.md §1) print comes from [workspace.package] through
+//          the CARGO_PKG_* variables, so the manifest stays the one place a name, a licence or
+//          a URL is written down.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::env;
 use std::error::Error;

@@ -1,17 +1,31 @@
-/*
- * Project:  Privatium™  |  File: apps/pantry/web/views.js
- * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
- * Created:  2026-09-07  |  Modified: 2026-09-08
- * Summary:  Everything this app puts on the screen, built with createElement and
- *           textContent. No innerHTML anywhere: markup built from a value is the injection
- *           a Content Security Policy cannot see (spec/app-contract.md §5.4). Amounts
- *           arrive from the data API as strings and are shown as strings — a DECIMAL is
- *           text on purpose, and turning one into a JavaScript number is the bug the
- *           framework's exact arithmetic exists to prevent. Every state is a word beside
- *           its icon, never a colour on its own, and every control that acts on one row
- *           names that row, so a screen reader hears which batch it is about.
- *           See main README.md for full license information.
- */
+// This file is part of Privatium
+// apps/pantry/web/views.js
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-07
+// Last Modified: 2026-09-08
+// Summary: Everything this app puts on the screen, built with createElement and textContent. No
+//          innerHTML anywhere: markup built from a value is the injection a Content Security
+//          Policy cannot see (spec/app-contract.md §5.4). Amounts arrive from the data API as
+//          strings and are shown as strings — a DECIMAL is text on purpose, and turning one
+//          into a JavaScript number is the bug the framework's exact arithmetic exists to
+//          prevent. Every state is a word beside its icon, never a colour on its own, and
+//          every control that acts on one row names that row, so a screen reader hears which
+//          batch it is about.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 /** The icons a batch may carry — the fixed set the add form offers, because an arbitrary
  * name is not in the page's sprite and would render an empty box (PV503). */

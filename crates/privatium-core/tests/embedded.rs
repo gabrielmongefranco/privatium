@@ -1,13 +1,29 @@
-// Project:  Privatium™  |  File: crates/privatium-core/tests/embedded.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-07
-// Summary:  spec/app-contract.md §2.3 and §6 against the crate as a library: a node opened
-//           with no app folders, an app this binary owns with its schema inline, append,
-//           append_batch, query with bound parameters and the data API's typing, subscribe,
-//           snapshot and restore, close; the sync methods that are present and never Ok;
-//           auth_layer around an embedder's own axum router; the sandbox holding under
-//           query (§7); and the example being what the spec shows, in thirty lines.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/tests/embedded.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-05
+// Last Modified: 2026-09-07
+// Summary: spec/app-contract.md §2.3 and §6 against the crate as a library: a node opened with no app
+//          folders, an app this binary owns with its schema inline, append, append_batch,
+//          query with bound parameters and the data API's typing, subscribe, snapshot and
+//          restore, close; the sync methods that are present and never Ok; auth_layer around
+//          an embedder's own axum router; the sandbox holding under query (§7); and the
+//          example being what the spec shows, in thirty lines.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

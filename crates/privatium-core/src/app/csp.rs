@@ -1,11 +1,27 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/app/csp.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-02  |  Modified: 2026-09-06
-// Summary:  One Content-Security-Policy per app, computed at load from [permissions]
-//           (spec/app-contract.md §5.4) over the default of spec/protocol.md §9.3. The
-//           default is never relaxed to make anything work (AGENTS.md); each permission
-//           widens exactly one directive and each widening is surfaced to the owner.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/app/csp.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-02
+// Last Modified: 2026-09-06
+// Summary: One Content-Security-Policy per app, computed at load from [permissions]
+//          (spec/app-contract.md §5.4) over the default of spec/protocol.md §9.3. The default
+//          is never relaxed to make anything work (AGENTS.md); each permission widens exactly
+//          one directive and each widening is surfaced to the owner.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use crate::app::manifest::Permissions;
 

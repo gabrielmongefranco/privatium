@@ -1,14 +1,29 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/store/sandbox.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-03  |  Modified: 2026-09-03
-// Summary:  spec/app-contract.md §7 — the connection app SQL runs on. Read-only at the
-//           file, `query_only` at the connection, and an authorizer that refuses every
-//           write, every PRAGMA, ATTACH, and extension loading, so nothing an app's SQL can
-//           say reaches the filesystem or the engine's settings. The framework's own
-//           connection is separate and never handed out. The framework attaches
-//           cache/_sys.sqlite as `sys` before the authorizer goes on
-//           (spec/data-dictionary.md §4): read-only, like main.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/store/sandbox.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-03
+// Last Modified: 2026-09-03
+// Summary: spec/app-contract.md §7 — the connection app SQL runs on. Read-only at the file,
+//          `query_only` at the connection, and an authorizer that refuses every write, every
+//          PRAGMA, ATTACH, and extension loading, so nothing an app's SQL can say reaches the
+//          filesystem or the engine's settings. The framework's own connection is separate and
+//          never handed out. The framework attaches cache/_sys.sqlite as `sys` before the
+//          authorizer goes on (spec/data-dictionary.md §4): read-only, like main.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::path::Path;
 use std::time::Duration;

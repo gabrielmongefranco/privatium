@@ -1,13 +1,29 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/lint/mod.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-06
-// Summary:  `privatium lint` (spec/cli.md §5): the rule table with its stable IDs,
-//           severities and spec citations; a finding and its JSON shape (§5.2); the walk
-//           over an app folder that hands each file to the rule module that reads it — the
-//           manifest, the schema through SQLite, Lua through a full_moon AST, templates
-//           through the compiler's own front end, a Tier 2 web/ through a lexer — and the
-//           mechanical fixer of §5.3. A module of the core, not a crate, so CI and the
-//           binary run identical rules. See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/lint/mod.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-05
+// Last Modified: 2026-09-06
+// Summary: `privatium lint` (spec/cli.md §5): the rule table with its stable IDs, severities and spec
+//          citations; a finding and its JSON shape (§5.2); the walk over an app folder that
+//          hands each file to the rule module that reads it — the manifest, the schema through
+//          SQLite, Lua through a full_moon AST, templates through the compiler's own front
+//          end, a Tier 2 web/ through a lexer — and the mechanical fixer of §5.3. A module of
+//          the core, not a crate, so CI and the binary run identical rules.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 pub mod css;
 pub mod html;

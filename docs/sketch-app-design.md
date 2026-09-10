@@ -1,13 +1,21 @@
 <!--
-Project:  Privatium™
-File:     docs/sketch-app-design.md
-Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-Created:  2026-09-07
-Modified: 2026-09-07
-Summary:  The design of the Sketch reference app: its coordinate model, its layout, what
-          each tool writes to the log, the keyboard map, and the accessibility and colour
-          rules the implementation is held to.
-          See main README.md for full license information.
+This file is part of Privatium
+docs/sketch-app-design.md
+Author(s): Gabriel Mongefranco
+Created: 2026-09-07
+Last Modified: 2026-09-07
+Summary: The design of the Sketch reference app: its coordinate model, its layout, what each tool
+         writes to the log, the keyboard map, and the accessibility and colour rules the
+         implementation is held to.
+Notes: See README file for documentation and full license information.
+
+Copyright © 2026 Gabriel Mongefranco
+
+Permission is granted to copy, distribute and/or modify this document
+under the terms of the GNU Free Documentation License, Version 1.3 or
+any later version published by the Free Software Foundation; with no
+Invariant Sections, no Front-Cover Texts, and no Back-Cover Texts.
+See <https://www.gnu.org/licenses/fdl-1.3.html>.
 -->
 
 # Sketch app design

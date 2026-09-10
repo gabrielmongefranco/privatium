@@ -1,15 +1,31 @@
-// Project:  Privatium™  |  File: crates/privatium/tests/cli.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-04  |  Modified: 2026-09-08
-// Summary:  spec/cli.md against the real binary, section by section: the qualified
-//           --version (§1) and the exit codes; the flags, which are exactly the spec's
-//           synopsis lines (§1–§9, both directions); a node on loopback with --port, --solo
-//           and --no-discovery (§2); dev naming the app (§3); new for each tier and from
-//           hello (§4); skill list and export (§6); snapshot, --verify, and restore from a
-//           backup with its tier reported and a diverged log refused (§7); `pair` against a
-//           running node and without one (§8); `--open`'s QR code and the first-run window
-//           (§2); firewall parsing and refusing (§9); the commands §10 keeps absent.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium/tests/cli.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-04
+// Last Modified: 2026-09-08
+// Summary: spec/cli.md against the real binary, section by section: the qualified --version (§1) and
+//          the exit codes; the flags, which are exactly the spec's synopsis lines (§1–§9, both
+//          directions); a node on loopback with --port, --solo and --no-discovery (§2); dev
+//          naming the app (§3); new for each tier and from hello (§4); skill list and export
+//          (§6); snapshot, --verify, and restore from a backup with its tier reported and a
+//          diverged log refused (§7); `pair` against a running node and without one (§8);
+//          `--open`'s QR code and the first-run window (§2); firewall parsing and refusing
+//          (§9); the commands §10 keeps absent.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 // AGENTS.md, Style: unwrap() is permitted in tests, and a test that hides a failure
 // behind `?` is worse than one that panics with a line number.

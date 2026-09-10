@@ -1,17 +1,32 @@
-/*
- * Project:  Privatium™  |  File: apps/sketch/web/app.js
- * Authors:  Gabriel Mongefranco (@gabrielmongefranco)
- * Created:  2026-08-28  |  Modified: 2026-09-07
- * Summary:  Drawing, controls and event replay. Plain ES modules — no build step, no
- *           framework, no SQL. The event log is used directly as a document store, and a
- *           mark is one event: freehand keeps the original { points, color, width }, and
- *           the shapes, text, fills and the page colour add a `kind`, so every log written
- *           before this redesign still replays. A stroke holds the pointer's capture from down to up,
- *           so ending it off the sheet still saves it; the keyboard draws too, and a live
- *           summary says what the sheet holds. Which controls are on show is CSS's job
- *           (data-tool on <body>) — this file owns behaviour, not layout.
- *           See main README.md for full license information.
- */
+// This file is part of Privatium
+// apps/sketch/web/app.js
+// Author(s): Gabriel Mongefranco
+// Created: 2026-08-28
+// Last Modified: 2026-09-07
+// Summary: Drawing, controls and event replay. Plain ES modules — no build step, no framework, no SQL.
+//          The event log is used directly as a document store, and a mark is one event:
+//          freehand keeps the original { points, color, width }, and the shapes, text, fills
+//          and the page colour add a `kind`, so every log written before this redesign still
+//          replays. A stroke holds the pointer's capture from down to up, so ending it off the
+//          sheet still saves it; the keyboard draws too, and a live summary says what the
+//          sheet holds. Which controls are on show is CSS's job (data-tool on <body>) — this
+//          file owns behaviour, not layout.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
+
 import { pv } from '/static/pv.js';
 import { batches, SketchHistory } from './history.js';
 import { Sheet, SHEET_W, SHEET_H } from './sheet.js';

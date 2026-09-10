@@ -1,13 +1,29 @@
-// Project:  Privatium™  |  File: crates/privatium-core/src/http/pairing.rs
-// Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-// Created:  2026-09-05  |  Modified: 2026-09-08
-// Summary:  The data-free browser bootstrap (§8.4) with the pairing screen inside it (§7.2,
-//           §7.7): the word field first, then the sixteen-glyph pad with a label beneath
-//           every glyph, and the status region the three outcomes are said in. Both
-//           renderings of the code are always offered (§7.2). The markup is
-//           rendered here so the PV4xx checks hold it; client.js shows it when the browser
-//           holds no pairing and wires it, and a <noscript> browser never reaches it.
-//           See main README.md for full license information.
+// This file is part of Privatium
+// crates/privatium-core/src/http/pairing.rs
+// Author(s): Gabriel Mongefranco
+// Created: 2026-09-05
+// Last Modified: 2026-09-08
+// Summary: The data-free browser bootstrap (§8.4) with the pairing screen inside it (§7.2, §7.7): the
+//          word field first, then the sixteen-glyph pad with a label beneath every glyph, and
+//          the status region the three outcomes are said in. Both renderings of the code are
+//          always offered (§7.2). The markup is rendered here so the PV4xx checks hold it;
+//          client.js shows it when the browser holds no pairing and wires it, and a <noscript>
+//          browser never reaches it.
+// Notes: See README file for documentation and full license information.
+//
+// Copyright © 2026 Gabriel Mongefranco
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::fmt::Write as _;
 

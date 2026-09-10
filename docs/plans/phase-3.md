@@ -1,16 +1,24 @@
 <!--
-Project:  Privatium™
-File:     docs/plans/phase-3.md
-Authors:  Gabriel Mongefranco (@gabrielmongefranco)
-Created:  2026-09-05
-Modified: 2026-09-08
-Summary:  Implementation plan for Phase 3 — more than one node: node admission over the
-          pairing handshake, certificate renewal on sync, the sync protocol over the Phase
-          2 channel, the foreign-log receiver, multi-writer materialization, logs that
-          arrive by file sync, endpoint failover, attachments, the always-on node of
-          Phase 3b, and the household profiles of Phase 3c.
-          Non-normative. Where this plan and spec/ disagree, spec/ wins and this
-          file is wrong. See main README.md for full license information.
+This file is part of Privatium
+docs/plans/phase-3.md
+Author(s): Gabriel Mongefranco
+Created: 2026-09-05
+Last Modified: 2026-09-08
+Summary: Implementation plan for Phase 3 — more than one node: node admission over the pairing
+         handshake, certificate renewal on sync, the sync protocol over the Phase 2 channel,
+         the foreign-log receiver, multi-writer materialization, logs that arrive by file
+         sync, endpoint failover, attachments, the always-on node of Phase 3b, and the
+         household profiles of Phase 3c. Non-normative. Where this plan and spec/ disagree,
+         spec/ wins and this file is wrong.
+Notes: See README file for documentation and full license information.
+
+Copyright © 2026 Gabriel Mongefranco
+
+Permission is granted to copy, distribute and/or modify this document
+under the terms of the GNU Free Documentation License, Version 1.3 or
+any later version published by the Free Software Foundation; with no
+Invariant Sections, no Front-Cover Texts, and no Back-Cover Texts.
+See <https://www.gnu.org/licenses/fdl-1.3.html>.
 -->
 
 # Phase 3 Implementation Plan
