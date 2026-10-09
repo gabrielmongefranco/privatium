@@ -95,6 +95,16 @@ pub enum Route {
         /// The app.
         slug: String,
     },
+    /// `GET /settings/apps/<slug>/backup.zip` — download an app's data as a zip file.
+    AppBackup {
+        /// The app.
+        slug: String,
+    },
+    /// `POST /settings/apps/<slug>/clear` — delete an app's data and reload it.
+    AppClear {
+        /// The app.
+        slug: String,
+    },
     /// `POST /settings/name` — the owner's display name (`spec/protocol.md §6.1`).
     NodeName,
     /// `POST /settings/devices/pair` — open a pairing window from the settings page
@@ -217,14 +227,31 @@ impl Router {
                 "/devices/pairing" => Route::PairPage,
                 "/devices/pairing/close" => Route::PairClose,
                 _ => {
-                    if let Some(slug) = rest
-                        .strip_prefix("/apps/")
-                        .and_then(|r| r.strip_suffix("/seed"))
-                        .filter(|slug| crate::app::manifest::is_valid_slug(slug))
-                    {
-                        return Route::Seed {
-                            slug: slug.to_owned(),
-                        };
+                    if let Some(rest_slug) = rest.strip_prefix("/apps/") {
+                        if let Some(slug) = rest_slug
+                            .strip_suffix("/seed")
+                            .filter(|slug| crate::app::manifest::is_valid_slug(slug))
+                        {
+                            return Route::Seed {
+                                slug: slug.to_owned(),
+                            };
+                        }
+                        if let Some(slug) = rest_slug
+                            .strip_suffix("/backup.zip")
+                            .filter(|slug| crate::app::manifest::is_valid_slug(slug))
+                        {
+                            return Route::AppBackup {
+                                slug: slug.to_owned(),
+                            };
+                        }
+                        if let Some(slug) = rest_slug
+                            .strip_suffix("/clear")
+                            .filter(|slug| crate::app::manifest::is_valid_slug(slug))
+                        {
+                            return Route::AppClear {
+                                slug: slug.to_owned(),
+                            };
+                        }
                     }
                     if let Some((id, action)) = rest
                         .strip_prefix("/devices/")

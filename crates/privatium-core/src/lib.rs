@@ -61,6 +61,7 @@ pub mod store;
 pub mod sync;
 pub mod sys;
 pub mod wire;
+pub mod zip;
 
 pub use app::{
     App, AppRoot, Appended, Csp, Event, LoadFailure, LoadReport, Manifest, Permissions, Seeded,

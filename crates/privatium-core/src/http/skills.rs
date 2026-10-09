@@ -106,7 +106,11 @@ pub fn files() -> Vec<(String, &'static [u8])> {
 /// timestamp rather than the moment of the request.
 #[must_use]
 pub fn bundle() -> &'static [u8] {
-    static BUNDLE: LazyLock<Vec<u8>> = LazyLock::new(|| zip::stored(&files()));
+    static BUNDLE: LazyLock<Vec<u8>> = LazyLock::new(|| {
+        let f = files();
+        let refs: Vec<(String, &[u8])> = f.into_iter().map(|(k, v)| (k, v as &[u8])).collect();
+        crate::zip::stored(&refs)
+    });
     BUNDLE.as_slice()
 }
 
@@ -117,103 +121,6 @@ fn collect<'a>(dir: &'a Dir<'a>, into: &mut Vec<(String, &'a [u8])>) {
     }
     for sub in dir.dirs() {
         collect(sub, into);
-    }
-}
-
-/// A stored-only zip writer (PKWARE APPNOTE 6.3.x): local file headers, a central
-/// directory, and the end-of-central-directory record. Method 0, no data descriptors, no
-/// zip64, so the format is the 1989 one every extractor reads.
-pub mod zip {
-    /// One entry's fixed DOS date-time: 2026-01-01 00:00:00. Reproducible output matters
-    /// more than a real mtime, and the files have none the binary could know.
-    const DOS_TIME: u16 = 0;
-    const DOS_DATE: u16 = ((2026 - 1980) << 9) | (1 << 5) | 1;
-
-    /// Write `entries` as `(name, bytes)`, in the order given.
-    #[must_use]
-    pub fn stored(entries: &[(String, &[u8])]) -> Vec<u8> {
-        let mut out = Vec::new();
-        let mut central = Vec::new();
-        for (name, data) in entries {
-            let name = name.as_bytes();
-            let crc = crc32(data);
-            let offset = u32::try_from(out.len()).unwrap_or(u32::MAX);
-            let size = u32::try_from(data.len()).unwrap_or(u32::MAX);
-            let name_len = u16::try_from(name.len()).unwrap_or(u16::MAX);
-
-            // Local file header.
-            put32(&mut out, 0x0403_4b50);
-            put16(&mut out, 20); // version needed: 2.0
-            put16(&mut out, 0x0800); // flags: UTF-8 names
-            put16(&mut out, 0); // method: stored
-            put16(&mut out, DOS_TIME);
-            put16(&mut out, DOS_DATE);
-            put32(&mut out, crc);
-            put32(&mut out, size);
-            put32(&mut out, size);
-            put16(&mut out, name_len);
-            put16(&mut out, 0); // extra
-            out.extend_from_slice(name);
-            out.extend_from_slice(data);
-
-            // Central directory entry.
-            put32(&mut central, 0x0201_4b50);
-            put16(&mut central, 20); // version made by
-            put16(&mut central, 20); // version needed
-            put16(&mut central, 0x0800);
-            put16(&mut central, 0);
-            put16(&mut central, DOS_TIME);
-            put16(&mut central, DOS_DATE);
-            put32(&mut central, crc);
-            put32(&mut central, size);
-            put32(&mut central, size);
-            put16(&mut central, name_len);
-            put16(&mut central, 0); // extra
-            put16(&mut central, 0); // comment
-            put16(&mut central, 0); // disk
-            put16(&mut central, 0); // internal attributes
-            put32(&mut central, 0); // external attributes
-            put32(&mut central, offset);
-            central.extend_from_slice(name);
-        }
-
-        let central_offset = u32::try_from(out.len()).unwrap_or(u32::MAX);
-        let central_size = u32::try_from(central.len()).unwrap_or(u32::MAX);
-        let count = u16::try_from(entries.len()).unwrap_or(u16::MAX);
-        out.extend_from_slice(&central);
-
-        // End of central directory.
-        put32(&mut out, 0x0605_4b50);
-        put16(&mut out, 0); // this disk
-        put16(&mut out, 0); // central directory disk
-        put16(&mut out, count);
-        put16(&mut out, count);
-        put32(&mut out, central_size);
-        put32(&mut out, central_offset);
-        put16(&mut out, 0); // comment
-        out
-    }
-
-    /// CRC-32 (IEEE 802.3, reflected, polynomial `0xEDB88320`), as zip requires.
-    #[must_use]
-    pub fn crc32(data: &[u8]) -> u32 {
-        let mut crc = 0xFFFF_FFFFu32;
-        for byte in data {
-            crc ^= u32::from(*byte);
-            for _ in 0..8 {
-                let mask = (crc & 1).wrapping_neg();
-                crc = (crc >> 1) ^ (0xEDB8_8320 & mask);
-            }
-        }
-        !crc
-    }
-
-    fn put16(out: &mut Vec<u8>, value: u16) {
-        out.extend_from_slice(&value.to_le_bytes());
-    }
-
-    fn put32(out: &mut Vec<u8>, value: u32) {
-        out.extend_from_slice(&value.to_le_bytes());
     }
 }
 
@@ -251,8 +158,8 @@ mod tests {
     /// The check value from the CRC-32 specification.
     #[test]
     fn crc32_check_value() {
-        assert_eq!(zip::crc32(b"123456789"), 0xCBF4_3926);
-        assert_eq!(zip::crc32(b""), 0);
+        assert_eq!(crate::zip::crc32(b"123456789"), 0xCBF4_3926);
+        assert_eq!(crate::zip::crc32(b""), 0);
     }
 
     /// Walk the archive by hand: every local header is where the central directory says,
@@ -283,7 +190,7 @@ mod tests {
             // The local header it points at, and the data behind it.
             assert_eq!(&bytes[offset..offset + 4], &0x0403_4b50u32.to_le_bytes());
             let data_at = offset + 30 + name_len;
-            assert_eq!(zip::crc32(&bytes[data_at..data_at + size]), crc);
+            assert_eq!(crate::zip::crc32(&bytes[data_at..data_at + size]), crc);
             names.push(name.to_owned());
             at += 46 + name_len;
         }

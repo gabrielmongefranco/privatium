@@ -220,6 +220,9 @@ it writes into an empty `apps/` folder on its first run; the portable zip carrie
 as files beside the program instead. Installers, AppImage, Flatpak and signed or
 notarized packages are not built yet.
 
+> [!NOTE]
+> **Windows SmartScreen:** When running the downloaded Windows executable for the first time, you may see a "Windows protected your PC" warning. This is because the executable is not yet signed. Click **More info** and then **Run anyway**. This does not require administrator rights.
+
 ### 6.1 Publishing binaries
 
 1. Let CI pass on the commit you intend to release on `main`. CI runs on pushes to

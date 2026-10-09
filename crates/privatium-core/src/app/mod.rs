@@ -1348,8 +1348,73 @@ impl Node {
             app.store = store;
         }
         app.reload_error = None;
+        app.reload_error = None;
         self.flush()?;
         Ok(Ok(schema_changed))
+    }
+
+    /// Clear an app's data and cache, then reload it.
+    pub fn clear_app(&mut self, slug: &str) -> Result<()> {
+        let (dir, source) = {
+            let app = self.apps.get(slug).ok_or_else(|| Error::AppNotLoaded {
+                slug: slug.to_owned(),
+            })?;
+            let Some(dir) = app.dir.clone() else {
+                return Ok(());
+            };
+            (dir, app.source)
+        };
+        self.apps.remove(slug);
+        let data_dir = self.paths.data_dir().join(slug);
+        let cache_db = self.paths.app_cache_db(slug);
+        let snap_dir = self.paths.app_snap_dir(slug);
+        let _ = std::fs::remove_dir_all(&data_dir);
+        let _ = std::fs::remove_file(&cache_db);
+        let _ = std::fs::remove_dir_all(&snap_dir);
+        let candidate = Candidate {
+            folder: slug.to_owned(),
+            dir,
+            source,
+        };
+        if let Outcome::Loaded(app) = self.load_one(&candidate, &store::cutoff_now())? {
+            self.apps.insert(slug.to_owned(), *app);
+        }
+        Ok(())
+    }
+
+    /// Return a zip file of the app's `data/` folder.
+    pub fn backup_app_zip(&self, slug: &str) -> Result<Vec<u8>> {
+        let _ = self.apps.get(slug).ok_or_else(|| Error::AppNotLoaded {
+            slug: slug.to_owned(),
+        })?;
+        let data_dir = self.paths.data_dir().join(slug);
+        let mut entries = Vec::new();
+        fn collect(dir: &std::path::Path, prefix: &str, entries: &mut Vec<(String, Vec<u8>)>) {
+            if let Ok(rd) = std::fs::read_dir(dir) {
+                for entry in rd.flatten() {
+                    let path = entry.path();
+                    let name = entry.file_name().to_string_lossy().into_owned();
+                    let entry_path = if prefix.is_empty() {
+                        name.clone()
+                    } else {
+                        format!("{}/{}", prefix, name)
+                    };
+                    if entry.file_type().is_ok_and(|t| t.is_file()) {
+                        if let Ok(bytes) = std::fs::read(&path) {
+                            entries.push((entry_path, bytes));
+                        }
+                    } else if entry.file_type().is_ok_and(|t| t.is_dir()) {
+                        collect(&path, &entry_path, entries);
+                    }
+                }
+            }
+        }
+        collect(&data_dir, "", &mut entries);
+        let refs: Vec<(String, &[u8])> = entries
+            .iter()
+            .map(|(k, v)| (k.clone(), v.as_slice()))
+            .collect();
+        Ok(crate::zip::stored(&refs))
     }
 
     /// One folder through `§8`, writing its row and its audit as it goes.

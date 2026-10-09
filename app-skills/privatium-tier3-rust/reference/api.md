@@ -146,6 +146,8 @@ pub fn subscribe(&self, slug: &str) -> Result<broadcast::Receiver<StreamEvent>>
 pub fn setting_value(&self, key: &str) -> Result<Option<String>>
 pub fn audit_lua_limit(&mut self, slug: &str, detail: &str) -> Result<()>
 pub fn refresh_app(&mut self, slug: &str) -> Result<bool>
+pub fn clear_app(&mut self, slug: &str) -> Result<()>
+pub fn backup_app_zip(&self, slug: &str) -> Result<Vec<u8>>
 pub fn join(&mut self, url: &str, code: Code) -> Result<Joined>
 pub fn join_start_at( &mut self, url: &str, code: Code, hello: &str, now: jiff::Timestamp, ) -> Result<(JoinClient, String)>
 pub fn join_apply_at(&mut self, outcome: JoinOutcome, now: jiff::Timestamp) -> Result<Joined>

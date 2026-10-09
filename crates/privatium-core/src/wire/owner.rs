@@ -89,6 +89,8 @@ pub(super) enum OwnerAction {
     DeviceLabel(String),
     /// `POST /settings/devices/<id>/revoke`.
     DeviceRevoke(String),
+    /// `POST /settings/apps/<slug>/clear`.
+    AppClear(String),
 }
 
 /// `POST /api/v1/pair`'s body (`spec/protocol.md §9.2`). Every other key is refused.
@@ -417,6 +419,10 @@ impl Handler {
                 }
                 (SettingsPage::Devices, outcome)
             }
+            OwnerAction::AppClear(slug) => {
+                let outcome = self.lock().clear_app(slug);
+                (SettingsPage::Apps, outcome)
+            }
         };
         match outcome {
             Ok(()) => {
@@ -473,6 +479,38 @@ impl Handler {
             return Err(headers::text(StatusCode::FORBIDDEN, FORM_REFUSED));
         }
         Ok(form)
+    }
+
+    /// `GET /settings/apps/<slug>/backup.zip` — download an app's data as a zip file.
+    pub(super) async fn app_backup(&self, slug: &str, request: Request) -> Response {
+        if !Self::is_owner(&request) {
+            return headers::text(StatusCode::FORBIDDEN, OWNER_ONLY);
+        }
+        if request.method() != Method::GET && request.method() != Method::HEAD {
+            return headers::method_not_allowed("GET, HEAD");
+        }
+        let head = request.method() == Method::HEAD;
+        let node = self.lock();
+        let response = match node.backup_app_zip(slug) {
+            Ok(bytes) => {
+                let mut response = headers::with_body(StatusCode::OK, headers::ZIP, bytes);
+                if let Ok(value) = axum::http::HeaderValue::from_str(&format!(
+                    "attachment; filename=\"{}-backup.zip\"",
+                    slug
+                )) {
+                    response
+                        .headers_mut()
+                        .insert(axum::http::header::CONTENT_DISPOSITION, value);
+                }
+                response
+            }
+            Err(error) => self.failure(&error),
+        };
+        if head {
+            headers::strip_body(response)
+        } else {
+            response
+        }
     }
 
     /// A settings page with a notice at the top, under `status` — how a refused form

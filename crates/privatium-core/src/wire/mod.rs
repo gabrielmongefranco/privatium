@@ -406,6 +406,14 @@ impl Handler {
                 }
                 return self.seed(&slug, &path, request).await;
             }
+            Route::AppClear { slug } => {
+                return self
+                    .owner_action(owner::OwnerAction::AppClear(slug), &path, request)
+                    .await;
+            }
+            Route::AppBackup { slug } => {
+                return self.app_backup(&slug, request).await;
+            }
             Route::NodeName => {
                 return self
                     .owner_action(owner::OwnerAction::NodeName, &path, request)

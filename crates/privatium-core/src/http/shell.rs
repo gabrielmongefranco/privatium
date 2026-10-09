@@ -2,7 +2,7 @@
 // crates/privatium-core/src/http/shell.rs
 // Author(s): Gabriel Mongefranco
 // Created: 2026-09-03
-// Last Modified: 2026-10-04
+// Last Modified: 2026-10-09
 // Summary: The framework's own pages — launcher, settings, errors — and the frame a Tier 1 view
 //          renders inside, as server-rendered HTML with HTMX and inlined Bootstrap Icons
 //          (docs/architecture.md §2.5, docs/icons.md). The frame is the standard chrome of
@@ -858,6 +858,20 @@ fn apps_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
             dl(body, "Events (this space)", &app.log().seq().to_string());
         }
         body.push_str("</dl>\n");
+
+        let _ = writeln!(
+            body,
+            "<div class=\"pv-actions\">\
+             <a href=\"/settings/apps/{slug}/backup.zip\" class=\"pv-btn\">{} Backup data</a>\
+             <form class=\"pv-inline\" method=\"post\" action=\"/settings/apps/{slug}/clear\" hx-post=\"/settings/apps/{slug}/clear\" \
+             hx-target=\"body\" hx-push-url=\"true\" hx-confirm=\"Are you sure you want to delete all data for this app? This cannot be undone. Download a backup first.\">\
+             {}<button type=\"submit\" class=\"pv-btn pv-btn-danger\">{} Clear data</button>\
+             </form></div>",
+            icon("download"),
+            cx.csrf.field(&format!("/settings/apps/{}/clear", row.slug)),
+            icon("trash"),
+            slug = escape(&row.slug)
+        );
 
         // Permission widenings read as a privacy warning (`spec/app-contract.md §5.4`);
         // warnings about the app's shape keep their own box, so the two are not confused.
