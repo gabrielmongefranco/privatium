@@ -63,6 +63,8 @@ You can run Privatium on Windows, macOS, or Linux. Lua and SQLite are included.
    that folder is. To keep everything in one place instead, create a folder named
    `privatium-data` beside the program: the program uses that folder whenever it
    exists, and the example apps are written into it on the first run.
+   
+   *(Note: On Windows, you may see a "Windows protected your PC" SmartScreen warning on your first run. Simply click **More info** and then **Run anyway**. This does not require administrator rights.)*
 3. **Open it in your browser.** Visit [Privatium on your computer](http://127.0.0.1:8420/)
    and pick **Hello**. Keep the terminal open while you use your apps. To use them from
    your phone on the same network, open **Settings › Devices** on your computer and
