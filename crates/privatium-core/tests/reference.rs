@@ -2,7 +2,7 @@
 // crates/privatium-core/tests/reference.rs
 // Author(s): Gabriel Mongefranco
 // Created: 2026-09-04
-// Last Modified: 2026-10-04
+// Last Modified: 2026-10-23
 // Summary: The three reference apps end to end through core::handle with no listener, exactly as their
 //          READMEs describe them: hello (write, amend, break the cache, and the README's own
 //          `echo >>` line run for real), animals (the seed, a round over htmx and over plain
@@ -2420,6 +2420,10 @@ async fn test_spec_cli_5_pv4xx_shell_pages() {
     ] {
         assert!(apps_page.contains(expected), "{expected}\n{apps_page}");
     }
+    let data_page = page("/settings/data");
+    assert!(data_page.contains("Approximate size:"), "{data_page}");
+    assert!(data_page.contains("KB"), "{data_page}");
+    assert!(data_page.contains("Your space&#39;s key"), "{data_page}");
     let devices = page("/settings/devices");
     assert!(
         devices.contains("<th scope=\"col\">Device</th>"),
