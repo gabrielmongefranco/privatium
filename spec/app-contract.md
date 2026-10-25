@@ -3,7 +3,7 @@ This file is part of Privatium
 spec/app-contract.md
 Author(s): Gabriel Mongefranco
 Created: 2026-08-28
-Last Modified: 2026-10-04
+Last Modified: 2026-10-26
 Summary: NORMATIVE. What an app is, the three tiers of app, and the three deployment modes. The
          declarative tier is one option, not the model.
 Notes: See README file for documentation and full license information.
@@ -646,13 +646,13 @@ treat running a script someone emailed you — because that is what it is.
 
 Include `sample/seed.jsonl` (synthetic events only) so an owner can see the app populated.
 
-A seed is one event envelope per line (`spec/protocol.md §4.1`). A node loading it takes
-`op`, `tbl`, `id` and `d` from each line and discards `seq`, `lam`, `ts`, `dev` and `app`:
-the events are appended through the node's own log, as the node's, with every envelope
-field minted afresh — never copied as another device's file (`spec/protocol.md §3.1`).
-Loading is an explicit owner action and MUST NOT happen on its own, and it MUST be refused
-when the app's log already holds an event from any device: a seed populates an empty app
-or nothing.
+A node loading an app automatically loads `sample/seed.jsonl` upon installation if the
+app's log holds no events. A seed is one event envelope per line (`spec/protocol.md §4.1`).
+A node loading it takes `op`, `tbl`, `id` and `d` from each line and discards `seq`, `lam`,
+`ts`, `dev` and `app`: the events are appended through the node's own log, as the node's,
+with every envelope field minted afresh — never copied as another device's file
+(`spec/protocol.md §3.1`). Loading MUST be refused when the app's log already holds an
+event from any device: a seed populates an empty app or nothing.
 
 ---
 

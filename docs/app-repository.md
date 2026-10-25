@@ -3,7 +3,7 @@ This file is part of Privatium
 docs/app-repository.md
 Author(s): Gabriel Mongefranco
 Created: 2026-09-26
-Last Modified: 2026-09-26
+Last Modified: 2026-10-26
 Summary: How to start a Privatium app in a repository of its own: the repository template, the
          app folder, the assistant guides, the framework version pin, and how to run, lint and
          share the app. Ends with a prompt that walks an AI assistant through the same steps.
@@ -253,9 +253,9 @@ Two things belong in the repository from the first commit.
   explains what that does and does not protect. Say so plainly in your own README rather
   than implying more.
 - **Synthetic sample data in `apps/<slug>/sample/seed.jsonl`.** One event per line, invented
-  from start to finish, with no real names, dates of birth or medication records. The
-  settings page of a node offers to load it into an app whose log is still empty. A new
-  owner can then see the app populated before they type anything.
+  from start to finish, with no real names, dates of birth or medication records. A node
+  loads it automatically upon installation when an app has no existing data. A new owner
+  can then see the app populated before they type anything.
 
 ## 9. Share the app
 

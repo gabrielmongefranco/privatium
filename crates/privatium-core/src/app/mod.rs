@@ -2,7 +2,7 @@
 // crates/privatium-core/src/app/mod.rs
 // Author(s): Gabriel Mongefranco
 // Created: 2026-09-02
-// Last Modified: 2026-10-04
+// Last Modified: 2026-10-26
 // Summary: The app loader — the lifecycle of spec/app-contract.md §8 up to and including mount.
 //          Discovers app folders, refuses per app and loudly (§3.1), keeps sys_app as events
 //          (§3.4), and owns each app's log, store and — for Tier 1 — its Lua host. The node's
@@ -702,8 +702,8 @@ impl Node {
     /// root are marked `last_error = "folder missing"` (`§3.4`) — so pass every root at
     /// once rather than one call per root.
     ///
-    /// Nothing here loads `sample/seed.jsonl`. That is [`load_seed`](Self::load_seed), on
-    /// the owner's say-so (`§9`).
+    /// If an app ships `sample/seed.jsonl` and its event log is empty, the seed is
+    /// automatically loaded upon installation/initial load (`§9`).
     pub fn load_apps(&mut self, roots: &[AppRoot]) -> Result<LoadReport> {
         let cutoff = store::cutoff_now();
         // `sys.sys_app` and `sys.sys_audit` have to be current: the upsert compares
@@ -740,7 +740,20 @@ impl Node {
                     Outcome::Loaded(app) => {
                         report.warnings.extend(app.warnings.iter().cloned());
                         report.loaded.push(candidate.folder.clone());
+                        let slug = candidate.folder.clone();
+                        let has_seed = app.seed_path().is_some();
+                        let is_empty = app.log.seq() == 0 && app.log.heads().is_empty();
                         self.apps.insert(candidate.folder, *app);
+                        if has_seed && is_empty {
+                            if let Ok(seeded) = self.load_seed(&slug) {
+                                if let (Some(appended), Some(app)) =
+                                    (seeded.appended, self.apps.get_mut(&slug))
+                                {
+                                    let dev = appended.dev.clone();
+                                    app.unfired.push((appended, dev));
+                                }
+                            }
+                        }
                     }
                     Outcome::Disabled => report.disabled.push(candidate.folder),
                     Outcome::Refused(failure) => report.failed.push(failure),
@@ -799,13 +812,14 @@ impl Node {
         self.apps.get(slug).and_then(App::seed_path)
     }
 
-    /// Load `sample/seed.jsonl` into `slug`, on the owner's explicit say-so.
+    /// Load `sample/seed.jsonl` into `slug`.
     ///
-    /// Never called by [`load_apps`](Self::load_apps). Refused when the app's log already
-    /// holds an event from any device, so a seed can only ever populate an empty app.
-    /// Every line is appended through the app's own log as one batch of **this node's**
-    /// events — fresh `seq`, `lam`, `ts` and `dev` — and applied to the cache
-    /// incrementally; the seed's own envelope fields are discarded (`seed`).
+    /// Called automatically by [`load_apps`](Self::load_apps) on initial install/load if
+    /// the log is empty. Refused when the app's log already holds an event from any
+    /// device, so a seed can only ever populate an empty app. Every line is appended
+    /// through the app's own log as one batch of **this node's** events — fresh `seq`,
+    /// `lam`, `ts` and `dev` — and applied to the cache incrementally; the seed's own
+    /// envelope fields are discarded (`seed`).
     pub fn load_seed(&mut self, slug: &str) -> Result<Seeded> {
         let app = self.apps.get_mut(slug).ok_or_else(|| Error::AppNotLoaded {
             slug: slug.to_owned(),
@@ -1377,7 +1391,18 @@ impl Node {
             source,
         };
         if let Outcome::Loaded(app) = self.load_one(&candidate, &store::cutoff_now())? {
+            let has_seed = app.seed_path().is_some();
+            let is_empty = app.log.seq() == 0 && app.log.heads().is_empty();
             self.apps.insert(slug.to_owned(), *app);
+            if has_seed && is_empty {
+                if let Ok(seeded) = self.load_seed(slug) {
+                    if let (Some(appended), Some(app)) = (seeded.appended, self.apps.get_mut(slug))
+                    {
+                        let dev = appended.dev.clone();
+                        app.unfired.push((appended, dev));
+                    }
+                }
+            }
         }
         Ok(())
     }

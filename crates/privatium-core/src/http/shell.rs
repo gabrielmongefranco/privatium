@@ -2,7 +2,7 @@
 // crates/privatium-core/src/http/shell.rs
 // Author(s): Gabriel Mongefranco
 // Created: 2026-09-03
-// Last Modified: 2026-10-24
+// Last Modified: 2026-10-26
 // Summary: The framework's own pages — launcher, settings, errors — and the frame a Tier 1 view
 //          renders inside, as server-rendered HTML with HTMX and inlined Bootstrap Icons
 //          (docs/architecture.md §2.5, docs/icons.md). The frame is the standard chrome of
@@ -898,27 +898,6 @@ fn apps_page(cx: &Context<'_>, body: &mut String) -> Result<()> {
                 let _ = write!(body, "<li>{}</li>", escape(&warning.detail()));
             }
             body.push_str("</ul></div></div>\n");
-        }
-
-        // The seed offer (spec/app-contract.md §9): shown only for a loaded app whose log is
-        // empty and whose folder ships a seed; loading is a POST, never a GET, never automatic.
-        if let Some(app) = loaded
-            && app.seed_path().is_some()
-            && app.log().seq() == 0
-            && app.log().heads().is_empty()
-        {
-            let action = format!("/settings/apps/{}/seed", row.slug);
-            let _ = writeln!(
-                body,
-                "<form class=\"pv-inline\" method=\"post\" action=\"{action}\" hx-post=\"{action}\" \
-                 hx-target=\"body\" hx-push-url=\"true\">{}<button type=\"submit\" class=\"pv-btn pv-btn-primary\">\
-                 {} Load sample data</button> <span class=\"pv-muted\">synthetic events from \
-                 <code>sample/seed.jsonl</code>, appended as this space's; only offered while the \
-                 app has no events</span></form>",
-                cx.csrf.field(&action),
-                icon("plus-lg"),
-                action = escape(&action)
-            );
         }
         body.push_str("</section>\n");
     }

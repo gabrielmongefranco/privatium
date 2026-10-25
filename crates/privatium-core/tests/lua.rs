@@ -2,7 +2,7 @@
 // crates/privatium-core/tests/lua.rs
 // Author(s): Gabriel Mongefranco
 // Created: 2026-09-03
-// Last Modified: 2026-10-04
+// Last Modified: 2026-10-26
 // Summary: The Lua host against spec/lua-api.md, every test through core::handle with no listener: the
 //          sandbox of §5 and its four limits, adversarially; the stable route index of §2.4;
 //          the pv module of §3 — routing, typed reads, appends and batches, pv.dec; the
@@ -1493,12 +1493,7 @@ pv.get('/add', function() return pv.text(pv.append('thing', { name = 'added' }))
     let log = log_path(&handler, "react");
     let dev = handler.node().lock().unwrap().id().as_str().to_owned();
 
-    let action = "/settings/apps/react/seed";
-    let token = handler.csrf().token(action);
-    let seeded = handler
-        .handle(post(action, &format!("_csrf={token}")))
-        .await;
-    assert_eq!(seeded.status(), StatusCode::SEE_OTHER);
+    handler.fire_pending("react").await;
     let lines = log_lines(&log);
     assert_eq!(
         lines.len(),

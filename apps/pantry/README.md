@@ -13,9 +13,9 @@ when you look. That one decision is what the rest of this page explains.
 
 ## 1. Open it
 
-A shelf, a batch on it, and the amount you have. Load the sample data from **Settings →
-Apps → Load sample data** to start with a stocked freezer, or add a shelf and go — with
-nothing stored yet the page asks for a shelf first, because a batch has to go somewhere.
+A shelf, a batch on it, and the amount you have. The sample data loads automatically upon
+installation so you start with a stocked freezer, or add a shelf and go — with nothing
+stored yet the page asks for a shelf first, because a batch has to go somewhere.
 
 ## 2. Add a batch
 

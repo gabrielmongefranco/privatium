@@ -2,9 +2,9 @@
 // crates/privatium-core/src/app/seed.rs
 // Author(s): Gabriel Mongefranco
 // Created: 2026-09-02
-// Last Modified: 2026-09-02
-// Summary: sample/seed.jsonl (spec/app-contract.md §9) — synthetic events an owner may load into an
-//          empty app. Parsed here; appended by Node::load_seed through the app's own log as
+// Last Modified: 2026-10-26
+// Summary: sample/seed.jsonl (spec/app-contract.md §9) — synthetic events loaded into an empty app
+//          upon installation. Parsed here; appended by Node::load_seed through the app's own log as
 //          this node's events, never copied as another device's file.
 // Notes: See README file for documentation and full license information.
 //

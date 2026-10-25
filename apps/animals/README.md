@@ -150,14 +150,12 @@ That is only clean when identity is a ULID you control and writes are appends.
 ## Sample data
 
 `sample/seed.jsonl` holds seven events — three questions and four animals — a larger tree
-than the starter, for seeing the knowledge page and the question paths populated. It is
-offered on the settings page while the app's log is empty and loaded only when you ask
+than the starter, for seeing the knowledge page and the question paths populated. When you
+install the app, the seed data loads automatically if no data already exists
 (`spec/app-contract.md §9`); the events are appended as this node's own, with fresh
 envelopes. There is no `cursor` row in it, so the first round starts at the root.
 
-Load it before you open the game. Opening the game plants the starter tree, and a seed
-populates an empty log or nothing, so once the log holds those three events the offer is
-gone. To try the seed after that, delete the app's `data/animals` folder and start again.
+To try the seed again later, delete the app's `data/animals` folder and restart the node.
 
 ## Reading your own game history
 

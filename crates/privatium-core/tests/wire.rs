@@ -2,7 +2,7 @@
 // crates/privatium-core/tests/wire.rs
 // Author(s): Gabriel Mongefranco
 // Created: 2026-09-03
-// Last Modified: 2026-10-04
+// Last Modified: 2026-10-26
 // Summary: core::handle against spec/protocol.md §9 and ADR 0003 — every route reachable with no
 //          listener, the headers of §9.3 on every response, nothing leaked unauthenticated
 //          (§9.2), solo mode at `/` with the framework prefixes winning (§9.1), Tier 2 served
@@ -717,11 +717,11 @@ async fn test_hand_appended_line_visible_without_restart() {
     assert!(!after.contains("<code>profile</code>: 0 rows"), "{after}");
 }
 
-/// `spec/app-contract.md §9` — the seed offer is shown for a loaded app with an empty log,
-/// and only a POST carrying `csrf()` loads it; a GET does nothing, a POST without the token
-/// does nothing, and a second POST is refused because the log now holds events.
+/// `spec/app-contract.md §9` — a seed is automatically loaded upon app load when the log is
+/// empty; no seed offer button is shown in settings, and a POST to the seed route is refused
+/// because the log now holds events.
 #[tokio::test]
-async fn test_seed_offer_shown_and_only_a_post_loads_it() {
+async fn test_seed_auto_loaded_and_no_seed_button_shown() {
     let root = tempfile::tempdir().unwrap();
     let apps = Node::open(root.path()).unwrap().paths().apps_dir();
     write_app(
@@ -748,32 +748,26 @@ async fn test_seed_offer_shown_and_only_a_post_loads_it() {
         node.paths().app_log("seeded", node.id())
     };
 
+    // The seed was auto-loaded at startup.
+    let lines: Vec<serde_json::Value> = fs::read_to_string(&log)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0]["d"]["display_name"], "Ada");
+
     let page = body_of(handler.handle(get("/settings/apps")).await).await;
-    assert!(page.contains(&format!("action=\"{action}\"")), "{page}");
-    assert!(page.contains("name=\"_csrf\""), "{page}");
-    assert!(page.contains("Load sample data"), "{page}");
-    // Of the reference apps animals and pantry ship a seed, so exactly three offers
-    // appear — this app's and theirs — and nothing is offered for hello or sketch.
-    assert_eq!(page.matches("Load sample data").count(), 3, "{page}");
-    assert!(
-        page.contains("action=\"/settings/apps/animals/seed\""),
-        "{page}"
-    );
-    assert!(
-        page.contains("action=\"/settings/apps/pantry/seed\""),
-        "{page}"
-    );
+    // No "Load sample data" button exists on the settings page.
+    assert!(!page.contains("Load sample data"), "{page}");
+    assert!(!page.contains(&format!("action=\"{action}\"")), "{page}");
+    assert!(!page.contains("/settings/apps/animals/seed"), "{page}");
+    assert!(!page.contains("/settings/apps/pantry/seed"), "{page}");
     assert!(!page.contains("/settings/apps/hello/seed"), "{page}");
     assert!(!page.contains("/settings/apps/sketch/seed"), "{page}");
+    assert!(page.contains("<code>profile</code>: 2 rows"), "{page}");
 
-    // A GET is not the act.
-    assert_eq!(
-        handler.handle(get(action)).await.status(),
-        StatusCode::METHOD_NOT_ALLOWED
-    );
-    assert_eq!(fs::read_to_string(&log).unwrap_or_default(), "");
-
-    // A POST without the token is not the act either.
+    // Never over existing events: POST to seed route is refused with CONFLICT.
     let post = |body: String| {
         axum::http::Request::builder()
             .method(Method::POST)
@@ -782,32 +776,7 @@ async fn test_seed_offer_shown_and_only_a_post_loads_it() {
             .body(Body::from(body))
             .unwrap()
     };
-    let forbidden = handler.handle(post("_csrf=nope".into())).await;
-    assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
-    assert_eq!(fs::read_to_string(&log).unwrap_or_default(), "");
-    let other = handler.csrf().token("/settings/apps/other/seed");
-    let forbidden = handler.handle(post(format!("_csrf={other}"))).await;
-    assert_eq!(forbidden.status(), StatusCode::FORBIDDEN);
-
-    // The act.
     let token = handler.csrf().token(action);
-    let seeded = handler.handle(post(format!("_csrf={token}"))).await;
-    assert_eq!(seeded.status(), StatusCode::SEE_OTHER);
-    assert_eq!(header(&seeded, &LOCATION), "/settings/apps#app-seeded");
-    let lines: Vec<serde_json::Value> = fs::read_to_string(&log)
-        .unwrap()
-        .lines()
-        .map(|l| serde_json::from_str(l).unwrap())
-        .collect();
-    assert_eq!(lines.len(), 2);
-    assert_eq!(lines[0]["d"]["display_name"], "Ada");
-    let page = body_of(handler.handle(get("/settings/apps")).await).await;
-    assert!(page.contains("<code>profile</code>: 2 rows"), "{page}");
-    // This app's offer is gone; animals' and pantry's, whose logs are still empty, remain.
-    assert!(!page.contains(&format!("action=\"{action}\"")), "{page}");
-    assert_eq!(page.matches("Load sample data").count(), 2, "{page}");
-
-    // Never over existing events.
     let refused = handler.handle(post(format!("_csrf={token}"))).await;
     assert_eq!(refused.status(), StatusCode::CONFLICT);
     let text = body_of(refused).await;

@@ -2,7 +2,7 @@
 // crates/privatium-core/tests/reference.rs
 // Author(s): Gabriel Mongefranco
 // Created: 2026-09-04
-// Last Modified: 2026-10-23
+// Last Modified: 2026-10-26
 // Summary: The three reference apps end to end through core::handle with no listener, exactly as their
 //          READMEs describe them: hello (write, amend, break the cache, and the README's own
 //          `echo >>` line run for real), animals (the seed, a round over htmx and over plain
@@ -503,19 +503,7 @@ fn animals_seed() -> Vec<Value> {
     .collect()
 }
 
-/// Load `sample/seed.jsonl` through the settings page, as the owner does.
-async fn seed_animals(handler: &Handler) {
-    let action = "/settings/apps/animals/seed";
-    let page = body_of(handler.handle(get("/settings/apps")).await).await;
-    assert!(page.contains(&format!("action=\"{action}\"")), "{page}");
-    let token = handler.csrf().token(action);
-    let seeded = handler
-        .handle(post(action, &format!("_csrf={token}")))
-        .await;
-    assert_eq!(seeded.status(), StatusCode::SEE_OTHER);
-}
-
-/// `apps/animals/README.md` — the seed through the settings page as this node's events,
+/// `apps/animals/README.md` — the seed auto-loaded upon installation as this node's events,
 /// a round over htmx (the `_board` fragment, the cursor row, the same question on a
 /// reload), the three-event teach that turns the leaf into the question in one batch, the
 /// recursive knowledge page, reset as tombstones for every node, and the Alpine CSP build
@@ -531,7 +519,6 @@ async fn test_animals_end_to_end() {
     let seed = animals_seed();
     assert_eq!(seed.len(), 7);
 
-    seed_animals(&handler).await;
     let lines = log_lines(&log);
     assert_eq!(lines.len(), 7);
     for (index, (line, wanted)) in lines.iter().zip(&seed).enumerate() {
@@ -1372,8 +1359,7 @@ async fn test_sketch_end_to_end() {
 
 /// A node with the reference apps, `pantry` seeded from `sample/seed.jsonl`.
 fn pantry(root: &tempfile::TempDir) -> Handler {
-    let (mut node, report) = open(root);
-    node.load_seed("pantry").unwrap();
+    let (node, report) = open(root);
     Handler::new(node, report)
 }
 
@@ -1968,10 +1954,11 @@ async fn test_pantry_schema_rejects_bad_reason() {
 fn test_pantry_seed_loads_into_empty_app_only() {
     let root = tempfile::tempdir().unwrap();
     let (mut node, _report) = open(&root);
-    let seeded = node.load_seed("pantry").unwrap();
+    let log = node.paths().app_log("pantry", node.id());
     assert_eq!(
-        seeded.events, 22,
-        "four shelves, six batches, twelve changes"
+        log_lines(&log).len(),
+        22,
+        "four shelves, six batches, twelve changes loaded automatically"
     );
     assert!(
         matches!(node.load_seed("pantry"), Err(Error::SeedRefused { .. })),
@@ -2409,8 +2396,8 @@ async fn test_spec_cli_5_pv4xx_shell_pages() {
     );
     assert!(node_page.contains("restore.tier3"), "{node_page}");
     let apps_page = page("/settings/apps");
+    assert!(!apps_page.contains("Load sample data"), "{apps_page}");
     for expected in [
-        "Load sample data",
         "Privacy warning",
         "Load warning",
         "ad-hoc read-only SQL",
@@ -2479,7 +2466,6 @@ async fn test_spec_cli_5_pv4xx_app_frame_and_reference_views() {
     let root = tempfile::tempdir().unwrap();
     configure(&root, LUA_CONFIG);
     let handler = handler_for(&root);
-    seed_animals(&handler).await;
 
     let mut documents: Vec<(&str, String)> = Vec::new();
     for path in [

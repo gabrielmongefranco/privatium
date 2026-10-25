@@ -2,11 +2,11 @@
 // crates/privatium-core/tests/apps.rs
 // Author(s): Gabriel Mongefranco
 // Created: 2026-09-02
-// Last Modified: 2026-10-04
+// Last Modified: 2026-10-26
 // Summary: The app loader against spec/app-contract.md §3, §3.1, §5.4, §8 and §9, spec/protocol.md §1.1
 //          and §12, and spec/data-dictionary.md §3.4 — refusal per app and loud, the index as
 //          events, the sandboxed cache, the store the node-level snapshot and restore reopen,
-//          and the seed that never loads itself.
+//          and the seed automatically loaded for an empty app.
 // Notes: See README file for documentation and full license information.
 //
 // Copyright © 2026 Gabriel Mongefranco
@@ -644,7 +644,7 @@ fn test_cross_origin_isolated_refused_in_host_mode() {
 // §9 — the seed
 // ---------------------------------------------------------------------------------------
 
-/// `spec/app-contract.md §9` — a seed is offered, never loaded silently, refused over an
+/// `spec/app-contract.md §9` — a seed is automatically loaded for an empty app, refused over an
 /// app that has events, and appended as this node's events when it does load.
 #[test]
 fn test_seed_not_loaded_over_existing_events() {
@@ -696,7 +696,7 @@ fn test_seed_not_loaded_over_existing_events() {
     );
     assert_eq!(log_lines(&log).len(), 1, "a refused seed appended");
 
-    // (b) A fresh app: the seed loads once, as this node's events, in one batch.
+    // (b) A fresh app: the seed loads automatically on load, as this node's events, in one batch.
     write_lua_app(
         &apps,
         "fresh",
@@ -704,15 +704,8 @@ fn test_seed_not_loaded_over_existing_events() {
     );
     node.load_apps(&[local(&node)]).unwrap();
     let fresh_log = node.paths().app_log("fresh", node.id());
-    assert_eq!(
-        fs::read_to_string(&fresh_log).unwrap(),
-        "",
-        "a load must not seed"
-    );
-    let seeded = node.load_seed("fresh").unwrap();
-    assert_eq!(seeded.events, 3);
     let lines = log_lines(&fresh_log);
-    assert_eq!(lines.len(), 3);
+    assert_eq!(lines.len(), 3, "a fresh load must automatically seed");
     for (index, line) in lines.iter().enumerate() {
         let n = u64::try_from(index).unwrap() + 1;
         assert_eq!(line["seq"], n, "gapless from 1");
